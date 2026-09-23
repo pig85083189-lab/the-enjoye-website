@@ -475,7 +475,7 @@
   align-items: center;
   border: 0;
   background: transparent;
-  padding: 0.45rem 0.85rem 0.72rem;
+  padding: 0.5rem 0.9rem 0.8rem;
   cursor: pointer;
   color: var(--pm-muted);
   position: relative;
@@ -486,12 +486,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.45rem; /* ~7px */
+  gap: 0.4375rem; /* 7px between EN and ZH */
 }
 
 .pm-catnav__en {
   font-family: var(--font-display), "Cormorant Garamond", serif;
-  font-size: 0.7rem;
+  font-size: 0.8125rem;
   font-weight: 400;
   letter-spacing: 0.24em;
   white-space: nowrap;
@@ -500,13 +500,13 @@
 
 .pm-catnav__zh {
   font-family: var(--font-serif), "Noto Serif TC", serif;
-  /* Prefer readability on narrow screens; desktop uses slightly smaller relative size */
+  /* ~15% smaller than EN; readable on phones */
   font-size: 0.6875rem;
   font-weight: 300;
-  letter-spacing: 0.06em;
-  line-height: 1.25;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
   white-space: nowrap;
-  color: color-mix(in srgb, currentColor 68%, transparent);
+  color: color-mix(in srgb, currentColor 72%, transparent);
 }
 
 .pm-catnav__item::after {
@@ -514,7 +514,7 @@
   position: absolute;
   left: 0.85rem;
   right: 0.85rem;
-  bottom: 0.2rem;
+  bottom: 0.15rem;
   height: 1px;
   background: var(--pm-coffee);
   transform: scaleX(0);
@@ -1337,12 +1337,12 @@
   }
 
   .pm-catnav__en {
-    font-size: 0.76rem;
+    font-size: 0.78rem;
     letter-spacing: 0.28em;
   }
 
   .pm-catnav__zh {
-    font-size: 0.62rem;
+    font-size: 0.625rem; /* ~20% smaller than EN */
     font-weight: 300;
   }
 
