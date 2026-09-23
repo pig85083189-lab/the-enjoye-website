@@ -38,12 +38,14 @@ export function TreatmentSection({
             {branded ? (
               <Image
                 src={visual.image}
-                alt="THE ENJOYE 矽晶煥膚"
-                width={1024}
-                height={341}
+                alt={`THE ENJOYE ${visual.caption}`}
+                width={visual.width ?? 1024}
+                height={visual.height ?? 341}
                 sizes="100vw"
                 className="pm-treatment__visual-img pm-treatment__visual-img--branded"
-                priority={category.id === "crystal"}
+                priority={
+                  category.id === "crystal" || category.id === "facial"
+                }
               />
             ) : (
               <>
