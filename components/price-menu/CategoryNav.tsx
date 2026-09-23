@@ -7,6 +7,16 @@ type CategoryNavProps = {
   onSelect: (categoryId: string) => void;
 };
 
+/** Nav-only Chinese labels — does not alter catalog data in services.ts */
+const NAV_ZH: Record<MenuCategoryId, string> = {
+  "new-guest": "新客專屬",
+  "body-aroma": "身體 SPA・芳療",
+  facial: "臉部保養",
+  crystal: "矽晶煥膚",
+  bust: "美胸 SPA",
+  sculpting: "體雕・曲線管理",
+};
+
 const NAV_IDS = menuCategories.map((c) => c.id);
 
 export function CategoryNav({ onSelect }: CategoryNavProps) {
@@ -48,15 +58,20 @@ export function CategoryNav({ onSelect }: CategoryNavProps) {
       <div className="pm-catnav__track">
         {menuCategories.map((category) => {
           const isActive = active === category.id;
+          const zh = NAV_ZH[category.id];
           return (
             <button
               key={category.id}
               type="button"
               className={`pm-catnav__item ${isActive ? "is-active" : ""}`}
               aria-current={isActive ? "true" : undefined}
+              aria-label={`${category.englishLabel} ${zh}`}
               onClick={() => onSelect(category.id)}
             >
-              <span className="pm-catnav__en">{category.englishLabel}</span>
+              <span className="pm-catnav__stack">
+                <span className="pm-catnav__en">{category.englishLabel}</span>
+                <span className="pm-catnav__zh">{zh}</span>
+              </span>
             </button>
           );
         })}

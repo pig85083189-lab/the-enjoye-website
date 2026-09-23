@@ -447,7 +447,7 @@
   top: 0;
   z-index: 40;
   margin: 0 calc(50% - 50vw);
-  padding: 0.75rem 0;
+  padding: 0.65rem 0 0.55rem;
   background: color-mix(in srgb, var(--pm-ivory) 90%, transparent);
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--pm-line-soft);
@@ -470,27 +470,51 @@
 .pm-catnav__item {
   appearance: none;
   flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   border: 0;
   background: transparent;
-  padding: 0.6rem 0.9rem;
+  padding: 0.45rem 0.85rem 0.72rem;
   cursor: pointer;
   color: var(--pm-muted);
   position: relative;
+  text-align: center;
+}
+
+.pm-catnav__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem; /* ~7px */
 }
 
 .pm-catnav__en {
   font-family: var(--font-display), "Cormorant Garamond", serif;
   font-size: 0.7rem;
+  font-weight: 400;
   letter-spacing: 0.24em;
   white-space: nowrap;
+  line-height: 1.2;
+}
+
+.pm-catnav__zh {
+  font-family: var(--font-serif), "Noto Serif TC", serif;
+  /* Prefer readability on narrow screens; desktop uses slightly smaller relative size */
+  font-size: 0.6875rem;
+  font-weight: 300;
+  letter-spacing: 0.06em;
+  line-height: 1.25;
+  white-space: nowrap;
+  color: color-mix(in srgb, currentColor 68%, transparent);
 }
 
 .pm-catnav__item::after {
   content: "";
   position: absolute;
-  left: 0.9rem;
-  right: 0.9rem;
-  bottom: 0.18rem;
+  left: 0.85rem;
+  right: 0.85rem;
+  bottom: 0.2rem;
   height: 1px;
   background: var(--pm-coffee);
   transform: scaleX(0);
@@ -505,6 +529,10 @@
 .pm-catnav__item.is-active::after,
 .pm-catnav__item:hover::after {
   transform: scaleX(1);
+}
+
+.pm-catnav__item:hover {
+  color: var(--pm-mocha);
 }
 
 /* —— Price list —— */
@@ -1292,13 +1320,30 @@
     padding: 1.65rem 0;
   }
 
+  .pm-catnav__track {
+    justify-content: space-between;
+    overflow-x: visible;
+  }
+
   .pm-catnav__item {
-    padding-inline: 1.15rem;
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: 0.55rem;
+  }
+
+  .pm-catnav__item::after {
+    left: 12%;
+    right: 12%;
   }
 
   .pm-catnav__en {
     font-size: 0.76rem;
     letter-spacing: 0.28em;
+  }
+
+  .pm-catnav__zh {
+    font-size: 0.62rem;
+    font-weight: 300;
   }
 
   .pm-guest-offer__amount {
