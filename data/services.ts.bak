@@ -1,0 +1,542 @@
+/**
+ * THE ENJOYE SPA — public price-menu catalog.
+ * Single source of truth for the /prices page.
+ *
+ * Guest-facing amounts live in experiencePrice (experience menu).
+ * price is kept for compatibility with the same numeric value; /prices UI never shows price.
+ * Do not invent or alter confirmed amounts.
+ */
+
+import { LINE_URL } from "@/lib/line";
+
+export const BRAND = {
+  name: "THE ENJOYE SPA",
+  tagline: "Beauty \u00B7 Body \u00B7 Mind \u00B7 Life",
+  pageLabel: "體驗價目表",
+  headline: "把時間留給自己，從今天最想被照顧的地方開始。",
+  subhead: "從身體、肌膚到心情，\n為自己留下一段真正被照顧的時間。",
+  lineUrl: LINE_URL,
+  siteUrl: "https://theenjoye.com",
+  canonicalPath: "/prices",
+} as const;
+
+export type MenuCategoryId =
+  | "breast"
+  | "body"
+  | "aromatherapy"
+  | "womb"
+  | "maternity"
+  | "facial"
+  | "pore"
+  | "hair-removal";
+
+export type MenuCategory = {
+  id: MenuCategoryId;
+  englishLabel: string;
+  name: string;
+  shortName: string;
+  moodLine: string;
+  description: string;
+  image: string;
+  imageAlt: string;
+  layout: "tall" | "wide" | "square";
+};
+
+export type MenuService = {
+  id: string;
+  category: MenuCategoryId | "first-experience";
+  categoryId: MenuCategoryId | "first-experience";
+  relatedCategoryId?: MenuCategoryId;
+  name: string;
+  duration: number | null;
+  price: number | null;
+  experiencePrice: number | null;
+  description: string;
+  published: boolean;
+};
+
+export const menuCategories: MenuCategory[] = [
+  {
+    id: "breast",
+    englishLabel: "BREAST CARE",
+    name: "性感美胸",
+    shortName: "性感美胸",
+    moodLine: "柔軟、緊實，與漂亮曲線。",
+    description: "找回柔軟、緊實與漂亮曲線，把照顧自己重新放回生活裡。",
+    image: "https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "溫暖光線下的身體護理雰圍",
+    layout: "tall",
+  },
+  {
+    id: "body",
+    englishLabel: "BODY SCULPTING",
+    name: "窈窕體雕",
+    shortName: "窈窕體雕",
+    moodLine: "線條，是被好好照顧後的結果。",
+    description: "以溫柔手法雕塑輪廓，讓身體重新找回輕盈與自信。",
+    image: "https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "寧靜的身體按摩護理",
+    layout: "wide",
+  },
+  {
+    id: "aromatherapy",
+    englishLabel: "AROMATHERAPY",
+    name: "身心芳療 SPA",
+    shortName: "身心芳療",
+    moodLine: "讓呼吸，先慢下來。",
+    description: "以精油與觸感安撫身心，留下一段真正被照顧的時間。",
+    image: "https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "精油與芳療 SPA 細節",
+    layout: "square",
+  },
+  {
+    id: "womb",
+    englishLabel: "FEMININE CARE",
+    name: "暖宮・元氣調理",
+    shortName: "暖宮調理",
+    moodLine: "溫熱從身體深處回來。",
+    description: "溫養腹部與日常節奏，為自己找回穩定的元氣。",
+    image: "https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "溫暖療癒的 SPA 時刻",
+    layout: "tall",
+  },
+  {
+    id: "maternity",
+    englishLabel: "MOM CARE",
+    name: "孕媽咪 SPA",
+    shortName: "孕媽咪",
+    moodLine: "為新生命，也為妳自己。",
+    description: "專為孕期與產後設計的溫柔呵護，讓身心都被好好安放。",
+    image: "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "柔和寧靜的 SPA 環境",
+    layout: "wide",
+  },
+  {
+    id: "facial",
+    englishLabel: "FACIAL CARE",
+    name: "臉部保養",
+    shortName: "臉部保養",
+    moodLine: "肌膚，值得被慢下來對待。",
+    description: "依膚況層層調理，讓臉部呈現乾淨、透亮的自然光澤。",
+    image: "https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "臉部保養護理細節",
+    layout: "square",
+  },
+  {
+    id: "pore",
+    englishLabel: "PORE CARE",
+    name: "毛孔清潔・修護",
+    shortName: "毛孔清潔",
+    moodLine: "清透，是舒服的開始。",
+    description: "深層清潔與修護並行，讓肌膚重新呼吸。",
+    image: "https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "肌膚護理與清潔細節",
+    layout: "tall",
+  },
+  {
+    id: "hair-removal",
+    englishLabel: "HAIR REMOVAL",
+    name: "除毛・美肌護理",
+    shortName: "除毛美肌",
+    moodLine: "細緻觸感，從日常開始。",
+    description: "溫和除毛與後續美肌護理，讓肌膚維持舒適與平滑。",
+    image: "https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=1200&q=80",
+    imageAlt: "光潔細緻的美肌護理",
+    layout: "wide",
+  },
+];
+
+export const menuServices: MenuService[] = [
+  {
+    id: "breast-upup",
+    category: "breast",
+    categoryId: "breast",
+    name: "美波澎潤 UPUP SPA",
+    duration: 60,
+    price: 1800,
+    experiencePrice: 1800,
+    description: "以溫柔手法呵護胸部輪廓，感受豐潤與放鬆。",
+    published: true,
+  },
+  {
+    id: "breast-gold",
+    category: "breast",
+    categoryId: "breast",
+    name: "黃金美胸緊實 SPA",
+    duration: 80,
+    price: 2250,
+    experiencePrice: 2250,
+    description: "針對胸型緊實與線條，享受細緻的保養時光。",
+    published: true,
+  },
+  {
+    id: "breast-lymph",
+    category: "breast",
+    categoryId: "breast",
+    name: "美胸淋巴疏通 SPA",
+    duration: 60,
+    price: 1980,
+    experiencePrice: 1980,
+    description: "溫和疏通手法，帶來輕盈舒適的身體感受。",
+    published: true,
+  },
+  {
+    id: "breast-shape",
+    category: "breast",
+    categoryId: "breast",
+    name: "胸型調整保養 SPA",
+    duration: 90,
+    price: 2500,
+    experiencePrice: 2500,
+    description: "完整照護胸型線條，留給自己一段細緻時間。",
+    published: true,
+  },
+  {
+    id: "body-chanel",
+    category: "body",
+    categoryId: "body",
+    name: "CHANEL 美人小香肩",
+    duration: 60,
+    price: 1980,
+    experiencePrice: 1980,
+    description: "針對肩頸線條細心保養，展現優雅肩線。",
+    published: true,
+  },
+  {
+    id: "body-heat",
+    category: "body",
+    categoryId: "body",
+    name: "熱能雕塑曲線 SPA",
+    duration: 80,
+    price: 2250,
+    experiencePrice: 2250,
+    description: "熱能搭配手法，感受曲線的柔韌與緊實。",
+    published: true,
+  },
+  {
+    id: "body-waist",
+    category: "body",
+    categoryId: "body",
+    name: "腰腹緊實雕塑 SPA",
+    duration: 60,
+    price: 1980,
+    experiencePrice: 1980,
+    description: "專注腰腹輪廓，溫柔雕塑日常線條。",
+    published: true,
+  },
+  {
+    id: "body-hip",
+    category: "body",
+    categoryId: "body",
+    name: "翹臀美腿雕塑 SPA",
+    duration: 80,
+    price: 2250,
+    experiencePrice: 2250,
+    description: "照顧臀腿曲線，讓身體線條更有層次。",
+    published: true,
+  },
+  {
+    id: "aroma-full",
+    category: "aromatherapy",
+    categoryId: "aromatherapy",
+    name: "身心療癒全身 SPA",
+    duration: 80,
+    price: 2250,
+    experiencePrice: 2250,
+    description: "全身放鬆舒壓，讓心情與身體一起慢下來。",
+    published: true,
+  },
+  {
+    id: "aroma-oil",
+    category: "aromatherapy",
+    categoryId: "aromatherapy",
+    name: "頂級精油舒壓 SPA",
+    duration: 60,
+    price: 1980,
+    experiencePrice: 1980,
+    description: "精油香氣伴隨手法，帶來深度舒緩體驗。",
+    published: true,
+  },
+  {
+    id: "aroma-detox",
+    category: "aromatherapy",
+    categoryId: "aromatherapy",
+    name: "深層排毒放鬆 SPA",
+    duration: 90,
+    price: 2500,
+    experiencePrice: 2500,
+    description: "深層放鬆照顧，幫助身體找回輕盈感。",
+    published: true,
+  },
+  {
+    id: "womb-warm",
+    category: "womb",
+    categoryId: "womb",
+    name: "暖宮溫感 SPA",
+    duration: 60,
+    price: 1980,
+    experiencePrice: 1980,
+    description: "溫熱呵護腹部，感受柔和安穩的照護。",
+    published: true,
+  },
+  {
+    id: "womb-candle",
+    category: "womb",
+    categoryId: "womb",
+    name: "臍燭能量調理",
+    duration: 60,
+    price: 1980,
+    experiencePrice: 1980,
+    description: "以溫暖儀式感，安撫身體與日常節奏。",
+    published: true,
+  },
+  {
+    id: "womb-energy",
+    category: "womb",
+    categoryId: "womb",
+    name: "元氣滿滿能量 SPA",
+    duration: 80,
+    price: 2250,
+    experiencePrice: 2250,
+    description: "溫養身體狀態，找回日常的飽滿元氣。",
+    published: true,
+  },
+  {
+    id: "maternity-relax",
+    category: "maternity",
+    categoryId: "maternity",
+    name: "孕期舒緩放鬆 SPA",
+    duration: 60,
+    price: 1980,
+    experiencePrice: 1980,
+    description: "專為孕期設計的溫柔放鬆，安放身心。",
+    published: true,
+  },
+  {
+    id: "maternity-lactation",
+    category: "maternity",
+    categoryId: "maternity",
+    name: "孕後泌乳疏通 SPA",
+    duration: 80,
+    price: 1800,
+    experiencePrice: 1800,
+    description: "產後溫和疏通照護，帶來舒適放鬆。",
+    published: true,
+  },
+  {
+    id: "maternity-full",
+    category: "maternity",
+    categoryId: "maternity",
+    name: "幸福媽咪全身放鬆",
+    duration: 80,
+    price: 2250,
+    experiencePrice: 2250,
+    description: "全身細心放鬆，陪伴媽媽好好休息。",
+    published: true,
+  },
+  {
+    id: "facial-hydrate",
+    category: "facial",
+    categoryId: "facial",
+    name: "保濕水潤護膚",
+    duration: 60,
+    price: 1980,
+    experiencePrice: 1980,
+    description: "層層補水保濕，讓肌膚感受柔嫩水潤。",
+    published: true,
+  },
+  {
+    id: "facial-bright",
+    category: "facial",
+    categoryId: "facial",
+    name: "亮白透嫩護膚",
+    duration: 60,
+    price: 1980,
+    experiencePrice: 1980,
+    description: "提亮膚色與細緻保養，呈現透亮光澤。",
+    published: true,
+  },
+  {
+    id: "facial-silicon",
+    category: "facial",
+    categoryId: "facial",
+    name: "臉部矽晶護膚",
+    duration: 90,
+    price: 2500,
+    experiencePrice: 2500,
+    description: "深入呵護臉部肌膚，享受完整保養流程。",
+    published: true,
+  },
+  {
+    id: "pore-deep",
+    category: "pore",
+    categoryId: "pore",
+    name: "深層毛孔清潔",
+    duration: 70,
+    price: 2250,
+    experiencePrice: 2250,
+    description: "徹底清潔毛孔，讓肌膚重新呼吸清透。",
+    published: true,
+  },
+  {
+    id: "pore-hydro",
+    category: "pore",
+    categoryId: "pore",
+    name: "水飛梭深層淨化",
+    duration: 90,
+    price: 2500,
+    experiencePrice: 2500,
+    description: "淨化並修護肌膚，帶來清新舒適感受。",
+    published: true,
+  },
+  {
+    id: "hair-intimate",
+    category: "hair-removal",
+    categoryId: "hair-removal",
+    name: "私密除毛",
+    duration: 60,
+    price: 1980,
+    experiencePrice: 1980,
+    description: "細緻私密除毛護理，維持肌膚平滑舒適。",
+    published: true,
+  },
+  {
+    id: "hair-underarm",
+    category: "hair-removal",
+    categoryId: "hair-removal",
+    name: "腋下除毛",
+    duration: 30,
+    price: 899,
+    experiencePrice: 899,
+    description: "快速溫和的腋下除毛，日常更清爽。",
+    published: true,
+  },
+  {
+    id: "hair-arm",
+    category: "hair-removal",
+    categoryId: "hair-removal",
+    name: "手部除毛",
+    duration: 30,
+    price: 899,
+    experiencePrice: 899,
+    description: "手部肌膚細緻除毛，觸感更加柔滑。",
+    published: true,
+  },
+  {
+    id: "hair-full",
+    category: "hair-removal",
+    categoryId: "hair-removal",
+    name: "全身除毛方案",
+    duration: 120,
+    price: 3500,
+    experiencePrice: 3500,
+    description: "全身完整除毛護理，一次照料多處肌膚。",
+    published: true,
+  },
+  {
+    id: "trial-breast",
+    category: "first-experience",
+    categoryId: "first-experience",
+    relatedCategoryId: "breast",
+    name: "美胸體驗課程",
+    duration: 60,
+    price: 1299,
+    experiencePrice: 1299,
+    description: "初次體驗美胸保養，感受溫柔曲線照護。",
+    published: true,
+  },
+  {
+    id: "trial-body",
+    category: "first-experience",
+    categoryId: "first-experience",
+    relatedCategoryId: "body",
+    name: "窈窕體雕體驗",
+    duration: 60,
+    price: 1299,
+    experiencePrice: 1299,
+    description: "體驗體雕手法，認識自己的身體線條。",
+    published: true,
+  },
+  {
+    id: "trial-aroma",
+    category: "first-experience",
+    categoryId: "first-experience",
+    relatedCategoryId: "aromatherapy",
+    name: "身心芳療體驗",
+    duration: 60,
+    price: 1299,
+    experiencePrice: 1299,
+    description: "以芳療放鬆身心，開啟第一次 SPA 時光。",
+    published: true,
+  },
+  {
+    id: "trial-facial",
+    category: "first-experience",
+    categoryId: "first-experience",
+    relatedCategoryId: "facial",
+    name: "臉部保養體驗",
+    duration: 60,
+    price: 1299,
+    experiencePrice: 1299,
+    description: "體驗臉部保養流程，感受肌膚被細心照顧。",
+    published: true,
+  },
+];
+
+export function getPublishedServices(): MenuService[] {
+  return menuServices.filter((s) => s.published);
+}
+
+export function getServicesByCategory(
+  categoryId: MenuCategoryId,
+): MenuService[] {
+  return getPublishedServices().filter((s) => s.categoryId === categoryId);
+}
+
+export function hasExperiencePrice(service: MenuService): boolean {
+  return service.experiencePrice != null;
+}
+
+/** Dedicated first-visit trial courses (the original $1,299 set). */
+export function isDedicatedTrial(service: MenuService): boolean {
+  return service.categoryId === "first-experience";
+}
+
+/**
+ * Services shown in First Experience section only.
+ * Must NOT include regular category treatments — those already show
+ * experiencePrice in their category lists.
+ */
+export function getTrialHighlights(): MenuService[] {
+  return getPublishedServices().filter(
+    (s) => isDedicatedTrial(s) && hasExperiencePrice(s),
+  );
+}
+
+/** @deprecated Prefer getTrialHighlights — kept for older imports. */
+export function getExperienceServices(): MenuService[] {
+  return getTrialHighlights();
+}
+
+/** Whether a category has a dedicated $1,299 trial course (not all experience prices). */
+export function categoryHasDedicatedTrial(
+  categoryId: MenuCategoryId,
+): boolean {
+  return getPublishedServices().some(
+    (s) => isDedicatedTrial(s) && s.relatedCategoryId === categoryId,
+  );
+}
+
+export function getCategoryName(categoryId: MenuCategoryId): string {
+  return menuCategories.find((c) => c.id === categoryId)?.name ?? "";
+}
+
+export function formatDuration(minutes: number | null): string {
+  if (minutes == null) return "";
+  return `${minutes} MIN`;
+}
+
+export function formatPrice(price: number | null): string {
+  if (price == null) return "請洽詢";
+  return `$${price.toLocaleString("en-US")}`;
+}
