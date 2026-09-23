@@ -35,23 +35,32 @@ export function TreatmentSection({
           <figure
             className={`pm-treatment__visual${branded ? " pm-treatment__visual--branded" : ""}`}
           >
-            <Image
-              src={visual.image}
-              alt={branded ? "THE ENJOYE 矽晶煥膚" : ""}
-              fill
-              sizes="100vw"
-              className="pm-treatment__visual-img"
-              priority={category.id === "crystal"}
-            />
-            {!branded ? (
+            {branded ? (
+              <Image
+                src={visual.image}
+                alt="THE ENJOYE 矽晶煥膚"
+                width={1024}
+                height={341}
+                sizes="100vw"
+                className="pm-treatment__visual-img pm-treatment__visual-img--branded"
+                priority={category.id === "crystal"}
+              />
+            ) : (
               <>
+                <Image
+                  src={visual.image}
+                  alt=""
+                  fill
+                  sizes="100vw"
+                  className="pm-treatment__visual-img"
+                />
                 <div className="pm-treatment__visual-veil" />
                 <figcaption className="pm-treatment__visual-caption">
                   {visual.caption}
                 </figcaption>
                 <span className="pm-treatment__visual-frame" aria-hidden />
               </>
-            ) : null}
+            )}
           </figure>
         </Reveal>
       ) : null}
