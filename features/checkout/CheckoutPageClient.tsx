@@ -54,6 +54,14 @@ export function CheckoutPageClient() {
 
   const [error, setError] = useState("");
   const [draftId, setDraftId] = useState<string | null>(draftIdParam ?? null);
+  const [boundOrgId, setBoundOrgId] = useState(organization.id);
+
+  // Tenant switch: drop local draft pointer so prior-org draft ids cannot flash
+  if (boundOrgId !== organization.id) {
+    setBoundOrgId(organization.id);
+    setDraftId(draftIdParam ?? null);
+    setError("");
+  }
 
   // Keep draftId aligned with URL (React-allowed render-time adjust when props change)
   const effectiveDraftId =

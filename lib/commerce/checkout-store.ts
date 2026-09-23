@@ -14,7 +14,6 @@ import {
 import { getPackageDefinition } from "@/lib/packages/store";
 import {
   getCustomerStoredValueBalance,
-  getOrCreateStoredValueAccount,
 } from "@/lib/stored-value/store";
 import { getPackageUsableBalance, listUsablePackagesForService } from "@/lib/packages/store";
 import {
@@ -498,8 +497,7 @@ export function setCheckoutPayments(
     if (p.method === "STORED_VALUE") {
       const bal = getCustomerStoredValueBalance(organizationId, draft.customerId);
       if (p.amount > bal) throw new Error("insufficient stored value balance");
-      // ensure account exists for customer
-      getOrCreateStoredValueAccount(organizationId, draft.customerId, draft.createdByStaffId);
+      // Account is created on settle / top-up — do not write SV domain on draft payment edit
     }
     return {
       id: newId("pay"),

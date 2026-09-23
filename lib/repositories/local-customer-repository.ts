@@ -45,7 +45,7 @@ function normalizeList(list: Customer[], organizationId: string): Customer[] {
   const byId = new Map<string, Customer>();
 
   for (const seed of seeds) {
-    byId.set(seed.id, seed);
+    byId.set(seed.id, { ...seed, packages: [] });
   }
 
   for (const raw of list) {
@@ -72,7 +72,8 @@ function normalizeList(list: Customer[], organizationId: string): Customer[] {
 
 function readAll(organizationId: string): Customer[] {
   if (typeof window === "undefined") {
-    return [...seedForOrganization(organizationId)];
+    // Fail-closed: never expose seed packages[] as balance SoT (SSR / hydration)
+    return seedForOrganization(organizationId).map((c) => ({ ...c, packages: [] }));
   }
   const existing = readTenantJson<Customer[] | null>(organizationId, "customers", null);
   if (existing && Array.isArray(existing) && existing.length > 0) {

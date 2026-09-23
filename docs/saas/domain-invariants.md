@@ -43,4 +43,5 @@ Payment state is derived from Transaction (`hasCompletedTransactionForAppointmen
 ## Legacy compatibility
 
 `Customer.packages` / `remainingSessions` = seed/CRM residue only.  
+Customer repository **always** normalizes `packages: []` (including SSR).  
 Wallet / Checkout / Transactions use `lib/packages` ledger selectors exclusively.
