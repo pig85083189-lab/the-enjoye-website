@@ -12,7 +12,17 @@ export const HERO_IMAGES = {
     "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80",
 } as const;
 
-export const CATEGORY_VISUALS = {
+export type CategoryVisual = {
+  image: string;
+  caption: string;
+  /** Branded artwork already contains copy — no overlay text/veil. */
+  branded?: boolean;
+};
+
+export const CATEGORY_VISUALS: Record<
+  "body-aroma" | "facial" | "crystal" | "bust" | "sculpting",
+  CategoryVisual
+> = {
   "body-aroma": {
     image:
       "https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?auto=format&fit=crop&w=1800&q=80",
@@ -24,9 +34,9 @@ export const CATEGORY_VISUALS = {
     caption: "FACIAL",
   },
   crystal: {
-    image:
-      "https://images.unsplash.com/photo-1570172619644-dfd03ed85f47?auto=format&fit=crop&w=1800&q=80",
+    image: "/images/prices/crystal-skin-banner.png",
     caption: "CRYSTAL SKIN",
+    branded: true,
   },
   bust: {
     image:
@@ -38,7 +48,7 @@ export const CATEGORY_VISUALS = {
       "https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=1800&q=80",
     caption: "BODY SCULPTING",
   },
-} as const;
+};
 
 export const NEW_GUEST_VISUAL =
   "https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=1600&q=80";

@@ -694,6 +694,30 @@
   background: var(--pm-cream);
 }
 
+/* Branded campaign banners (e.g. Crystal Skin) — artwork already has copy */
+.pm-treatment__visual--branded {
+  /* Taller than native ~3:1 so cover prefers vertical crop — keep left title + face */
+  height: auto;
+  aspect-ratio: 1.78 / 1;
+  max-height: none;
+  width: 100vw;
+  max-width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  overflow: hidden;
+}
+
+.pm-treatment__visual--branded .pm-treatment__visual-img {
+  object-fit: cover;
+  /* Balance left title 「矽晶煥膚」 with right-side portrait */
+  object-position: 38% 40%;
+  transform: none;
+  animation: none;
+}
+
+.pm-treatment:hover .pm-treatment__visual--branded .pm-treatment__visual-img {
+  transform: none;
+}
+
 .pm-treatment__visual-img {
   object-fit: cover;
   transform: scale(1.03);
@@ -1218,6 +1242,14 @@
   .pm-footer {
     padding-bottom: 3.5rem;
   }
+
+  .pm-treatment__visual--branded {
+    aspect-ratio: 2.55 / 1;
+  }
+
+  .pm-treatment__visual--branded .pm-treatment__visual-img {
+    object-position: 50% 42%;
+  }
 }
 
 @media (min-width: 1024px) {
@@ -1225,6 +1257,21 @@
     height: min(40vw, 440px);
     margin-inline: calc(50% - 50vw);
     width: 100vw;
+  }
+
+  .pm-treatment__visual--branded {
+    /* Near-native banner ratio — minimize crop of baked-in copy */
+    height: auto;
+    aspect-ratio: 1024 / 341;
+    max-height: min(42vw, 480px);
+    width: 100vw;
+    max-width: 100vw;
+    margin-inline: calc(50% - 50vw);
+  }
+
+  .pm-treatment__visual--branded .pm-treatment__visual-img {
+    object-fit: cover;
+    object-position: center center;
   }
 
   .pm-treatment__visual-frame {

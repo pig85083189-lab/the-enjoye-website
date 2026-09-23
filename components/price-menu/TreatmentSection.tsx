@@ -22,6 +22,7 @@ export function TreatmentSection({
     category.id in CATEGORY_VISUALS
       ? CATEGORY_VISUALS[category.id as Exclude<MenuCategoryId, "new-guest">]
       : null;
+  const branded = Boolean(visual?.branded);
 
   return (
     <section
@@ -31,19 +32,26 @@ export function TreatmentSection({
     >
       {showVisual && visual ? (
         <Reveal>
-          <figure className="pm-treatment__visual">
+          <figure
+            className={`pm-treatment__visual${branded ? " pm-treatment__visual--branded" : ""}`}
+          >
             <Image
               src={visual.image}
-              alt=""
+              alt={branded ? "THE ENJOYE 矽晶煥膚" : ""}
               fill
               sizes="100vw"
               className="pm-treatment__visual-img"
+              priority={category.id === "crystal"}
             />
-            <div className="pm-treatment__visual-veil" />
-            <figcaption className="pm-treatment__visual-caption">
-              {visual.caption}
-            </figcaption>
-            <span className="pm-treatment__visual-frame" aria-hidden />
+            {!branded ? (
+              <>
+                <div className="pm-treatment__visual-veil" />
+                <figcaption className="pm-treatment__visual-caption">
+                  {visual.caption}
+                </figcaption>
+                <span className="pm-treatment__visual-frame" aria-hidden />
+              </>
+            ) : null}
           </figure>
         </Reveal>
       ) : null}
