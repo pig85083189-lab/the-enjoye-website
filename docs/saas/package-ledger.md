@@ -59,7 +59,10 @@ Idempotency: `effectKey = {transactionId}:PACKAGE_PURCHASE|{REDEMPTION}:{sourceI
 
 ## Reversal
 
-`reversePackageLedgerEntry` appends inverse entry once (`already reversed` if repeated).
+`reversePackageLedgerEntry` appends inverse `REVERSAL` once (`reversesEntryId` + `effectKey = REV:PKG:{entryId}`).  
+Repeat calls return the existing reversal (idempotent).
+
+**Void path:** UI must use `voidTransaction` ([transaction-void.md](./transaction-void.md)), which prevalidates that reversing a PURCHASE will not drive package balance below 0.
 
 ---
 

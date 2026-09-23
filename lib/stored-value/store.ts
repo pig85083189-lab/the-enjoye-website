@@ -311,7 +311,7 @@ export function reverseStoredValueLedgerEntry(
   const already = listStoredValueLedger(organizationId).find(
     (e) => e.type === "REVERSAL" && e.reversesEntryId === entryId,
   );
-  if (already) throw new Error("entry already reversed");
+  if (already) return already;
   const effectKey = `REV:SV:${entryId}`;
   const existing = findStoredValueLedgerByEffectKey(organizationId, effectKey);
   if (existing) return existing;

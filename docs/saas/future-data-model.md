@@ -64,7 +64,8 @@ Most tenant tables:
 
 ### Catalog
 
-`services` · `service_categories` · `packages` · `products`
+`services` · `service_categories` · `packages` · `products`  
+*(Prototype: `products` catalog live; `inventory_stocks` derived from `inventory-movements` localStorage in 4.10C — physical tables still LATER.)*
 
 ### Scheduling & clinical
 

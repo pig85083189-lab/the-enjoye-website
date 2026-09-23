@@ -26,7 +26,9 @@ Forms the closed loop for a single beauty store (or brand with 1–N locations):
 |--------|----------|
 | Multi-location UX polish | After IA + location switcher maturity |
 | Advanced reports | Needs settled transactions |
-| Product retail + simple stock | Secondary to services/packages |
+| **Product retail catalog** | **Done in 4.10B** |
+| **Location inventory ledger** | **Done in 4.10C** (no PO/transfer/cost) |
+| Simple stock / inventory extras | Transfer · reorder · cost — later |
 | Fine-grained RBAC UI | After roles stabilize |
 | CRM segments / reminders automation | After follow-up basics |
 | Entitlement enforcement UI | After billing intent |
@@ -96,9 +98,16 @@ Do not regress Treatment / Today / Customer flows when extending Sales placehold
 
 - **4.9A** — Checkout draft + Transaction + mixed tender  
 - **4.9B** — Package ledger + Stored value ledger; Customer Wallet  
-- **4.9C** — Core business flow integration audit + hardening (no new product domains)  
-- **Next (recommended)** — Refund/Void, or Auth / Supabase foundation (Phase 5) — pick deliberately  
+- **4.9C** — Core business flow integration audit + hardening  
+- **4.9C.1** — `/staff` entry redirect (login / today)  
 - Do not treat Appointment COMPLETED as paid.
+
+### Phase 4.10 note
+
+- **4.10A** — Full Transaction void + package / SV ledger reversal  
+- **4.10B** — Product catalog + retail checkout  
+- **4.10C** — Location inventory movements + sale/void stock  
+- **Next (recommended)** — Stock transfer / low-stock alerts, or Partial refund — pick deliberately  
 
 ---
 

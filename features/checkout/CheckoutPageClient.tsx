@@ -10,6 +10,7 @@ import {
   addCheckoutItem,
   completeCheckout,
   createCheckoutFromAppointment,
+  createEmptyCheckoutDraft,
   getCheckoutDraft,
   getCommerceRevision,
   getOpenDraftForAppointment,
@@ -19,6 +20,7 @@ import {
   setCheckoutPayments,
   setPackageRedemption,
   subscribeCommerce,
+  updateCheckoutItemQuantity,
 } from "@/lib/commerce/checkout-store";
 import {
   ACTIVE_PAYMENT_METHODS,
@@ -35,8 +37,13 @@ import { getServicesForOrganization } from "@/data/mock-services";
 import { getCustomerById } from "@/data/mock-customers";
 import { getScheduleAppointment } from "@/lib/appointments/store";
 import { listUsablePackagesForService } from "@/lib/packages/store";
+import { CHECKOUT_ITEM_TYPE_LABEL } from "@/lib/products/domain";
+import { searchProducts } from "@/lib/products/store";
+import { getProductStock } from "@/lib/inventory/store";
+import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { getCustomerStoredValueBalance } from "@/lib/stored-value/store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
+import { listLocations } from "@/lib/tenant/organization-store";
 import { cn } from "@/lib/utils";
 
 export function CheckoutPageClient() {
@@ -115,12 +122,32 @@ export function CheckoutPageClient() {
   }
 
   if (!resolved) {
+    const customers = localCustomerRepository.list({ organizationId: organization.id });
+    const startRetail = (customerId: string) => {
+      setError("");
+      if (!locationId) {
+        setError("請先選擇可存取的分店");
+        return;
+      }
+      try {
+        const draft = createEmptyCheckoutDraft(organization.id, {
+          locationId,
+          customerId,
+          createdByStaffId: staffId,
+        });
+        setDraftId(draft.id);
+        router.replace(`/staff/checkout?draft=${draft.id}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "無法建立一般銷售");
+      }
+    };
+
     return (
       <div className="space-y-4">
         <header>
           <h1 className="text-2xl font-semibold text-text">結帳</h1>
           <p className="mt-1 text-sm text-secondary-text">
-            選擇要結帳的預約（服務中 / 已完成且尚未結帳）
+            預約結帳或一般銷售（商品／服務）
           </p>
         </header>
         {error ? (
@@ -161,7 +188,7 @@ export function CheckoutPageClient() {
         ) : null}
         {candidates.length === 0 && !pendingAppointment ? (
           <Card padding="lg" className="text-sm text-secondary-text">
-            目前沒有可結帳的預約。請先完成到店與服務流程。
+            目前沒有可結帳的預約。可改用下方「一般銷售」。
           </Card>
         ) : (
           <ul className="space-y-2">
@@ -191,6 +218,40 @@ export function CheckoutPageClient() {
             ))}
           </ul>
         )}
+
+        <Card padding="lg" className="space-y-3">
+          <h2 className="text-lg font-semibold text-text">一般銷售</h2>
+          <p className="text-sm text-secondary-text">
+            無預約也可結帳商品／服務。請選擇客戶（不會自動選人）。目前分店：
+            {currentLocation?.name ?? "未選擇"}
+          </p>
+          {customers.length === 0 ? (
+            <p className="text-sm text-secondary-text">尚無客戶，請先建立客戶資料。</p>
+          ) : (
+            <label className="block text-sm text-secondary-text">
+              選擇客戶
+              <select
+                className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
+                defaultValue=""
+                aria-label="一般銷售客戶"
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!id) return;
+                  startRetail(id);
+                  e.target.value = "";
+                }}
+              >
+                <option value="">選擇客戶後開始…</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.phone ? ` · ${c.phone}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </Card>
       </div>
     );
   }
@@ -228,6 +289,7 @@ function CheckoutWorkspace({
   const [error, setError] = useState("");
   const [customName, setCustomName] = useState("");
   const [customPrice, setCustomPrice] = useState("500");
+  const [productQuery, setProductQuery] = useState("");
   const [discountType, setDiscountType] = useState<DiscountType>("ORDER_FIXED");
   const [discountValue, setDiscountValue] = useState("");
   const [payMethod, setPayMethod] = useState<PaymentMethod>("CASH");
@@ -265,6 +327,13 @@ function CheckoutWorkspace({
       )
     : [];
   const svBalance = getCustomerStoredValueBalance(organizationId, liveDraft.customerId);
+  const productHits = searchProducts(organizationId, productQuery, { activeOnly: true }).slice(
+    0,
+    8,
+  );
+  const saleLocationName =
+    listLocations(organizationId).find((l) => l.id === liveDraft.locationId)?.name ??
+    liveDraft.locationId;
 
   function syncPayments(
     next: Array<{ method: PaymentMethod; amount: number; reference?: string }>,
@@ -302,9 +371,11 @@ function CheckoutWorkspace({
                   <div className="min-w-0">
                     <p className="font-medium text-text">{item.nameSnapshot}</p>
                     <p className="text-sm text-secondary-text">
+                      {CHECKOUT_ITEM_TYPE_LABEL[item.type] ?? item.type}
                       {item.type === "PACKAGE_PURCHASE" && item.sessionCountSnapshot
-                        ? `${item.sessionCountSnapshot} 堂 · `
+                        ? ` · ${item.sessionCountSnapshot} 堂`
                         : null}
+                      {" · "}
                       {item.quantity} × {formatTwd(item.unitPrice)}
                       {item.discountAmount > 0
                         ? ` · 折抵 ${formatTwd(item.discountAmount)}`
@@ -312,6 +383,55 @@ function CheckoutWorkspace({
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
+                    {item.type === "PRODUCT" ? (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="outline"
+                          className="min-h-11 min-w-11 px-2"
+                          aria-label="減少數量"
+                          onClick={() => {
+                            try {
+                              if (item.quantity <= 1) {
+                                removeCheckoutItem(organizationId, draftId, item.id);
+                              } else {
+                                updateCheckoutItemQuantity(
+                                  organizationId,
+                                  draftId,
+                                  item.id,
+                                  item.quantity - 1,
+                                );
+                              }
+                              setError("");
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : "無法調整數量");
+                            }
+                          }}
+                        >
+                          −
+                        </Button>
+                        <span className="min-w-8 text-center tabular-nums">{item.quantity}</span>
+                        <Button
+                          variant="outline"
+                          className="min-h-11 min-w-11 px-2"
+                          aria-label="增加數量"
+                          onClick={() => {
+                            try {
+                              updateCheckoutItemQuantity(
+                                organizationId,
+                                draftId,
+                                item.id,
+                                item.quantity + 1,
+                              );
+                              setError("");
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : "無法調整數量");
+                            }
+                          }}
+                        >
+                          +
+                        </Button>
+                      </div>
+                    ) : null}
                     <span className="tabular-nums text-text">{formatTwd(item.lineTotal)}</span>
                     <Button
                       variant="ghost"
@@ -414,6 +534,86 @@ function CheckoutWorkspace({
                 </select>
               </label>
               <div className="space-y-2">
+                <label className="block text-sm text-secondary-text">
+                  新增商品（名稱／SKU／Barcode）
+                  <input
+                    className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
+                    value={productQuery}
+                    onChange={(e) => setProductQuery(e.target.value)}
+                    placeholder="搜尋商品…"
+                    aria-label="搜尋商品"
+                  />
+                </label>
+                {productQuery.trim() ? (
+                  <ul
+                    className="max-h-48 space-y-1 overflow-y-auto rounded-2xl border border-border bg-surface p-2"
+                    role="listbox"
+                    aria-label="商品搜尋結果"
+                  >
+                    {productHits.length === 0 ? (
+                      <li className="px-2 py-2 text-sm text-secondary-text">
+                        找不到啟用中商品
+                      </li>
+                    ) : (
+                      productHits.map((p) => {
+                        const stock = getProductStock(
+                          organizationId,
+                          liveDraft.locationId,
+                          p.id,
+                        );
+                        const outOfStock = stock <= 0;
+                        return (
+                        <li key={p.id}>
+                          <button
+                            type="button"
+                            disabled={outOfStock}
+                            className={cn(
+                              "flex min-h-11 w-full items-center justify-between gap-2 rounded-xl px-2 py-2 text-left",
+                              outOfStock
+                                ? "cursor-not-allowed opacity-50"
+                                : "hover:bg-primary-light/50",
+                            )}
+                            onClick={() => {
+                              if (outOfStock) return;
+                              try {
+                                addCheckoutItem(organizationId, draftId, {
+                                  type: "PRODUCT",
+                                  referenceId: p.id,
+                                  name: "",
+                                  unitPrice: 0,
+                                  quantity: 1,
+                                });
+                                setProductQuery("");
+                                setError("");
+                              } catch (err) {
+                                setError(
+                                  err instanceof Error ? err.message : "無法新增商品",
+                                );
+                              }
+                            }}
+                          >
+                            <span className="min-w-0">
+                              <span className="block font-medium text-text">{p.name}</span>
+                              <span className="block text-xs text-secondary-text">
+                                {p.category ?? "未分類"}
+                                {p.sku ? ` · ${p.sku}` : ""}
+                                {" · "}
+                                {saleLocationName}庫存{" "}
+                                {outOfStock ? "缺貨" : stock}
+                              </span>
+                            </span>
+                            <span className="shrink-0 tabular-nums text-sm">
+                              {formatTwd(p.priceMinor)}
+                            </span>
+                          </button>
+                        </li>
+                        );
+                      })
+                    )}
+                  </ul>
+                ) : null}
+              </div>
+              <div className="space-y-2 sm:col-span-2">
                 <label className="block text-sm text-secondary-text">
                   自訂項目
                   <input

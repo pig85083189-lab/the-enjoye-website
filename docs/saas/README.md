@@ -21,7 +21,12 @@ THE ENJOYE is the **first Organization tenant**, not the platform itself.
 | [core-business-flow.md](./core-business-flow.md) | Phase 4.9C end-to-end SoT map |
 | [domain-invariants.md](./domain-invariants.md) | Tenant · location · money · idempotency invariants |
 | [checkout.md](./checkout.md) | CheckoutDraft · payments · mixed tender · eligibility |
-| [transaction-domain.md](./transaction-domain.md) | Immutable Transaction · snapshots · void future |
+| [transaction-domain.md](./transaction-domain.md) | Immutable Transaction · snapshots · void metadata |
+| [transaction-void.md](./transaction-void.md) | Phase 4.10A full void + ledger reversal |
+| [product-domain.md](./product-domain.md) | Phase 4.10B Product catalog (≠ inventory) |
+| [retail-sales.md](./retail-sales.md) | Phase 4.10B walk-in retail + mixed cart |
+| [inventory-domain.md](./inventory-domain.md) | Phase 4.10C location stock + movement model |
+| [inventory-movements.md](./inventory-movements.md) | Sale deduction · void restore · receive/adjust |
 | [rbac.md](./rbac.md) | Roles, permissions, location access |
 | [platform-admin.md](./platform-admin.md) | Platform vs Organization security |
 | [entitlements.md](./entitlements.md) | Plans → entitlements (not `if plan === PRO`) |

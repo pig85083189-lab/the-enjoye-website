@@ -57,6 +57,11 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
 
 export type TransactionStatus = "COMPLETED" | "VOIDED";
 
+export const TRANSACTION_STATUS_LABEL: Record<TransactionStatus, string> = {
+  COMPLETED: "已完成",
+  VOIDED: "已作廢",
+};
+
 /** Intent to redeem one package session on settle — not applied until completeCheckout */
 export interface PackageRedemptionSelection {
   customerPackageId: string;

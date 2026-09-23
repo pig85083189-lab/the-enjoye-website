@@ -25,7 +25,7 @@ Customer
 | **Check-in** | Arrived guest | ARRIVED status | Appointment | New appointment | timestamp + staff |
 | **Consultation** | New / update form | Consultation version | CustomerConsultation | Overwrite prior consultation | consultedBy, confirmedAt |
 | **Treatment** | Appointment + Customer + Service | Completed treatment | Treatment (+ steps) | Fake “new” treatment for same open appointment | staff, completedAt |
-| **Checkout** | Cart lines + tenders | Transaction settled | CheckoutDraft → Transaction, Items, Payments | Duplicate charge for same appointment without void | payments, refunds |
+| **Checkout** | Cart lines + tenders | Transaction settled | CheckoutDraft → Transaction, Items, Payments | Duplicate charge for same appointment while a COMPLETED TX exists (VOIDED allows re-checkout) | payments, void |
 | **Package / SV deduction** | Redemption intent | Ledger entries | PackageLedger / StoredValueLedger | Silent balance mutate without ledger | actor, reason, refs |
 | **Follow Up** | Treatment follow-up tags/date | CRM task | FollowUp | Lost follow-up after complete | created_by |
 | **Rebooking** | Follow-up / customer request | New Appointment | Appointment | Orphan follow-up without link | link ids |
@@ -123,7 +123,10 @@ Checkout may start:
 
 **Phase 4.9A** implements CheckoutDraft → Transaction with integer TWD, mixed tender exact match, and immutable snapshots.  
 **Phase 4.9B** adds Package / Stored Value ledgers applied only on settle (`applyCommerceLedgerEffects`). See [checkout.md](./checkout.md), [package-ledger.md](./package-ledger.md), [stored-value-ledger.md](./stored-value-ledger.md).  
-**Phase 4.9C** hardens the end-to-end loop and documents sources of truth — see [core-business-flow.md](./core-business-flow.md) and [domain-invariants.md](./domain-invariants.md).
+**Phase 4.9C** hardens the end-to-end loop and documents sources of truth — see [core-business-flow.md](./core-business-flow.md) and [domain-invariants.md](./domain-invariants.md).  
+**Phase 4.10A** full void + ledger reversal — [transaction-void.md](./transaction-void.md).  
+**Phase 4.10B** Product catalog + walk-in retail — [product-domain.md](./product-domain.md), [retail-sales.md](./retail-sales.md). Sidebar 結帳 also supports 「一般銷售」without appointment.  
+**Phase 4.10C** Location inventory movement ledger + sale/void stock effects — [inventory-domain.md](./inventory-domain.md).
 
 Appointment `COMPLETED` ≠ Transaction `COMPLETED`.
 

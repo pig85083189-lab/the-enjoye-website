@@ -35,6 +35,19 @@ Retries return the same Transaction and must not double-post ledger effects (`ef
 
 Failed validation must leave: no new Transaction, no ledger delta, draft not COMPLETED.
 
+## Void idempotency (Phase 4.10A)
+
+`voidTransaction` is the only void orchestration:
+
+```text
+validate → prevalidate balances → append REVERSAL → mark Transaction VOIDED
+```
+
+- Only `COMPLETED` may void; already `VOIDED` returns existing reversals
+- `hasCompletedTransactionForAppointment` counts **COMPLETED only** (VOIDED allows re-checkout)
+- Failed prevalidation: TX stays COMPLETED; ledgers unchanged
+- See [transaction-void.md](./transaction-void.md)
+
 ## Status
 
 Appointment lifecycle does **not** include `PAID`.  
@@ -45,3 +58,17 @@ Payment state is derived from Transaction (`hasCompletedTransactionForAppointmen
 `Customer.packages` / `remainingSessions` = seed/CRM residue only.  
 Customer repository **always** normalizes `packages: []` (including SSR).  
 Wallet / Checkout / Transactions use `lib/packages` ledger selectors exclusively.
+
+## Product catalog (Phase 4.10B)
+
+- Product is organization-owned catalog — **not** the stock balance
+- Checkout PRODUCT lines snapshot price/name/qty; catalog edits must not rewrite Transactions
+- Package redemption applies only to eligible **SERVICE** lines, never PRODUCT
+- See [product-domain.md](./product-domain.md) · [retail-sales.md](./retail-sales.md)
+
+## Inventory (Phase 4.10C)
+
+- Stock = `SUM(InventoryMovement.quantityDelta)` per org + location + product
+- Sale / adjustment cannot make balance negative
+- Void restores stock via compensating `REVERSAL` movements
+- See [inventory-domain.md](./inventory-domain.md) · [inventory-movements.md](./inventory-movements.md)

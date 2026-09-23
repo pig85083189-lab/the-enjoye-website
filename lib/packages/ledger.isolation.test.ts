@@ -297,9 +297,8 @@ describe("package purchase and redemption", () => {
     }).length;
     reversePackageLedgerEntry(ORG_ENJOYE_ID, entry.id, "staff-001", "錯扣");
     expect(getPackageLedgerBalance(ORG_ENJOYE_ID, customerPackage.id)).toBe(10);
-    expect(() =>
-      reversePackageLedgerEntry(ORG_ENJOYE_ID, entry.id, "staff-001"),
-    ).toThrow(/already reversed/);
+    const again = reversePackageLedgerEntry(ORG_ENJOYE_ID, entry.id, "staff-001");
+    expect(again.reversesEntryId).toBe(entry.id);
     expect(
       listPackageLedger(ORG_ENJOYE_ID, { customerPackageId: customerPackage.id }).length,
     ).toBe(before + 1);
@@ -420,9 +419,13 @@ describe("stored value", () => {
     const entry = listStoredValueLedger(ORG_ENJOYE_ID, { customerId: "demo-001" })[0]!;
     reverseStoredValueLedgerEntry(ORG_ENJOYE_ID, entry.id, "staff-001");
     expect(getCustomerStoredValueBalance(ORG_ENJOYE_ID, "demo-001")).toBe(0);
-    expect(() =>
-      reverseStoredValueLedgerEntry(ORG_ENJOYE_ID, entry.id, "staff-001"),
-    ).toThrow(/already reversed/);
+    const again = reverseStoredValueLedgerEntry(ORG_ENJOYE_ID, entry.id, "staff-001");
+    expect(again.reversesEntryId).toBe(entry.id);
+    expect(
+      listStoredValueLedger(ORG_ENJOYE_ID, { customerId: "demo-001" }).filter(
+        (e) => e.type === "REVERSAL",
+      ),
+    ).toHaveLength(1);
   });
 });
 

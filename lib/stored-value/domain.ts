@@ -42,5 +42,5 @@ export const STORED_VALUE_LEDGER_TYPE_LABEL: Record<StoredValueLedgerType, strin
   TOP_UP: "儲值",
   PAYMENT: "消費",
   ADJUSTMENT: "調整",
-  REVERSAL: "沖正",
+  REVERSAL: "作廢回沖",
 };

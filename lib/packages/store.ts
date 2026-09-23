@@ -494,6 +494,30 @@ export function adjustPackageSessions(
   return entry;
 }
 
+/** Mark package VOIDED after a purchase void (usable balance stays 0). */
+export function markCustomerPackageVoided(
+  organizationId: string,
+  customerPackageId: string,
+  actorStaffId: string,
+): CustomerPackage {
+  assertStaff(organizationId, actorStaffId);
+  const pkg = getCustomerPackage(organizationId, customerPackageId);
+  if (!pkg || pkg.organizationId !== organizationId) {
+    throw new Error("Customer package not found");
+  }
+  if (pkg.status === "VOIDED") return pkg;
+  const next: CustomerPackage = {
+    ...pkg,
+    status: "VOIDED",
+    updatedAt: new Date().toISOString(),
+  };
+  writeJson(getCustomerPackagesKey(organizationId), organizationId, [
+    next,
+    ...listCustomerPackages(organizationId).filter((p) => p.id !== customerPackageId),
+  ]);
+  return next;
+}
+
 export function reversePackageLedgerEntry(
   organizationId: string,
   entryId: string,
@@ -511,11 +535,16 @@ export function reversePackageLedgerEntry(
   const already = listPackageLedger(organizationId).find(
     (e) => e.type === "REVERSAL" && e.reversesEntryId === entryId,
   );
-  if (already) throw new Error("entry already reversed");
+  if (already) return already;
 
   const effectKey = `REV:PKG:${entryId}`;
   const existing = findPackageLedgerByEffectKey(organizationId, effectKey);
   if (existing) return existing;
+
+  const balance = getPackageLedgerBalance(organizationId, original.customerPackageId);
+  if (balance + -original.sessionDelta < 0) {
+    throw new Error("package reversal would make balance negative");
+  }
 
   const entry = appendPackageLedger(organizationId, {
     id: newId("plg"),

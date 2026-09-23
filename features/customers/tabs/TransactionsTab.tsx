@@ -7,7 +7,7 @@ import {
   getCommerceRevision,
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
-import { PAYMENT_METHOD_LABEL } from "@/lib/commerce/domain";
+import { PAYMENT_METHOD_LABEL, TRANSACTION_STATUS_LABEL } from "@/lib/commerce/domain";
 import { formatTwd } from "@/lib/commerce/money";
 import { listTransactions } from "@/lib/commerce/transaction-store";
 import { formatHm, formatYmd } from "@/lib/appointments/domain";
@@ -46,7 +46,10 @@ export function TransactionsTab({ customerId }: TransactionsTabProps) {
                 <p className="tabular-nums font-medium">{formatTwd(tx.total)}</p>
               </div>
               <p className="mt-1 text-sm text-secondary-text">
-                {methods} · {tx.status}
+                {methods || "無付款列"} ·{" "}
+                <span className="font-medium text-text">
+                  {TRANSACTION_STATUS_LABEL[tx.status]}
+                </span>
               </p>
               <p className="text-xs text-secondary-text">
                 {formatYmd(new Date(tx.completedAt))} {formatHm(new Date(tx.completedAt))}

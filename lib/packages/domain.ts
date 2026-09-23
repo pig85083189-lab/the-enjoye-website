@@ -75,5 +75,5 @@ export const PACKAGE_LEDGER_TYPE_LABEL: Record<PackageLedgerType, string> = {
   PURCHASE: "購買",
   REDEMPTION: "核銷",
   ADJUSTMENT: "調整",
-  REVERSAL: "沖正",
+  REVERSAL: "作廢回沖",
 };

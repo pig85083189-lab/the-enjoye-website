@@ -25,9 +25,11 @@ Phase 4.6. Principle: **do not break Phase 4.5B** for the sake of the blueprint.
 | StaffShell / Bottom Nav | IA | NAV | **Extend** in 4.7 — not 4.6 | Low |
 | Phase 3B SQL foundation | Early tables | DATA | **Extend** additively | Medium |
 | Platform Admin | — | PLATFORM | **New** later | — |
-| Checkout / Transaction | Phase 4.9A local commerce | CHECKOUT | **Extend** · Supabase later | Medium |
+| Checkout / Transaction | Phase 4.9A–4.10B local commerce | CHECKOUT | **Extend** · Supabase later | Medium |
 | Package ledger | Phase 4.9B `lib/packages` | PACKAGE | **Keep** · Supabase later | Medium |
 | Stored value ledger | Phase 4.9B `lib/stored-value` | STORED VALUE | **Keep** · Supabase later | Medium |
+| Product catalog | Phase 4.10B `lib/products` | PRODUCT | **Keep** · inventory separate | Low |
+| Inventory movements | Phase 4.10C `lib/inventory` | INVENTORY | **Keep** · no cost/transfer yet | Medium |
 | `Service.priceMinor` | List price integer TWD | SERVICE | **Keep** · snapshot at checkout | Low |
 
 ---

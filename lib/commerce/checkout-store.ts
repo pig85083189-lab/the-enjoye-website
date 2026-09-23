@@ -16,6 +16,7 @@ import {
   getCustomerStoredValueBalance,
 } from "@/lib/stored-value/store";
 import { getPackageUsableBalance, listUsablePackagesForService } from "@/lib/packages/store";
+import { getProductById } from "@/lib/products/store";
 import {
   calculateTotals,
   recomputeItem,
@@ -36,6 +37,8 @@ import {
 import { assertNonNegativeMoney } from "./money";
 import { getServicePriceMinor } from "./pricing";
 import { applyCommerceLedgerEffects } from "./settle-effects";
+import { assertInventoryAvailableForSale } from "@/lib/inventory/store";
+import { getProductStock } from "@/lib/inventory/store";
 import { hasCompletedTransactionForAppointment, createTransactionFromDraft, getTransactionByCheckoutDraftId, getCompletedTransactionForAppointment } from "./transaction-store";
 import type { Transaction } from "./domain";
 
@@ -353,7 +356,50 @@ export function addCheckoutItem(
   }
 
   if (input.type === "PRODUCT") {
-    throw new Error("PRODUCT items are not enabled");
+    if (!input.referenceId) throw new Error("PRODUCT item requires referenceId");
+    const product = getProductById(organizationId, input.referenceId);
+    if (!product || product.organizationId !== organizationId) {
+      throw new Error("Product does not belong to this organization");
+    }
+    if (!product.isActive) {
+      throw new Error("inactive product cannot be added to checkout");
+    }
+    const quantity = input.quantity ?? 1;
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new Error("quantity must be an integer >= 1");
+    }
+    const stock = getProductStock(
+      organizationId,
+      draft.locationId,
+      product.id,
+    );
+    const alreadyOnDraft = draft.items
+      .filter(
+        (i) =>
+          i.type === "PRODUCT" && i.referenceId === product.id,
+      )
+      .reduce((s, i) => s + i.quantity, 0);
+    if (stock < 1 || alreadyOnDraft >= stock) {
+      throw new Error(`缺貨：${product.name}（目前分店庫存 ${stock}）`);
+    }
+    if (alreadyOnDraft + quantity > stock) {
+      throw new Error(
+        `庫存不足：${product.name}（分店可用 ${stock}，需要 ${alreadyOnDraft + quantity}）`,
+      );
+    }
+    const item = recomputeItem({
+      id: newId("cli"),
+      type: "PRODUCT",
+      referenceId: product.id,
+      nameSnapshot: product.name,
+      unitPrice: product.priceMinor,
+      quantity,
+      discountAmount: 0,
+    });
+    return saveDraft(organizationId, {
+      ...draft,
+      items: [...draft.items, item],
+    });
   }
 
   if (input.type === "PACKAGE_PURCHASE") {
@@ -430,10 +476,25 @@ export function updateCheckoutItemQuantity(
   const draft = getCheckoutDraft(organizationId, draftId);
   if (!draft) throw new Error("Checkout draft not found");
   assertEditable(draft);
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw new Error("quantity must be an integer >= 1");
+  }
   const items = draft.items.map((item) => {
     if (item.id !== itemId) return item;
-    if (item.type === "SERVICE" && quantity !== 1) {
-      // Services default to 1; allow override only if explicitly set for prototype flexibility
+    if (item.type === "PRODUCT" && item.referenceId) {
+      const others = draft.items
+        .filter((i) => i.id !== itemId && i.type === "PRODUCT" && i.referenceId === item.referenceId)
+        .reduce((s, i) => s + i.quantity, 0);
+      const stock = getProductStock(
+        organizationId,
+        draft.locationId,
+        item.referenceId,
+      );
+      if (others + quantity > stock) {
+        throw new Error(
+          `庫存不足：${item.nameSnapshot}（分店可用 ${stock}，需要 ${others + quantity}）`,
+        );
+      }
     }
     return recomputeItem({ ...item, quantity });
   });
@@ -640,6 +701,13 @@ export function completeCheckout(
       throw new Error("top-up requires external payment");
     }
   }
+
+  // Inventory prevalidation before any TX / ledger writes
+  assertInventoryAvailableForSale(
+    organizationId,
+    draft.locationId,
+    draft.items,
+  );
 
   const transaction = createTransactionFromDraft(organizationId, draft);
   applyCommerceLedgerEffects(organizationId, transaction, draft);

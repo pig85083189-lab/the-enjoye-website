@@ -106,6 +106,16 @@ export function getCommerceEffectsKey(organizationId: string): string {
   return `${TENANT_STORAGE_NAMESPACE}:${organizationId}:commerce-effects:v1`;
 }
 
+/** Phase 4.10B product catalog (no stock on product) */
+export function getProductsKey(organizationId: string): string {
+  return `${TENANT_STORAGE_NAMESPACE}:${organizationId}:products:v1`;
+}
+
+/** Phase 4.10C inventory movements (location-scoped stock ledger) */
+export function getInventoryMovementsKey(organizationId: string): string {
+  return `${TENANT_STORAGE_NAMESPACE}:${organizationId}:inventory-movements:v1`;
+}
+
 export { LEGACY_GLOBAL_LOCATION_KEY };
 
 /** Map legacy Phase 4 global keys → tenant resources (THE ENJOYE only). */

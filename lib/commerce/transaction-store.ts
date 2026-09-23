@@ -221,3 +221,44 @@ export function createTransactionFromDraft(
   writeTransactions(organizationId, [transaction, ...readTransactions(organizationId)]);
   return transaction;
 }
+
+/**
+ * Mark COMPLETED → VOIDED. Does not mutate items / payments / totals.
+ * Idempotent when already VOIDED (returns existing row).
+ */
+export function markTransactionVoided(
+  organizationId: string,
+  transactionId: string,
+  input: {
+    voidedByStaffId: string;
+    voidReason: string;
+    voidedAt?: string;
+  },
+): Transaction {
+  const list = readTransactions(organizationId);
+  const existing = list.find((t) => t.id === transactionId);
+  if (!existing || existing.organizationId !== organizationId) {
+    throw new Error("Transaction not found");
+  }
+  if (existing.status === "VOIDED") {
+    return existing;
+  }
+  if (existing.status !== "COMPLETED") {
+    throw new Error("Only COMPLETED transactions can be voided");
+  }
+  const reason = input.voidReason.trim();
+  if (!reason) throw new Error("void reason required");
+
+  const next: Transaction = {
+    ...existing,
+    status: "VOIDED",
+    voidedAt: input.voidedAt ?? new Date().toISOString(),
+    voidedBy: input.voidedByStaffId,
+    voidReason: reason,
+  };
+  writeTransactions(
+    organizationId,
+    list.map((t) => (t.id === transactionId ? next : t)),
+  );
+  return next;
+}

@@ -60,6 +60,13 @@ export function isAuthenticated(): boolean {
   return getSession() !== null;
 }
 
+/** Staff root entry (`/staff`) — same session signal as StaffShell (raw localStorage). */
+export function resolveStaffEntryHref(
+  sessionRaw: string | null,
+): "/staff/login" | "/staff/today" {
+  return sessionRaw === null ? "/staff/login" : "/staff/today";
+}
+
 export function subscribeAuth(onStoreChange: () => void): () => void {
   if (typeof window === "undefined") return () => undefined;
   const handler = () => onStoreChange();

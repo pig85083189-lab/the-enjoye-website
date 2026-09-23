@@ -55,7 +55,10 @@ Balance is **organization-wide**. Activity `locationId` is recorded per entry (w
 
 ## Reversal
 
-`reverseStoredValueLedgerEntry` — append inverse once; never delete the original row.
+`reverseStoredValueLedgerEntry` — append inverse once (`reversesEntryId` + `REV:SV:{entryId}`); never delete the original row.  
+Repeat calls return the existing reversal.
+
+**Void path:** `voidTransaction` ([transaction-void.md](./transaction-void.md)) blocks TOP_UP void when balance would go negative.
 
 ---
 

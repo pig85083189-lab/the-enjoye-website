@@ -1,9 +1,10 @@
 /**
- * Post-settle ledger orchestration — Phase 4.9B.
+ * Post-settle ledger orchestration — Phase 4.9B + 4.10C inventory SALE.
  * Called only after Transaction is created. Effects are idempotent via effectKey.
  */
 
 import type { CheckoutDraft, Transaction } from "@/lib/commerce/domain";
+import { postInventorySale } from "@/lib/inventory/store";
 import {
   createCustomerPackageFromPurchase,
   redeemPackageSession,
@@ -22,8 +23,8 @@ export function effectKey(
 }
 
 /**
- * Apply package purchase / redemption and stored-value top-up / payment
- * after an immutable Transaction exists. Safe to retry.
+ * Apply package / stored-value / inventory SALE effects after Transaction exists.
+ * Safe to retry (effectKey idempotency).
  */
 export function applyCommerceLedgerEffects(
   organizationId: string,
@@ -93,6 +94,20 @@ export function applyCommerceLedgerEffects(
       locationId,
       createdByStaffId: staffId,
       effectKey: effectKey(transaction.id, "STORED_VALUE_PAYMENT", pay.id),
+    });
+  }
+
+  // Inventory SALE — one movement per PRODUCT line (deterministic item.id)
+  for (const item of transaction.items) {
+    if (item.type !== "PRODUCT" || !item.referenceId) continue;
+    postInventorySale(organizationId, {
+      productId: item.referenceId,
+      locationId,
+      quantity: item.quantity,
+      transactionId: transaction.id,
+      transactionItemId: item.id,
+      createdByStaffId: staffId,
+      effectKey: effectKey(transaction.id, "INVENTORY_SALE", item.id),
     });
   }
 }
