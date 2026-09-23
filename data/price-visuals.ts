@@ -27,9 +27,11 @@ export const CATEGORY_VISUALS: Record<
   CategoryVisual
 > = {
   "body-aroma": {
-    image:
-      "https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?auto=format&fit=crop&w=1800&q=80",
+    image: "/images/prices/body-aroma-banner.png",
     caption: "BODY & AROMA",
+    branded: true,
+    width: 1024,
+    height: 576,
   },
   facial: {
     image: "/images/prices/facial-banner.png",
