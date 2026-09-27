@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -39,12 +39,17 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
+function isTabId(value: string | null): value is TabId {
+  return TABS.some((tab) => tab.id === value);
+}
+
 interface CustomerProfilePageProps {
   customerId: string;
 }
 
 export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { organization } = useOrganization();
   const isClient = useIsClient();
   const customer = useCrmJson(
@@ -55,7 +60,10 @@ export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
       }) ?? null,
     null as Customer | null,
   );
-  const [tab, setTab] = useState<TabId>("overview");
+  const initialTab = searchParams.get("tab");
+  const [tab, setTab] = useState<TabId>(
+    isTabId(initialTab) ? initialTab : "overview",
+  );
   const [showMore, setShowMore] = useState(false);
 
   const treatmentHref = useMemo(() => {

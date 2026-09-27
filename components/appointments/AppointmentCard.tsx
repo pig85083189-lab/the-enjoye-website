@@ -2,17 +2,21 @@
 
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
-import { ArrowRight, UserRound } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import type { CanonicalAppointmentStatus } from "@/lib/appointments/domain";
-import { resolveAppointmentCheckoutNav } from "@/lib/commerce/appointment-checkout-nav";
 import {
   getCommerceRevision,
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
+import {
+  getTreatmentDraftRevision,
+  subscribeTreatmentDrafts,
+} from "@/lib/treatment-draft";
+import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
 import type { Appointment } from "@/types";
 import { cn, formatReminderTag, MEMBERSHIP_LABEL } from "@/lib/utils";
 
@@ -28,40 +32,37 @@ const membershipTone = {
   new: "new" as const,
 };
 
-function treatmentHref(appointment: Appointment) {
-  return `/staff/treatments/new?customer=${appointment.customerId}&appointment=${appointment.id}`;
-}
-
 export function AppointmentCard({
   appointment,
   canonicalStatus,
 }: AppointmentCardProps) {
   useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
+  useSyncExternalStore(
+    subscribeTreatmentDrafts,
+    () => getTreatmentDraftRevision(appointment.organizationId),
+    () => "",
+  );
+
   const isCompleted = appointment.status === "completed";
   const isInProgress = appointment.status === "in_progress";
-  const statusForCheckout = canonicalStatus ?? appointment.status;
-  const checkoutNav = resolveAppointmentCheckoutNav(
-    appointment.organizationId,
-    appointment.id,
-    statusForCheckout,
-  );
-  const showTreatmentAction = !isCompleted;
+  const primary = resolveTodayPrimaryAction(appointment, canonicalStatus);
+  const customerHref = `/staff/customers/${appointment.customerId}`;
 
   return (
     <Card
       padding="none"
       className={cn(
         "overflow-hidden transition-opacity",
-        isCompleted && checkoutNav.kind === "none" && "opacity-60",
+        isCompleted && "opacity-70",
         isInProgress &&
-          "border-primary/50 shadow-[0_1px_3px_rgba(201,121,125,0.14)] ring-1 ring-primary/15",
+          "border-primary/40 shadow-[0_1px_3px_rgba(201,121,125,0.12)] ring-1 ring-primary/10",
       )}
     >
       <div
         className={cn(
-          "relative flex flex-col gap-3 p-4",
-          "sm:flex-row sm:items-center sm:gap-4 sm:p-4",
-          isInProgress && "bg-primary-light/30",
+          "relative grid gap-3 p-4",
+          "sm:grid-cols-[4.5rem_minmax(0,1fr)_auto] sm:items-start sm:gap-x-4",
+          isInProgress && "bg-primary-light/25",
         )}
       >
         {isInProgress ? (
@@ -71,20 +72,17 @@ export function AppointmentCard({
           />
         ) : null}
 
-        <div className="flex shrink-0 items-center gap-2.5 sm:w-[5.5rem] sm:flex-col sm:items-start sm:gap-1.5">
-          <time
-            className={cn(
-              "font-display text-2xl font-medium tracking-tight text-text sm:text-[26px]",
-              isCompleted && "text-secondary-text",
-            )}
-          >
-            {appointment.time}
-          </time>
-          <StatusBadge status={appointment.status} />
-        </div>
+        <time
+          className={cn(
+            "font-display text-xl font-medium tracking-tight tabular-nums text-text sm:pt-0.5 sm:text-2xl",
+            isCompleted && "text-secondary-text",
+          )}
+        >
+          {appointment.time}
+        </time>
 
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <div className="min-w-0 space-y-2">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
             <h3
               className={cn(
                 "text-base font-semibold text-text sm:text-[17px]",
@@ -93,22 +91,28 @@ export function AppointmentCard({
             >
               {appointment.customerName}
             </h3>
-            <p className="text-sm text-secondary-text">
+            <Badge
+              tone={membershipTone[appointment.membership]}
+              className="px-2 py-0.5 text-[11px] font-medium"
+            >
+              {MEMBERSHIP_LABEL[appointment.membership]}
+            </Badge>
+          </div>
+
+          <p className="text-sm leading-snug text-secondary-text">
+            <span className="line-clamp-2">
               {appointment.serviceName}
               <span className="mx-1.5 text-border">·</span>
               {appointment.durationMinutes}分鐘
-            </p>
-          </div>
+            </span>
+          </p>
 
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge tone={membershipTone[appointment.membership]}>
-              {MEMBERSHIP_LABEL[appointment.membership]}
-            </Badge>
-            {/* Legacy seed remainingSessions is NOT canonical package balance — omit badge */}
+            <StatusBadge status={appointment.status} />
             {appointment.notes.map((note) => (
               <span
                 key={note}
-                className="inline-flex items-center rounded-full border border-border bg-[#FAF7F5] px-2 py-0.5 text-[11px] font-medium text-secondary-text"
+                className="inline-flex max-w-[14rem] items-center truncate rounded-full border border-border bg-[#FAF7F5] px-2 py-0.5 text-[11px] font-medium text-secondary-text"
               >
                 {formatReminderTag(note)}
               </span>
@@ -116,38 +120,20 @@ export function AppointmentCard({
           </div>
         </div>
 
-        <div className="flex w-full shrink-0 flex-col gap-2 sm:w-[8.25rem]">
-          {showTreatmentAction ? (
-            <Link href={treatmentHref(appointment)} className="block">
-              <Button fullWidth className="min-h-11">
-                {isInProgress ? "繼續服務" : "開始服務"}
+        <div className="flex flex-col gap-1.5 sm:min-w-[7.5rem] sm:items-stretch">
+          {primary.kind !== "none" ? (
+            <Link href={primary.href} className="block">
+              <Button fullWidth className="min-h-10 px-4 text-sm">
+                {primary.label}
               </Button>
             </Link>
           ) : null}
-          {checkoutNav.kind === "checkout" ? (
-            <Link href={checkoutNav.href} className="block">
-              <Button
-                fullWidth
-                variant={showTreatmentAction ? "secondary" : "primary"}
-                className="min-h-11"
-              >
-                前往結帳
-              </Button>
-            </Link>
-          ) : null}
-          {checkoutNav.kind === "view_transaction" ? (
-            <Link href={checkoutNav.href} className="block">
-              <Button fullWidth variant="outline" className="min-h-11">
-                查看交易
-              </Button>
-            </Link>
-          ) : null}
-          <Link href={`/staff/customers/${appointment.customerId}`} className="block">
-            <Button variant="ghost" fullWidth className="min-h-10 text-sm">
-              <UserRound className="h-4 w-4" aria-hidden />
-              查看客戶
-              <ArrowRight className="h-3.5 w-3.5 opacity-60" aria-hidden />
-            </Button>
+          <Link
+            href={customerHref}
+            className="inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap text-sm text-secondary-text transition-colors hover:text-primary"
+          >
+            客戶資料
+            <ArrowRight className="h-3.5 w-3.5 opacity-70" aria-hidden />
           </Link>
         </div>
       </div>

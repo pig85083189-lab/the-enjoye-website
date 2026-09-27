@@ -9,4 +9,4 @@ export const DEFAULT_SERVICE_DURATION_MINUTES = 60;
 /** Scheduling grid resolution */
 export const CALENDAR_SLOT_MINUTES = 30;
 /** Pixel height per 30-minute slot (desktop staff day / week columns) */
-export const CALENDAR_SLOT_PX = 28;
+export const CALENDAR_SLOT_PX = 36;

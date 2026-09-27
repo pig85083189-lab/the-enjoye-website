@@ -23,7 +23,9 @@ function StaffShellChrome({ children }: { children: ReactNode }) {
   const isTreatmentWorkspace = pathname.startsWith("/staff/treatments/");
   const isCalendarSurface =
     pathname.startsWith("/staff/calendar") || pathname.startsWith("/staff/appointments");
-  const useWideContent = isTreatmentWorkspace || isCalendarSurface;
+  const isTodayWorkbench = pathname.startsWith("/staff/today");
+  const useWideContent =
+    isTreatmentWorkspace || isCalendarSurface || isTodayWorkbench;
 
   return (
     <div className="flex min-h-screen bg-background">

@@ -7,16 +7,17 @@ export interface CalendarViewPrefs {
 }
 
 export function readCalendarViewPrefs(organizationId: string): CalendarViewPrefs {
-  if (typeof window === "undefined") return { desktopView: "week" };
+  // Default day view for staff ops workbench (time × staff).
+  if (typeof window === "undefined") return { desktopView: "day" };
   try {
     const raw = localStorage.getItem(getCalendarViewPrefsKey(organizationId));
-    if (!raw) return { desktopView: "week" };
+    if (!raw) return { desktopView: "day" };
     const parsed = JSON.parse(raw) as CalendarViewPrefs;
     if (parsed.desktopView === "day" || parsed.desktopView === "week") return parsed;
   } catch {
     /* ignore */
   }
-  return { desktopView: "week" };
+  return { desktopView: "day" };
 }
 
 export function writeCalendarViewPrefs(
