@@ -1,10 +1,5 @@
-import { ModulePlaceholder } from "@/components/navigation/ModulePlaceholder";
+import { FollowUpsPageClient } from "@/features/follow-ups/FollowUpsPageClient";
 
 export default function FollowUpsPage() {
-  return (
-    <ModulePlaceholder
-      title="追蹤"
-      description="回訪與再預約任務預留。可與療程 Follow Up 銜接。"
-    />
-  );
+  return <FollowUpsPageClient />;
 }

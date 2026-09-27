@@ -9,7 +9,7 @@ import { getCustomerById } from "@/data";
 import { getNextAppointment, sortAppointmentsByTime } from "@/lib/appointments";
 import {
   getAppointmentStatusRaw,
-  getLiveAppointments,
+  scheduleAppointmentToLegacyView,
   subscribeAppointments,
 } from "@/lib/appointment-store";
 import { listTodayAppointments } from "@/lib/appointments/store";
@@ -30,9 +30,11 @@ export function TodayDashboard() {
   const schedule = listTodayAppointments(organization.id, currentLocation?.id, day);
   const activeSchedule = schedule.filter((item) => todayBucket(item.status) !== "muted");
   const mutedSchedule = schedule.filter((item) => todayBucket(item.status) === "muted");
-  const liveAppointments = getLiveAppointments(organization.id).filter((item) =>
-    activeSchedule.some((s) => s.id === item.id),
+  const canonicalById = new Map(
+    activeSchedule.map((item) => [item.id, item.status] as const),
   );
+  // Canonical schedule → Today card view (no getLiveAppointments listing path)
+  const liveAppointments = activeSchedule.map(scheduleAppointmentToLegacyView);
   const stats = {
     total: activeSchedule.length,
     pending: activeSchedule.filter((item) => todayBucket(item.status) === "waiting").length,
@@ -41,6 +43,9 @@ export function TodayDashboard() {
   };
   const appointments = sortAppointmentsByTime(liveAppointments);
   const nextAppointment = getNextAppointment(appointments);
+  const nextCanonical = nextAppointment
+    ? canonicalById.get(nextAppointment.id)
+    : undefined;
   const nextCustomer = nextAppointment
     ? getCustomerById(nextAppointment.customerId, organization.id)
     : undefined;
@@ -87,7 +92,11 @@ export function TodayDashboard() {
       {/* Next customer — mobile / tablet only (below stats) */}
       {nextAppointment ? (
         <section className="mb-5 min-[1200px]:hidden">
-          <NextCustomerPanel appointment={nextAppointment} customer={nextCustomer} />
+          <NextCustomerPanel
+            appointment={nextAppointment}
+            customer={nextCustomer}
+            canonicalStatus={nextCanonical}
+          />
         </section>
       ) : null}
 
@@ -112,6 +121,7 @@ export function TodayDashboard() {
             {appointments.map((appointment) => {
               const isInProgress = appointment.status === "in_progress";
               const isCompleted = appointment.status === "completed";
+              const canonicalStatus = canonicalById.get(appointment.id);
 
               return (
                 <div key={appointment.id} className="relative sm:pl-8">
@@ -124,7 +134,10 @@ export function TodayDashboard() {
                     )}
                     aria-hidden
                   />
-                  <AppointmentCard appointment={appointment} />
+                  <AppointmentCard
+                    appointment={appointment}
+                    canonicalStatus={canonicalStatus}
+                  />
                 </div>
               );
             })}
@@ -148,6 +161,7 @@ export function TodayDashboard() {
               appointment={nextAppointment}
               customer={nextCustomer}
               sticky
+              canonicalStatus={nextCanonical}
             />
           </aside>
         ) : null}

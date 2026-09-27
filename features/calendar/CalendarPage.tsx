@@ -166,6 +166,8 @@ function startOfWeek(date: Date): Date {
 
 export interface CreatePrefill {
   staffId?: string;
+  customerId?: string;
+  serviceId?: string;
   dateYmd?: string;
   startHm?: string;
 }
@@ -218,6 +220,31 @@ export function CalendarPage() {
     setPrefill(nextPrefill ?? null);
     setCreating(true);
   }
+
+  // Follow-up rebook / deep-link: /staff/calendar?create=1&customer=&service=&staff=
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("create") !== "1") return;
+    const nextPrefill: CreatePrefill = {
+      customerId: params.get("customer") || undefined,
+      serviceId: params.get("service") || undefined,
+      staffId: params.get("staff") || undefined,
+    };
+    const url = new URL(window.location.href);
+    url.searchParams.delete("create");
+    url.searchParams.delete("customer");
+    url.searchParams.delete("service");
+    url.searchParams.delete("staff");
+    url.searchParams.delete("followUp");
+    window.history.replaceState({}, "", url.pathname + url.search);
+    queueMicrotask(() => {
+      setSelected(null);
+      setEditing(false);
+      setPrefill(nextPrefill);
+      setCreating(true);
+    });
+  }, [organization.id]);
 
   function toggleStaffFilter(staffId: string) {
     setStaffFilter((prev) =>
@@ -929,8 +956,12 @@ function AppointmentEditor({
   const services = getServicesForOrganization(organizationId);
   const [loc, setLoc] = useState(initial?.locationId ?? locationId);
   const staff = staffOptionsForLocation(organizationId, loc);
-  const [customerId, setCustomerId] = useState(initial?.customerId ?? "");
-  const [serviceId, setServiceId] = useState(initial?.serviceId ?? services[0]?.id ?? "");
+  const [customerId, setCustomerId] = useState(
+    initial?.customerId ?? prefill?.customerId ?? "",
+  );
+  const [serviceId, setServiceId] = useState(
+    initial?.serviceId ?? prefill?.serviceId ?? services[0]?.id ?? "",
+  );
   const [staffId, setStaffId] = useState(
     initial?.staffId ?? prefill?.staffId ?? staff[0]?.userId ?? "",
   );

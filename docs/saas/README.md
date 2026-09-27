@@ -27,6 +27,9 @@ THE ENJOYE is the **first Organization tenant**, not the platform itself.
 | [retail-sales.md](./retail-sales.md) | Phase 4.10B walk-in retail + mixed cart |
 | [inventory-domain.md](./inventory-domain.md) | Phase 4.10C location stock + movement model |
 | [inventory-movements.md](./inventory-movements.md) | Sale deduction · void restore · receive/adjust |
+| [core-ops-ux.md](./core-ops-ux.md) | Phase 4.11B Today→Checkout · Treatments list · Customer edit |
+| [follow-up-domain.md](./follow-up-domain.md) | Phase 4.11C FollowUpTask · workspace · Treatment → task |
+| [reporting-domain.md](./reporting-domain.md) | Phase 4.11D ops dashboard · derived revenue metrics |
 | [rbac.md](./rbac.md) | Roles, permissions, location access |
 | [platform-admin.md](./platform-admin.md) | Platform vs Organization security |
 | [entitlements.md](./entitlements.md) | Plans → entitlements (not `if plan === PRO`) |

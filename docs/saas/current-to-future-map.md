@@ -17,6 +17,7 @@ Phase 4.6. Principle: **do not break Phase 4.5B** for the sake of the blueprint.
 | `ScheduleAppointment` + schedule store | Calendar, Today, customer history | APPOINTMENT | **Keep** · Supabase later | Medium (local → DB) |
 | `AppointmentStatus` `pending\|in_progress\|completed` | Today card compatibility | Canonical status | **Mapped** via `normalizeAppointmentStatus` | Low while adapter remains |
 | `TreatmentDraft` / completed treatments | Workflow + history | TREATMENT | **Keep** · sync strategy later | Medium (local → DB) |
+| `FollowUpTask` (4.11C) | CRM work items from Treatment.followUp | FOLLOW_UP | **Keep** · tenant store | Low |
 | Customer `packages[]` + `remainingSessions` | Seed CRM residue | PACKAGE | **Deprecated** · Wallet/ledger SoT (4.9C) | Low if unused in UI |
 | localStorage tenant keys | Prototype persistence | — | **Keep** until Supabase | Low |
 | Mock Auth `enjoye-staff-auth` | Login | User Auth | **Replace Later** with Supabase Auth | Medium |

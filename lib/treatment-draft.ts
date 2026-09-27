@@ -5,7 +5,8 @@ import {
   getTenantStorageKey,
   getTreatmentDraftKey,
 } from "@/lib/tenant/storage-keys";
-import { ORG_ENJOYE_ID } from "@/lib/tenant/constants";
+import { ORG_ENJOYE_ID, TENANT_STORAGE_NAMESPACE } from "@/lib/tenant/constants";
+import { ensureFollowUpTaskFromCompletedTreatment } from "@/lib/follow-ups/store";
 
 /** @deprecated Legacy key — migration only */
 export const DRAFT_KEY_PREFIX = "the-enjoye:treatment-draft:";
@@ -305,11 +306,12 @@ export function saveCompletedTreatment(draft: TreatmentDraft): void {
     localStorage.setItem(key, JSON.stringify([completed]));
   }
   clearDraft(organizationId, draft.appointmentId);
+  ensureFollowUpTaskFromCompletedTreatment(completed);
 }
 
-export function getCompletedTreatmentsForCustomer(
+/** Completed treatments persisted for the organization (no seed merge). */
+export function listStoredCompletedTreatments(
   organizationId: string,
-  customerId: string,
 ): TreatmentDraft[] {
   if (typeof window === "undefined") return [];
   migrateLegacyTenantStorage(organizationId);
@@ -322,21 +324,82 @@ export function getCompletedTreatmentsForCustomer(
     return list
       .filter(
         (item) =>
-          item.customerId === customerId &&
-          (!item.organizationId || item.organizationId === organizationId),
+          !item.organizationId || item.organizationId === organizationId,
       )
       .map((item) =>
         normalizeTreatmentDraft(item as Record<string, unknown>, {
           organizationId,
+          locationId:
+            typeof item.locationId === "string" ? item.locationId : undefined,
           appointmentId: item.appointmentId ?? "",
-          customerId,
+          customerId: item.customerId ?? "",
           staffId: item.staffId ?? "",
           serviceId: item.serviceId ?? "",
         }),
-      );
+      )
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   } catch {
     return [];
   }
+}
+
+export function getCompletedTreatmentsForCustomer(
+  organizationId: string,
+  customerId: string,
+): TreatmentDraft[] {
+  return listStoredCompletedTreatments(organizationId).filter(
+    (item) => item.customerId === customerId,
+  );
+}
+
+/**
+ * Open treatment drafts for an organization (draft inbox).
+ * Scans tenant-scoped localStorage keys — never cross-org.
+ */
+export function listOpenTreatmentDrafts(
+  organizationId: string,
+): TreatmentDraft[] {
+  if (typeof window === "undefined") return [];
+  migrateLegacyTenantStorage(organizationId);
+  const prefix = `${TENANT_STORAGE_NAMESPACE}:${organizationId}:treatment-draft:`;
+  const drafts: TreatmentDraft[] = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith(prefix)) continue;
+    const appointmentId = key.slice(prefix.length);
+    if (!appointmentId) continue;
+    const draft = loadDraft(organizationId, appointmentId);
+    if (
+      draft &&
+      draft.status === "draft" &&
+      draft.organizationId === organizationId
+    ) {
+      drafts.push(draft);
+    }
+  }
+  return drafts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export function getTreatmentDraftRevision(organizationId: string): string {
+  if (typeof window === "undefined") return "";
+  const drafts = listOpenTreatmentDrafts(organizationId);
+  const completed = listStoredCompletedTreatments(organizationId);
+  return `${organizationId}|d:${drafts.length}:${drafts.map((d) => d.updatedAt).join(",")}|c:${completed.length}:${completed.map((d) => d.updatedAt).join(",")}`;
+}
+
+export function subscribeTreatmentDrafts(
+  onStoreChange: () => void,
+): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  const handler = () => onStoreChange();
+  window.addEventListener("storage", handler);
+  window.addEventListener("enjoye-treatment-draft-change", handler);
+  window.addEventListener("beauty-os-organization-change", handler);
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener("enjoye-treatment-draft-change", handler);
+    window.removeEventListener("beauty-os-organization-change", handler);
+  };
 }
 
 /** Default org for legacy seed stamps */

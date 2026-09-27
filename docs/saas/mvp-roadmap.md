@@ -60,8 +60,8 @@ Suggested modules:
 | **Treatments** | History / continue drafts |
 | **Sales** | Checkout · Packages · Products · Transactions |
 | **CRM** | Follow-ups · Rebooking · Segments (light) |
-| **Reports** | Revenue · visits · retention |
-| **Staff** | Members · roles |
+| **Reports** | 營運報表（4.11D derived；非正式會計） |
+| **Staff** | 員工與排班 (schedule hours / breaks / time off) |
 | **Settings** | Org · Locations · Services · Entitlements display |
 
 **Sales** groups commercial surfaces so Bottom Nav stays uncluttered.

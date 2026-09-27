@@ -4,7 +4,12 @@ import {
   listAppointments,
   transitionAppointmentStatus,
 } from "@/lib/appointments/store";
-import { formatHm, normalizeAppointmentStatus, todayBucket } from "@/lib/appointments/domain";
+import {
+  formatHm,
+  normalizeAppointmentStatus,
+  todayBucket,
+  type ScheduleAppointment,
+} from "@/lib/appointments/domain";
 import { migrateLegacyTenantStorage } from "@/lib/tenant/migration";
 import { getTenantStorageKey } from "@/lib/tenant/storage-keys";
 import { getStoredOrganizationId } from "@/lib/tenant/organization-store";
@@ -41,9 +46,14 @@ function toLegacyStatus(status: string): AppointmentStatus {
   return "pending";
 }
 
-/** Compatibility view for existing Today cards. Prefer listAppointments for new UI. */
-export function getLiveAppointments(organizationId: string): Appointment[] {
-  return listAppointments({ organizationId }).map((item) => ({
+/**
+ * Map canonical ScheduleAppointment → Today card view model.
+ * Prefer listTodayAppointments + this mapper over getLiveAppointments for new Today UI.
+ */
+export function scheduleAppointmentToLegacyView(
+  item: ScheduleAppointment,
+): Appointment {
+  return {
     id: item.id,
     organizationId: item.organizationId,
     locationId: item.locationId,
@@ -60,7 +70,12 @@ export function getLiveAppointments(organizationId: string): Appointment[] {
     staffName: item.staffName,
     status: toLegacyStatus(item.status),
     notes: item.notes,
-  }));
+  };
+}
+
+/** Compatibility list for Treatment / Customer flows that still need legacy Appointment[]. */
+export function getLiveAppointments(organizationId: string): Appointment[] {
+  return listAppointments({ organizationId }).map(scheduleAppointmentToLegacyView);
 }
 
 export function setAppointmentStatus(

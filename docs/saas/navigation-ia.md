@@ -96,15 +96,15 @@ Treatment workspace stays full-screen; enter via Today / Customer / Appointment 
 | `/staff/calendar` | **ready** | Staff Day / Week (4.8A–4.8B.1) |
 | `/staff/appointments` | redirect → calendar | Legacy; do not dual-maintain UI |
 | `/staff/customers` (+ nested) | ready | CRM |
-| `/staff/treatments` | placeholder list | |
+| `/staff/treatments` | **ready** | List + draft inbox (4.11B) |
 | `/staff/treatments/new` · `[id]` | ready | Workspace |
 | `/staff/checkout` | **ready** | Phase 4.9A CheckoutDraft → Transaction |
-| `/staff/packages` | placeholder | |
+| `/staff/packages` | ready | Package definitions + ledger |
 | `/staff/transactions` | **ready** | Phase 4.9A list / detail |
-| `/staff/products` | future | |
-| `/staff/follow-ups` | placeholder | |
-| `/staff/reports` | placeholder | |
-| `/staff/staff` | **ready** | Staff schedule hours / breaks / time off (4.8B) |
+| `/staff/products` | **ready** | Catalog + inventory (4.10B–C) |
+| `/staff/follow-ups` | **ready** | FollowUpTask workspace (4.11C) |
+| `/staff/reports` | **ready** | Ops dashboard derived metrics (4.11D) |
+| `/staff/staff` | **ready** | 員工與排班 (hours / breaks / time off) |
 | `/staff/settings` (+ org/locations) | ready hub | |
 | `/staff/more` | ready | Mobile/tablet hub |
 | `/staff/notifications` | kept, not primary nav | |

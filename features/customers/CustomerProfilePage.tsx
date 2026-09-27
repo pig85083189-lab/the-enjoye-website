@@ -12,6 +12,7 @@ import { CustomerSummaryPanel } from "./CustomerSummaryPanel";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { ConsultationsTab } from "./tabs/ConsultationsTab";
 import { TreatmentsTab } from "./tabs/TreatmentsTab";
+import { FollowUpsTab } from "./tabs/FollowUpsTab";
 import { PhotosTab } from "./tabs/PhotosTab";
 import { AppointmentsTab } from "./tabs/AppointmentsTab";
 import { NotesTab } from "./tabs/NotesTab";
@@ -28,6 +29,7 @@ const TABS = [
   { id: "overview", label: "總覽" },
   { id: "consultation", label: "諮詢紀錄" },
   { id: "treatments", label: "療程紀錄" },
+  { id: "follow-ups", label: "追蹤" },
   { id: "photos", label: "照片" },
   { id: "appointments", label: "預約" },
   { id: "wallet", label: "錢包" },
@@ -134,9 +136,11 @@ export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
                 新增預約
               </Button>
             </Link>
-            <Button variant="outline" className="min-h-11" disabled title="Prototype">
-              編輯資料
-            </Button>
+            <Link href={`/staff/customers/${customer.id}/edit`}>
+              <Button variant="outline" className="min-h-11">
+                編輯資料
+              </Button>
+            </Link>
             <div className="relative">
               <Button
                 variant="ghost"
@@ -198,6 +202,7 @@ export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
           ) : null}
           {tab === "consultation" ? <ConsultationsTab customerId={customer.id} /> : null}
           {tab === "treatments" ? <TreatmentsTab customerId={customer.id} /> : null}
+          {tab === "follow-ups" ? <FollowUpsTab customerId={customer.id} /> : null}
           {tab === "photos" ? <PhotosTab customerId={customer.id} /> : null}
           {tab === "appointments" ? <AppointmentsTab customerId={customer.id} /> : null}
           {tab === "wallet" ? <WalletTab customerId={customer.id} /> : null}

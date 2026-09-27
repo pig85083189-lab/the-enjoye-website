@@ -4,12 +4,12 @@ Phase **4.9C**. End-to-end operating loop for Beauty OS SPA.
 
 ```text
 Customer
-  → Appointment (org + location)           // optional for walk-in retail
-  → Treatment (clinical)                   // optional
-  → CheckoutDraft (commerce workbench)
-  → Transaction (immutable)
-       ↳ PackageLedger / StoredValueLedger effects
-       ↳ PRODUCT lines = snapshots + location Inventory SALE (4.10C)
+  ??Appointment (org + location)           // optional for walk-in retail
+  ??Treatment (clinical)                   // optional
+  ??CheckoutDraft (commerce workbench)
+  ??Transaction (immutable)
+       ??PackageLedger / StoredValueLedger effects
+       ??PRODUCT lines = snapshots + location Inventory SALE (4.10C)
 ```
 
 ## Source of truth
@@ -23,7 +23,7 @@ Customer
 | Stored value | `SUM(StoredValueLedgerEntry.amountDelta)` |
 | Checkout work | `CheckoutDraft` until COMPLETED |
 
-**Not SoT:** `Customer.packages[].remainingSessions` (seed residue), Appointment `remainingSessions`, Treatment “paid” flags.
+**Not SoT:** `Customer.packages[].remainingSessions` (seed residue), Appointment `remainingSessions`, Treatment ?�paid??flags.
 
 ## Location semantics
 
@@ -36,15 +36,16 @@ Checkout from appointment uses **appointment.locationId**, not the current UI lo
 
 ## Separation
 
-Appointment `COMPLETED` ≠ Transaction paid.  
-Treatment complete ≠ auto-charge.  
+Appointment `COMPLETED` ??Transaction paid.
+Treatment complete ??auto-charge.
+Treatment.followUp intent ??FollowUpTask (4.11C); FollowUpTask ??Appointment.
 Package / SV selection on OPEN draft does not mutate ledgers.
 
 ## Void (Phase 4.10A)
 
-Full void via `voidTransaction` only — see [transaction-void.md](./transaction-void.md).
+Full void via `voidTransaction` only ??see [transaction-void.md](./transaction-void.md).
 
-- Original Transaction snapshots stay (SERVICE / PRODUCT / …); `status → VOIDED`
+- Original Transaction snapshots stay (SERVICE / PRODUCT / ??; `status ??VOIDED`
 - Package / SV append compensating `REVERSAL` rows
 - PRODUCT void does **not** invent inventory reversal
 - Appointment / Treatment statuses are **not** rolled back
@@ -52,6 +53,6 @@ Full void via `voidTransaction` only — see [transaction-void.md](./transaction
 
 ## Retail (Phase 4.10B / 4.10C)
 
-Walk-in sales without appointment use the same Checkout → Transaction path.  
-Inventory deducts at the draft/appointment **locationId**.  
+Walk-in sales without appointment use the same Checkout ??Transaction path.
+Inventory deducts at the draft/appointment **locationId**.
 See [retail-sales.md](./retail-sales.md) · [product-domain.md](./product-domain.md) · [inventory-movements.md](./inventory-movements.md).

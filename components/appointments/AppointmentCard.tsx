@@ -1,14 +1,25 @@
+"use client";
+
 import Link from "next/link";
+import { useSyncExternalStore } from "react";
 import { ArrowRight, UserRound } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import type { CanonicalAppointmentStatus } from "@/lib/appointments/domain";
+import { resolveAppointmentCheckoutNav } from "@/lib/commerce/appointment-checkout-nav";
+import {
+  getCommerceRevision,
+  subscribeCommerce,
+} from "@/lib/commerce/checkout-store";
 import type { Appointment } from "@/types";
 import { cn, formatReminderTag, MEMBERSHIP_LABEL } from "@/lib/utils";
 
 interface AppointmentCardProps {
   appointment: Appointment;
+  /** Canonical status from schedule store — preferred for checkout eligibility */
+  canonicalStatus?: CanonicalAppointmentStatus;
 }
 
 const membershipTone = {
@@ -21,17 +32,27 @@ function treatmentHref(appointment: Appointment) {
   return `/staff/treatments/new?customer=${appointment.customerId}&appointment=${appointment.id}`;
 }
 
-export function AppointmentCard({ appointment }: AppointmentCardProps) {
-  const showActions = appointment.status !== "completed";
+export function AppointmentCard({
+  appointment,
+  canonicalStatus,
+}: AppointmentCardProps) {
+  useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
   const isCompleted = appointment.status === "completed";
   const isInProgress = appointment.status === "in_progress";
+  const statusForCheckout = canonicalStatus ?? appointment.status;
+  const checkoutNav = resolveAppointmentCheckoutNav(
+    appointment.organizationId,
+    appointment.id,
+    statusForCheckout,
+  );
+  const showTreatmentAction = !isCompleted;
 
   return (
     <Card
       padding="none"
       className={cn(
         "overflow-hidden transition-opacity",
-        isCompleted && "opacity-60",
+        isCompleted && checkoutNav.kind === "none" && "opacity-60",
         isInProgress &&
           "border-primary/50 shadow-[0_1px_3px_rgba(201,121,125,0.14)] ring-1 ring-primary/15",
       )}
@@ -95,24 +116,40 @@ export function AppointmentCard({ appointment }: AppointmentCardProps) {
           </div>
         </div>
 
-        {showActions ? (
-          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-[8.25rem]">
+        <div className="flex w-full shrink-0 flex-col gap-2 sm:w-[8.25rem]">
+          {showTreatmentAction ? (
             <Link href={treatmentHref(appointment)} className="block">
               <Button fullWidth className="min-h-11">
                 {isInProgress ? "繼續服務" : "開始服務"}
               </Button>
             </Link>
-            <Link href={`/staff/customers/${appointment.customerId}`} className="block">
-              <Button variant="ghost" fullWidth className="min-h-10 text-sm">
-                <UserRound className="h-4 w-4" aria-hidden />
-                查看客戶
-                <ArrowRight className="h-3.5 w-3.5 opacity-60" aria-hidden />
+          ) : null}
+          {checkoutNav.kind === "checkout" ? (
+            <Link href={checkoutNav.href} className="block">
+              <Button
+                fullWidth
+                variant={showTreatmentAction ? "secondary" : "primary"}
+                className="min-h-11"
+              >
+                前往結帳
               </Button>
             </Link>
-          </div>
-        ) : (
-          <div className="hidden sm:block sm:w-[8.25rem]" aria-hidden />
-        )}
+          ) : null}
+          {checkoutNav.kind === "view_transaction" ? (
+            <Link href={checkoutNav.href} className="block">
+              <Button fullWidth variant="outline" className="min-h-11">
+                查看交易
+              </Button>
+            </Link>
+          ) : null}
+          <Link href={`/staff/customers/${appointment.customerId}`} className="block">
+            <Button variant="ghost" fullWidth className="min-h-10 text-sm">
+              <UserRound className="h-4 w-4" aria-hidden />
+              查看客戶
+              <ArrowRight className="h-3.5 w-3.5 opacity-60" aria-hidden />
+            </Button>
+          </Link>
+        </div>
       </div>
     </Card>
   );

@@ -116,6 +116,11 @@ export function getInventoryMovementsKey(organizationId: string): string {
   return `${TENANT_STORAGE_NAMESPACE}:${organizationId}:inventory-movements:v1`;
 }
 
+/** Phase 4.11C CRM follow-up tasks */
+export function getFollowUpTasksKey(organizationId: string): string {
+  return `${TENANT_STORAGE_NAMESPACE}:${organizationId}:follow-up-tasks:v1`;
+}
+
 export { LEGACY_GLOBAL_LOCATION_KEY };
 
 /** Map legacy Phase 4 global keys → tenant resources (THE ENJOYE only). */

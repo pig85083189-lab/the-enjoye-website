@@ -1,6 +1,6 @@
 import type { TreatmentDraft } from "@/types/treatment";
 import type { OrgCustomerQuery, OrgEntityQuery, TreatmentRepository } from "./interfaces";
-import { getCompletedTreatmentsForCustomer } from "@/lib/treatment-draft";
+import { getCompletedTreatmentsForCustomer, listStoredCompletedTreatments } from "@/lib/treatment-draft";
 import { ORG_ENJOYE_ID } from "@/lib/tenant/constants";
 import { readTenantJson } from "./tenant-read";
 
@@ -254,6 +254,28 @@ function mergeSeedWithStored(
     byId.set(t.id, { ...t, organizationId });
   }
   return Array.from(byId.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Org-wide completed treatments (seed + stored) for Treatments list. */
+export function listCompletedTreatmentsForOrganization(
+  organizationId: string,
+): TreatmentDraft[] {
+  const fromStore =
+    typeof window !== "undefined"
+      ? listStoredCompletedTreatments(organizationId)
+      : [];
+  const seed = SEED_COMPLETED_TREATMENTS.filter(
+    (t) => t.organizationId === organizationId,
+  );
+  const byId = new Map<string, TreatmentDraft>();
+  for (const t of seed) byId.set(t.id, { ...t, organizationId });
+  for (const t of fromStore) {
+    if (t.organizationId && t.organizationId !== organizationId) continue;
+    byId.set(t.id, { ...t, organizationId });
+  }
+  return Array.from(byId.values()).sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  );
 }
 
 export class LocalTreatmentRepository implements TreatmentRepository {
