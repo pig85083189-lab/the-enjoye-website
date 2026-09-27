@@ -20,6 +20,8 @@ export const GRID_HEIGHT = TOTAL_SLOTS * CALENDAR_SLOT_PX;
 export const TIME_COL_PX = 56;
 export const STAFF_FILL_THRESHOLD = 4;
 export const STAFF_COL_MIN_PX = 168;
+/** Fallback sticky staff-header height when DOM measure is unavailable */
+export const STAFF_DAY_HEADER_STICKY_PX = 104;
 
 export function staffGridTemplate(count: number): string {
   if (count <= 0) return `${TIME_COL_PX}px`;

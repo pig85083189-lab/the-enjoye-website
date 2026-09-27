@@ -30,11 +30,16 @@ import {
 } from "@/lib/staff-schedule/store";
 import {
   formatNowHm,
+  isTodayYmd,
   nowLineTopPx,
-  scrollOffsetForNow,
+  resolveDayViewScrollTop,
   shouldShowNowLine,
 } from "@/lib/calendar/now-line";
-import { resolveStaffDayScheduleLabel } from "@/lib/calendar/workload";
+import {
+  formatStaffDayHeaderMeta,
+  resolveStaffDayScheduleStatus,
+} from "@/lib/calendar/schedule-status";
+import { absoluteMinutesFromDate } from "@/lib/appointments/visible-range";
 import { useClientNow } from "@/lib/use-client-now";
 import { cn } from "@/lib/utils";
 import type { StaffMembership } from "@/types/saas";
@@ -48,6 +53,7 @@ import {
   TIME_OFF_STYLE,
   STATUS_ACCENT,
   STATUS_BLOCK_BG,
+  STAFF_DAY_HEADER_STICKY_PX,
   TIME_COL_PX,
   TOTAL_SLOTS,
   WEEKDAY,
@@ -264,7 +270,13 @@ function StaffColumn({
   const workEnd = workingHours?.isWorking
     ? parseHmToMinutes(workingHours.endTime)
     : null;
-  const dayOff = workStart == null || workEnd == null;
+  const schedule = resolveStaffDayScheduleStatus({
+    organizationId,
+    locationId,
+    staffId: staff.userId,
+    day,
+  });
+  const noShift = workStart == null || workEnd == null;
   const dayYmd = formatYmd(day);
 
   function handleSlotClick(hm: string) {
@@ -298,14 +310,22 @@ function StaffColumn({
       aria-label={`${staff.displayName} 時段`}
     >
       <SlotLines />
-      {dayOff ? (
-        <div
-          className="absolute inset-0 flex flex-col items-center justify-center px-3"
-          style={OFF_HOURS_STYLE}
-        >
-          <p className="text-sm font-semibold text-secondary-text">休假</p>
-          <p className="mt-1 text-xs text-secondary-text/80">未排班</p>
-        </div>
+      {noShift ? (
+        schedule.kind === "time_off" ? (
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center px-3"
+            style={TIME_OFF_STYLE}
+          >
+            <p className="text-sm font-semibold text-secondary-text">休假</p>
+          </div>
+        ) : (
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center px-3"
+            style={OFF_HOURS_STYLE}
+          >
+            <p className="text-sm font-semibold text-secondary-text">未排班</p>
+          </div>
+        )
       ) : (
         <>
           {workStart! > DAY_MINUTES_START ? (
@@ -337,26 +357,31 @@ function StaffColumn({
         </>
       )}
 
-      {timeOff.map((off) => {
-        const layout = layoutTimedBlock(new Date(off.startAt), new Date(off.endAt));
-        if (!layout.visible) return null;
-        return (
-          <div
-            key={off.id}
-            className="absolute left-1.5 right-1.5 overflow-hidden rounded-lg border border-dashed border-border/70 px-2 py-1 text-[11px] text-secondary-text"
-            style={{
-              ...TIME_OFF_STYLE,
-              top: layout.topPx,
-              height: layout.heightPx,
-            }}
-          >
-            <span className="font-medium whitespace-nowrap">休假</span>
-            {off.reason ? (
-              <span className="ml-1 line-clamp-1">{off.reason}</span>
-            ) : null}
-          </div>
-        );
-      })}
+      {schedule.kind !== "time_off" || !noShift
+        ? timeOff.map((off) => {
+            const layout = layoutTimedBlock(
+              new Date(off.startAt),
+              new Date(off.endAt),
+            );
+            if (!layout.visible) return null;
+            return (
+              <div
+                key={off.id}
+                className="absolute left-1.5 right-1.5 overflow-hidden rounded-lg border border-dashed border-border/70 px-2 py-1 text-[11px] text-secondary-text"
+                style={{
+                  ...TIME_OFF_STYLE,
+                  top: layout.topPx,
+                  height: layout.heightPx,
+                }}
+              >
+                <span className="font-medium whitespace-nowrap">休假</span>
+                {off.reason ? (
+                  <span className="ml-1 line-clamp-1">{off.reason}</span>
+                ) : null}
+              </div>
+            );
+          })
+        : null}
 
       {breaks.map((br) => {
         const layout = layoutTimedBlock(new Date(br.startAt), new Date(br.endAt));
@@ -393,7 +418,7 @@ function StaffColumn({
         );
       })}
 
-      {!dayOff
+      {!noShift
         ? Array.from({ length: TOTAL_SLOTS }, (_, i) => {
             const minutes = DAY_MINUTES_START + i * CALENDAR_SLOT_MINUTES;
             const hm = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
@@ -443,16 +468,30 @@ export function StaffDayGrid({
 
   useEffect(() => {
     if (!scrollRef.current || !now) return;
-    if (!shouldShowNowLine(day, now)) return;
+    if (!isTodayYmd(day, now)) return;
     if (scrolledForDay.current === dayYmd) return;
     scrolledForDay.current = dayYmd;
-    scrollRef.current.scrollTop = scrollOffsetForNow({
+    const el = scrollRef.current;
+    const headerEl = el.querySelector("[data-calendar-staff-header]");
+    const stickyHeaderPx =
+      headerEl instanceof HTMLElement
+        ? headerEl.offsetHeight
+        : STAFF_DAY_HEADER_STICKY_PX;
+    const appointmentStartMinutes = appointments
+      .filter((a) => formatYmd(new Date(a.startAt)) === dayYmd)
+      .map((a) => absoluteMinutesFromDate(new Date(a.startAt)));
+    el.scrollTop = resolveDayViewScrollTop({
       now,
+      isToday: true,
+      appointmentStartMinutes,
       visibleStartMinutes: DAY_MINUTES_START,
+      visibleEndMinutes: DAY_MINUTES_END,
       slotMinutes: CALENDAR_SLOT_MINUTES,
       slotPx: CALENDAR_SLOT_PX,
+      stickyHeaderPx,
+      viewportPx: el.clientHeight,
     });
-  }, [day, dayYmd, now]);
+  }, [day, dayYmd, now, appointments]);
 
   if (staff.length === 0) {
     return (
@@ -473,6 +512,7 @@ export function StaffDayGrid({
       >
         <div style={{ minWidth: minWidth ?? "100%" }}>
           <div
+            data-calendar-staff-header
             className="sticky top-0 z-10 grid border-b border-border/70 bg-[#FFFCFA]/95 backdrop-blur-sm"
             style={{ gridTemplateColumns: columns }}
           >
@@ -480,29 +520,19 @@ export function StaffDayGrid({
               時間
             </div>
             {staff.map((s) => {
-              const hours = getWorkingHoursForDay(
-                organizationId,
-                locationId,
-                s.userId,
-                dayOfWeekLocal(day),
-              );
-              const schedule = resolveStaffDayScheduleLabel({
+              const schedule = resolveStaffDayScheduleStatus({
                 organizationId,
                 locationId,
                 staffId: s.userId,
                 day,
+                now,
               });
-              const onDuty =
-                Boolean(now) &&
-                shouldShowNowLine(day, now) &&
-                hours?.isWorking &&
-                (() => {
-                  const mins =
-                    now!.getHours() * 60 + now!.getMinutes();
-                  const start = parseHmToMinutes(hours.startTime);
-                  const end = parseHmToMinutes(hours.endTime);
-                  return mins >= start && mins < end;
-                })();
+              const apptCount = appointments.filter(
+                (a) =>
+                  a.staffId === s.userId &&
+                  formatYmd(new Date(a.startAt)) === dayYmd,
+              ).length;
+              const meta = formatStaffDayHeaderMeta(schedule, apptCount);
               return (
                 <div
                   key={s.userId}
@@ -517,20 +547,30 @@ export function StaffDayGrid({
                   <p className="mt-1.5 truncate text-sm font-semibold text-text">
                     {s.displayName}
                   </p>
-                  {schedule.isDayOff ? (
-                    <p className="mt-0.5 text-xs text-secondary-text">休假</p>
-                  ) : (
-                    <>
-                      <p className="mt-0.5 truncate text-xs tabular-nums text-secondary-text">
-                        {schedule.workingLabel}
-                      </p>
-                      {onDuty ? (
-                        <span className="mt-1.5 inline-flex rounded-full bg-[#E8F3EC] px-2 py-0.5 text-[10px] font-medium text-[#4F7A5C]">
-                          上班中
-                        </span>
-                      ) : null}
-                    </>
-                  )}
+                  {meta ? (
+                    <p
+                      className={cn(
+                        "mt-0.5 truncate text-xs tabular-nums text-secondary-text",
+                        schedule.kind === "not_scheduled" &&
+                          apptCount > 0 &&
+                          "text-amber-800/80",
+                      )}
+                    >
+                      {meta}
+                    </p>
+                  ) : null}
+                  {schedule.dutyLabel ? (
+                    <span
+                      className={cn(
+                        "mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium",
+                        schedule.dutyLabel === "上班中"
+                          ? "bg-[#E8F3EC] text-[#4F7A5C]"
+                          : "bg-[#F3EEEA] text-secondary-text",
+                      )}
+                    >
+                      {schedule.dutyLabel}
+                    </span>
+                  ) : null}
                 </div>
               );
             })}
@@ -729,7 +769,7 @@ export function MobileStaffDayView({
     from: dayStart,
     to: dayEnd,
   }).filter((t) => t.status === "APPROVED");
-  const schedule = resolveStaffDayScheduleLabel({
+  const schedule = resolveStaffDayScheduleStatus({
     organizationId,
     locationId,
     staffId: staff.userId,
@@ -740,6 +780,7 @@ export function MobileStaffDayView({
       a.staffId === staff.userId &&
       formatYmd(new Date(a.startAt)) === formatYmd(day),
   );
+  const meta = formatStaffDayHeaderMeta(schedule, columnAppts.length);
 
   return (
     <div className="overflow-hidden rounded-3xl border border-border/80 bg-surface shadow-[0_1px_3px_rgba(48,43,43,0.04)]">
@@ -749,8 +790,16 @@ export function MobileStaffDayView({
         </div>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-text">{staff.displayName}</p>
-          <p className="text-xs text-secondary-text">
-            {schedule.isDayOff ? "休假 · 未排班" : schedule.workingLabel}
+          <p
+            className={cn(
+              "text-xs text-secondary-text",
+              schedule.kind === "not_scheduled" &&
+                columnAppts.length > 0 &&
+                "text-amber-800/80",
+            )}
+          >
+            {meta}
+            {schedule.dutyLabel ? ` · ${schedule.dutyLabel}` : ""}
           </p>
         </div>
       </div>

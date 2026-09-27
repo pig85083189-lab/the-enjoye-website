@@ -1,15 +1,16 @@
 /**
- * Calendar workload derivation — from appointments + staff schedule; no parallel store.
+ * Calendar workload derivation — from appointments only for counts/hours.
+ * Schedule labels come from resolveStaffDayScheduleStatus (separate concept).
  */
 import {
   formatYmd,
   type ScheduleAppointment,
 } from "@/lib/appointments/domain";
 import {
-  dayOfWeekLocal,
-  parseHmToMinutes,
-} from "@/lib/staff-schedule/domain";
-import { getWorkingHoursForDay } from "@/lib/staff-schedule/store";
+  resolveStaffDayScheduleStatus,
+  type StaffDayScheduleKind,
+} from "@/lib/calendar/schedule-status";
+import { parseHmToMinutes } from "@/lib/staff-schedule/domain";
 import type { StaffMembership } from "@/types/saas";
 
 const WORKLOAD_STATUSES = new Set([
@@ -26,8 +27,7 @@ export interface StaffWorkload {
   count: number;
   /** Total appointment duration in hours (1 decimal) */
   hours: number;
-  /** True when staff has no working hours for the day */
-  isDayOff: boolean;
+  scheduleKind: StaffDayScheduleKind;
   workingLabel: string | null;
 }
 
@@ -45,10 +45,7 @@ export function computeStaffWorkload(input: {
   appointments: ScheduleAppointment[];
   from: Date;
   toInclusive: Date;
-  organizationId?: string;
-  locationId?: string;
-  dayForSchedule?: Date;
-}): Omit<StaffWorkload, "staffId" | "isDayOff" | "workingLabel"> {
+}): { count: number; hours: number } {
   const fromYmd = formatYmd(input.from);
   const toYmd = formatYmd(input.toInclusive);
   const items = input.appointments.filter(
@@ -64,27 +61,6 @@ export function computeStaffWorkload(input: {
   };
 }
 
-export function resolveStaffDayScheduleLabel(input: {
-  organizationId: string;
-  locationId: string;
-  staffId: string;
-  day: Date;
-}): { isDayOff: boolean; workingLabel: string | null } {
-  const hours = getWorkingHoursForDay(
-    input.organizationId,
-    input.locationId,
-    input.staffId,
-    dayOfWeekLocal(input.day),
-  );
-  if (!hours || !hours.isWorking) {
-    return { isDayOff: true, workingLabel: null };
-  }
-  return {
-    isDayOff: false,
-    workingLabel: `${hours.startTime} – ${hours.endTime}`,
-  };
-}
-
 export function buildStaffWorkloadRows(input: {
   staff: StaffMembership[];
   appointments: ScheduleAppointment[];
@@ -92,8 +68,8 @@ export function buildStaffWorkloadRows(input: {
   toInclusive: Date;
   organizationId: string;
   locationId: string;
-  /** Day used for working-hours / day-off label (day view = anchor; week = today or week start) */
   scheduleDay: Date;
+  now?: Date | null;
 }): StaffWorkload[] {
   return input.staff.map((s) => {
     const load = computeStaffWorkload({
@@ -102,17 +78,18 @@ export function buildStaffWorkloadRows(input: {
       from: input.from,
       toInclusive: input.toInclusive,
     });
-    const schedule = resolveStaffDayScheduleLabel({
+    const schedule = resolveStaffDayScheduleStatus({
       organizationId: input.organizationId,
       locationId: input.locationId,
       staffId: s.userId,
       day: input.scheduleDay,
+      now: input.now,
     });
     return {
       staffId: s.userId,
       count: load.count,
       hours: load.hours,
-      isDayOff: schedule.isDayOff,
+      scheduleKind: schedule.kind,
       workingLabel: schedule.workingLabel,
     };
   });
@@ -123,7 +100,7 @@ export function formatWorkloadHours(hours: number): string {
   return `${hours}h`;
 }
 
-/** Total workload across all staff in range (dedupe by appointment id). */
+/** Total workload across all staff in range. */
 export function computeTotalWorkload(
   appointments: ScheduleAppointment[],
   from: Date,

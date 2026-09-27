@@ -1,31 +1,63 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   CALENDAR_SLOT_MINUTES,
   CALENDAR_SLOT_PX,
 } from "@/lib/appointments/calendar-config";
 import type { ScheduleAppointment } from "@/lib/appointments/domain";
 import {
+  clampScrollTop,
   formatNowHm,
   nowLineTopPx,
+  resolveDayViewScrollTop,
   scrollOffsetForNow,
   shouldShowNowLine,
 } from "@/lib/calendar/now-line";
 import {
+  formatStaffDayHeaderMeta,
+  resolveStaffDayScheduleStatus,
+} from "@/lib/calendar/schedule-status";
+import {
+  buildStaffWorkloadRows,
   computeStaffWorkload,
   computeTotalWorkload,
   formatWorkloadHours,
   minutesToGridTopPx,
 } from "@/lib/calendar/workload";
+import {
+  LOC_ENJOYE_PRIMARY_ID,
+  ORG_ENJOYE_ID,
+} from "@/lib/tenant/constants";
+import {
+  createBreak,
+  createTimeOff,
+  upsertWorkingHours,
+} from "@/lib/staff-schedule/store";
+import type { StaffMembership } from "@/types/saas";
 
 const DAY_START = 9 * 60;
+const DAY_END = 21 * 60;
+
+function wipe() {
+  localStorage.clear();
+}
+
+beforeEach(() => wipe());
 
 function apt(
   partial: Partial<ScheduleAppointment> &
-    Pick<ScheduleAppointment, "id" | "staffId" | "startAt" | "endAt" | "durationMinutes" | "status">,
+    Pick<
+      ScheduleAppointment,
+      | "id"
+      | "staffId"
+      | "startAt"
+      | "endAt"
+      | "durationMinutes"
+      | "status"
+    >,
 ): ScheduleAppointment {
   return {
-    organizationId: "org-enjoye",
-    locationId: "loc-1",
+    organizationId: ORG_ENJOYE_ID,
+    locationId: LOC_ENJOYE_PRIMARY_ID,
     customerId: "c1",
     customerName: "客",
     serviceId: "svc",
@@ -37,6 +69,149 @@ function apt(
     ...partial,
   };
 }
+
+const sunday = new Date(2026, 8, 27); // 2026-09-27 Sunday
+const monday = new Date(2026, 8, 21);
+
+describe("resolveStaffDayScheduleStatus", () => {
+  it("shows working hours when isWorking", () => {
+    upsertWorkingHours(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-001",
+      dayOfWeek: 0,
+      startTime: "10:00",
+      endTime: "19:00",
+      isWorking: true,
+    });
+    const status = resolveStaffDayScheduleStatus({
+      organizationId: ORG_ENJOYE_ID,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-001",
+      day: sunday,
+      now: new Date(2026, 8, 27, 12, 0),
+    });
+    expect(status.kind).toBe("working");
+    expect(status.workingLabel).toBe("10:00 – 19:00");
+    expect(status.dutyLabel).toBe("上班中");
+    expect(status.isOnLeave).toBe(false);
+    expect(formatStaffDayHeaderMeta(status)).toBe("10:00 – 19:00");
+  });
+
+  it("shows 未排班 when isWorking:false (not 休假)", () => {
+    upsertWorkingHours(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-001",
+      dayOfWeek: 0,
+      startTime: "10:00",
+      endTime: "19:00",
+      isWorking: false,
+    });
+    const status = resolveStaffDayScheduleStatus({
+      organizationId: ORG_ENJOYE_ID,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-001",
+      day: sunday,
+    });
+    expect(status.kind).toBe("not_scheduled");
+    expect(status.isOnLeave).toBe(false);
+    expect(status.isNotScheduled).toBe(true);
+    expect(formatStaffDayHeaderMeta(status)).toBe("未排班");
+  });
+
+  it("shows 休假 only for APPROVED time off", () => {
+    upsertWorkingHours(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-002",
+      dayOfWeek: 0,
+      startTime: "10:00",
+      endTime: "19:00",
+      isWorking: true,
+    });
+    createTimeOff(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-002",
+      startAt: new Date(2026, 8, 27, 0, 0).toISOString(),
+      endAt: new Date(2026, 8, 28, 0, 0).toISOString(),
+      status: "APPROVED",
+      reason: "個人假期",
+    });
+    const status = resolveStaffDayScheduleStatus({
+      organizationId: ORG_ENJOYE_ID,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-002",
+      day: sunday,
+    });
+    expect(status.kind).toBe("time_off");
+    expect(status.isOnLeave).toBe(true);
+    expect(formatStaffDayHeaderMeta(status)).toBe("休假");
+  });
+
+  it("keeps 未排班 + appointment conflict hint without inventing leave", () => {
+    upsertWorkingHours(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-001",
+      dayOfWeek: 0,
+      startTime: "10:00",
+      endTime: "19:00",
+      isWorking: false,
+    });
+    const status = resolveStaffDayScheduleStatus({
+      organizationId: ORG_ENJOYE_ID,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-001",
+      day: sunday,
+    });
+    expect(status.kind).toBe("not_scheduled");
+    expect(formatStaffDayHeaderMeta(status, 3)).toBe("未排班 · 3 筆預約");
+  });
+
+  it("does not treat break as time off", () => {
+    upsertWorkingHours(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-003",
+      dayOfWeek: 1,
+      startTime: "10:00",
+      endTime: "19:00",
+      isWorking: true,
+    });
+    createBreak(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-003",
+      startAt: new Date(2026, 8, 21, 12, 0).toISOString(),
+      endAt: new Date(2026, 8, 21, 13, 0).toISOString(),
+      label: "午休",
+    });
+    const status = resolveStaffDayScheduleStatus({
+      organizationId: ORG_ENJOYE_ID,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-003",
+      day: monday,
+      now: new Date(2026, 8, 21, 9, 0),
+    });
+    expect(status.kind).toBe("working");
+    expect(status.isOnLeave).toBe(false);
+    expect(status.dutyLabel).toBe("今日有班");
+  });
+
+  it("marks 已下班 after end time", () => {
+    upsertWorkingHours(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-001",
+      dayOfWeek: 0,
+      startTime: "10:00",
+      endTime: "19:00",
+      isWorking: true,
+    });
+    const status = resolveStaffDayScheduleStatus({
+      organizationId: ORG_ENJOYE_ID,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-001",
+      day: sunday,
+      now: new Date(2026, 8, 27, 20, 0),
+    });
+    expect(status.dutyLabel).toBe("已下班");
+  });
+});
 
 describe("computeStaffWorkload", () => {
   const day = new Date(2026, 8, 27);
@@ -101,9 +276,69 @@ describe("computeStaffWorkload", () => {
     expect(total.count).toBe(3);
     expect(total.hours).toBe(3.7);
   });
+
+  it("workload ignores working-hours / not_scheduled", () => {
+    upsertWorkingHours(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-001",
+      dayOfWeek: 0,
+      startTime: "10:00",
+      endTime: "19:00",
+      isWorking: false,
+    });
+    const staff: StaffMembership[] = [
+      {
+        id: "m1",
+        organizationId: ORG_ENJOYE_ID,
+        userId: "staff-001",
+        locationIds: [LOC_ENJOYE_PRIMARY_ID],
+        role: "STAFF",
+        displayName: "怡蓁",
+        isActive: true,
+        createdAt: "2025-01-01T00:00:00+08:00",
+      },
+    ];
+    const rows = buildStaffWorkloadRows({
+      staff,
+      appointments: [
+        apt({
+          id: "w1",
+          staffId: "staff-001",
+          startAt: new Date(2026, 8, 27, 14, 0).toISOString(),
+          endAt: new Date(2026, 8, 27, 16, 0).toISOString(),
+          durationMinutes: 120,
+          status: "BOOKED",
+        }),
+        apt({
+          id: "w2",
+          staffId: "staff-001",
+          startAt: new Date(2026, 8, 27, 16, 0).toISOString(),
+          endAt: new Date(2026, 8, 27, 18, 0).toISOString(),
+          durationMinutes: 120,
+          status: "CONFIRMED",
+        }),
+        apt({
+          id: "w3",
+          staffId: "staff-001",
+          startAt: new Date(2026, 8, 27, 18, 0).toISOString(),
+          endAt: new Date(2026, 8, 27, 20, 0).toISOString(),
+          durationMinutes: 120,
+          status: "BOOKED",
+        }),
+      ],
+      from: sunday,
+      toInclusive: sunday,
+      organizationId: ORG_ENJOYE_ID,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      scheduleDay: sunday,
+    });
+    expect(rows[0].scheduleKind).toBe("not_scheduled");
+    expect(rows[0].count).toBe(3);
+    expect(rows[0].hours).toBe(6);
+  });
 });
 
-describe("now line", () => {
+describe("now line + day view scroll", () => {
   it("only shows on the same local day", () => {
     const today = new Date(2026, 8, 27, 13, 24);
     const other = new Date(2026, 8, 28, 13, 24);
@@ -117,7 +352,7 @@ describe("now line", () => {
     const top = nowLineTopPx({
       now,
       visibleStartMinutes: DAY_START,
-      visibleEndMinutes: 21 * 60,
+      visibleEndMinutes: DAY_END,
       slotMinutes: CALENDAR_SLOT_MINUTES,
       slotPx: CALENDAR_SLOT_PX,
     });
@@ -131,14 +366,14 @@ describe("now line", () => {
     const top = nowLineTopPx({
       now,
       visibleStartMinutes: DAY_START,
-      visibleEndMinutes: 21 * 60,
+      visibleEndMinutes: DAY_END,
       slotMinutes: CALENDAR_SLOT_MINUTES,
       slotPx: CALENDAR_SLOT_PX,
     });
     expect(top).toBeNull();
   });
 
-  it("scrolls near current time", () => {
+  it("legacy scrollOffsetForNow still works", () => {
     const now = new Date(2026, 8, 27, 13, 24);
     const offset = scrollOffsetForNow({
       now,
@@ -154,6 +389,62 @@ describe("now line", () => {
       CALENDAR_SLOT_PX,
     );
     expect(offset).toBe(Math.max(0, rawTop - 120));
+  });
+
+  it("clamps scroll target within range", () => {
+    expect(clampScrollTop(-20, 400)).toBe(0);
+    expect(clampScrollTop(500, 400)).toBe(400);
+    expect(clampScrollTop(120, 400)).toBe(120);
+    expect(clampScrollTop(10, 0)).toBe(0);
+  });
+
+  it("initial scroll does not hide relevant appointment under sticky header", () => {
+    const now = new Date(2026, 8, 27, 14, 20);
+    const stickyHeaderPx = 104;
+    const viewportPx = 600;
+    const aptStart = 14 * 60; // 14:00 in progress
+    const scrollTop = resolveDayViewScrollTop({
+      now,
+      isToday: true,
+      appointmentStartMinutes: [aptStart, 16 * 60, 18 * 60],
+      visibleStartMinutes: DAY_START,
+      visibleEndMinutes: DAY_END,
+      slotMinutes: CALENDAR_SLOT_MINUTES,
+      slotPx: CALENDAR_SLOT_PX,
+      stickyHeaderPx,
+      viewportPx,
+      contextBufferMinutes: 45,
+    });
+    const aptTop = minutesToGridTopPx(
+      aptStart,
+      DAY_START,
+      CALENDAR_SLOT_MINUTES,
+      CALENDAR_SLOT_PX,
+    );
+    // Appointment top must remain below sticky header after scrolling
+    expect(aptTop - scrollTop).toBeGreaterThanOrEqual(stickyHeaderPx);
+  });
+
+  it("scroll target is clamped to grid bounds", () => {
+    const now = new Date(2026, 8, 27, 20, 45);
+    const stickyHeaderPx = 104;
+    const viewportPx = 500;
+    const gridHeight =
+      ((DAY_END - DAY_START) / CALENDAR_SLOT_MINUTES) * CALENDAR_SLOT_PX;
+    const maxScroll = Math.max(0, gridHeight - viewportPx);
+    const scrollTop = resolveDayViewScrollTop({
+      now,
+      isToday: true,
+      appointmentStartMinutes: [],
+      visibleStartMinutes: DAY_START,
+      visibleEndMinutes: DAY_END,
+      slotMinutes: CALENDAR_SLOT_MINUTES,
+      slotPx: CALENDAR_SLOT_PX,
+      stickyHeaderPx,
+      viewportPx,
+    });
+    expect(scrollTop).toBeGreaterThanOrEqual(0);
+    expect(scrollTop).toBeLessThanOrEqual(maxScroll);
   });
 });
 

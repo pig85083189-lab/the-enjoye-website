@@ -600,7 +600,6 @@ function StaffWorkloadFilter({
       {staff.map((s) => {
         const active = selected.includes(s.userId);
         const load = byId.get(s.userId);
-        const dayOff = dayView && load?.isDayOff;
         return (
           <button
             key={s.userId}
@@ -624,9 +623,12 @@ function StaffWorkloadFilter({
               <span className="text-sm font-semibold">{s.displayName}</span>
             </span>
             <span className="mt-0.5 block pl-9 text-xs tabular-nums opacity-80">
-              {dayOff
-                ? "休假"
-                : `${load?.count ?? 0}筆 · ${formatWorkloadHours(load?.hours ?? 0)}`}
+              {load?.count ?? 0}筆 · {formatWorkloadHours(load?.hours ?? 0)}
+              {dayView && load?.scheduleKind === "time_off"
+                ? " · 休假"
+                : dayView && load?.scheduleKind === "not_scheduled"
+                  ? " · 未排班"
+                  : ""}
             </span>
           </button>
         );
