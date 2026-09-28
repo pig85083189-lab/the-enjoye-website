@@ -11,6 +11,7 @@ import { LeaveGuardProvider } from "@/features/treatments/LeaveGuard";
 import { getSessionRaw, subscribeAuth } from "@/lib/auth";
 import { OrganizationProvider, useOrganization } from "@/lib/tenant/OrganizationContext";
 import { cn } from "@/lib/utils";
+import { isCustomerProfileWorkbenchPath } from "@/lib/customers/customer-360";
 
 interface StaffShellProps {
   children: ReactNode;
@@ -28,6 +29,7 @@ function StaffShellChrome({ children }: { children: ReactNode }) {
   const isTodayWorkbench = pathname.startsWith("/staff/today");
   const isCustomersWorkbench =
     pathname === "/staff/customers" || pathname === "/staff/customers/";
+  const isCustomerProfileWorkbench = isCustomerProfileWorkbenchPath(pathname);
   const isCheckoutWorkbench =
     pathname === "/staff/checkout" || pathname === "/staff/checkout/";
   const isStoredValueWorkbench =
@@ -40,6 +42,7 @@ function StaffShellChrome({ children }: { children: ReactNode }) {
     isCalendarSurface ||
     isTodayWorkbench ||
     isCustomersWorkbench ||
+    isCustomerProfileWorkbench ||
     isCheckoutWorkbench ||
     isStoredValueWorkbench ||
     isPackagesWorkbench;

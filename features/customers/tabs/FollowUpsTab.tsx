@@ -20,9 +20,10 @@ import { cn } from "@/lib/utils";
 
 interface FollowUpsTabProps {
   customerId: string;
+  treatmentHref?: string;
 }
 
-export function FollowUpsTab({ customerId }: FollowUpsTabProps) {
+export function FollowUpsTab({ customerId, treatmentHref }: FollowUpsTabProps) {
   const { organization } = useOrganization();
   const rev = useSyncExternalStore(
     subscribeFollowUps,
@@ -45,6 +46,15 @@ export function FollowUpsTab({ customerId }: FollowUpsTabProps) {
         <p className="mt-2 text-sm text-secondary-text">
           完成療程並設定下次追蹤後，會顯示在此。
         </p>
+        {treatmentHref ? (
+          <Link href={treatmentHref} className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary">
+            開始第一次療程
+          </Link>
+        ) : (
+          <Link href="/staff/follow-ups" className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary">
+            前往追蹤工作台
+          </Link>
+        )}
       </Card>
     );
   }

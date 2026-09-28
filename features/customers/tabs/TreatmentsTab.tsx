@@ -15,9 +15,10 @@ function formatDate(iso: string): string {
 
 interface TreatmentsTabProps {
   customerId: string;
+  treatmentHref?: string;
 }
 
-export function TreatmentsTab({ customerId }: TreatmentsTabProps) {
+export function TreatmentsTab({ customerId, treatmentHref }: TreatmentsTabProps) {
   const { organization } = useOrganization();
   const treatments = localTreatmentRepository.listByCustomer({
     organizationId: organization.id,
@@ -26,8 +27,13 @@ export function TreatmentsTab({ customerId }: TreatmentsTabProps) {
 
   if (treatments.length === 0) {
     return (
-      <Card padding="lg">
-        <p className="text-[15px] text-secondary-text">尚無療程紀錄</p>
+      <Card padding="lg" className="text-center">
+        <p className="text-[15px] font-medium text-text">尚無療程紀錄</p>
+        {treatmentHref ? (
+          <Link href={treatmentHref} className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary">
+            開始第一次療程
+          </Link>
+        ) : null}
       </Card>
     );
   }

@@ -77,8 +77,9 @@ export function PhotosTab({ customerId }: PhotosTabProps) {
       </div>
 
       {groups.length === 0 ? (
-        <Card padding="lg">
-          <p className="text-[15px] text-secondary-text">尚無照片（Prototype 使用示意圖）</p>
+        <Card padding="lg" className="text-center">
+          <p className="text-[15px] font-medium text-text">尚無照片</p>
+          <p className="mt-1 text-sm text-secondary-text">完成療程並上傳照片後會顯示在此。</p>
         </Card>
       ) : (
         groups.map(([date, items]) => (

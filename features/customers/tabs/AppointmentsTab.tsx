@@ -78,10 +78,11 @@ function AppointmentRow({
 
 interface AppointmentsTabProps {
   customerId: string;
+  createHref?: string;
 }
 
 /** Single source of truth: schedule appointment store (Phase 4.8A). */
-export function AppointmentsTab({ customerId }: AppointmentsTabProps) {
+export function AppointmentsTab({ customerId, createHref }: AppointmentsTabProps) {
   const { organization } = useOrganization();
   useSyncExternalStore(subscribeAppointments, getAppointmentStatusRaw, () => "");
   const all = listAppointments({
@@ -116,7 +117,14 @@ export function AppointmentsTab({ customerId }: AppointmentsTabProps) {
       <section className="space-y-3">
         <h3 className="text-base font-semibold text-text">即將到來</h3>
         {upcoming.length === 0 ? (
-          <p className="text-[15px] text-secondary-text">尚無即將到來的預約</p>
+          <div className="space-y-1">
+            <p className="text-[15px] text-secondary-text">尚未安排下次預約</p>
+            {createHref ? (
+              <Link href={createHref} className="inline-flex min-h-11 items-center text-sm font-medium text-primary">
+                新增預約
+              </Link>
+            ) : null}
+          </div>
         ) : (
           upcoming.map((item) => (
             <AppointmentRow

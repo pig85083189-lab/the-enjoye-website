@@ -25,8 +25,14 @@ export function TransactionsTab({ customerId }: TransactionsTabProps) {
 
   if (rows.length === 0) {
     return (
-      <Card padding="lg" className="text-sm text-secondary-text">
-        尚無交易紀錄。
+      <Card padding="lg" className="text-center">
+        <p className="text-[15px] font-medium text-text">尚無交易</p>
+        <Link
+          href="/staff/checkout"
+          className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary"
+        >
+          前往結帳
+        </Link>
       </Card>
     );
   }

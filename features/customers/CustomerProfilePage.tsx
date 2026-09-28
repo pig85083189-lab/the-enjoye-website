@@ -1,13 +1,14 @@
 "use client";
 
+import { useEffect, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
+import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { ImportantNotesAlert } from "@/components/customers/ImportantNotesAlert";
 import { CustomerTagChips } from "@/components/customers/CustomerTagChips";
+import { Customer360Tabs } from "./Customer360Tabs";
 import { CustomerSummaryPanel } from "./CustomerSummaryPanel";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { ConsultationsTab } from "./tabs/ConsultationsTab";
@@ -18,29 +19,21 @@ import { AppointmentsTab } from "./tabs/AppointmentsTab";
 import { NotesTab } from "./tabs/NotesTab";
 import { TransactionsTab } from "./tabs/TransactionsTab";
 import { WalletTab } from "./tabs/WalletTab";
-import { findAppointmentForCustomer } from "@/lib/appointment-store";
+import { useCustomer360Snapshot } from "./use-customer-360";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
-import { cn } from "@/lib/utils";
+import {
+  customerConsultationNewHref,
+  customerEditHref,
+  isCustomer360TabId,
+  type Customer360TabId,
+  type Customer360WalletSection,
+} from "@/lib/customers/customer-360";
 import type { Customer } from "@/types";
 
-const TABS = [
-  { id: "overview", label: "總覽" },
-  { id: "consultation", label: "諮詢紀錄" },
-  { id: "treatments", label: "療程紀錄" },
-  { id: "follow-ups", label: "追蹤" },
-  { id: "photos", label: "照片" },
-  { id: "appointments", label: "預約" },
-  { id: "wallet", label: "錢包" },
-  { id: "transactions", label: "交易紀錄" },
-  { id: "notes", label: "內部備註" },
-] as const;
-
-type TabId = (typeof TABS)[number]["id"];
-
-function isTabId(value: string | null): value is TabId {
-  return TABS.some((tab) => tab.id === value);
+function isWalletSection(value: string | null): value is Customer360WalletSection {
+  return value === "packages" || value === "stored-value";
 }
 
 interface CustomerProfilePageProps {
@@ -61,24 +54,47 @@ export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
     null as Customer | null,
   );
   const initialTab = searchParams.get("tab");
-  const [tab, setTab] = useState<TabId>(
-    isTabId(initialTab) ? initialTab : "overview",
+  const initialSection = searchParams.get("section");
+  const [tab, setTab] = useState<Customer360TabId>(
+    isCustomer360TabId(initialTab) ? initialTab : "overview",
   );
-  const [showMore, setShowMore] = useState(false);
+  const [walletSection, setWalletSection] = useState<Customer360WalletSection | undefined>(
+    isWalletSection(initialSection) ? initialSection : undefined,
+  );
+  const [desktopMoreOpen, setDesktopMoreOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const desktopMoreRef = useRef<HTMLDivElement>(null);
+  const mobileMoreRef = useRef<HTMLDivElement>(null);
 
-  const treatmentHref = useMemo(() => {
-    if (!customer) return `/staff/treatments/new?customer=${customerId}`;
-    const apt = findAppointmentForCustomer(customer.id, organization.id);
-    return apt
-      ? `/staff/treatments/new?customer=${customer.id}&appointment=${apt.id}`
-      : `/staff/treatments/new?customer=${customer.id}`;
-  }, [customer, customerId, organization.id]);
+  useEffect(() => {
+    function bind(open: boolean, ref: RefObject<HTMLDivElement | null>, close: () => void) {
+      if (!open) return () => undefined;
+      function onPointer(event: MouseEvent) {
+        if (!ref.current?.contains(event.target as Node)) close();
+      }
+      function onKey(event: KeyboardEvent) {
+        if (event.key === "Escape") close();
+      }
+      document.addEventListener("mousedown", onPointer);
+      document.addEventListener("keydown", onKey);
+      return () => {
+        document.removeEventListener("mousedown", onPointer);
+        document.removeEventListener("keydown", onKey);
+      };
+    }
+    const a = bind(desktopMoreOpen, desktopMoreRef, () => setDesktopMoreOpen(false));
+    const b = bind(mobileMoreOpen, mobileMoreRef, () => setMobileMoreOpen(false));
+    return () => {
+      a();
+      b();
+    };
+  }, [desktopMoreOpen, mobileMoreOpen]);
 
   if (!isClient) {
     return (
       <div className="space-y-3">
         <div className="h-10 w-40 animate-pulse rounded-2xl bg-primary-light/50" />
-        <div className="h-40 animate-pulse rounded-2xl bg-primary-light/40" />
+        <div className="h-32 animate-pulse rounded-2xl bg-primary-light/40" />
       </div>
     );
   }
@@ -98,8 +114,63 @@ export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <Customer360Workspace
+      customer={customer}
+      tab={tab}
+      walletSection={walletSection}
+      desktopMoreOpen={desktopMoreOpen}
+      mobileMoreOpen={mobileMoreOpen}
+      desktopMoreRef={desktopMoreRef}
+      mobileMoreRef={mobileMoreRef}
+      onDesktopMoreOpen={setDesktopMoreOpen}
+      onMobileMoreOpen={setMobileMoreOpen}
+      onSelectTab={(next, section) => {
+        setTab(next);
+        setWalletSection(next === "wallet" ? section ?? "packages" : undefined);
+        const params = new URLSearchParams();
+        params.set("tab", next);
+        if (next === "wallet" && (section || walletSection)) {
+          params.set("section", section ?? walletSection ?? "packages");
+        }
+        router.replace(`/staff/customers/${customer.id}?${params.toString()}`, { scroll: false });
+      }}
+    />
+  );
+}
+
+function Customer360Workspace({
+  customer,
+  tab,
+  walletSection,
+  desktopMoreOpen,
+  mobileMoreOpen,
+  desktopMoreRef,
+  mobileMoreRef,
+  onDesktopMoreOpen,
+  onMobileMoreOpen,
+  onSelectTab,
+}: {
+  customer: Customer;
+  tab: Customer360TabId;
+  walletSection?: Customer360WalletSection;
+  desktopMoreOpen: boolean;
+  mobileMoreOpen: boolean;
+  desktopMoreRef: RefObject<HTMLDivElement | null>;
+  mobileMoreRef: RefObject<HTMLDivElement | null>;
+  onDesktopMoreOpen: (open: boolean) => void;
+  onMobileMoreOpen: (open: boolean) => void;
+  onSelectTab: (tab: Customer360TabId, section?: Customer360WalletSection) => void;
+}) {
+  const router = useRouter();
+  const snapshot = useCustomer360Snapshot(customer);
+  const next = snapshot.nextAppointment;
+  const initials = customer.name.slice(0, 1);
+  const visitLabel =
+    snapshot.visitCount > 0 ? `第 ${snapshot.visitCount} 次來店` : "尚未到店";
+
+  return (
+    <div className="mx-auto w-full min-w-0 max-w-[1180px] space-y-4 overflow-x-hidden pb-16 min-[768px]:pb-0">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
           href="/staff/customers"
           className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-secondary-text hover:text-text"
@@ -110,130 +181,299 @@ export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
         <p className="text-xs text-secondary-text">僅供內部服務紀錄使用</p>
       </div>
 
-      <Card padding="lg">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="font-display text-3xl tracking-tight text-text sm:text-4xl">
-              {customer.name}
-            </h1>
-            <CustomerTagChips tags={customer.tags} className="mt-3" />
-            <dl className="mt-4 grid gap-3 text-[15px] sm:grid-cols-3">
-              <div>
-                <dt className="text-sm text-secondary-text">電話</dt>
-                <dd className="mt-0.5 font-medium text-text">{customer.phone}</dd>
+      <Card
+        padding="md"
+        data-customer-header
+      >
+        <div className="flex items-start gap-3 min-[1200px]:items-center min-[1200px]:gap-4">
+          <Avatar initials={initials} size="lg" className="shrink-0 gap-0" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold tracking-tight text-text min-[1200px]:text-[22px]">
+                {customer.name}
+              </h1>
+              <div className="hidden min-[768px]:block">
+                <CustomerTagChips tags={customer.tags} max={4} />
               </div>
-              <div>
-                <dt className="text-sm text-secondary-text">加入日期</dt>
-                <dd className="mt-0.5 font-medium text-text">{customer.joinedAt}</dd>
-              </div>
-              <div>
-                <dt className="text-sm text-secondary-text">負責美容師</dt>
-                <dd className="mt-0.5 font-medium text-text">
-                  {customer.primaryStaffName ?? "—"}
-                </dd>
-              </div>
-            </dl>
+            </div>
+            <p className="mt-1 truncate text-sm text-secondary-text min-[768px]:hidden">
+              {customer.phone}
+              <span className="mx-1.5 text-border">·</span>
+              {visitLabel}
+            </p>
+            <p className="mt-0.5 truncate text-sm text-secondary-text min-[768px]:hidden">
+              最近 {snapshot.lastVisitLabel ?? "—"}
+              <span className="mx-1.5 text-border">·</span>
+              下次 {next ? `${next.dateLabel} ${next.timeLabel}` : "尚未安排"}
+            </p>
+            <p className="mt-1 hidden truncate text-sm text-secondary-text min-[768px]:block">
+              {customer.phone}
+              <span className="mx-1.5 text-border">·</span>
+              {visitLabel}
+              <span className="mx-1.5 text-border">·</span>
+              負責美容師 {customer.primaryStaffName ?? "尚未指定"}
+            </p>
+            <p className="mt-0.5 hidden truncate text-sm text-secondary-text min-[768px]:block">
+              最近到店 {snapshot.lastVisitLabel ?? "—"}
+              <span className="mx-1.5 text-border">·</span>
+              下次預約{" "}
+              {next ? (
+                <span className="text-text">
+                  {next.dateLabel} {next.timeLabel}
+                </span>
+              ) : (
+                <>
+                  尚未安排
+                  <Link
+                    href={snapshot.createHref}
+                    className="ml-2 font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  >
+                    ＋ 安排預約
+                  </Link>
+                </>
+              )}
+            </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Link href={treatmentHref}>
-              <Button className="min-h-11">新增療程紀錄</Button>
-            </Link>
-            <Link href="/staff/appointments">
+          <div className="hidden shrink-0 flex-wrap items-center justify-end gap-2 min-[768px]:flex">
+            <Button className="min-h-11" onClick={() => router.push(snapshot.treatmentHref)}>
+              開始療程紀錄
+            </Button>
+            <Link href={snapshot.createHref}>
               <Button variant="secondary" className="min-h-11">
                 新增預約
               </Button>
             </Link>
-            <Link href={`/staff/customers/${customer.id}/edit`}>
+            <Link href={customerEditHref(customer.id)}>
               <Button variant="outline" className="min-h-11">
                 編輯資料
               </Button>
             </Link>
-            <div className="relative">
-              <Button
-                variant="ghost"
-                className="min-h-11 min-w-11 px-3"
-                aria-label="更多"
-                onClick={() => setShowMore((v) => !v)}
-              >
-                <MoreHorizontal className="h-5 w-5" />
-              </Button>
-              {showMore ? (
-                <div className="absolute right-0 z-20 mt-1 w-48 rounded-2xl border border-border bg-surface p-2 shadow-sm">
-                  <Link
-                    href={`/staff/customers/${customer.id}/consultation/new`}
-                    className="block min-h-11 rounded-xl px-3 py-2 text-sm text-text hover:bg-primary-light/50"
-                    onClick={() => setShowMore(false)}
-                  >
-                    新增諮詢更新
-                  </Link>
-                </div>
-              ) : null}
-            </div>
+            <HeaderMore
+              customerId={customer.id}
+              open={desktopMoreOpen}
+              wrapRef={desktopMoreRef}
+              onOpen={onDesktopMoreOpen}
+              onNotes={() => onSelectTab("notes")}
+            />
           </div>
+        </div>
+        <div className="mt-2 flex items-center gap-2 min-[768px]:hidden">
+          <CustomerTagChips tags={customer.tags} max={3} nowrap className="min-w-0 flex-1" />
+          <Button
+            data-customer-header-cta
+            className="min-h-11 shrink-0 px-3 text-sm"
+            onClick={() => router.push(snapshot.treatmentHref)}
+          >
+            開始療程
+          </Button>
+          <HeaderMore
+            customerId={customer.id}
+            open={mobileMoreOpen}
+            wrapRef={mobileMoreRef}
+            onOpen={onMobileMoreOpen}
+            onNotes={() => onSelectTab("notes")}
+            onFollowUp={() => onSelectTab("follow-ups")}
+            includeEdit
+            createHref={snapshot.createHref}
+          />
         </div>
       </Card>
 
-      <ImportantNotesAlert notes={customer.importantNotes ?? []} />
+      <details className="hidden min-[768px]:block min-[1200px]:hidden">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between rounded-2xl border border-border bg-surface px-4 text-sm font-medium text-text [&::-webkit-details-marker]:hidden">
+          客戶摘要
+          <span className="text-xs font-normal text-secondary-text">展開</span>
+        </summary>
+        <div className="mt-3">
+          <CustomerSummaryPanel
+            customer={customer}
+            snapshot={snapshot}
+            onStartTreatment={() => router.push(snapshot.treatmentHref)}
+            onAddFollowUp={() => onSelectTab("follow-ups")}
+            onOpenNotes={() => onSelectTab("notes")}
+          />
+        </div>
+      </details>
 
-      {/* Summary under header on <1200 */}
-      <div className="min-[1200px]:hidden">
-        <CustomerSummaryPanel
-          customer={customer}
-          onStartTreatment={() => router.push(treatmentHref)}
-          onAddNote={() => setTab("notes")}
-        />
-      </div>
-
-      <div className="grid gap-5 min-[1200px]:grid-cols-[minmax(0,1fr)_minmax(280px,0.38fr)]">
+      <div className="grid min-w-0 gap-4 min-[1200px]:grid-cols-[minmax(0,1fr)_320px] min-[1200px]:gap-5">
         <div className="min-w-0 space-y-4">
-          <div className="flex gap-1 overflow-x-auto border-b border-border pb-px">
-            {TABS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTab(item.id)}
-                className={cn(
-                  "min-h-11 shrink-0 border-b-2 px-4 text-sm font-medium transition-colors",
-                  tab === item.id
-                    ? "border-primary text-primary"
-                    : "border-transparent text-secondary-text hover:text-text",
-                )}
-              >
-                {item.label}
-              </button>
-            ))}
+          <Customer360Tabs
+            tab={tab}
+            walletSection={walletSection}
+            onSelect={onSelectTab}
+          />
+          <div
+            role="tabpanel"
+            id={`customer-tabpanel-${tab}`}
+            aria-labelledby={`customer-tab-${tab === "wallet" || tab === "transactions" ? "financial" : tab}`}
+          >
+            {tab === "overview" ? (
+              <OverviewTab customer={customer} snapshot={snapshot} onOpenTab={onSelectTab} />
+            ) : null}
+            {tab === "consultation" ? <ConsultationsTab customerId={customer.id} /> : null}
+            {tab === "treatments" ? (
+              <TreatmentsTab customerId={customer.id} treatmentHref={snapshot.treatmentHref} />
+            ) : null}
+            {tab === "follow-ups" ? (
+              <FollowUpsTab customerId={customer.id} treatmentHref={snapshot.treatmentHref} />
+            ) : null}
+            {tab === "photos" ? <PhotosTab customerId={customer.id} /> : null}
+            {tab === "appointments" ? (
+              <AppointmentsTab customerId={customer.id} createHref={snapshot.createHref} />
+            ) : null}
+            {tab === "wallet" ? (
+              <WalletTab
+                customerId={customer.id}
+                section={walletSection}
+                onOpenTransactions={() => onSelectTab("transactions")}
+              />
+            ) : null}
+            {tab === "transactions" ? <TransactionsTab customerId={customer.id} /> : null}
+            {tab === "notes" ? <NotesTab customerId={customer.id} /> : null}
           </div>
-
-          {tab === "overview" ? (
-            <OverviewTab customer={customer} onOpenTreatments={() => setTab("treatments")} />
-          ) : null}
-          {tab === "consultation" ? <ConsultationsTab customerId={customer.id} /> : null}
-          {tab === "treatments" ? <TreatmentsTab customerId={customer.id} /> : null}
-          {tab === "follow-ups" ? <FollowUpsTab customerId={customer.id} /> : null}
-          {tab === "photos" ? <PhotosTab customerId={customer.id} /> : null}
-          {tab === "appointments" ? <AppointmentsTab customerId={customer.id} /> : null}
-          {tab === "wallet" ? <WalletTab customerId={customer.id} /> : null}
-          {tab === "transactions" ? <TransactionsTab customerId={customer.id} /> : null}
-          {tab === "notes" ? <NotesTab customerId={customer.id} /> : null}
         </div>
 
         <aside className="hidden min-[1200px]:block">
           <div className="sticky top-6">
             <CustomerSummaryPanel
               customer={customer}
-              onStartTreatment={() => router.push(treatmentHref)}
-              onAddNote={() => setTab("notes")}
+              snapshot={snapshot}
+              onStartTreatment={() => router.push(snapshot.treatmentHref)}
+              onAddFollowUp={() => onSelectTab("follow-ups")}
+              onOpenNotes={() => onSelectTab("notes")}
             />
           </div>
         </aside>
       </div>
 
-      <div className="sticky bottom-20 z-10 pt-2 lg:hidden">
-        <Button fullWidth size="lg" onClick={() => router.push(treatmentHref)}>
-          開始療程
-        </Button>
-      </div>
+      <MobileStickyTreatment href={snapshot.treatmentHref} />
+    </div>
+  );
+}
+
+function MobileStickyTreatment({ href }: { href: string }) {
+  const router = useRouter();
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    const el = document.querySelector("[data-customer-header-cta]");
+    if (!el) return undefined;
+    const io = new IntersectionObserver(
+      ([entry]) => setShow(!entry.isIntersecting),
+      { threshold: 0 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  if (!show) return null;
+
+  return (
+    <div
+      className="pointer-events-none fixed inset-x-0 z-30 px-4 min-[768px]:hidden"
+      style={{ bottom: "calc(3.5rem + env(safe-area-inset-bottom) + 0.5rem)" }}
+    >
+      <Button
+        className="pointer-events-auto w-full shadow-[0_1px_2px_rgba(48,43,43,0.06)]"
+        onClick={() => router.push(href)}
+      >
+        開始療程紀錄
+      </Button>
+    </div>
+  );
+}
+
+function HeaderMore({
+  customerId,
+  open,
+  wrapRef,
+  onOpen,
+  onNotes,
+  onFollowUp,
+  includeEdit = false,
+  createHref,
+}: {
+  customerId: string;
+  open: boolean;
+  wrapRef: RefObject<HTMLDivElement | null>;
+  onOpen: (open: boolean) => void;
+  onNotes: () => void;
+  onFollowUp?: () => void;
+  includeEdit?: boolean;
+  createHref?: string;
+}) {
+  return (
+    <div className="relative" ref={wrapRef}>
+      <Button
+        variant="ghost"
+        className="min-h-11 min-w-11 px-3"
+        aria-label="更多操作"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => onOpen(!open)}
+      >
+        <MoreHorizontal className="h-5 w-5" />
+      </Button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 z-30 mt-1 w-48 rounded-2xl border border-border bg-surface p-1 shadow-[0_8px_24px_rgba(48,43,43,0.08)]"
+        >
+          {includeEdit && createHref ? (
+            <Link
+              href={createHref}
+              role="menuitem"
+              className="flex min-h-11 items-center rounded-xl px-3 text-sm text-text hover:bg-[#FBF4F3]"
+              onClick={() => onOpen(false)}
+            >
+              新增預約
+            </Link>
+          ) : null}
+          {onFollowUp ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-sm text-text hover:bg-[#FBF4F3]"
+              onClick={() => {
+                onOpen(false);
+                onFollowUp();
+              }}
+            >
+              新增追蹤
+            </button>
+          ) : null}
+          {includeEdit ? (
+            <Link
+              href={customerEditHref(customerId)}
+              role="menuitem"
+              className="flex min-h-11 items-center rounded-xl px-3 text-sm text-text hover:bg-[#FBF4F3]"
+              onClick={() => onOpen(false)}
+            >
+              編輯資料
+            </Link>
+          ) : null}
+          <Link
+            href={customerConsultationNewHref(customerId)}
+            role="menuitem"
+            className="flex min-h-11 items-center rounded-xl px-3 text-sm text-text hover:bg-[#FBF4F3]"
+            onClick={() => onOpen(false)}
+          >
+            新增諮詢更新
+          </Link>
+          <button
+            type="button"
+            role="menuitem"
+            className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-sm text-text hover:bg-[#FBF4F3]"
+            onClick={() => {
+              onOpen(false);
+              onNotes();
+            }}
+          >
+            內部備註
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
