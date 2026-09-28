@@ -25,6 +25,12 @@ export const STAFF_COL_MIN_PX = 168;
 export const STAFF_DAY_HEADER_STICKY_PX = 115;
 /** Desktop Quick View width — measured ~325px on the 1536 reference */
 export const QUICK_VIEW_WIDTH_PX = 325;
+/**
+ * CSS `min-[720px]` is the single inline-QV breakpoint.
+ * 1536 desktop and 1200+ shell desktop both sit above this; do not add a
+ * second JS viewport check that can disagree with the layout classes.
+ */
+export const CALENDAR_INLINE_QUICKVIEW_MIN_PX = 720;
 /** Calendar card / Quick View corner — reference is a soft 16px card, not 24px */
 export const WORKSPACE_RADIUS_CLASS = "rounded-2xl";
 /** Appointment event-block corner — reference is a tight calendar block */

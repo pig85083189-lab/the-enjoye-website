@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import {
   CALENDAR_SLOT_MINUTES,
   CALENDAR_SLOT_PX,
@@ -39,6 +39,7 @@ import {
   formatStaffDayHeaderMeta,
   resolveStaffDayScheduleStatus,
 } from "@/lib/calendar/schedule-status";
+import { isAppointmentKeyboardActivation } from "@/lib/calendar/selection";
 import { absoluteMinutesFromDate } from "@/lib/appointments/visible-range";
 import { useClientNow } from "@/lib/use-client-now";
 import { cn } from "@/lib/utils";
@@ -193,17 +194,40 @@ export function AppointmentBlock({
     .filter(Boolean)
     .join(" · ");
 
+  function selectFromPointer(
+    event: MouseEvent<HTMLButtonElement> | PointerEvent<HTMLButtonElement>,
+  ) {
+    if (event.button !== 0) return;
+    // Prevent button focus inside `.calendar-body-scroll`. Chrome otherwise
+    // scrollIntoViews the card between mousedown and mouseup, which cancels
+    // the click and never opens Quick View.
+    event.preventDefault();
+    event.stopPropagation();
+    onSelect(item);
+  }
+
+  function selectFromKeyboard(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!isAppointmentKeyboardActivation(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onSelect(item);
+  }
+
   return (
     <button
       type="button"
-      onClick={(e) => {
-        e.stopPropagation();
+      data-appointment-id={item.id}
+      onPointerDown={selectFromPointer}
+      onMouseDown={selectFromPointer}
+      onClick={(event) => {
+        event.stopPropagation();
         onSelect(item);
       }}
+      onKeyDown={selectFromKeyboard}
       aria-label={tooltip}
       title={tooltip}
       className={cn(
-        "absolute z-[1] overflow-hidden text-left",
+        "absolute z-10 cursor-pointer overflow-hidden text-left pointer-events-auto",
         APPOINTMENT_INSET_CLASS,
         APPOINTMENT_RADIUS_CLASS,
         fillClass,
@@ -438,21 +462,6 @@ function StaffColumn({
         );
       })}
 
-      {appointments.map((item) => {
-        const layout = layoutTimedBlock(new Date(item.startAt), new Date(item.endAt));
-        if (!layout.visible) return null;
-        return (
-          <AppointmentBlock
-            key={item.id}
-            item={item}
-            top={layout.topPx}
-            height={layout.heightPx}
-            hideStaffName={hideStaffName}
-            onSelect={onSelect}
-          />
-        );
-      })}
-
       {!noShift
         ? Array.from({ length: TOTAL_SLOTS }, (_, i) => {
             const minutes = DAY_MINUTES_START + i * CALENDAR_SLOT_MINUTES;
@@ -469,6 +478,21 @@ function StaffColumn({
             );
           })
         : null}
+
+      {appointments.map((item) => {
+        const layout = layoutTimedBlock(new Date(item.startAt), new Date(item.endAt));
+        if (!layout.visible) return null;
+        return (
+          <AppointmentBlock
+            key={item.id}
+            item={item}
+            top={layout.topPx}
+            height={layout.heightPx}
+            hideStaffName={hideStaffName}
+            onSelect={onSelect}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -545,7 +569,7 @@ export function StaffDayGrid({
     >
       <div
         ref={scrollRef}
-        className="calendar-body-scroll min-h-0 flex-1 overflow-auto"
+        className="calendar-body-scroll min-h-0 flex-1 overflow-auto overflow-anchor-none"
       >
         <div style={{ minWidth: minWidth ?? "100%" }}>
           <div
@@ -690,7 +714,7 @@ export function WeekGrid({
         WORKSPACE_RADIUS_CLASS,
       )}
     >
-      <div className="calendar-body-scroll min-h-0 flex-1 overflow-auto">
+      <div className="calendar-body-scroll min-h-0 flex-1 overflow-auto overflow-anchor-none">
         <div className="w-full" style={{ minWidth: weekMinWidth }}>
           <div
             className="sticky top-0 z-10 grid border-b border-border/70 bg-[#FFFCFA]/95 backdrop-blur-sm"
@@ -840,7 +864,7 @@ export function MobileStaffDayView({
           </p>
         </div>
       </div>
-      <div className="calendar-body-scroll max-h-[min(70vh,32rem)] overflow-auto">
+      <div className="calendar-body-scroll max-h-[min(70vh,32rem)] overflow-auto overflow-anchor-none">
         <div className="grid" style={{ gridTemplateColumns: `${TIME_COL_PX}px minmax(0,1fr)` }}>
           <TimeAxis />
           <StaffColumn

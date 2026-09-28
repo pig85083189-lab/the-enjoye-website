@@ -41,6 +41,11 @@ import {
   updateAppointment,
 } from "@/lib/appointments/store";
 import {
+  resolveSelectedAppointment,
+  shouldRenderQuickView,
+  shouldResetCalendarSelection,
+} from "@/lib/calendar/selection";
+import {
   buildStaffWorkloadRows,
   computeTotalWorkload,
   formatWorkloadHours,
@@ -161,7 +166,7 @@ export function CalendarPage() {
   });
   const [mobileDay, setMobileDay] = useState(() => new Date());
   const [mobileStaffId, setMobileStaffId] = useState<string>("");
-  const [selected, setSelected] = useState<ScheduleAppointment | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [prefill, setPrefill] = useState<CreatePrefill | null>(null);
@@ -225,13 +230,24 @@ export function CalendarPage() {
   function setViewPersisted(next: CalendarViewMode) {
     setView(next);
     writeCalendarViewPrefs(organization.id, { desktopView: next });
+    setSelectedId(null);
+  }
+
+  function goToDay(next: Date) {
+    setAnchor(next);
+    setMobileDay(next);
+    setSelectedId(null);
   }
 
   function openCreate(nextPrefill?: CreatePrefill) {
-    setSelected(null);
+    setSelectedId(null);
     setEditing(false);
     setPrefill(nextPrefill ?? null);
     setCreating(true);
+  }
+
+  function selectAppointment(item: ScheduleAppointment) {
+    setSelectedId(item.id);
   }
 
   useEffect(() => {
@@ -251,7 +267,7 @@ export function CalendarPage() {
     url.searchParams.delete("followUp");
     window.history.replaceState({}, "", url.pathname + url.search);
     queueMicrotask(() => {
-      setSelected(null);
+      setSelectedId(null);
       setEditing(false);
       setPrefill(nextPrefill);
       setCreating(true);
@@ -259,17 +275,34 @@ export function CalendarPage() {
   }, [organization.id]);
 
   function toggleStaffFilter(staffId: string) {
-    setStaffFilter((prev) =>
-      prev.includes(staffId)
-        ? prev.filter((id) => id !== staffId)
-        : [...prev, staffId],
-    );
+    const next = staffFilter.includes(staffId)
+      ? staffFilter.filter((id) => id !== staffId)
+      : [...staffFilter, staffId];
+    setStaffFilter(next);
+    if (!selectedId) return;
+    const item = appointments.find((row) => row.id === selectedId);
+    if (item && next.length > 0 && !next.includes(item.staffId)) {
+      setSelectedId(null);
+    }
   }
 
   const filteredAppointments =
     staffFilter.length === 0
       ? appointments
       : appointments.filter((a) => staffFilter.includes(a.staffId));
+
+  const resolved = resolveSelectedAppointment(filteredAppointments, selectedId);
+  const selected =
+    resolved &&
+    !shouldResetCalendarSelection({
+      selectedId,
+      appointments: filteredAppointments,
+      view,
+      anchor,
+      weekStart,
+    })
+      ? resolved
+      : null;
 
   const mobileStaff =
     staffRoster.find((s) => s.userId === mobileStaffId) ??
@@ -282,7 +315,11 @@ export function CalendarPage() {
     return () => window.clearTimeout(id);
   }, [blockedMsg]);
 
-  const showQuickView = Boolean(selected && !editing && !creating);
+  const showQuickView = shouldRenderQuickView({
+    selected,
+    editing,
+    creating,
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 min-[720px]:gap-5">
@@ -306,11 +343,7 @@ export function CalendarPage() {
           <Button
             variant="outline"
             className="h-8 min-h-8 shrink-0 rounded-full px-3.5 text-[13px]"
-            onClick={() => {
-              const today = new Date();
-              setAnchor(today);
-              setMobileDay(today);
-            }}
+            onClick={() => goToDay(new Date())}
           >
             今天
           </Button>
@@ -319,11 +352,9 @@ export function CalendarPage() {
               variant="ghost"
               className="h-8 min-h-8 min-w-8 shrink-0 rounded-full px-1.5"
               aria-label="上一段"
-              onClick={() => {
-                const next = addDays(anchor, view === "week" ? -7 : -1);
-                setAnchor(next);
-                setMobileDay(next);
-              }}
+              onClick={() =>
+                goToDay(addDays(anchor, view === "week" ? -7 : -1))
+              }
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -336,11 +367,9 @@ export function CalendarPage() {
               variant="ghost"
               className="h-8 min-h-8 min-w-8 shrink-0 rounded-full px-1.5"
               aria-label="下一段"
-              onClick={() => {
-                const next = addDays(anchor, view === "week" ? 7 : 1);
-                setAnchor(next);
-                setMobileDay(next);
-              }}
+              onClick={() =>
+                goToDay(addDays(anchor, view === "week" ? 7 : 1))
+              }
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -410,10 +439,7 @@ export function CalendarPage() {
               <button
                 key={formatYmd(day)}
                 type="button"
-                onClick={() => {
-                  setMobileDay(day);
-                  setAnchor(day);
-                }}
+                onClick={() => goToDay(day)}
                 className={cn(
                   "min-h-11 min-w-14 shrink-0 rounded-2xl px-3 text-sm",
                   active
@@ -448,7 +474,7 @@ export function CalendarPage() {
           locationId={locationId}
           staff={mobileStaff}
           appointments={filteredAppointments}
-          onSelect={setSelected}
+          onSelect={selectAppointment}
           onEmptySlot={(staffId, hm) =>
             openCreate({
               staffId,
@@ -475,6 +501,7 @@ export function CalendarPage() {
       {/* Desktop / tablet workspace — calendar + inline Quick View, tops aligned */}
       <div
         data-calendar-workspace
+        data-has-quickview={showQuickView ? "true" : "false"}
         className="hidden min-h-0 min-[720px]:flex min-[720px]:flex-1 min-[720px]:gap-4"
       >
         <div data-calendar-grid className="min-h-0 min-w-0 flex-1">
@@ -485,7 +512,7 @@ export function CalendarPage() {
               locationId={locationId}
               staff={visibleStaff}
               appointments={filteredAppointments}
-              onSelect={setSelected}
+              onSelect={selectAppointment}
               onEmptySlot={(staffId, hm) =>
                 openCreate({
                   staffId,
@@ -499,7 +526,7 @@ export function CalendarPage() {
             <WeekGrid
               days={weekDays}
               appointments={filteredAppointments}
-              onSelect={setSelected}
+              onSelect={selectAppointment}
               now={now}
             />
           )}
@@ -511,7 +538,7 @@ export function CalendarPage() {
               locations.find((l) => l.id === selected.locationId)?.name ??
               currentLocation?.name
             }
-            onClose={() => setSelected(null)}
+            onClose={() => setSelectedId(null)}
             onEdit={() => setEditing(true)}
             onRequestCancel={() => setCancelTarget(selected)}
             onTransition={(status) => {
@@ -521,7 +548,7 @@ export function CalendarPage() {
                 status,
                 membership?.userId,
               );
-              setSelected(next);
+              setSelectedId(next.id);
             }}
           />
         ) : null}
@@ -544,7 +571,7 @@ export function CalendarPage() {
             setCreating(false);
             setEditing(false);
             setPrefill(null);
-            setSelected(null);
+            setSelectedId(null);
           }}
         />
       ) : null}
@@ -557,7 +584,7 @@ export function CalendarPage() {
               locations.find((l) => l.id === selected.locationId)?.name ??
               currentLocation?.name
             }
-            onClose={() => setSelected(null)}
+            onClose={() => setSelectedId(null)}
             onEdit={() => setEditing(true)}
             onRequestCancel={() => setCancelTarget(selected)}
             onTransition={(status) => {
@@ -567,7 +594,7 @@ export function CalendarPage() {
                 status,
                 membership?.userId,
               );
-              setSelected(next);
+              setSelectedId(next.id);
             }}
           />
         </div>
@@ -585,7 +612,7 @@ export function CalendarPage() {
               membership?.userId,
             );
             setCancelTarget(null);
-            setSelected(null);
+            setSelectedId(null);
           }}
         />
       ) : null}

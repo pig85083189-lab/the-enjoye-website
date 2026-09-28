@@ -132,7 +132,7 @@ export function AppointmentQuickView({
         className={cn(
           "z-50 flex flex-col overflow-hidden border border-border bg-surface",
           "fixed inset-x-0 bottom-0 max-h-[88vh] rounded-t-3xl shadow-[0_-4px_24px_rgba(48,43,43,0.08)]",
-          "min-[720px]:relative min-[720px]:inset-auto min-[720px]:z-0 min-[720px]:h-full min-[720px]:w-[325px] min-[720px]:max-h-none min-[720px]:shrink-0 min-[720px]:shadow-none",
+          "min-[720px]:relative min-[720px]:inset-auto min-[720px]:z-0 min-[720px]:h-full min-[720px]:w-[325px] min-[720px]:min-w-[325px] min-[720px]:max-h-none min-[720px]:shrink-0 min-[720px]:shadow-none",
           WORKSPACE_RADIUS_CLASS,
         )}
       >

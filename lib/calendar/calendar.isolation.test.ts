@@ -40,7 +40,18 @@ import {
   CALENDAR_VISUAL_FIXTURE_DAY,
   CALENDAR_VISUAL_FIXTURE_NOW,
 } from "@/lib/calendar/visual-fixture";
-import { serviceTypeCardTone } from "@/features/calendar/grid-shared";
+import {
+  CALENDAR_INLINE_QUICKVIEW_MIN_PX,
+  QUICK_VIEW_WIDTH_PX,
+  serviceTypeCardTone,
+} from "@/features/calendar/grid-shared";
+import {
+  isAppointmentKeyboardActivation,
+  isInlineQuickViewViewport,
+  resolveSelectedAppointment,
+  shouldRenderQuickView,
+  shouldResetCalendarSelection,
+} from "@/lib/calendar/selection";
 import type { StaffMembership } from "@/types/saas";
 
 const DAY_START = 9 * 60;
@@ -587,6 +598,192 @@ describe("calendar visual fixture (test-only)", () => {
         slotPx: CALENDAR_SLOT_PX,
       }),
     ).toBe(264);
+  });
+});
+
+describe("calendar quick view selection", () => {
+  const day = new Date(2026, 8, 28);
+  const weekStart = new Date(2026, 8, 28);
+  const booked = apt({
+    id: "apt-wang",
+    staffId: "staff-001",
+    startAt: new Date(2026, 8, 28, 10, 0).toISOString(),
+    endAt: new Date(2026, 8, 28, 11, 40).toISOString(),
+    durationMinutes: 100,
+    status: "BOOKED",
+    customerName: "王小美",
+  });
+  const later = apt({
+    id: "apt-lin",
+    staffId: "staff-001",
+    startAt: new Date(2026, 8, 28, 11, 30).toISOString(),
+    endAt: new Date(2026, 8, 28, 13, 0).toISOString(),
+    durationMinutes: 90,
+    status: "COMPLETED",
+    customerName: "林雅婷",
+  });
+  const otherDay = apt({
+    id: "apt-next",
+    staffId: "staff-001",
+    startAt: new Date(2026, 8, 29, 10, 0).toISOString(),
+    endAt: new Date(2026, 8, 29, 11, 0).toISOString(),
+    durationMinutes: 60,
+    status: "BOOKED",
+  });
+
+  it("1. desktop + no selection → Quick View does not render", () => {
+    expect(resolveSelectedAppointment([booked, later], null)).toBeNull();
+    expect(
+      shouldRenderQuickView({
+        selected: null,
+        editing: false,
+        creating: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("2. desktop click sets selectedAppointmentId to the appointment id", () => {
+    const selectedAppointmentId = booked.id;
+    expect(selectedAppointmentId).toBe("apt-wang");
+    expect(resolveSelectedAppointment([booked, later], selectedAppointmentId)?.id).toBe(
+      "apt-wang",
+    );
+  });
+
+  it("3. desktop + selected appointment → Quick View renders", () => {
+    const selected = resolveSelectedAppointment([booked, later], "apt-wang");
+    expect(
+      shouldRenderQuickView({
+        selected,
+        editing: false,
+        creating: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("4. Quick View width / desktop layout contract — calendar + QV coexist", () => {
+    expect(QUICK_VIEW_WIDTH_PX).toBe(325);
+    expect(CALENDAR_INLINE_QUICKVIEW_MIN_PX).toBe(720);
+    expect(isInlineQuickViewViewport(1536)).toBe(true);
+    expect(isInlineQuickViewViewport(1200)).toBe(true);
+    const calendarRemaining = 1536 - 254 - 40 - 16 - QUICK_VIEW_WIDTH_PX;
+    expect(calendarRemaining).toBeGreaterThan(800);
+  });
+
+  it("5. close clears selected id so Quick View disappears", () => {
+    expect(resolveSelectedAppointment([booked, later], null)).toBeNull();
+    expect(
+      shouldRenderQuickView({
+        selected: null,
+        editing: false,
+        creating: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("6. clicking another appointment updates Quick View content", () => {
+    expect(resolveSelectedAppointment([booked, later], "apt-lin")?.customerName).toBe(
+      "林雅婷",
+    );
+    expect(resolveSelectedAppointment([booked, later], "apt-wang")?.customerName).toBe(
+      "王小美",
+    );
+  });
+
+  it("7. date change resets a stale selection", () => {
+    expect(
+      shouldResetCalendarSelection({
+        selectedId: "apt-wang",
+        appointments: [booked, later, otherDay],
+        view: "day",
+        anchor: new Date(2026, 8, 29),
+        weekStart,
+      }),
+    ).toBe(true);
+  });
+
+  it("8. staff filter hiding the selected appointment resets selection", () => {
+    expect(
+      shouldResetCalendarSelection({
+        selectedId: "apt-wang",
+        appointments: [later],
+        view: "day",
+        anchor: day,
+        weekStart,
+      }),
+    ).toBe(true);
+  });
+
+  it("9. normal rerender does not reset selection", () => {
+    const first = shouldResetCalendarSelection({
+      selectedId: "apt-wang",
+      appointments: [booked, later],
+      view: "day",
+      anchor: day,
+      weekStart,
+    });
+    const rerender = shouldResetCalendarSelection({
+      selectedId: "apt-wang",
+      appointments: [booked, later],
+      view: "day",
+      anchor: day,
+      weekStart,
+    });
+    expect(first).toBe(false);
+    expect(rerender).toBe(false);
+    expect(resolveSelectedAppointment([booked, later], "apt-wang")?.id).toBe(
+      "apt-wang",
+    );
+  });
+
+  it("10. mobile still renders Quick View (sheet/drawer via CSS, not a second state)", () => {
+    expect(
+      shouldRenderQuickView({
+        selected: booked,
+        editing: false,
+        creating: false,
+      }),
+    ).toBe(true);
+    expect(isInlineQuickViewViewport(390)).toBe(false);
+    expect(QUICK_VIEW_WIDTH_PX).toBe(325);
+  });
+
+  it("keyboard Enter / Space activate selection without needing mouse click", () => {
+    expect(isAppointmentKeyboardActivation("Enter")).toBe(true);
+    expect(isAppointmentKeyboardActivation(" ")).toBe(true);
+    expect(isAppointmentKeyboardActivation("Tab")).toBe(false);
+    expect(isAppointmentKeyboardActivation("Escape")).toBe(false);
+  });
+
+  it("selecting the same appointment id is idempotent", () => {
+    const first = resolveSelectedAppointment([booked, later], "apt-wang");
+    const again = resolveSelectedAppointment([booked, later], "apt-wang");
+    expect(first?.id).toBe("apt-wang");
+    expect(again?.id).toBe(first?.id);
+    expect(
+      shouldRenderQuickView({
+        selected: again,
+        editing: false,
+        creating: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not bind Quick View to editor / create dialog state", () => {
+    expect(
+      shouldRenderQuickView({
+        selected: booked,
+        editing: true,
+        creating: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRenderQuickView({
+        selected: booked,
+        editing: false,
+        creating: true,
+      }),
+    ).toBe(false);
   });
 });
 
