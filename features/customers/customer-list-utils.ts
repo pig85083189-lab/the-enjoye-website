@@ -37,6 +37,7 @@ export function filterCustomers(
   customers: Customer[],
   filter: CustomerListFilter,
   query: string,
+  now: Date = new Date(),
 ): Customer[] {
   return customers.filter((c) => {
     if (!matchesCustomerSearch(c, query)) return false;
@@ -47,7 +48,7 @@ export function filterCustomers(
       return c.listStatus === "needs_follow_up" || c.tags.some((t) => t.id === "needs_follow_up");
     }
     if (filter === "recent") {
-      const days = (Date.now() - parseVisitDate(c.lastVisit)) / (1000 * 60 * 60 * 24);
+      const days = (now.getTime() - parseVisitDate(c.lastVisit)) / (1000 * 60 * 60 * 24);
       return days >= 0 && days <= 14;
     }
     return true;
