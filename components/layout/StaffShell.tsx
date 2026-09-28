@@ -21,6 +21,8 @@ function StaffShellChrome({ children }: { children: ReactNode }) {
   const { organization, currentLocation, membership } = useOrganization();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isTreatmentWorkspace = pathname.startsWith("/staff/treatments/");
+  const isTreatmentsListWorkbench =
+    pathname === "/staff/treatments" || pathname === "/staff/treatments/";
   const isCalendarSurface =
     pathname.startsWith("/staff/calendar") || pathname.startsWith("/staff/appointments");
   const isTodayWorkbench = pathname.startsWith("/staff/today");
@@ -28,6 +30,7 @@ function StaffShellChrome({ children }: { children: ReactNode }) {
     pathname === "/staff/customers" || pathname === "/staff/customers/";
   const useWideContent =
     isTreatmentWorkspace ||
+    isTreatmentsListWorkbench ||
     isCalendarSurface ||
     isTodayWorkbench ||
     isCustomersWorkbench;
