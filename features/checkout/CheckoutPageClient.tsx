@@ -1,895 +1,789 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
-import Link from "next/link";
+import {
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type SyntheticEvent,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ChevronRight,
+  Crown,
+  Plus,
+  Search,
+  Sparkles,
+  X,
+} from "lucide-react";
+import { Avatar } from "@/components/ui/Avatar";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { STATUS_LABEL, formatHm } from "@/lib/appointments/domain";
+import { CheckoutPanel } from "@/features/checkout/CheckoutPanel";
+import { getServicesForOrganization } from "@/data/mock-services";
+import { formatHm } from "@/lib/appointments/domain";
 import {
-  addCheckoutItem,
-  completeCheckout,
+  getAppointmentStatusRaw,
+  subscribeAppointments,
+} from "@/lib/appointment-store";
+import { listAppointments } from "@/lib/appointments/store";
+import {
   createCheckoutFromAppointment,
   createEmptyCheckoutDraft,
-  getCheckoutDraft,
   getCommerceRevision,
   getOpenDraftForAppointment,
-  listCheckoutCandidates,
-  removeCheckoutItem,
-  setCheckoutDiscounts,
-  setCheckoutPayments,
-  setPackageRedemption,
+  listCheckoutDrafts,
   subscribeCommerce,
-  updateCheckoutItemQuantity,
 } from "@/lib/commerce/checkout-store";
+import { formatTwd } from "@/lib/commerce/money";
+import { listTransactions } from "@/lib/commerce/transaction-store";
 import {
-  ACTIVE_PAYMENT_METHODS,
-  PAYMENT_METHOD_LABEL,
-  type DiscountType,
-  type PaymentMethod,
-} from "@/lib/commerce/domain";
-import { formatTwd, parseMoneyInput } from "@/lib/commerce/money";
-import {
-  getCompletedTransactionForAppointment,
-  hasCompletedTransactionForAppointment,
-} from "@/lib/commerce/transaction-store";
-import { getServicesForOrganization } from "@/data/mock-services";
-import { getCustomerById } from "@/data/mock-customers";
-import { getScheduleAppointment } from "@/lib/appointments/store";
-import { listUsablePackagesForService } from "@/lib/packages/store";
-import { CHECKOUT_ITEM_TYPE_LABEL } from "@/lib/products/domain";
-import { searchProducts } from "@/lib/products/store";
-import { getProductStock } from "@/lib/inventory/store";
+  CHECKOUT_WORKSPACE_GAP_PX,
+  buildCheckoutWorkspaceItems,
+  checkoutRowId,
+  countCheckoutSummary,
+  filterCheckoutItems,
+  isCheckoutRowKeyboardActivation,
+  remapCheckoutSelection,
+  resolveSelectedCheckout,
+  shouldRenderCheckoutPanel,
+  shouldResetCheckoutSelection,
+  type CheckoutDateFilter,
+  type CheckoutListFilter,
+  type CheckoutWorkspaceItem,
+} from "@/lib/commerce/checkout-workspace-derived";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
-import { getCustomerStoredValueBalance } from "@/lib/stored-value/store";
+import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
-import { listLocations } from "@/lib/tenant/organization-store";
+import { PLATFORM_NAME } from "@/lib/tenant/constants";
 import { cn } from "@/lib/utils";
+import type { Customer } from "@/types";
+
+const FILTERS: Array<{ id: CheckoutListFilter; label: string }> = [
+  { id: "pending", label: "待結帳" },
+  { id: "paid", label: "已結帳" },
+  { id: "all", label: "全部" },
+];
+
+const DATE_FILTERS: Array<{ id: CheckoutDateFilter; label: string }> = [
+  { id: "today", label: "今天" },
+  { id: "7d", label: "最近 7 天" },
+  { id: "all", label: "全部" },
+];
+
+const STATUS_PILL: Record<CheckoutWorkspaceItem["status"]["kind"], string> = {
+  pending: "bg-[#F3E6E5] text-[#C56B70]",
+  paid: "bg-[#E7F0EA] text-[#5C7F66]",
+  in_service: "bg-[#F6EDE0] text-[#C08A3E]",
+  other: "bg-[#F1EEEC] text-[#7A7272]",
+};
+
+const SUMMARY_VALUE: Record<"default" | "primary" | "warning" | "success", string> = {
+  default: "text-text",
+  primary: "text-[#C56B70]",
+  warning: "text-[#C08A3E]",
+  success: "text-[#5C7F66]",
+};
+
+function ListSkeleton() {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="h-[80px] animate-pulse rounded-2xl bg-primary-light/40" />
+      ))}
+    </div>
+  );
+}
+
+function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
+  event.preventDefault();
+}
 
 export function CheckoutPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { organization, currentLocation, locations, membership } = useOrganization();
-  const revision = useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
-  void revision;
+  const isClient = useIsClient();
+  const appointmentRev = useSyncExternalStore(
+    subscribeAppointments,
+    getAppointmentStatusRaw,
+    () => "",
+  );
+  const commerceRev = useSyncExternalStore(
+    subscribeCommerce,
+    getCommerceRevision,
+    () => "",
+  );
 
-  const appointmentIdParam = searchParams.get("appointment") ?? undefined;
-  const draftIdParam = searchParams.get("draft") ?? undefined;
-  const treatmentIdParam = searchParams.get("treatment") ?? undefined;
   const locationId = currentLocation?.id ?? locations[0]?.id ?? "";
   const staffId = membership?.userId ?? "staff-001";
+  const appointmentIdParam = searchParams.get("appointment");
+  const draftIdParam = searchParams.get("draft");
+  const treatmentIdParam = searchParams.get("treatment");
 
-  const [error, setError] = useState("");
-  const [draftId, setDraftId] = useState<string | null>(draftIdParam ?? null);
-  const [boundOrgId, setBoundOrgId] = useState(organization.id);
-
-  // Tenant switch: drop local draft pointer so prior-org draft ids cannot flash
-  if (boundOrgId !== organization.id) {
-    setBoundOrgId(organization.id);
-    setDraftId(draftIdParam ?? null);
-    setError("");
-  }
-
-  // Keep draftId aligned with URL (React-allowed render-time adjust when props change)
-  const effectiveDraftId =
-    draftIdParam && draftId !== draftIdParam ? draftIdParam : draftId;
-  if (effectiveDraftId !== draftId) {
-    setDraftId(effectiveDraftId);
-  }
-
-  const resolved = (() => {
-    if (effectiveDraftId) {
-      const d = getCheckoutDraft(organization.id, effectiveDraftId);
-      if (d) return d;
-    }
-    if (appointmentIdParam) {
-      return getOpenDraftForAppointment(organization.id, appointmentIdParam) ?? null;
-    }
+  const [filter, setFilter] = useState<CheckoutListFilter>("pending");
+  const [dateFilter, setDateFilter] = useState<CheckoutDateFilter>("today");
+  const [query, setQuery] = useState("");
+  const [selectedCheckoutId, setSelectedCheckoutId] = useState<string | null>(() => {
+    if (appointmentIdParam) return checkoutRowId("appointment", appointmentIdParam);
+    if (draftIdParam) return checkoutRowId("draft", draftIdParam);
     return null;
-  })();
+  });
+  const [now] = useState(() => new Date());
+  const [error, setError] = useState("");
+  const [generalSaleOpen, setGeneralSaleOpen] = useState(false);
+  const [saleQuery, setSaleQuery] = useState("");
 
-  const candidates = listCheckoutCandidates(organization.id, locationId);
-  const pendingAppointment =
-    appointmentIdParam && !resolved
-      ? getScheduleAppointment(organization.id, appointmentIdParam)
-      : undefined;
-  const pendingAlreadyPaid =
-    appointmentIdParam != null &&
-    hasCompletedTransactionForAppointment(organization.id, appointmentIdParam);
+  const customers = useCrmJson(
+    () => localCustomerRepository.list({ organizationId: organization.id }),
+    [] as Customer[],
+  );
+  const catalog = useMemo(
+    () => getServicesForOrganization(organization.id),
+    [organization.id],
+  );
 
-  function startFromAppointment(appointmentId: string) {
-    setError("");
+  const appointments = useMemo(() => {
+    void appointmentRev;
+    if (!isClient) return [];
+    return listAppointments({
+      organizationId: organization.id,
+      locationId: currentLocation?.id,
+    });
+  }, [appointmentRev, currentLocation?.id, isClient, organization.id]);
+
+  const items = useMemo(() => {
+    void commerceRev;
+    if (!isClient) return [];
+    const openDrafts = [
+      ...listCheckoutDrafts(organization.id, { status: "OPEN" }),
+      ...listCheckoutDrafts(organization.id, { status: "READY" }),
+    ];
+    return buildCheckoutWorkspaceItems({
+      appointments,
+      transactions: listTransactions(organization.id, {
+        locationId: currentLocation?.id,
+        status: "COMPLETED",
+      }),
+      openDrafts,
+      customers,
+      catalog,
+      locationId: currentLocation?.id,
+    });
+  }, [
+    appointments,
+    catalog,
+    currentLocation?.id,
+    customers,
+    isClient,
+    organization.id,
+    commerceRev,
+  ]);
+
+  const visible = useMemo(
+    () => filterCheckoutItems(items, filter, query, dateFilter, now),
+    [dateFilter, filter, items, now, query],
+  );
+  const summary = useMemo(
+    () => countCheckoutSummary(items, appointments, now),
+    [appointments, items, now],
+  );
+
+  const remappedSelectedId = remapCheckoutSelection(items, selectedCheckoutId);
+  const selectedStillVisible = !shouldResetCheckoutSelection({
+    selectedId: remappedSelectedId,
+    visibleItems: visible,
+  });
+  const selectedItem = selectedStillVisible
+    ? resolveSelectedCheckout(items, remappedSelectedId)
+    : null;
+  const showPanel = shouldRenderCheckoutPanel(selectedItem);
+  const selectedCustomer = selectedItem
+    ? customers.find((row) => row.id === selectedItem.customerId) ?? null
+    : null;
+
+  function ensureAppointmentDraft(appointmentId: string) {
+    if (!appointmentId) return;
     try {
-      if (hasCompletedTransactionForAppointment(organization.id, appointmentId)) {
-        const tx = getCompletedTransactionForAppointment(organization.id, appointmentId);
-        if (tx) {
-          router.push(`/staff/transactions?id=${tx.id}`);
-          return;
-        }
-        setError("此預約已結帳");
-        return;
-      }
-      const draft = createCheckoutFromAppointment(organization.id, {
+      const existing = getOpenDraftForAppointment(organization.id, appointmentId);
+      if (existing) return;
+      createCheckoutFromAppointment(organization.id, {
         appointmentId,
         createdByStaffId: staffId,
-        treatmentId: treatmentIdParam,
+        treatmentId: treatmentIdParam ?? undefined,
       });
-      setDraftId(draft.id);
-      router.replace(`/staff/checkout?draft=${draft.id}&appointment=${appointmentId}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "無法建立結帳");
+      setError(err instanceof Error ? err.message : "無法建立結帳草稿");
     }
   }
 
-  if (!resolved) {
-    const customers = localCustomerRepository.list({ organizationId: organization.id });
-    const startRetail = (customerId: string) => {
-      setError("");
-      if (!locationId) {
-        setError("請先選擇可存取的分店");
-        return;
-      }
-      try {
-        const draft = createEmptyCheckoutDraft(organization.id, {
-          locationId,
-          customerId,
-          createdByStaffId: staffId,
-        });
-        setDraftId(draft.id);
-        router.replace(`/staff/checkout?draft=${draft.id}`);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "無法建立一般銷售");
-      }
-    };
-
-    return (
-      <div className="space-y-4">
-        <header>
-          <h1 className="text-2xl font-semibold text-text">結帳</h1>
-          <p className="mt-1 text-sm text-secondary-text">
-            預約結帳或一般銷售（商品／服務）
-          </p>
-        </header>
-        {error ? (
-          <p className="text-sm text-[#B07A4A]" role="alert">
-            {error}
-          </p>
-        ) : null}
-        {pendingAlreadyPaid && appointmentIdParam ? (
-          <Card padding="lg" className="space-y-2 text-sm">
-            <p className="text-secondary-text">此預約已結帳。</p>
-            <Button
-              className="min-h-11"
-              onClick={() => {
-                const tx = getCompletedTransactionForAppointment(
-                  organization.id,
-                  appointmentIdParam,
-                );
-                if (tx) router.push(`/staff/transactions?id=${tx.id}`);
-              }}
-            >
-              查看交易
-            </Button>
-          </Card>
-        ) : null}
-        {pendingAppointment && !pendingAlreadyPaid ? (
-          <Card padding="lg" className="space-y-3">
-            <p className="font-medium text-text">{pendingAppointment.customerName}</p>
-            <p className="text-sm text-secondary-text">
-              {pendingAppointment.serviceName} · {STATUS_LABEL[pendingAppointment.status]}
-            </p>
-            <Button
-              className="min-h-11"
-              onClick={() => startFromAppointment(pendingAppointment.id)}
-            >
-              開始結帳
-            </Button>
-          </Card>
-        ) : null}
-        {candidates.length === 0 && !pendingAppointment ? (
-          <Card padding="lg" className="text-sm text-secondary-text">
-            目前沒有可結帳的預約。可改用下方「一般銷售」。
-          </Card>
-        ) : (
-          <ul className="space-y-2">
-            {candidates
-              .filter((c) => c.appointmentId !== appointmentIdParam)
-              .map((c) => (
-              <li key={c.appointmentId}>
-                <button
-                  type="button"
-                  disabled={c.alreadyCheckedOut}
-                  onClick={() => startFromAppointment(c.appointmentId)}
-                  className={cn(
-                    "min-h-11 w-full rounded-2xl border border-border bg-surface px-4 py-3 text-left",
-                    c.alreadyCheckedOut && "opacity-60",
-                  )}
-                >
-                  <p className="font-medium text-text">{c.customerName}</p>
-                  <p className="text-sm text-secondary-text">
-                    {formatHm(new Date(c.startAt))} · {c.serviceName} · {c.staffName}
-                  </p>
-                  <p className="mt-1 text-xs text-secondary-text">
-                    {STATUS_LABEL[c.status as keyof typeof STATUS_LABEL] ?? c.status}
-                    {c.alreadyCheckedOut ? " · 已結帳" : ""}
-                  </p>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <Card padding="lg" className="space-y-3">
-          <h2 className="text-lg font-semibold text-text">一般銷售</h2>
-          <p className="text-sm text-secondary-text">
-            無預約也可結帳商品／服務。請選擇客戶（不會自動選人）。目前分店：
-            {currentLocation?.name ?? "未選擇"}
-          </p>
-          {customers.length === 0 ? (
-            <p className="text-sm text-secondary-text">尚無客戶，請先建立客戶資料。</p>
-          ) : (
-            <label className="block text-sm text-secondary-text">
-              選擇客戶
-              <select
-                className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
-                defaultValue=""
-                aria-label="一般銷售客戶"
-                onChange={(e) => {
-                  const id = e.target.value;
-                  if (!id) return;
-                  startRetail(id);
-                  e.target.value = "";
-                }}
-              >
-                <option value="">選擇客戶後開始…</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                    {c.phone ? ` · ${c.phone}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </Card>
-      </div>
-    );
+  function selectCheckout(id: string) {
+    setSelectedCheckoutId(id);
+    const item = items.find((row) => row.id === id);
+    if (item?.kind === "appointment" && !item.paid && !item.draftId) {
+      ensureAppointmentDraft(item.appointmentId);
+    }
   }
 
-  return (
-    <CheckoutWorkspace
-      organizationId={organization.id}
-      draftId={resolved.id}
-      staffId={staffId}
-      onCompleted={(txId) => router.push(`/staff/transactions?id=${txId}`)}
-    />
-  );
-}
-
-function CheckoutWorkspace({
-  organizationId,
-  draftId,
-  staffId,
-  onCompleted,
-}: {
-  organizationId: string;
-  draftId: string;
-  staffId: string;
-  onCompleted: (txId: string) => void;
-}) {
-  const revision = useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
-  void revision;
-  const draft = getCheckoutDraft(organizationId, draftId);
-  const customer = draft ? getCustomerById(draft.customerId, organizationId) : null;
-  const appointment = draft?.appointmentId
-    ? getScheduleAppointment(organizationId, draft.appointmentId)
-    : null;
-  const services = getServicesForOrganization(organizationId);
-
-  const [error, setError] = useState("");
-  const [customName, setCustomName] = useState("");
-  const [customPrice, setCustomPrice] = useState("500");
-  const [productQuery, setProductQuery] = useState("");
-  const [discountType, setDiscountType] = useState<DiscountType>("ORDER_FIXED");
-  const [discountValue, setDiscountValue] = useState("");
-  const [payMethod, setPayMethod] = useState<PaymentMethod>("CASH");
-  const [payAmount, setPayAmount] = useState("");
-  const [paymentsLocal, setPaymentsLocal] = useState(draft?.payments ?? []);
-
-  if (!draft) {
-    return (
-      <Card padding="lg" className="text-sm text-secondary-text">
-        結帳草稿不存在或已失效。
-      </Card>
-    );
+  function closePanel() {
+    setSelectedCheckoutId(null);
   }
 
-  if (draft.status === "COMPLETED") {
-    return (
-      <Card padding="lg" className="space-y-3 text-sm">
-        <p className="text-text">此結帳已完成，不可再編輯。</p>
-        <Link href="/staff/transactions" className="text-primary">
-          查看交易紀錄
-        </Link>
-      </Card>
-    );
-  }
-
-  const paid = paymentsLocal.reduce((s, p) => s + p.amount, 0);
-  const remaining = draft.total - paid;
-  const liveDraft = getCheckoutDraft(organizationId, draftId) ?? draft;
-  const primaryService = liveDraft.items.find((i) => i.type === "SERVICE");
-  const usablePackages = primaryService?.referenceId
-    ? listUsablePackagesForService(
-        organizationId,
-        liveDraft.customerId,
-        primaryService.referenceId,
-      )
-    : [];
-  const svBalance = getCustomerStoredValueBalance(organizationId, liveDraft.customerId);
-  const productHits = searchProducts(organizationId, productQuery, { activeOnly: true }).slice(
-    0,
-    8,
-  );
-  const saleLocationName =
-    listLocations(organizationId).find((l) => l.id === liveDraft.locationId)?.name ??
-    liveDraft.locationId;
-
-  function syncPayments(
-    next: Array<{ method: PaymentMethod; amount: number; reference?: string }>,
+  function applyFilters(
+    nextFilter: CheckoutListFilter,
+    nextDate: CheckoutDateFilter,
+    nextQuery: string,
   ) {
-    try {
-      const updated = setCheckoutPayments(organizationId, draftId, next);
-      setPaymentsLocal(updated.payments);
-      setError("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "付款更新失敗");
+    setFilter(nextFilter);
+    setDateFilter(nextDate);
+    setQuery(nextQuery);
+    const nextVisible = filterCheckoutItems(
+      items,
+      nextFilter,
+      nextQuery,
+      nextDate,
+      now,
+    );
+    if (
+      shouldResetCheckoutSelection({
+        selectedId: remappedSelectedId,
+        visibleItems: nextVisible,
+      })
+    ) {
+      setSelectedCheckoutId(null);
     }
   }
 
+  function handleRowKeyDown(event: KeyboardEvent<HTMLElement>, id: string) {
+    if (!isCheckoutRowKeyboardActivation(event.key)) return;
+    event.preventDefault();
+    selectCheckout(id);
+  }
+
+  function startGeneralSale(customerId: string) {
+    setError("");
+    if (!locationId) {
+      setError("請先選擇可存取的分店");
+      return;
+    }
+    try {
+      const draft = createEmptyCheckoutDraft(organization.id, {
+        locationId,
+        customerId,
+        createdByStaffId: staffId,
+      });
+      setGeneralSaleOpen(false);
+      setSaleQuery("");
+      setFilter("pending");
+      setSelectedCheckoutId(checkoutRowId("draft", draft.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "無法建立一般銷售");
+    }
+  }
+
+  const saleCustomers = customers.filter((row) => {
+    const q = saleQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      row.name.toLowerCase().includes(q) ||
+      row.phone.toLowerCase().includes(q)
+    );
+  });
+
   return (
-    <div className="space-y-4">
-      <header>
-        <h1 className="text-2xl font-semibold text-text">結帳</h1>
-        <p className="mt-1 text-sm text-secondary-text">
-          {customer?.name ?? "客戶"}
-          {appointment ? ` · ${appointment.serviceName}` : null}
-          <span className="ml-2">儲值可用 {formatTwd(svBalance)}</span>
-        </p>
+    <div
+      data-checkout-workspace
+      data-has-panel={showPanel ? "true" : "false"}
+      className="min-w-0"
+    >
+      <header className="mb-4 flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-1">
+          <p className="text-[11px] tracking-[0.18em] text-secondary-text">
+            {PLATFORM_NAME}
+          </p>
+          <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">
+            結帳
+          </h1>
+          <p className="text-sm text-secondary-text">
+            處理今日待結帳的預約、一般銷售與收款
+          </p>
+        </div>
+        <Button
+          className="h-9 min-h-9 shrink-0 rounded-full px-4 text-[13px]"
+          onClick={() => {
+            closePanel();
+            setGeneralSaleOpen(true);
+          }}
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden />
+          一般銷售
+        </Button>
       </header>
 
-      <div className="grid gap-4 min-[960px]:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.9fr)]">
-        <div className="space-y-4">
-          <Card padding="lg" className="space-y-3">
-            <h2 className="text-sm font-medium text-secondary-text">項目</h2>
-            <ul className="space-y-2">
-              {liveDraft.items.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 py-2 last:border-0"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium text-text">{item.nameSnapshot}</p>
-                    <p className="text-sm text-secondary-text">
-                      {CHECKOUT_ITEM_TYPE_LABEL[item.type] ?? item.type}
-                      {item.type === "PACKAGE_PURCHASE" && item.sessionCountSnapshot
-                        ? ` · ${item.sessionCountSnapshot} 堂`
-                        : null}
-                      {" · "}
-                      {item.quantity} × {formatTwd(item.unitPrice)}
-                      {item.discountAmount > 0
-                        ? ` · 折抵 ${formatTwd(item.discountAmount)}`
-                        : null}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {item.type === "PRODUCT" ? (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="outline"
-                          className="min-h-11 min-w-11 px-2"
-                          aria-label="減少數量"
-                          onClick={() => {
-                            try {
-                              if (item.quantity <= 1) {
-                                removeCheckoutItem(organizationId, draftId, item.id);
-                              } else {
-                                updateCheckoutItemQuantity(
-                                  organizationId,
-                                  draftId,
-                                  item.id,
-                                  item.quantity - 1,
-                                );
-                              }
-                              setError("");
-                            } catch (err) {
-                              setError(err instanceof Error ? err.message : "無法調整數量");
-                            }
-                          }}
-                        >
-                          −
-                        </Button>
-                        <span className="min-w-8 text-center tabular-nums">{item.quantity}</span>
-                        <Button
-                          variant="outline"
-                          className="min-h-11 min-w-11 px-2"
-                          aria-label="增加數量"
-                          onClick={() => {
-                            try {
-                              updateCheckoutItemQuantity(
-                                organizationId,
-                                draftId,
-                                item.id,
-                                item.quantity + 1,
-                              );
-                              setError("");
-                            } catch (err) {
-                              setError(err instanceof Error ? err.message : "無法調整數量");
-                            }
-                          }}
-                        >
-                          +
-                        </Button>
-                      </div>
-                    ) : null}
-                    <span className="tabular-nums text-text">{formatTwd(item.lineTotal)}</span>
-                    <Button
-                      variant="ghost"
-                      className="min-h-11"
-                      onClick={() => {
-                        try {
-                          removeCheckoutItem(organizationId, draftId, item.id);
-                          setError("");
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : "無法移除");
-                        }
-                      }}
-                    >
-                      移除
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+      {error ? (
+        <p className="mb-3 text-sm text-[#B07A4A]" role="alert">
+          {error}
+        </p>
+      ) : null}
 
-            {usablePackages.length > 0 && primaryService?.referenceId ? (
-              <div className="rounded-2xl bg-primary-light/40 px-3 py-3">
-                <p className="text-xs text-secondary-text">可用套票（完成結帳才扣堂）</p>
-                <ul className="mt-2 space-y-2">
-                  {usablePackages.map((pkg) => {
-                    const selected =
-                      liveDraft.packageRedemption?.customerPackageId === pkg.id;
-                    return (
-                      <li
-                        key={pkg.id}
-                        className="flex flex-wrap items-center justify-between gap-2"
-                      >
-                        <span className="text-sm text-text">
-                          {pkg.nameSnapshot} · 剩餘 {pkg.usableBalance} 堂
-                          {pkg.expiresAt
-                            ? ` · 至 ${new Date(pkg.expiresAt).toLocaleDateString("zh-TW")}`
-                            : ""}
-                        </span>
-                        <Button
-                          className="min-h-11"
-                          variant={selected ? "primary" : "secondary"}
-                          onClick={() => {
-                            try {
-                              if (selected) {
-                                setPackageRedemption(organizationId, draftId, null);
-                              } else {
-                                setPackageRedemption(organizationId, draftId, {
-                                  customerPackageId: pkg.id,
-                                  serviceId: primaryService.referenceId!,
-                                  sessions: 1,
-                                });
-                              }
-                              setPaymentsLocal(
-                                getCheckoutDraft(organizationId, draftId)?.payments ?? [],
-                              );
-                              setError("");
-                            } catch (err) {
-                              setError(err instanceof Error ? err.message : "無法套用套票");
-                            }
-                          }}
-                        >
-                          {selected ? "取消核銷" : "使用 1 堂"}
-                        </Button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ) : null}
+      <section className="mb-4 grid grid-cols-2 gap-2 min-[1200px]:grid-cols-4 min-[1200px]:gap-3">
+        <CheckoutSummaryCard
+          label="待結帳"
+          value={isClient ? summary.pending : "—"}
+          accent="primary"
+        />
+        <CheckoutSummaryCard
+          label="服務完成"
+          value={isClient ? summary.completedService : "—"}
+        />
+        <CheckoutSummaryCard
+          label="服務中"
+          value={isClient ? summary.inService : "—"}
+          accent="warning"
+        />
+        <CheckoutSummaryCard
+          label="今日實收"
+          value={isClient ? formatTwd(summary.todayRevenueMinor) : "—"}
+          accent="success"
+        />
+      </section>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="text-sm text-secondary-text">
-                新增服務
-                <select
-                  className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
-                  defaultValue=""
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    if (!id) return;
-                    try {
-                      addCheckoutItem(organizationId, draftId, {
-                        type: "SERVICE",
-                        referenceId: id,
-                        name: "",
-                        unitPrice: 0,
-                      });
-                      e.target.value = "";
-                      setError("");
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : "無法新增");
-                    }
-                  }}
-                >
-                  <option value="">選擇服務…</option>
-                  {services.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="space-y-2">
-                <label className="block text-sm text-secondary-text">
-                  新增商品（名稱／SKU／Barcode）
-                  <input
-                    className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
-                    value={productQuery}
-                    onChange={(e) => setProductQuery(e.target.value)}
-                    placeholder="搜尋商品…"
-                    aria-label="搜尋商品"
-                  />
-                </label>
-                {productQuery.trim() ? (
-                  <ul
-                    className="max-h-48 space-y-1 overflow-y-auto rounded-2xl border border-border bg-surface p-2"
-                    role="listbox"
-                    aria-label="商品搜尋結果"
-                  >
-                    {productHits.length === 0 ? (
-                      <li className="px-2 py-2 text-sm text-secondary-text">
-                        找不到啟用中商品
-                      </li>
-                    ) : (
-                      productHits.map((p) => {
-                        const stock = getProductStock(
-                          organizationId,
-                          liveDraft.locationId,
-                          p.id,
-                        );
-                        const outOfStock = stock <= 0;
-                        return (
-                        <li key={p.id}>
-                          <button
-                            type="button"
-                            disabled={outOfStock}
-                            className={cn(
-                              "flex min-h-11 w-full items-center justify-between gap-2 rounded-xl px-2 py-2 text-left",
-                              outOfStock
-                                ? "cursor-not-allowed opacity-50"
-                                : "hover:bg-primary-light/50",
-                            )}
-                            onClick={() => {
-                              if (outOfStock) return;
-                              try {
-                                addCheckoutItem(organizationId, draftId, {
-                                  type: "PRODUCT",
-                                  referenceId: p.id,
-                                  name: "",
-                                  unitPrice: 0,
-                                  quantity: 1,
-                                });
-                                setProductQuery("");
-                                setError("");
-                              } catch (err) {
-                                setError(
-                                  err instanceof Error ? err.message : "無法新增商品",
-                                );
-                              }
-                            }}
-                          >
-                            <span className="min-w-0">
-                              <span className="block font-medium text-text">{p.name}</span>
-                              <span className="block text-xs text-secondary-text">
-                                {p.category ?? "未分類"}
-                                {p.sku ? ` · ${p.sku}` : ""}
-                                {" · "}
-                                {saleLocationName}庫存{" "}
-                                {outOfStock ? "缺貨" : stock}
-                              </span>
-                            </span>
-                            <span className="shrink-0 tabular-nums text-sm">
-                              {formatTwd(p.priceMinor)}
-                            </span>
-                          </button>
-                        </li>
-                        );
-                      })
+      <div
+        data-checkout-workspace-split
+        data-checkout-gap={showPanel ? CHECKOUT_WORKSPACE_GAP_PX : 0}
+        className={cn("flex items-start", showPanel && "min-[1200px]:gap-4")}
+      >
+        <div className="min-w-0 flex-1">
+          <div
+            data-checkout-toolbar
+            className="mb-3 rounded-2xl border border-border bg-surface px-3 py-2.5"
+          >
+            <div className="flex flex-col gap-2 min-[720px]:flex-row min-[720px]:items-center min-[720px]:justify-between">
+              <div className="flex min-w-0 flex-wrap gap-1.5">
+                {FILTERS.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    data-checkout-filter={entry.id}
+                    onClick={() => applyFilters(entry.id, dateFilter, query)}
+                    className={cn(
+                      "h-8 min-h-8 shrink-0 rounded-full px-3 text-[12px] font-medium transition-colors",
+                      filter === entry.id
+                        ? "bg-primary text-white"
+                        : "bg-[#F6F1EE] text-text hover:bg-primary-light",
                     )}
-                  </ul>
-                ) : null}
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <label className="block text-sm text-secondary-text">
-                  自訂項目
-                  <input
-                    className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
-                    value={customName}
-                    onChange={(e) => setCustomName(e.target.value)}
-                    placeholder="名稱"
-                  />
-                </label>
-                <div className="flex gap-2">
-                  <label className="flex-1 text-sm text-secondary-text">
-                    金額
-                    <input
-                      className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
-                      value={customPrice}
-                      onChange={(e) => setCustomPrice(e.target.value)}
-                      inputMode="numeric"
-                      aria-label="自訂金額"
-                    />
-                  </label>
-                  <Button
-                    className="mt-6 min-h-11"
-                    variant="secondary"
-                    onClick={() => {
-                      const price = parseMoneyInput(customPrice);
-                      if (price == null || price < 0) {
-                        setError("自訂金額須為非負整數");
-                        return;
-                      }
-                      try {
-                        addCheckoutItem(organizationId, draftId, {
-                          type: "CUSTOM",
-                          name: customName || "自訂項目",
-                          unitPrice: price,
-                          quantity: 1,
-                        });
-                        setCustomName("");
-                        setError("");
-                      } catch (err) {
-                        setError(err instanceof Error ? err.message : "無法新增");
-                      }
-                    }}
                   >
-                    新增
-                  </Button>
+                    {entry.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col gap-2 min-[720px]:max-w-md min-[720px]:flex-row min-[720px]:items-center">
+                <div className="relative min-w-0 flex-1">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-secondary-text"
+                    aria-hidden
+                  />
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(event) =>
+                      applyFilters(filter, dateFilter, event.target.value)
+                    }
+                    placeholder="搜尋客戶 / 服務 / 美容師"
+                    className="h-10 min-h-10 w-full rounded-xl border border-border bg-surface pl-9 pr-3 text-[14px] text-text outline-none ring-primary/30 placeholder:text-secondary-text focus:ring-2"
+                    aria-label="搜尋客戶、服務或美容師"
+                  />
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  {DATE_FILTERS.map((entry) => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      data-checkout-date={entry.id}
+                      onClick={() => applyFilters(filter, entry.id, query)}
+                      className={cn(
+                        "h-8 min-h-8 rounded-full px-2.5 text-[12px] font-medium transition-colors",
+                        dateFilter === entry.id
+                          ? "bg-primary text-white"
+                          : "bg-[#F6F1EE] text-text hover:bg-primary-light",
+                      )}
+                    >
+                      {entry.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
-          </Card>
+          </div>
 
-          <Card padding="lg" className="space-y-3">
-            <h2 className="text-sm font-medium text-secondary-text">折扣</h2>
-            <div className="flex flex-wrap gap-2">
-              <select
-                className="min-h-11 rounded-2xl border border-border px-3 text-sm"
-                value={discountType}
-                onChange={(e) => setDiscountType(e.target.value as DiscountType)}
-                aria-label="折扣類型"
-              >
-                <option value="ORDER_FIXED">固定金額</option>
-                <option value="ORDER_PERCENTAGE">百分比（basis points）</option>
-              </select>
-              <input
-                className="min-h-11 w-36 rounded-2xl border border-border px-3"
-                value={discountValue}
-                onChange={(e) => setDiscountValue(e.target.value)}
-                placeholder={discountType === "ORDER_FIXED" ? "例如 300" : "例如 1000=10%"}
-                inputMode="numeric"
-                aria-label="折扣數值"
-              />
-              <Button
-                className="min-h-11"
-                variant="secondary"
-                onClick={() => {
-                  const value = parseMoneyInput(discountValue);
-                  if (value == null) {
-                    setError("折扣數值無效");
-                    return;
-                  }
-                  try {
-                    setCheckoutDiscounts(organizationId, draftId, [
-                      {
-                        type: discountType,
-                        value,
-                        label:
-                          discountType === "ORDER_FIXED"
-                            ? `折 ${formatTwd(value)}`
-                            : `${(value / 100).toFixed(0)}% off`,
-                        createdByStaffId: staffId,
-                      },
-                    ]);
-                    setError("");
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : "折扣無效");
-                  }
-                }}
-              >
-                套用折扣
-              </Button>
-              {liveDraft.discounts.length > 0 ? (
-                <Button
-                  className="min-h-11"
-                  variant="ghost"
-                  onClick={() => {
-                    setCheckoutDiscounts(organizationId, draftId, []);
-                  }}
-                >
-                  清除折扣
-                </Button>
-              ) : null}
-            </div>
-            {liveDraft.discounts.map((d) => (
-              <p key={d.id} className="text-sm text-secondary-text">
-                {d.label ?? d.type} ·{" "}
-                {d.type === "ORDER_FIXED" ? formatTwd(d.value) : `${d.value} bps`}
+          {!isClient ? (
+            <ListSkeleton />
+          ) : visible.length === 0 ? (
+            <Card padding="lg" className="text-center">
+              <Sparkles className="mx-auto h-10 w-10 text-primary/50" aria-hidden />
+              <p className="mt-3 text-[15px] font-medium text-text">
+                {query
+                  ? "找不到符合條件的結帳項目"
+                  : filter === "paid"
+                    ? "目前沒有已結帳紀錄"
+                    : "目前沒有待結帳項目"}
               </p>
-            ))}
-          </Card>
+              <p className="mt-1 text-sm text-secondary-text">
+                {query
+                  ? "試試調整搜尋、狀態或日期篩選"
+                  : filter === "paid"
+                    ? "完成收款後，今日交易會出現在這裡"
+                    : "可從右上角開始一般銷售，或查看已結帳紀錄"}
+              </p>
+            </Card>
+          ) : (
+            <>
+              <div
+                data-checkout-table
+                className="hidden overflow-hidden rounded-2xl border border-border bg-surface min-[1200px]:block"
+              >
+                <div className="grid grid-cols-[80px_minmax(180px,1.3fr)_minmax(140px,1fr)_130px_110px_110px_32px] bg-[#FAF7F5] px-4 py-2.5 text-[12px] text-[#7A7272]">
+                  <span>時間</span>
+                  <span>客戶</span>
+                  <span>服務項目</span>
+                  <span>美容師</span>
+                  <span>金額</span>
+                  <span>狀態</span>
+                  <span className="sr-only">開啟</span>
+                </div>
+                {visible.map((item) => (
+                  <CheckoutDesktopRow
+                    key={item.id}
+                    item={item}
+                    selected={remappedSelectedId === item.id}
+                    onSelect={selectCheckout}
+                    onPointerDown={selectFromPointer}
+                    onKeyDown={handleRowKeyDown}
+                  />
+                ))}
+              </div>
+
+              <div className="space-y-2.5 min-[1200px]:hidden">
+                {visible.map((item) => (
+                  <CheckoutMobileCard
+                    key={item.id}
+                    item={item}
+                    selected={remappedSelectedId === item.id}
+                    onSelect={selectCheckout}
+                    onPointerDown={selectFromPointer}
+                    onKeyDown={handleRowKeyDown}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
-        <div className="space-y-4 min-[960px]:sticky min-[960px]:top-6 min-[960px]:self-start">
-          <Card padding="lg" className="space-y-3">
-            <h2 className="text-sm font-medium text-secondary-text">摘要</h2>
-            {liveDraft.packageRedemption ? (
-              <p className="text-xs text-secondary-text">已選套票核銷 1 堂（完成後入帳）</p>
-            ) : null}
-            <dl className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-secondary-text">小計</dt>
-                <dd className="tabular-nums">{formatTwd(liveDraft.subtotal)}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-secondary-text">折扣</dt>
-                <dd className="tabular-nums">−{formatTwd(liveDraft.discountTotal)}</dd>
-              </div>
-              <div className="flex justify-between text-base font-semibold text-text">
-                <dt>應付</dt>
-                <dd className="tabular-nums">{formatTwd(liveDraft.total)}</dd>
-              </div>
-            </dl>
-          </Card>
+        {showPanel && selectedItem ? (
+          <div className="hidden min-[1200px]:block">
+            <CheckoutPanel
+              key={selectedItem.id}
+              item={selectedItem}
+              customer={selectedCustomer}
+              organizationId={organization.id}
+              staffId={staffId}
+              onClose={closePanel}
+              onCompleted={(txId) => router.push(`/staff/transactions?id=${txId}`)}
+            />
+          </div>
+        ) : null}
+      </div>
 
-          <Card padding="lg" className="space-y-3">
-            <h2 className="text-sm font-medium text-secondary-text">付款方式</h2>
-            <p className="text-xs text-secondary-text">
-              儲值金可用 {formatTwd(svBalance)}
-              {liveDraft.items.some((i) => i.type === "STORED_VALUE_TOP_UP")
-                ? " · 儲值單不可用儲值金付款"
-                : ""}
-            </p>
-            <ul className="space-y-2">
-              {paymentsLocal.map((p) => (
-                <li key={p.id} className="flex justify-between text-sm">
-                  <span>{PAYMENT_METHOD_LABEL[p.method]}</span>
-                  <span className="tabular-nums">{formatTwd(p.amount)}</span>
-                </li>
-              ))}
-            </ul>
-            {liveDraft.total === 0 ? (
-              <p className="text-sm text-secondary-text">應付為 0，無需額外付款列。</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                <select
-                  className="min-h-11 rounded-2xl border border-border px-3 text-sm"
-                  value={payMethod}
-                  onChange={(e) => setPayMethod(e.target.value as PaymentMethod)}
-                  aria-label="付款方式"
-                >
-                  {ACTIVE_PAYMENT_METHODS.map((m) => (
-                    <option key={m} value={m}>
-                      {PAYMENT_METHOD_LABEL[m]}
-                      {m === "STORED_VALUE" ? `（${formatTwd(svBalance)}）` : ""}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="min-h-11 w-28 rounded-2xl border border-border px-3"
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
-                  placeholder={remaining > 0 ? String(remaining) : "金額"}
-                  inputMode="numeric"
-                  aria-label="付款金額"
-                />
-                <Button
-                  className="min-h-11"
-                  variant="secondary"
-                  onClick={() => {
-                    const amount =
-                      parseMoneyInput(payAmount) ?? (remaining > 0 ? remaining : null);
-                    if (amount == null || amount <= 0) {
-                      setError("付款金額須為正整數");
-                      return;
-                    }
-                    if (payMethod === "STORED_VALUE" && amount > svBalance) {
-                      setError(`儲值金不足（可用 ${formatTwd(svBalance)}）`);
-                      return;
-                    }
-                    syncPayments([
-                      ...paymentsLocal.map((p) => ({
-                        method: p.method,
-                        amount: p.amount,
-                        reference: p.reference,
-                      })),
-                      { method: payMethod, amount },
-                    ]);
-                    setPayAmount("");
-                  }}
-                >
-                  加入付款
-                </Button>
-                {paymentsLocal.length > 0 ? (
-                  <Button
-                    className="min-h-11"
-                    variant="ghost"
-                    onClick={() => syncPayments([])}
-                  >
-                    清除付款
-                  </Button>
-                ) : null}
+      {showPanel && selectedItem ? (
+        <div className="min-[1200px]:hidden">
+          <CheckoutPanel
+            key={selectedItem.id}
+            item={selectedItem}
+            customer={selectedCustomer}
+            organizationId={organization.id}
+            staffId={staffId}
+            onClose={closePanel}
+            onCompleted={(txId) => router.push(`/staff/transactions?id=${txId}`)}
+          />
+        </div>
+      ) : null}
+
+      {generalSaleOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-text/30 p-0 min-[720px]:items-center min-[720px]:p-6">
+          <div
+            data-checkout-general-sale
+            role="dialog"
+            aria-modal="true"
+            aria-label="一般銷售"
+            className="flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-border bg-surface min-[720px]:rounded-2xl"
+          >
+            <div className="flex items-center justify-between px-5 py-3">
+              <div>
+                <h2 className="text-[16px] font-semibold text-text">一般銷售</h2>
+                <p className="text-[12px] text-secondary-text">
+                  選擇客戶後加入商品 / 服務
+                </p>
               </div>
-            )}
-            <p
-              className={cn(
-                "text-sm",
-                remaining === 0 ? "text-secondary-text" : "text-[#B07A4A]",
-              )}
-            >
-              剩餘 {formatTwd(Math.max(0, remaining))}
-              {remaining < 0 ? ` · 溢付 ${formatTwd(-remaining)}（須恰好等於應付）` : ""}
-            </p>
-          </Card>
-
-          {error ? (
-            <p className="text-sm text-[#B07A4A]" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          <div className="sticky bottom-4 z-10 rounded-2xl border border-border bg-surface/95 p-3 shadow-sm backdrop-blur min-[960px]:static min-[960px]:border-0 min-[960px]:bg-transparent min-[960px]:p-0 min-[960px]:shadow-none">
-            <div className="mb-2 flex justify-between text-sm min-[960px]:hidden">
-              <span>應付</span>
-              <span className="font-semibold tabular-nums">{formatTwd(liveDraft.total)}</span>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-secondary-text hover:bg-primary-light/50"
+                aria-label="關閉一般銷售"
+                onClick={() => setGeneralSaleOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <Button
-              fullWidth
-              className="min-h-11"
-              disabled={liveDraft.items.length === 0 || remaining !== 0}
-              onClick={() => {
-                setError("");
-                try {
-                  const latest = getCheckoutDraft(organizationId, draftId);
-                  if (!latest) throw new Error("草稿不存在");
-                  if (latest.total > 0) {
-                    setCheckoutPayments(
-                      organizationId,
-                      draftId,
-                      paymentsLocal.map((p) => ({
-                        method: p.method,
-                        amount: p.amount,
-                        reference: p.reference,
-                      })),
-                    );
-                  } else if (paymentsLocal.length > 0) {
-                    setCheckoutPayments(organizationId, draftId, []);
-                  }
-                  const tx = completeCheckout(organizationId, draftId);
-                  onCompleted(tx.id);
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : "無法完成結帳");
-                }
-              }}
-            >
-              完成結帳
-            </Button>
+            <div className="px-5 pb-3">
+              <label className="block text-[12px] text-secondary-text">
+                搜尋客戶
+                <input
+                  className="mt-1 h-10 w-full rounded-xl border border-border px-3 text-[14px]"
+                  value={saleQuery}
+                  onChange={(event) => setSaleQuery(event.target.value)}
+                  placeholder="姓名或電話"
+                  aria-label="搜尋一般銷售客戶"
+                />
+              </label>
+            </div>
+            <ul className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+              {saleCustomers.length === 0 ? (
+                <li className="px-2 py-3 text-sm text-secondary-text">尚無符合的客戶</li>
+              ) : (
+                saleCustomers.map((row) => (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      className="flex min-h-12 w-full items-center justify-between rounded-xl px-2 py-2 text-left hover:bg-primary-light/40"
+                      onClick={() => startGeneralSale(row.id)}
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-[14px] font-medium text-text">
+                          {row.name}
+                        </span>
+                        {row.phone ? (
+                          <span className="block text-[12px] text-secondary-text">
+                            {row.phone}
+                          </span>
+                        ) : null}
+                      </span>
+                      <ChevronRight className="h-4 w-4 text-secondary-text" aria-hidden />
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
           </div>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CheckoutSummaryCard({
+  label,
+  value,
+  accent = "default",
+}: {
+  label: string;
+  value: number | string;
+  accent?: "default" | "primary" | "warning" | "success";
+}) {
+  return (
+    <div
+      data-checkout-summary
+      className="flex h-[72px] min-h-[72px] max-h-[76px] min-w-0 flex-col justify-center rounded-2xl border border-border bg-surface px-3.5 py-2 shadow-[0_1px_1px_rgba(48,43,43,0.025)]"
+    >
+      <p
+        className={cn(
+          "text-[22px] font-semibold leading-none tracking-tight tabular-nums sm:text-[26px]",
+          SUMMARY_VALUE[accent],
+        )}
+      >
+        {value}
+      </p>
+      <p className="mt-1.5 text-[10px] leading-tight text-secondary-text">{label}</p>
+    </div>
+  );
+}
+
+interface RowProps {
+  item: CheckoutWorkspaceItem;
+  selected: boolean;
+  onSelect: (id: string) => void;
+  onPointerDown: (event: SyntheticEvent<HTMLElement>) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLElement>, id: string) => void;
+}
+
+function CheckoutDesktopRow({
+  item,
+  selected,
+  onSelect,
+  onPointerDown,
+  onKeyDown,
+}: RowProps) {
+  const time = item.startAt ? formatHm(new Date(item.startAt)) : "—";
+
+  return (
+    <div
+      data-checkout-row
+      data-checkout-id={item.id}
+      aria-pressed={selected}
+      className={cn(
+        "relative grid min-h-[80px] cursor-pointer grid-cols-[80px_minmax(180px,1.3fr)_minmax(140px,1fr)_130px_110px_110px_32px] items-center border-b border-[#EFE8E4] px-4 last:border-b-0",
+        "hover:bg-[#F7F2F0]",
+        selected && "bg-[#FBF4F3]",
+      )}
+      onPointerDown={onPointerDown}
+      onMouseDown={onPointerDown}
+      onClick={() => onSelect(item.id)}
+    >
+      {selected ? (
+        <span
+          data-checkout-row-accent
+          className="pointer-events-none absolute inset-y-0 left-0 z-20 w-[3px] bg-[#C56B70]"
+          aria-hidden
+        />
+      ) : null}
+      <button
+        type="button"
+        data-checkout-row-focus
+        aria-label={`${item.customerName}，開啟結帳`}
+        aria-pressed={selected}
+        className="absolute inset-0 z-10 cursor-pointer rounded-none bg-transparent"
+        onPointerDown={onPointerDown}
+        onMouseDown={onPointerDown}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect(item.id);
+        }}
+        onKeyDown={(event) => onKeyDown(event, item.id)}
+      />
+      <div className="pointer-events-none relative z-0 pr-2">
+        <p className="text-[14px] font-semibold tabular-nums text-text">{time}</p>
+      </div>
+      <div className="pointer-events-none relative z-0 flex min-w-0 items-center gap-2.5 pr-2">
+        <Avatar initials={item.customerInitials} size="sm" className="gap-0" />
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-[14px] font-semibold text-text">
+              {item.customerName}
+            </span>
+            {item.membership ? (
+              <Badge
+                tone={item.membership.id === "vip" ? "vip" : "new"}
+                className="shrink-0 px-1.5 py-px text-[10px]"
+              >
+                {item.membership.id === "vip" ? (
+                  <Crown className="mr-0.5 h-2.5 w-2.5" aria-hidden />
+                ) : null}
+                {item.membership.label}
+              </Badge>
+            ) : null}
+          </div>
+          {item.customerPhone ? (
+            <p className="truncate text-[12px] text-[#6E6666]">{item.customerPhone}</p>
+          ) : null}
+        </div>
+      </div>
+      <div className="pointer-events-none relative z-0 min-w-0 pr-2">
+        <p className="truncate text-[14px] font-medium text-text">{item.serviceName}</p>
+        <p className="text-[12px] text-[#6E6666]">
+          {item.durationMinutes ? `${item.durationMinutes} 分鐘` : ""}
+          {item.serviceCategory ? (
+            <span className="ml-1 rounded-full bg-[#F6F1EE] px-1.5 py-px text-[10px] text-[#7A7272]">
+              {item.serviceCategory}
+            </span>
+          ) : null}
+        </p>
+      </div>
+      <div className="pointer-events-none relative z-0 flex min-w-0 items-center gap-2 pr-2">
+        {item.staffName ? (
+          <>
+            <Avatar initials={item.staffInitials} size="sm" className="gap-0" />
+            <span className="truncate text-[13px] font-medium text-text">
+              {item.staffName}
+            </span>
+          </>
+        ) : (
+          <span className="text-[13px] text-secondary-text">—</span>
+        )}
+      </div>
+      <div className="pointer-events-none relative z-0 pr-2">
+        <p className="text-[14px] font-semibold tabular-nums text-text">
+          {item.amountMinor == null ? "—" : formatTwd(item.amountMinor)}
+        </p>
+      </div>
+      <div className="pointer-events-none relative z-0 pr-1">
+        <span
+          className={cn(
+            "inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium",
+            STATUS_PILL[item.status.kind],
+          )}
+        >
+          {item.status.title}
+        </span>
+      </div>
+      <div className="pointer-events-none relative z-0 flex justify-end text-secondary-text">
+        <ChevronRight className="h-4 w-4" aria-hidden />
+      </div>
+    </div>
+  );
+}
+
+function CheckoutMobileCard({
+  item,
+  selected,
+  onSelect,
+  onPointerDown,
+  onKeyDown,
+}: RowProps) {
+  const time = item.startAt ? formatHm(new Date(item.startAt)) : "—";
+
+  return (
+    <div
+      data-checkout-row
+      data-checkout-id={item.id}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      aria-label={`${item.customerName}，開啟結帳`}
+      className={cn(
+        "cursor-pointer rounded-2xl border border-border bg-surface px-3.5 py-3 outline-none transition-colors",
+        "hover:border-primary/30 focus-visible:bg-primary-light/30",
+        selected && "border-primary/40 bg-[#FBF4F3]",
+      )}
+      onPointerDown={onPointerDown}
+      onMouseDown={onPointerDown}
+      onClick={() => onSelect(item.id)}
+      onKeyDown={(event) => onKeyDown(event, item.id)}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Avatar initials={item.customerInitials} size="sm" className="gap-0" />
+          <div className="min-w-0">
+            <p className="truncate text-[14px] font-semibold text-text">
+              {item.customerName}
+            </p>
+            <p className="truncate text-[12px] text-[#6E6666]">
+              {time} · {item.serviceName}
+            </p>
+          </div>
+        </div>
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+            STATUS_PILL[item.status.kind],
+          )}
+        >
+          {item.status.title}
+        </span>
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[12px] text-[#6E6666]">
+        <span>{item.staffName || "一般銷售"}</span>
+        <span className="font-semibold tabular-nums text-text">
+          {item.amountMinor == null ? "—" : formatTwd(item.amountMinor)}
+        </span>
       </div>
     </div>
   );

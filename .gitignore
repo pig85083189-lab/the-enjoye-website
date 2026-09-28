@@ -50,3 +50,4 @@ next-env.d.ts
 .calendar-qa/
 .customer-qa/
 .treatment-qa/
+.checkout-qa/
