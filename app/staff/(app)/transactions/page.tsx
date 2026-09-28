@@ -1,6 +1,6 @@
 "use client";
 
-import { TransactionsPageClient } from "@/features/checkout/TransactionsPageClient";
+import { TransactionsPageClient } from "@/features/transactions/TransactionsPageClient";
 
 export default function TransactionsPage() {
   return <TransactionsPageClient />;

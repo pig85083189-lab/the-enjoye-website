@@ -53,3 +53,4 @@ next-env.d.ts
 .checkout-qa/
 .stored-value-qa/
 .packages-qa/
+.transactions-qa/
