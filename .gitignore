@@ -52,3 +52,4 @@ next-env.d.ts
 .treatment-qa/
 .checkout-qa/
 .stored-value-qa/
+.packages-qa/

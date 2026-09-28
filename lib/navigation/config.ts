@@ -98,7 +98,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     icon: Package,
     group: "sales",
     status: "ready",
-    description: "套票定義與堂數 Ledger",
+    description: "客戶套票、剩餘堂數與使用紀錄",
     requiredPermissions: ["package.read"],
     roles: ["OWNER", "MANAGER", "RECEPTIONIST", "STAFF"],
   },
