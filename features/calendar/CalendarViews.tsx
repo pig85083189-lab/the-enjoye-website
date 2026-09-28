@@ -470,6 +470,7 @@ function StaffColumn({
               <button
                 key={hm}
                 type="button"
+                tabIndex={-1}
                 aria-label={`在 ${staff.displayName} ${hm} 新增預約`}
                 className="absolute left-0 right-0 z-0 opacity-0 hover:bg-primary/[0.05] hover:opacity-100 focus:bg-primary/[0.07] focus:opacity-100 focus:outline-none"
                 style={{ top: i * CALENDAR_SLOT_PX, height: CALENDAR_SLOT_PX }}
