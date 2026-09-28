@@ -30,8 +30,17 @@ import {
 import {
   createBreak,
   createTimeOff,
+  getWorkingHoursForDay,
+  listBreaks,
   upsertWorkingHours,
 } from "@/lib/staff-schedule/store";
+import { dayOfWeekLocal } from "@/lib/staff-schedule/domain";
+import {
+  applyCalendarVisualFixture,
+  CALENDAR_VISUAL_FIXTURE_DAY,
+  CALENDAR_VISUAL_FIXTURE_NOW,
+} from "@/lib/calendar/visual-fixture";
+import { serviceTypeCardTone } from "@/features/calendar/grid-shared";
 import type { StaffMembership } from "@/types/saas";
 
 const DAY_START = 9 * 60;
@@ -445,6 +454,139 @@ describe("now line + day view scroll", () => {
     });
     expect(scrollTop).toBeGreaterThanOrEqual(0);
     expect(scrollTop).toBeLessThanOrEqual(maxScroll);
+  });
+});
+
+describe("day-view visual tokens", () => {
+  it("keeps the measured 30px / 30-minute slot from the desktop reference", () => {
+    expect(CALENDAR_SLOT_PX).toBe(30);
+  });
+});
+
+describe("serviceTypeCardTone", () => {
+  it("maps existing service types to stable rose / sage / lavender tints", () => {
+    expect(serviceTypeCardTone("BREAST")).toEqual({
+      bg: "bg-[#F8ECEB]",
+      accent: "bg-[#C9797D]",
+    });
+    expect(serviceTypeCardTone("BODY_SCULPTING")).toEqual({
+      bg: "bg-[#EAF3EE]",
+      accent: "bg-[#6A8F74]",
+    });
+    expect(serviceTypeCardTone("FACIAL")).toEqual({
+      bg: "bg-[#EEEAF8]",
+      accent: "bg-[#8B7AA8]",
+    });
+  });
+
+  it("does not invent tints for unmapped types or staff identity", () => {
+    expect(serviceTypeCardTone("WOMB_CARE")).toBeNull();
+    expect(serviceTypeCardTone("GENERIC")).toBeNull();
+    expect(serviceTypeCardTone("ACID_DRAIN")).toBeNull();
+    expect(serviceTypeCardTone(undefined)).toBeNull();
+    expect(serviceTypeCardTone("staff-001")).toBeNull();
+  });
+});
+
+describe("calendar visual fixture (test-only)", () => {
+  const staffIds = ["staff-001", "staff-002", "staff-003", "staff-004"] as [
+    string,
+    string,
+    string,
+    string,
+  ];
+
+  beforeEach(() => {
+    applyCalendarVisualFixture({
+      organizationId: ORG_ENJOYE_ID,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffIds,
+    });
+  });
+
+  it("applies working hours, break, and approved time off without touching production seed", () => {
+    const dow = dayOfWeekLocal(CALENDAR_VISUAL_FIXTURE_DAY);
+    const hoursA = getWorkingHoursForDay(
+      ORG_ENJOYE_ID,
+      LOC_ENJOYE_PRIMARY_ID,
+      "staff-001",
+      dow,
+    );
+    const hoursB = getWorkingHoursForDay(
+      ORG_ENJOYE_ID,
+      LOC_ENJOYE_PRIMARY_ID,
+      "staff-002",
+      dow,
+    );
+    const hoursC = getWorkingHoursForDay(
+      ORG_ENJOYE_ID,
+      LOC_ENJOYE_PRIMARY_ID,
+      "staff-003",
+      dow,
+    );
+
+    expect(hoursA).toMatchObject({
+      startTime: "10:00",
+      endTime: "19:00",
+      isWorking: true,
+    });
+    expect(hoursB).toMatchObject({
+      startTime: "10:00",
+      endTime: "19:00",
+      isWorking: true,
+    });
+    expect(hoursC).toMatchObject({
+      startTime: "11:00",
+      endTime: "20:00",
+      isWorking: true,
+    });
+
+    const breaksB = listBreaks(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-002",
+      from: new Date(2026, 8, 27, 0, 0),
+      to: new Date(2026, 8, 28, 0, 0),
+    });
+    expect(breaksB).toHaveLength(1);
+    expect(new Date(breaksB[0].startAt).getHours()).toBe(12);
+    expect(new Date(breaksB[0].endAt).getHours()).toBe(13);
+
+    const staffA = resolveStaffDayScheduleStatus({
+      organizationId: ORG_ENJOYE_ID,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-001",
+      day: CALENDAR_VISUAL_FIXTURE_DAY,
+      now: CALENDAR_VISUAL_FIXTURE_NOW,
+    });
+    const staffD = resolveStaffDayScheduleStatus({
+      organizationId: ORG_ENJOYE_ID,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-004",
+      day: CALENDAR_VISUAL_FIXTURE_DAY,
+      now: CALENDAR_VISUAL_FIXTURE_NOW,
+    });
+
+    expect(staffA.kind).toBe("working");
+    expect(staffA.workingLabel).toBe("10:00 – 19:00");
+    expect(staffA.dutyLabel).toBe("上班中");
+    expect(staffD.kind).toBe("time_off");
+    expect(formatStaffDayHeaderMeta(staffD)).toBe("休假");
+  });
+
+  it("places the fixture now-line at 13:24 inside the visible day grid", () => {
+    expect(
+      shouldShowNowLine(CALENDAR_VISUAL_FIXTURE_DAY, CALENDAR_VISUAL_FIXTURE_NOW),
+    ).toBe(true);
+    expect(formatNowHm(CALENDAR_VISUAL_FIXTURE_NOW)).toBe("13:24");
+    expect(
+      nowLineTopPx({
+        now: CALENDAR_VISUAL_FIXTURE_NOW,
+        visibleStartMinutes: DAY_START,
+        visibleEndMinutes: DAY_END,
+        slotMinutes: CALENDAR_SLOT_MINUTES,
+        slotPx: CALENDAR_SLOT_PX,
+      }),
+    ).toBe(264);
   });
 });
 

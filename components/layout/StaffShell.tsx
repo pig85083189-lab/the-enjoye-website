@@ -28,9 +28,25 @@ function StaffShellChrome({ children }: { children: ReactNode }) {
     isTreatmentWorkspace || isCalendarSurface || isTodayWorkbench;
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <StaffSidebar />
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+    <div
+      className={cn(
+        "flex bg-background",
+        isCalendarSurface
+          ? "min-h-screen min-[1200px]:h-dvh min-[1200px]:overflow-hidden"
+          : "min-h-screen",
+      )}
+    >
+      <StaffSidebar
+        widthClass={isCalendarSurface ? "w-[254px]" : "w-[232px]"}
+      />
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col",
+          isCalendarSurface
+            ? "min-h-screen min-[1200px]:h-dvh min-[1200px]:min-h-0 min-[1200px]:overflow-hidden"
+            : "min-h-screen",
+        )}
+      >
         {/* Tablet / mobile context bar */}
         <header className="sticky top-0 z-30 flex min-h-14 items-center gap-3 border-b border-border bg-surface/95 px-4 backdrop-blur-sm min-[1200px]:hidden">
           <button
@@ -53,9 +69,11 @@ function StaffShellChrome({ children }: { children: ReactNode }) {
         <main
           className={cn(
             "mx-auto w-full min-w-0 flex-1 px-4 pb-28 pt-5 sm:px-6 sm:pt-6 min-[1200px]:pb-10 min-[1200px]:pt-7",
-            useWideContent
-              ? "max-w-3xl sm:max-w-4xl min-[1200px]:max-w-[1520px] min-[1200px]:px-8 xl:max-w-[1680px] xl:px-10"
-              : "max-w-3xl sm:max-w-4xl min-[1200px]:max-w-5xl min-[1200px]:px-8",
+            isCalendarSurface
+              ? "min-[1200px]:flex min-[1200px]:min-h-0 min-[1200px]:max-w-none min-[1200px]:flex-col min-[1200px]:overflow-hidden min-[1200px]:px-5 min-[1200px]:pb-4 min-[1200px]:pt-6 xl:max-w-none xl:px-5"
+              : useWideContent
+                ? "max-w-3xl sm:max-w-4xl min-[1200px]:max-w-[1520px] min-[1200px]:px-8 xl:max-w-[1680px] xl:px-10"
+                : "max-w-3xl sm:max-w-4xl min-[1200px]:max-w-5xl min-[1200px]:px-8",
           )}
         >
           {children}

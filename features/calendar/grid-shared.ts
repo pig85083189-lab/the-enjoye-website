@@ -10,6 +10,7 @@ import {
   layoutBlockInVisibleRange,
 } from "@/lib/appointments/visible-range";
 import type { CanonicalAppointmentStatus } from "@/lib/appointments/domain";
+import type { TreatmentServiceType } from "@/types/treatment-template";
 
 export const WEEKDAY = ["日", "一", "二", "三", "四", "五", "六"] as const;
 export const DAY_MINUTES_START = CALENDAR_DAY_START_HOUR * 60;
@@ -21,7 +22,36 @@ export const TIME_COL_PX = 56;
 export const STAFF_FILL_THRESHOLD = 4;
 export const STAFF_COL_MIN_PX = 168;
 /** Fallback sticky staff-header height when DOM measure is unavailable */
-export const STAFF_DAY_HEADER_STICKY_PX = 104;
+export const STAFF_DAY_HEADER_STICKY_PX = 115;
+/** Desktop Quick View width — measured ~325px on the 1536 reference */
+export const QUICK_VIEW_WIDTH_PX = 325;
+/** Calendar card / Quick View corner — reference is a soft 16px card, not 24px */
+export const WORKSPACE_RADIUS_CLASS = "rounded-2xl";
+/** Appointment event-block corner — reference is a tight calendar block */
+export const APPOINTMENT_RADIUS_CLASS = "rounded-md";
+/** Appointment inset from staff column edges — reference ~6–8px */
+export const APPOINTMENT_INSET_CLASS = "left-1.5 right-1.5";
+/** Active Day / primary CTA / selected workload — dusty rose, not bright pink */
+export const CALENDAR_ROSE_FILL = "bg-[#C56B70]";
+export const CALENDAR_ROSE_HOVER = "hover:bg-[#B85F64]";
+
+/**
+ * Stable serviceType → calendar tint.
+ * Only maps existing TreatmentServiceType values that have a clear visual family.
+ * WOMB_CARE / ACID_DRAIN / GENERIC etc. fall back to status fills.
+ */
+export const SERVICE_TYPE_TONES: Partial<
+  Record<TreatmentServiceType, { bg: string; accent: string }>
+> = {
+  BREAST: { bg: "bg-[#F8ECEB]", accent: "bg-[#C9797D]" },
+  BODY_SCULPTING: { bg: "bg-[#EAF3EE]", accent: "bg-[#6A8F74]" },
+  FACIAL: { bg: "bg-[#EEEAF8]", accent: "bg-[#8B7AA8]" },
+};
+
+export function serviceTypeCardTone(serviceType: string | undefined) {
+  if (!serviceType) return null;
+  return SERVICE_TYPE_TONES[serviceType as TreatmentServiceType] ?? null;
+}
 
 export function staffGridTemplate(count: number): string {
   if (count <= 0) return `${TIME_COL_PX}px`;
@@ -84,11 +114,11 @@ export const STATUS_BLOCK_BG: Record<CanonicalAppointmentStatus, string> = {
   NO_SHOW: "bg-[#F4EBE3] opacity-80",
 };
 
-/** Off-hours / not working — readable diagonal wash */
+/** Off-hours / not working — reference hatch is tighter than 6/12 */
 export const OFF_HOURS_STYLE: CSSProperties = {
   backgroundImage:
-    "repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(48,43,43,0.045) 6px, rgba(48,43,43,0.045) 12px)",
-  backgroundColor: "rgba(48, 43, 43, 0.045)",
+    "repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(48,43,43,0.04) 4px, rgba(48,43,43,0.04) 8px)",
+  backgroundColor: "rgba(48, 43, 43, 0.035)",
 };
 
 export const BREAK_STYLE: CSSProperties = {

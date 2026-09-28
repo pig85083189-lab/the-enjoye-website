@@ -45,3 +45,6 @@ supabase/.branches/
 next-env.d.ts
 
 .vercel
+
+# local visual QA artifacts (screenshots, metrics)
+.calendar-qa/

@@ -14,7 +14,13 @@ import {
   StaffDayGrid,
   WeekGrid,
 } from "@/features/calendar/CalendarViews";
-import { addDays, startOfWeek, WEEKDAY } from "@/features/calendar/grid-shared";
+import {
+  addDays,
+  CALENDAR_ROSE_FILL,
+  CALENDAR_ROSE_HOVER,
+  startOfWeek,
+  WEEKDAY,
+} from "@/features/calendar/grid-shared";
 import {
   getAppointmentStatusRaw,
   subscribeAppointments,
@@ -118,7 +124,7 @@ export interface CreatePrefill {
 
 function formatDayTitle(day: Date): string {
   const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
-  return `${day.getFullYear()}年${day.getMonth() + 1}月${day.getDate()}日 星期${weekdays[day.getDay()]}`;
+  return `${day.getFullYear()}年${day.getMonth() + 1}月${day.getDate()}日(週${weekdays[day.getDay()]})`;
 }
 
 function formatWeekTitle(weekStart: Date): string {
@@ -276,96 +282,104 @@ export function CalendarPage() {
     return () => window.clearTimeout(id);
   }, [blockedMsg]);
 
-  return (
-    <div
-      className={cn(
-        "flex min-h-0 flex-col space-y-3 min-[720px]:space-y-4",
-        selected && !editing && !creating && "min-[720px]:pr-[min(100%,22.5rem)]",
-      )}
-    >
-      <header className="shrink-0 space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-text sm:text-[1.75rem]">
-          行事曆
-        </h1>
-        <p className="text-sm font-medium text-text">
-          {currentLocation?.name ?? "分店"}
-        </p>
-        <p className="text-sm text-secondary-text">預約與人力排程</p>
-      </header>
+  const showQuickView = Boolean(selected && !editing && !creating);
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-2xl border border-border/70 bg-surface/80 px-2 py-2 sm:gap-3 sm:px-3">
-        <Button
-          variant="outline"
-          className="min-h-10 shrink-0 px-4"
-          onClick={() => {
-            const today = new Date();
-            setAnchor(today);
-            setMobileDay(today);
-          }}
-        >
-          今天
-        </Button>
-        <div className="flex min-w-0 flex-1 items-center justify-center gap-0.5 sm:min-w-[16rem] sm:flex-none sm:justify-start">
-          <Button
-            variant="ghost"
-            className="min-h-10 min-w-10 shrink-0 px-2"
-            aria-label="上一段"
-            onClick={() => {
-              const next = addDays(anchor, view === "week" ? -7 : -1);
-              setAnchor(next);
-              setMobileDay(next);
-            }}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <p className="min-w-0 truncate px-1 text-center text-sm font-semibold tabular-nums text-text sm:px-2 sm:text-base">
-            {view === "week"
-              ? formatWeekTitle(weekStart)
-              : formatDayTitle(anchor)}
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 min-[720px]:gap-5">
+      <div
+        data-calendar-chrome
+        className="flex shrink-0 flex-col gap-3 min-[720px]:flex-row min-[720px]:items-start min-[720px]:justify-between min-[720px]:gap-4"
+      >
+        <header data-calendar-header className="shrink-0 space-y-0.5">
+          <h1 className="text-[1.75rem] font-semibold leading-none tracking-tight text-text">
+            行事曆
+          </h1>
+          <p className="pt-1.5 text-[13px] text-secondary-text">
+            {currentLocation?.name ?? "分店"} · 週工作量
           </p>
+        </header>
+
+        <div
+          data-calendar-toolbar
+          className="flex shrink-0 flex-wrap items-center gap-2 min-[720px]:justify-end"
+        >
           <Button
-            variant="ghost"
-            className="min-h-10 min-w-10 shrink-0 px-2"
-            aria-label="下一段"
+            variant="outline"
+            className="h-8 min-h-8 shrink-0 rounded-full px-3.5 text-[13px]"
             onClick={() => {
-              const next = addDays(anchor, view === "week" ? 7 : 1);
-              setAnchor(next);
-              setMobileDay(next);
+              const today = new Date();
+              setAnchor(today);
+              setMobileDay(today);
             }}
           >
-            <ChevronRight className="h-4 w-4" />
+            今天
+          </Button>
+          <div className="flex min-w-0 items-center gap-0.5">
+            <Button
+              variant="ghost"
+              className="h-8 min-h-8 min-w-8 shrink-0 rounded-full px-1.5"
+              aria-label="上一段"
+              onClick={() => {
+                const next = addDays(anchor, view === "week" ? -7 : -1);
+                setAnchor(next);
+                setMobileDay(next);
+              }}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <p className="min-w-0 truncate px-1 text-center text-[13px] font-medium tabular-nums text-text sm:px-1.5">
+              {view === "week"
+                ? formatWeekTitle(weekStart)
+                : formatDayTitle(anchor)}
+            </p>
+            <Button
+              variant="ghost"
+              className="h-8 min-h-8 min-w-8 shrink-0 rounded-full px-1.5"
+              aria-label="下一段"
+              onClick={() => {
+                const next = addDays(anchor, view === "week" ? 7 : 1);
+                setAnchor(next);
+                setMobileDay(next);
+              }}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          <div
+            className="hidden items-center gap-1.5 min-[720px]:flex"
+            role="group"
+            aria-label="檢視模式"
+          >
+            {(["day", "week"] as const).map((id) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={view === id}
+                onClick={() => setViewPersisted(id)}
+                className={cn(
+                  "inline-flex h-8 min-h-8 items-center rounded-full px-3.5 text-[13px] font-medium transition-colors",
+                  view === id
+                    ? cn(CALENDAR_ROSE_FILL, "text-white")
+                    : "border border-border bg-surface text-secondary-text hover:bg-primary-light/40",
+                )}
+              >
+                {id === "day" ? "日" : "週"}
+              </button>
+            ))}
+          </div>
+          <Button
+            className={cn(
+              "h-8 min-h-8 shrink-0 rounded-full px-3.5 text-[13px]",
+              CALENDAR_ROSE_FILL,
+              CALENDAR_ROSE_HOVER,
+            )}
+            onClick={() => openCreate()}
+            aria-label="新增預約"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            新增預約
           </Button>
         </div>
-        <div
-          className="ml-auto hidden gap-0.5 rounded-xl border border-border bg-[#FFFCFA] p-0.5 min-[720px]:flex"
-          role="group"
-          aria-label="檢視模式"
-        >
-          {(["day", "week"] as const).map((id) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={view === id}
-              onClick={() => setViewPersisted(id)}
-              className={cn(
-                "min-h-9 rounded-lg px-4 text-sm font-medium transition-colors",
-                view === id
-                  ? "bg-primary-light text-primary"
-                  : "text-secondary-text hover:bg-primary-light/40",
-              )}
-            >
-              {id === "day" ? "日" : "週"}
-            </button>
-          ))}
-        </div>
-        <Button
-          className="min-h-10 shrink-0"
-          onClick={() => openCreate()}
-          aria-label="新增預約"
-        >
-          <Plus className="h-4 w-4" />
-          新增預約
-        </Button>
       </div>
 
       <StaffWorkloadFilter
@@ -458,33 +472,59 @@ export function CalendarPage() {
         </Button>
       </div>
 
-      {/* Desktop / tablet */}
-      <div className="hidden min-h-0 min-[720px]:block">
-        {view === "day" ? (
-          <StaffDayGrid
-            day={anchor}
-            organizationId={organization.id}
-            locationId={locationId}
-            staff={visibleStaff}
-            appointments={filteredAppointments}
-            onSelect={setSelected}
-            onEmptySlot={(staffId, hm) =>
-              openCreate({
-                staffId,
-                dateYmd: formatYmd(anchor),
-                startHm: hm,
-              })
+      {/* Desktop / tablet workspace — calendar + inline Quick View, tops aligned */}
+      <div
+        data-calendar-workspace
+        className="hidden min-h-0 min-[720px]:flex min-[720px]:flex-1 min-[720px]:gap-4"
+      >
+        <div data-calendar-grid className="min-h-0 min-w-0 flex-1">
+          {view === "day" ? (
+            <StaffDayGrid
+              day={anchor}
+              organizationId={organization.id}
+              locationId={locationId}
+              staff={visibleStaff}
+              appointments={filteredAppointments}
+              onSelect={setSelected}
+              onEmptySlot={(staffId, hm) =>
+                openCreate({
+                  staffId,
+                  dateYmd: formatYmd(anchor),
+                  startHm: hm,
+                })
+              }
+              onBlockedSlot={setBlockedMsg}
+            />
+          ) : (
+            <WeekGrid
+              days={weekDays}
+              appointments={filteredAppointments}
+              onSelect={setSelected}
+              now={now}
+            />
+          )}
+        </div>
+        {showQuickView && selected ? (
+          <AppointmentQuickView
+            item={selected}
+            locationName={
+              locations.find((l) => l.id === selected.locationId)?.name ??
+              currentLocation?.name
             }
-            onBlockedSlot={setBlockedMsg}
+            onClose={() => setSelected(null)}
+            onEdit={() => setEditing(true)}
+            onRequestCancel={() => setCancelTarget(selected)}
+            onTransition={(status) => {
+              const next = transitionAppointmentStatus(
+                organization.id,
+                selected.id,
+                status,
+                membership?.userId,
+              );
+              setSelected(next);
+            }}
           />
-        ) : (
-          <WeekGrid
-            days={weekDays}
-            appointments={filteredAppointments}
-            onSelect={setSelected}
-            now={now}
-          />
-        )}
+        ) : null}
       </div>
 
       {creating || editing ? (
@@ -509,26 +549,28 @@ export function CalendarPage() {
         />
       ) : null}
 
-      {selected && !editing && !creating ? (
-        <AppointmentQuickView
-          item={selected}
-          locationName={
-            locations.find((l) => l.id === selected.locationId)?.name ??
-            currentLocation?.name
-          }
-          onClose={() => setSelected(null)}
-          onEdit={() => setEditing(true)}
-          onRequestCancel={() => setCancelTarget(selected)}
-          onTransition={(status) => {
-            const next = transitionAppointmentStatus(
-              organization.id,
-              selected.id,
-              status,
-              membership?.userId,
-            );
-            setSelected(next);
-          }}
-        />
+      {showQuickView && selected ? (
+        <div className="min-[720px]:hidden">
+          <AppointmentQuickView
+            item={selected}
+            locationName={
+              locations.find((l) => l.id === selected.locationId)?.name ??
+              currentLocation?.name
+            }
+            onClose={() => setSelected(null)}
+            onEdit={() => setEditing(true)}
+            onRequestCancel={() => setCancelTarget(selected)}
+            onTransition={(status) => {
+              const next = transitionAppointmentStatus(
+                organization.id,
+                selected.id,
+                status,
+                membership?.userId,
+              );
+              setSelected(next);
+            }}
+          />
+        </div>
       ) : null}
 
       {cancelTarget ? (
@@ -577,7 +619,8 @@ function StaffWorkloadFilter({
 
   return (
     <div
-      className="flex gap-2.5 overflow-x-auto pb-1"
+      data-calendar-workload
+      className="flex shrink-0 gap-2 overflow-x-auto pb-0.5"
       role="group"
       aria-label="美容師篩選"
     >
@@ -586,14 +629,16 @@ function StaffWorkloadFilter({
         aria-pressed={selected.length === 0}
         onClick={onClear}
         className={cn(
-          "min-h-12 shrink-0 rounded-2xl border px-3.5 py-2 text-left transition-colors",
+          "flex h-[70px] shrink-0 flex-col justify-center rounded-2xl px-3.5 text-left transition-colors",
           selected.length === 0
-            ? "border-primary/35 bg-primary-light text-primary"
-            : "border-border bg-surface text-text hover:bg-primary-light/40",
+            ? cn(CALENDAR_ROSE_FILL, "text-white")
+            : "bg-surface text-text ring-1 ring-border hover:bg-primary-light/40",
         )}
       >
-        <span className="block text-sm font-semibold">全部美容師</span>
-        <span className="mt-0.5 block text-xs tabular-nums opacity-80">
+        <span className="block text-[13px] font-semibold leading-tight">
+          全部美容師
+        </span>
+        <span className="mt-1.5 block text-[11px] leading-tight tabular-nums opacity-80">
           {total.count}筆 · {formatWorkloadHours(total.hours)}
         </span>
       </button>
@@ -607,22 +652,29 @@ function StaffWorkloadFilter({
             aria-pressed={active}
             onClick={() => onToggle(s.userId)}
             className={cn(
-              "min-h-12 shrink-0 rounded-2xl border px-3.5 py-2 text-left transition-colors",
+              "flex h-[70px] shrink-0 flex-col justify-center rounded-2xl px-3.5 text-left transition-colors",
               active
-                ? "border-primary/35 bg-primary-light text-primary"
-                : "border-border bg-surface text-text hover:bg-primary-light/40",
+                ? cn(CALENDAR_ROSE_FILL, "text-white")
+                : "bg-surface text-text ring-1 ring-border hover:bg-primary-light/40",
             )}
           >
             <span className="flex items-center gap-2">
               <span
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/12 text-xs font-semibold text-primary"
+                className={cn(
+                  "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+                  active
+                    ? "bg-white/20 text-white"
+                    : "bg-primary/12 text-primary",
+                )}
                 aria-hidden
               >
                 {s.displayName.slice(0, 1)}
               </span>
-              <span className="text-sm font-semibold">{s.displayName}</span>
+              <span className="text-[13px] font-semibold leading-tight">
+                {s.displayName}
+              </span>
             </span>
-            <span className="mt-0.5 block pl-9 text-xs tabular-nums opacity-80">
+            <span className="mt-1.5 block pl-9 text-[11px] leading-tight tabular-nums opacity-80">
               {load?.count ?? 0}筆 · {formatWorkloadHours(load?.hours ?? 0)}
               {dayView && load?.scheduleKind === "time_off"
                 ? " · 休假"

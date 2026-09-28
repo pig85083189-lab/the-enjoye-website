@@ -44,7 +44,11 @@ import { useClientNow } from "@/lib/use-client-now";
 import { cn } from "@/lib/utils";
 import type { StaffMembership } from "@/types/saas";
 import { Card } from "@/components/ui/Card";
+import { Coffee, Crown } from "lucide-react";
+import { getServiceById } from "@/data/mock-services";
 import {
+  APPOINTMENT_INSET_CLASS,
+  APPOINTMENT_RADIUS_CLASS,
   DAY_MINUTES_END,
   DAY_MINUTES_START,
   GRID_HEIGHT,
@@ -57,8 +61,10 @@ import {
   TIME_COL_PX,
   TOTAL_SLOTS,
   WEEKDAY,
+  WORKSPACE_RADIUS_CLASS,
   addDays,
   layoutTimedBlock,
+  serviceTypeCardTone,
   staffGridMinWidth,
   staffGridTemplate,
 } from "./grid-shared";
@@ -84,7 +90,10 @@ function TimeAxis() {
         hour || i === labels.length - 1 ? (
           <div
             key={label + i}
-            className="absolute right-2 -translate-y-1/2 text-[11px] font-medium tabular-nums text-secondary-text sm:text-xs"
+            className={cn(
+              "absolute right-2 text-[11px] font-medium tabular-nums text-secondary-text sm:text-xs",
+              i === 0 ? "translate-y-0" : "-translate-y-1/2",
+            )}
             style={{ top: i * CALENDAR_SLOT_PX }}
           >
             {label}
@@ -105,7 +114,7 @@ function SlotLines() {
             key={i}
             className={cn(
               "absolute left-0 right-0 border-t",
-              isHour ? "border-border/45" : "border-border/15",
+              isHour ? "border-[#D4C6C0]" : "border-[#E5DBD6]",
             )}
             style={{ top: i * CALENDAR_SLOT_PX }}
           />
@@ -128,15 +137,15 @@ function NowLine({ day }: { day: Date }) {
   if (top == null) return null;
   return (
     <div
-      className="pointer-events-none absolute left-0 right-0 z-[3] flex items-center gap-1.5"
+      className="pointer-events-none absolute left-0 right-0 z-[3] flex items-center"
       style={{ top }}
       aria-hidden
     >
-      <span className="shrink-0 text-[11px] font-semibold tabular-nums tracking-wide text-[#C9797D]">
+      <span className="-translate-x-1 shrink-0 rounded-full bg-[#C9797D] px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums text-white">
         {formatNowHm(now)}
       </span>
-      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#C9797D]" />
-      <span className="h-px flex-1 bg-[#C9797D]/75" />
+      <span className="-ml-0.5 h-2 w-2 shrink-0 rounded-full bg-[#C9797D]" />
+      <span className="h-px flex-1 bg-[#C9797D]" />
     </div>
   );
 }
@@ -154,12 +163,26 @@ export function AppointmentBlock({
   hideStaffName?: boolean;
   onSelect: (item: ScheduleAppointment) => void;
 }) {
-  const showTimeRange = height >= 48;
-  const showService = height >= 56;
-  const showDuration = height >= 76;
-  const showStatus = height >= 96;
-  const showStaff = !hideStaffName && height >= 112;
+  const showTimeRange = height >= 36;
+  const showService = height >= 48;
+  const showDuration = height >= 64;
+  const showStaff = !hideStaffName && height >= 96;
   const isVip = item.membership === "vip";
+  const muted = item.status === "CANCELLED" || item.status === "NO_SHOW";
+  const service = getServiceById(item.serviceId, item.organizationId);
+  const typeTone = muted ? null : serviceTypeCardTone(service?.serviceType);
+  const fillClass = muted
+    ? STATUS_BLOCK_BG[item.status]
+    : item.status === "COMPLETED"
+      ? typeTone
+        ? `${typeTone.bg} opacity-80`
+        : STATUS_BLOCK_BG.COMPLETED
+      : (typeTone?.bg ?? STATUS_BLOCK_BG[item.status]);
+  const accentClass = muted
+    ? STATUS_ACCENT[item.status]
+    : item.status === "COMPLETED"
+      ? STATUS_ACCENT.COMPLETED
+      : (typeTone?.accent ?? STATUS_ACCENT[item.status]);
   const tooltip = [
     `${formatHm(new Date(item.startAt))}–${formatHm(new Date(item.endAt))}`,
     item.customerName,
@@ -180,55 +203,58 @@ export function AppointmentBlock({
       aria-label={tooltip}
       title={tooltip}
       className={cn(
-        "absolute left-1.5 right-1.5 z-[1] overflow-hidden rounded-xl border border-[#E8DDD9]/80 text-left shadow-[0_1px_2px_rgba(48,43,43,0.04)]",
-        STATUS_BLOCK_BG[item.status],
+        "absolute z-[1] overflow-hidden text-left",
+        APPOINTMENT_INSET_CLASS,
+        APPOINTMENT_RADIUS_CLASS,
+        fillClass,
       )}
       style={{ top, height }}
     >
       <span
-        className={cn(
-          "absolute inset-y-0 left-0 w-[3px] sm:w-1",
-          STATUS_ACCENT[item.status],
-        )}
+        className={cn("absolute inset-y-0 left-0 w-[3px]", accentClass)}
         aria-hidden
       />
-      <div className="flex h-full min-w-0 flex-col gap-0.5 py-1.5 pl-3 pr-2">
+      <div className="flex h-full min-w-0 flex-col gap-px py-1 pl-2.5 pr-1.5">
         {showTimeRange ? (
-          <p className="shrink-0 text-[11px] font-medium tabular-nums leading-tight text-secondary-text sm:text-xs">
-            {formatHm(new Date(item.startAt))} – {formatHm(new Date(item.endAt))}
+          <p className="flex shrink-0 items-center gap-1 text-[11px] font-medium leading-tight tabular-nums text-text/80">
+            <span className="truncate">
+              {formatHm(new Date(item.startAt))}–{formatHm(new Date(item.endAt))}
+            </span>
+            {isVip ? (
+              <Crown
+                className="h-3 w-3 shrink-0 text-[#C9797D]"
+                strokeWidth={1.75}
+                aria-hidden
+              />
+            ) : null}
           </p>
         ) : (
-          <p className="shrink-0 text-[11px] font-medium tabular-nums text-secondary-text">
+          <p className="shrink-0 text-[11px] font-medium tabular-nums text-text/80">
             {formatHm(new Date(item.startAt))}
           </p>
         )}
-        <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold leading-snug text-text sm:text-sm">
-          <span className="truncate">{item.customerName}</span>
-          {isVip ? (
-            <span className="shrink-0 rounded-md bg-primary/10 px-1.5 py-px text-[10px] font-medium text-primary">
-              VIP
-            </span>
-          ) : null}
+        <p className="truncate text-[12px] font-semibold leading-tight text-text">
+          {item.customerName}
         </p>
         {showService ? (
-          <p className="truncate text-[12px] leading-snug text-secondary-text sm:text-[13px]">
+          <p className="truncate text-[11px] leading-tight text-secondary-text">
             {item.serviceName}
           </p>
         ) : null}
         {showDuration ? (
-          <p className="truncate text-[11px] text-secondary-text/90">
-            {item.durationMinutes} 分鐘
+          <p className="truncate text-[11px] leading-tight text-secondary-text">
+            {item.durationMinutes}分鐘
+          </p>
+        ) : null}
+        {isVip && showDuration ? (
+          <p className="truncate text-[10px] leading-tight text-primary">
+            VIP會員
           </p>
         ) : null}
         {showStaff ? (
           <p className="truncate text-[11px] text-secondary-text">
             {item.staffName}
           </p>
-        ) : null}
-        {showStatus ? (
-          <span className="mt-auto inline-flex max-w-full truncate self-start rounded-md bg-surface/70 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-secondary-text ring-1 ring-border/60">
-            {STATUS_LABEL[item.status]}
-          </span>
         ) : null}
       </div>
     </button>
@@ -304,7 +330,7 @@ function StaffColumn({
 
   return (
     <div
-      className="relative min-w-0 border-l border-border/25"
+      className="relative min-w-0 border-l border-[#D8CBC6]"
       style={{ height: GRID_HEIGHT }}
       role="gridcell"
       aria-label={`${staff.displayName} 時段`}
@@ -367,7 +393,11 @@ function StaffColumn({
             return (
               <div
                 key={off.id}
-                className="absolute left-1.5 right-1.5 overflow-hidden rounded-lg border border-dashed border-border/70 px-2 py-1 text-[11px] text-secondary-text"
+                className={cn(
+                  "absolute overflow-hidden px-2 py-1 text-[11px] text-secondary-text",
+                  APPOINTMENT_INSET_CLASS,
+                  APPOINTMENT_RADIUS_CLASS,
+                )}
                 style={{
                   ...TIME_OFF_STYLE,
                   top: layout.topPx,
@@ -389,7 +419,11 @@ function StaffColumn({
         return (
           <div
             key={br.id}
-            className="absolute left-1.5 right-1.5 overflow-hidden rounded-lg border border-[#E5D9CC]/90 px-2 py-1 text-[11px] text-secondary-text"
+            className={cn(
+              "absolute flex items-start justify-between gap-1 overflow-hidden px-2 py-1 text-[11px] text-secondary-text",
+              APPOINTMENT_INSET_CLASS,
+              APPOINTMENT_RADIUS_CLASS,
+            )}
             style={{
               ...BREAK_STYLE,
               top: layout.topPx,
@@ -399,6 +433,7 @@ function StaffColumn({
             <span className="font-medium whitespace-nowrap">
               {br.label ?? "午休時間"}
             </span>
+            <Coffee className="mt-0.5 h-3 w-3 shrink-0 opacity-70" aria-hidden />
           </div>
         );
       })}
@@ -503,22 +538,22 @@ export function StaffDayGrid({
 
   return (
     <div
-      className="w-full overflow-hidden rounded-3xl border border-border/80 bg-surface shadow-[0_1px_3px_rgba(48,43,43,0.04)]"
-      style={{ maxHeight: "calc(100dvh - 14rem)" }}
+      className={cn(
+        "flex h-full min-h-0 w-full flex-col overflow-hidden border border-border/80 bg-surface",
+        WORKSPACE_RADIUS_CLASS,
+      )}
     >
       <div
         ref={scrollRef}
-        className="calendar-body-scroll h-full max-h-[inherit] overflow-auto"
+        className="calendar-body-scroll min-h-0 flex-1 overflow-auto"
       >
         <div style={{ minWidth: minWidth ?? "100%" }}>
           <div
             data-calendar-staff-header
-            className="sticky top-0 z-10 grid border-b border-border/70 bg-[#FFFCFA]/95 backdrop-blur-sm"
+            className="sticky top-0 z-10 grid border-b border-border/60 bg-[#FFFCFA]/95 backdrop-blur-sm"
             style={{ gridTemplateColumns: columns }}
           >
-            <div className="flex items-end justify-end px-2 pb-3 text-[11px] font-medium tabular-nums text-secondary-text">
-              時間
-            </div>
+            <div />
             {staff.map((s) => {
               const schedule = resolveStaffDayScheduleStatus({
                 organizationId,
@@ -536,21 +571,21 @@ export function StaffDayGrid({
               return (
                 <div
                   key={s.userId}
-                  className="border-l border-border/25 px-3 py-3 text-center"
+                  className="flex h-[115px] flex-col items-center justify-center border-l border-[#D8CBC6] px-2 py-2 text-center"
                 >
                   <div
-                    className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-primary/12 text-sm font-semibold text-primary"
+                    className="mx-auto flex h-9 w-9 items-center justify-center rounded-full bg-primary/12 text-[13px] font-semibold text-primary"
                     aria-hidden
                   >
                     {s.displayName.slice(0, 1)}
                   </div>
-                  <p className="mt-1.5 truncate text-sm font-semibold text-text">
+                  <p className="mt-1.5 truncate text-[13px] font-semibold leading-tight text-text">
                     {s.displayName}
                   </p>
                   {meta ? (
                     <p
                       className={cn(
-                        "mt-0.5 truncate text-xs tabular-nums text-secondary-text",
+                        "mt-0.5 truncate text-[11px] leading-tight tabular-nums text-secondary-text",
                         schedule.kind === "not_scheduled" &&
                           apptCount > 0 &&
                           "text-amber-800/80",
@@ -562,7 +597,7 @@ export function StaffDayGrid({
                   {schedule.dutyLabel ? (
                     <span
                       className={cn(
-                        "mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium",
+                        "mt-1.5 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium",
                         schedule.dutyLabel === "上班中"
                           ? "bg-[#E8F3EC] text-[#4F7A5C]"
                           : "bg-[#F3EEEA] text-secondary-text",
@@ -650,10 +685,12 @@ export function WeekGrid({
 
   return (
     <div
-      className="w-full overflow-hidden rounded-3xl border border-border/80 bg-surface shadow-[0_1px_3px_rgba(48,43,43,0.04)]"
-      style={{ maxHeight: "calc(100dvh - 14rem)" }}
+      className={cn(
+        "flex h-full min-h-0 w-full flex-col overflow-hidden border border-border/80 bg-surface",
+        WORKSPACE_RADIUS_CLASS,
+      )}
     >
-      <div className="calendar-body-scroll h-full max-h-[inherit] overflow-auto">
+      <div className="calendar-body-scroll min-h-0 flex-1 overflow-auto">
         <div className="w-full" style={{ minWidth: weekMinWidth }}>
           <div
             className="sticky top-0 z-10 grid border-b border-border/70 bg-[#FFFCFA]/95 backdrop-blur-sm"

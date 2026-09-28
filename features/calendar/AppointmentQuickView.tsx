@@ -2,7 +2,17 @@
 
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
-import { ArrowRight, X } from "lucide-react";
+import {
+  AlertCircle,
+  CalendarX,
+  CircleCheck,
+  Clock3,
+  Pencil,
+  Play,
+  Sparkles,
+  UserRound,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { scheduleAppointmentToLegacyView } from "@/lib/appointment-store";
@@ -28,6 +38,11 @@ import {
   subscribeTreatmentDrafts,
 } from "@/lib/treatment-draft";
 import { cn, MEMBERSHIP_LABEL } from "@/lib/utils";
+import {
+  CALENDAR_ROSE_FILL,
+  CALENDAR_ROSE_HOVER,
+  WORKSPACE_RADIUS_CLASS,
+} from "./grid-shared";
 
 const membershipTone = {
   vip: "vip" as const,
@@ -76,149 +91,214 @@ export function AppointmentQuickView({
   const membership = item.membership ?? customer?.membership ?? "regular";
   const start = new Date(item.startAt);
   const end = new Date(item.endAt);
+  const [tab, setTab] = useState<"info" | "customer">("info");
+
+  const infoRows = [
+    {
+      icon: Clock3,
+      label: "時間",
+      value: `${formatYmd(start).replace(/-/g, "/")} ${formatHm(start)}–${formatHm(end)}`,
+    },
+    {
+      icon: Sparkles,
+      label: "服務",
+      value: `${item.serviceName} · ${item.durationMinutes}分鐘`,
+    },
+    {
+      icon: UserRound,
+      label: "美容師",
+      value: item.staffName,
+    },
+    {
+      icon: CircleCheck,
+      label: "狀態",
+      value: STATUS_LABEL[item.status],
+    },
+  ];
 
   return (
     <>
       <button
         type="button"
-        className="fixed inset-0 z-40 bg-text/25 min-[1200px]:bg-transparent"
+        className="fixed inset-0 z-40 bg-text/25 min-[720px]:hidden"
         aria-label="關閉預約詳情"
         onClick={onClose}
       />
       <aside
+        data-calendar-quickview
         role="dialog"
         aria-modal="true"
         aria-label="預約詳情"
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 flex max-h-[88vh] flex-col overflow-hidden rounded-t-3xl border border-border bg-surface shadow-[0_-4px_24px_rgba(48,43,43,0.08)]",
-          "min-[720px]:inset-y-0 min-[720px]:left-auto min-[720px]:right-0 min-[720px]:max-h-none min-[720px]:w-[min(100%,360px)] min-[720px]:rounded-none min-[720px]:border-l min-[720px]:border-t-0 min-[720px]:shadow-[-4px_0_24px_rgba(48,43,43,0.06)]",
+          "z-50 flex flex-col overflow-hidden border border-border bg-surface",
+          "fixed inset-x-0 bottom-0 max-h-[88vh] rounded-t-3xl shadow-[0_-4px_24px_rgba(48,43,43,0.08)]",
+          "min-[720px]:relative min-[720px]:inset-auto min-[720px]:z-0 min-[720px]:h-full min-[720px]:w-[325px] min-[720px]:max-h-none min-[720px]:shrink-0 min-[720px]:shadow-none",
+          WORKSPACE_RADIUS_CLASS,
         )}
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
-          <div className="min-w-0">
-            <p className="text-xs font-medium tracking-wide text-secondary-text">
-              {formatHm(start)} 的預約
-              {locationName ? ` · ${locationName}` : ""}
-            </p>
-            <h2 className="mt-1 truncate text-xl font-semibold text-text">
-              {item.customerName}
-            </h2>
-          </div>
+        <div className="flex shrink-0 items-center justify-between gap-3 px-5 pt-3.5 pb-1.5">
+          <p className="text-[15px] font-semibold text-text">
+            {formatHm(start)}的預約
+          </p>
           <button
             type="button"
-            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-2xl text-secondary-text hover:bg-primary-light/50"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-secondary-text hover:bg-primary-light/50"
             aria-label="關閉"
             onClick={onClose}
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge
-              tone={membershipTone[membership]}
-              className="px-2 py-0.5 text-[11px]"
-            >
-              {MEMBERSHIP_LABEL[membership]}
-            </Badge>
-            {customer && customer.totalVisits > 0 ? (
-              <Badge tone="neutral" className="px-2 py-0.5 text-[11px]">
-                第{customer.totalVisits}次來店
+        <div className="flex shrink-0 items-start gap-3 px-5 pb-2.5">
+          <div
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/12 text-[15px] font-semibold text-primary"
+            aria-hidden
+          >
+            {item.customerName.slice(0, 1)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h2 className="truncate text-[15px] font-semibold text-text">
+                {item.customerName}
+              </h2>
+              <Badge
+                tone={membershipTone[membership]}
+                className="px-1.5 py-px text-[10px]"
+              >
+                {MEMBERSHIP_LABEL[membership]}
               </Badge>
+            </div>
+            {customer?.phone ? (
+              <p className="mt-0.5 text-[12px] text-secondary-text">
+                電話 {customer.phone}
+              </p>
+            ) : null}
+            {customer && customer.totalVisits > 0 ? (
+              <p className="text-[12px] text-secondary-text">
+                第{customer.totalVisits}次來店
+              </p>
             ) : null}
           </div>
-
-          {customer?.phone ? (
-            <div className="mt-4">
-              <p className="text-xs text-secondary-text">電話</p>
-              <p className="mt-0.5 text-[15px] text-text">{customer.phone}</p>
-            </div>
-          ) : null}
-
-          <section className="mt-5 border-t border-border pt-4">
-            <p className="text-xs font-medium tracking-wide text-secondary-text">
-              預約資訊
-            </p>
-            <dl className="mt-3 space-y-3 text-sm">
-              <div>
-                <dt className="text-secondary-text">時間</dt>
-                <dd className="mt-0.5 font-medium text-text">
-                  {formatYmd(start).replace(/-/g, "/")}
-                  <br />
-                  {formatHm(start)} – {formatHm(end)}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-secondary-text">服務</dt>
-                <dd className="mt-0.5 font-medium text-text">
-                  {item.serviceName} · {item.durationMinutes}分鐘
-                </dd>
-              </div>
-              <div>
-                <dt className="text-secondary-text">美容師</dt>
-                <dd className="mt-0.5 font-medium text-text">{item.staffName}</dd>
-              </div>
-              <div>
-                <dt className="text-secondary-text">狀態</dt>
-                <dd className="mt-0.5 font-medium text-text">
-                  {STATUS_LABEL[item.status]}
-                </dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="mt-5 border-t border-border pt-4">
-            <p className="text-xs font-medium tracking-wide text-secondary-text">
-              上次服務
-            </p>
-            {lastService ? (
-              <>
-                <p className="mt-1.5 text-[15px] font-medium text-text">
-                  {lastService.dateLabel}
-                </p>
-                {lastService.serviceName ? (
-                  <p className="mt-0.5 text-sm text-secondary-text">
-                    {lastService.serviceName}
-                  </p>
-                ) : null}
-              </>
-            ) : (
-              <p className="mt-1.5 text-sm text-secondary-text">尚無服務紀錄</p>
-            )}
-          </section>
-
-          <section className="mt-5 border-t border-border pt-4">
-            <p className="text-xs font-medium tracking-wide text-secondary-text">
-              需要留意
-            </p>
-            {attention.length > 0 ? (
-              <ul className="mt-2 space-y-1.5">
-                {attention.map((note) => (
-                  <li
-                    key={note}
-                    className="flex gap-2 text-[13px] leading-relaxed text-secondary-text"
-                  >
-                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary/70" />
-                    <span>{note}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-1.5 text-sm text-secondary-text">
-                目前沒有特別備註
-              </p>
-            )}
-          </section>
         </div>
 
-        <div className="shrink-0 space-y-2 border-t border-border px-5 py-4">
+        <div className="flex shrink-0 gap-5 border-b border-border px-5">
+          {(
+            [
+              ["info", "預約資訊"],
+              ["customer", "客戶資料"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={cn(
+                "-mb-px border-b-2 pb-1.5 text-[13px] font-medium",
+                tab === id
+                  ? "border-[#C56B70] text-[#C56B70]"
+                  : "border-transparent text-secondary-text hover:text-text",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3.5">
+          {tab === "info" ? (
+            <>
+              <div className="space-y-2.5 rounded-2xl bg-[#FAF7F5] px-3.5 py-3">
+                {infoRows.map((row) => {
+                  const Icon = row.icon;
+                  return (
+                    <div key={row.label} className="flex items-start gap-2.5">
+                      <Icon
+                        className="mt-0.5 h-4 w-4 shrink-0 text-secondary-text"
+                        aria-hidden
+                      />
+                      <div className="min-w-0">
+                        <p className="text-[11px] text-secondary-text">
+                          {row.label}
+                        </p>
+                        <p className="text-[13px] font-medium leading-snug text-text">
+                          {row.value}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <section className="mt-3.5">
+                <p className="text-[13px] font-semibold text-text">上次服務</p>
+                {lastService ? (
+                  <p className="mt-1 text-[13px] text-secondary-text">
+                    {lastService.dateLabel}
+                    {lastService.serviceName
+                      ? ` · ${lastService.serviceName}`
+                      : ""}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[13px] text-secondary-text">
+                    尚無服務紀錄
+                  </p>
+                )}
+              </section>
+
+              <section className="mt-3.5 rounded-2xl bg-[#F8F1F1] px-3.5 py-2.5">
+                <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[#B15B5B]">
+                  <AlertCircle className="h-3.5 w-3.5" aria-hidden />
+                  需要留意
+                </p>
+                {attention.length > 0 ? (
+                  <ul className="mt-2 space-y-1">
+                    {attention.map((note) => (
+                      <li
+                        key={note}
+                        className="flex gap-2 text-[12px] leading-relaxed text-secondary-text"
+                      >
+                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#C9797D]" />
+                        <span>{note}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1.5 text-[12px] text-secondary-text">
+                    目前沒有特別備註
+                  </p>
+                )}
+              </section>
+            </>
+          ) : (
+            <div className="space-y-3 text-[13px]">
+              <p className="text-[13px] font-semibold text-text">客戶資料</p>
+              <p className="text-secondary-text">
+                {customer?.phone ? `電話 ${customer.phone}` : "沒有電話"}
+              </p>
+              <p className="text-secondary-text">
+                {MEMBERSHIP_LABEL[membership]}
+                {customer && customer.totalVisits > 0
+                  ? ` · 第${customer.totalVisits}次來店`
+                  : ""}
+              </p>
+              {locationName ? (
+                <p className="text-secondary-text">{locationName}</p>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        <div className="shrink-0 space-y-1.5 px-5 pt-1.5 pb-5">
           {primary.kind !== "none" ? (
             <Link
               href={primary.href}
-              className="inline-flex min-h-11 w-full items-center justify-center rounded-2xl bg-primary px-5 text-[15px] font-medium text-white transition-colors hover:bg-[#b9686c]"
+              className={cn(
+                "inline-flex h-[50px] min-h-[50px] w-full items-center justify-center gap-1.5 rounded-full text-[15px] font-medium text-white transition-colors",
+                CALENDAR_ROSE_FILL,
+                CALENDAR_ROSE_HOVER,
+              )}
               onClick={() => {
-                // Domain only allows ARRIVED → IN_SERVICE; other statuses open treatment as-is.
                 if (primary.kind === "start_treatment" && item.status === "ARRIVED") {
                   try {
                     onTransition("IN_SERVICE");
@@ -228,6 +308,7 @@ export function AppointmentQuickView({
                 }
               }}
             >
+              <Play className="h-3.5 w-3.5 fill-current" aria-hidden />
               {primary.label}
             </Link>
           ) : null}
@@ -235,28 +316,30 @@ export function AppointmentQuickView({
             {canEdit ? (
               <Button
                 variant="outline"
-                className="min-h-11 flex-1"
+                className="h-10 min-h-10 flex-1 rounded-full text-[13px]"
                 onClick={onEdit}
               >
+                <Pencil className="h-3.5 w-3.5" aria-hidden />
                 編輯預約
               </Button>
             ) : null}
             {canCancel ? (
               <Button
-                variant="ghost"
-                className="min-h-11 flex-1 text-[#B15B5B]"
+                variant="outline"
+                className="h-10 min-h-10 flex-1 rounded-full text-[13px] text-[#B15B5B]"
                 onClick={onRequestCancel}
               >
+                <CalendarX className="h-3.5 w-3.5" aria-hidden />
                 取消預約
               </Button>
             ) : null}
           </div>
           <Link
             href={`/staff/customers/${item.customerId}`}
-            className="inline-flex min-h-10 w-full items-center justify-center gap-1 text-sm font-medium text-secondary-text transition-colors hover:text-primary"
+            className="inline-flex h-9 w-full items-center justify-center gap-1 text-[13px] font-medium text-secondary-text transition-colors hover:text-primary"
           >
-            查看完整客戶資料
-            <ArrowRight className="h-3.5 w-3.5 opacity-70" aria-hidden />
+            <UserRound className="h-3.5 w-3.5 opacity-70" aria-hidden />
+            查看完整客戶資料 →
           </Link>
         </div>
       </aside>

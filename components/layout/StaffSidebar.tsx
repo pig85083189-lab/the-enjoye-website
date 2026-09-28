@@ -14,7 +14,12 @@ import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
 import { cn } from "@/lib/utils";
 
-export function StaffSidebar() {
+export function StaffSidebar({
+  widthClass = "w-[232px]",
+}: {
+  /** Desktop rail width — Calendar workbench uses 254px to match the Day View reference. */
+  widthClass?: string;
+}) {
   const { organization, membership, currentLocation } = useOrganization();
   const session = getSession();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
@@ -33,7 +38,13 @@ export function StaffSidebar() {
   const staffName = membership?.displayName ?? session?.name ?? "美容師";
 
   return (
-    <aside className="hidden w-[232px] shrink-0 border-r border-border bg-surface min-[1200px]:flex min-[1200px]:flex-col">
+    <aside
+      data-staff-sidebar
+      className={cn(
+        "hidden shrink-0 border-r border-border bg-surface min-[1200px]:flex min-[1200px]:flex-col",
+        widthClass,
+      )}
+    >
       <div className="border-b border-border px-5 py-6">
         <p className="text-[11px] tracking-[0.18em] text-secondary-text">{PLATFORM_NAME}</p>
         <p className="mt-1 font-display text-lg tracking-[0.08em] text-primary">
