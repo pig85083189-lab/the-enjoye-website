@@ -117,6 +117,11 @@ export function getMembership(
   );
 }
 
+/** All org memberships, including inactive. Canonical StaffMembership read — not a parallel roster. */
+export function listMemberships(organizationId: string): StaffMembership[] {
+  return SEED_MEMBERSHIPS.filter((m) => m.organizationId === organizationId);
+}
+
 export function getSubscription(organizationId: string): OrganizationSubscription | undefined {
   return SEED_SUBSCRIPTIONS.find((s) => s.organizationId === organizationId);
 }

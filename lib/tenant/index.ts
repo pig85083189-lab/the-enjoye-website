@@ -47,6 +47,7 @@ export {
   getPrimaryLocation,
   updateLocationLocal,
   getMembership,
+  listMemberships,
   getSubscription,
   bootstrapOrganizationContext,
   persistOrganizationId,

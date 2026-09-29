@@ -1,7 +1,7 @@
 "use client";
 
-import { StaffSchedulePage } from "@/features/staff/StaffSchedulePage";
+import { StaffWorkspacePage } from "@/features/staff/StaffWorkspacePage";
 
 export default function StaffPage() {
-  return <StaffSchedulePage />;
+  return <StaffWorkspacePage />;
 }
