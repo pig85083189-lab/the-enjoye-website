@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Search, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -11,6 +12,7 @@ import {
 } from "@/lib/commerce/checkout-store";
 import { formatTwd } from "@/lib/commerce/money";
 import type { PackageDefinition } from "@/lib/packages/domain";
+import { planValidityLabel } from "@/lib/packages/package-plans-derived";
 import {
   canStartPackageSale,
   filterCustomersForPackagePicker,
@@ -26,6 +28,7 @@ interface PackageSellModalProps {
   staffId: string;
   customers: Customer[];
   definitions: PackageDefinition[];
+  serviceNames?: Record<string, string>;
   initialCustomerId?: string | null;
   onClose: () => void;
 }
@@ -37,6 +40,7 @@ export function PackageSellModal({
   staffId,
   customers,
   definitions,
+  serviceNames = {},
   initialCustomerId = null,
   onClose,
 }: PackageSellModalProps) {
@@ -196,7 +200,13 @@ export function PackageSellModal({
               <div className="mt-2 rounded-2xl border border-border bg-[#FAF7F5] px-3 py-2.5">
                 <p className="text-[14px] font-semibold text-text">{definition.name}</p>
                 <p className="mt-0.5 text-[12px] tabular-nums text-secondary-text">
-                  {definition.sessionCount} 堂 · {formatTwd(definition.priceMinor)}
+                  {definition.sessionCount} 堂 · {formatTwd(definition.priceMinor)} ·{" "}
+                  {planValidityLabel(definition.validityDays)}
+                </p>
+                <p className="mt-1 truncate text-[12px] text-secondary-text">
+                  {definition.includedServices
+                    .map((row) => serviceNames[row.serviceId] ?? row.serviceId)
+                    .join("、")}
                 </p>
                 <button
                   type="button"
@@ -210,9 +220,17 @@ export function PackageSellModal({
                 </button>
               </div>
             ) : defHits.length === 0 ? (
-              <p className="mt-2 text-sm text-secondary-text">
-                尚無可售套票定義。請先建立套票商品後再販售。
-              </p>
+              <div className="mt-2 space-y-2">
+                <p className="text-sm text-secondary-text">
+                  尚無可售套票方案。請先建立套票方案後再販售。
+                </p>
+                <Link
+                  href="/staff/packages/plans"
+                  className="inline-flex text-[13px] font-medium text-primary"
+                >
+                  前往套票方案
+                </Link>
+              </div>
             ) : (
               <>
                 <div className="relative mt-2">
@@ -270,6 +288,18 @@ export function PackageSellModal({
               <div className="flex items-center justify-between py-1">
                 <span className="text-secondary-text">堂數</span>
                 <span className="tabular-nums text-text">{definition.sessionCount} 堂</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-1">
+                <span className="shrink-0 text-secondary-text">內容</span>
+                <span className="min-w-0 truncate text-right text-text">
+                  {definition.includedServices
+                    .map((row) => serviceNames[row.serviceId] ?? row.serviceId)
+                    .join("、")}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="text-secondary-text">有效期限</span>
+                <span className="text-text">{planValidityLabel(definition.validityDays)}</span>
               </div>
               <div className="flex items-center justify-between py-1">
                 <span className="text-secondary-text">應付</span>

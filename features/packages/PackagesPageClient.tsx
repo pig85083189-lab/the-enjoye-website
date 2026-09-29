@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
   type SyntheticEvent,
 } from "react";
+import Link from "next/link";
 import { ChevronRight, Crown, Plus, Search, Ticket } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -246,14 +247,23 @@ export function PackagesPageClient() {
             管理客戶套票、剩餘堂數與使用紀錄
           </p>
         </div>
-        <div className="hidden shrink-0 min-[720px]:block">
-          <Button
-            className="h-9 min-h-9 rounded-full px-4 text-[13px]"
-            onClick={() => openSell(null)}
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            href="/staff/packages/plans"
+            data-packages-plans-link
+            className="inline-flex h-9 min-h-9 items-center justify-center rounded-full border border-border bg-surface px-3.5 text-[13px] font-medium text-text hover:bg-primary-light/40"
           >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
-            販售套票
-          </Button>
+            套票方案
+          </Link>
+          <div className="hidden min-[720px]:block">
+            <Button
+              className="h-9 min-h-9 rounded-full px-4 text-[13px]"
+              onClick={() => openSell(null)}
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              販售套票
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -461,6 +471,7 @@ export function PackagesPageClient() {
           staffId={staffId}
           customers={customers}
           definitions={definitions}
+          serviceNames={serviceNames}
           initialCustomerId={sellCustomerId}
           onClose={() => {
             setSellOpen(false);

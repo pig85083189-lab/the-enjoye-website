@@ -35,7 +35,7 @@ function StaffShellChrome({ children }: { children: ReactNode }) {
   const isStoredValueWorkbench =
     pathname === "/staff/stored-value" || pathname === "/staff/stored-value/";
   const isPackagesWorkbench =
-    pathname === "/staff/packages" || pathname === "/staff/packages/";
+    pathname === "/staff/packages" || pathname.startsWith("/staff/packages/");
   const isTransactionsWorkbench =
     pathname === "/staff/transactions" || pathname === "/staff/transactions/";
   const isProductsWorkbench =

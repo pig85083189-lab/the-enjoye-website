@@ -708,6 +708,7 @@ describe("packages workspace source guards", () => {
     expect(page).toMatch(/listCustomerPackages/);
     expect(page).toMatch(/listPackageLedger/);
     expect(page).toMatch(/getPackageUsableBalance/);
+    expect(page).toMatch(/\/staff\/packages\/plans/);
     expect(page).not.toMatch(/customer\.packages/);
     expect(quickView).toMatch(/adjustPackageSessions/);
     expect(quickView).toMatch(/packageScheduleHref/);
