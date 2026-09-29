@@ -11,6 +11,7 @@ export type NavPermission =
   | "package.read"
   | "transaction.read"
   | "product.read"
+  | "service.read"
   | "crm.read"
   | "report.read"
   | "staff.manage"

@@ -111,6 +111,7 @@ export interface PackagePlanMutationInput {
 export interface PackagePlanServiceOption {
   id: string;
   name: string;
+  isActive?: boolean;
 }
 
 export function canManagePackagePlans(role: StaffRole | undefined): boolean {
@@ -214,7 +215,7 @@ export function availablePlanServices(
   includedServiceIds: string[],
 ): PackagePlanServiceOption[] {
   const taken = new Set(includedServiceIds);
-  return options.filter((row) => !taken.has(row.id));
+  return options.filter((row) => !taken.has(row.id) && row.isActive !== false);
 }
 
 function parsePositiveInt(raw: string): number | null {

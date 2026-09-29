@@ -40,6 +40,8 @@ function StaffShellChrome({ children }: { children: ReactNode }) {
     pathname === "/staff/transactions" || pathname === "/staff/transactions/";
   const isProductsWorkbench =
     pathname === "/staff/products" || pathname === "/staff/products/";
+  const isServicesWorkbench =
+    pathname === "/staff/services" || pathname === "/staff/services/";
   const isFollowUpsWorkbench =
     pathname === "/staff/follow-ups" || pathname === "/staff/follow-ups/";
   const isReportsWorkbench =
@@ -59,6 +61,7 @@ function StaffShellChrome({ children }: { children: ReactNode }) {
     isPackagesWorkbench ||
     isTransactionsWorkbench ||
     isProductsWorkbench ||
+    isServicesWorkbench ||
     isFollowUpsWorkbench ||
     isReportsWorkbench ||
     isStaffWorkbench ||

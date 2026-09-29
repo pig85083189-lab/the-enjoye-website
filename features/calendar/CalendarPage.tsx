@@ -67,6 +67,7 @@ import {
 } from "@/lib/staff-schedule/prefs";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { getServicesForOrganization } from "@/data/mock-services";
+import { selectableServicesForBooking } from "@/lib/services/service-catalog-derived";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { useClientNow } from "@/lib/use-client-now";
 import { cn } from "@/lib/utils";
@@ -737,7 +738,11 @@ function AppointmentEditor({
 }) {
   const dialogRef = useDialogA11y(onClose);
   const customers = localCustomerRepository.list({ organizationId });
-  const services = getServicesForOrganization(organizationId);
+  const catalog = getServicesForOrganization(organizationId);
+  const services = selectableServicesForBooking(
+    catalog,
+    initial?.serviceId ?? prefill?.serviceId,
+  );
   const [loc, setLoc] = useState(initial?.locationId ?? locationId);
   const staff = staffOptionsForLocation(organizationId, loc);
   const [customerId, setCustomerId] = useState(

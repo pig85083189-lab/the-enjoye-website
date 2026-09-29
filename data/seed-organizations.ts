@@ -294,6 +294,7 @@ export const SEED_LUMIERE_SERVICES: Service[] = [
     category: "facial",
     serviceType: "FACIAL",
     priceMinor: 3000,
+    isActive: true,
   },
   {
     id: "svc-lumiere-relax",
@@ -303,6 +304,7 @@ export const SEED_LUMIERE_SERVICES: Service[] = [
     category: "body",
     serviceType: "BODY_SCULPTING",
     priceMinor: 2200,
+    isActive: true,
   },
 ];
 

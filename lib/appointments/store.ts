@@ -201,6 +201,10 @@ export function createAppointment(
   input: CreateAppointmentInput,
 ): ScheduleAppointment {
   const meta = assertOwnership(organizationId, input);
+  const booked = getServiceById(input.serviceId, organizationId);
+  if (booked?.isActive === false) {
+    throw new Error("Service is not available");
+  }
   const now = new Date().toISOString();
   const draft: ScheduleAppointment = {
     id: newId("apt"),

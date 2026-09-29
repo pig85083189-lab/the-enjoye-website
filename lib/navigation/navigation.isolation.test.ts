@@ -60,6 +60,10 @@ describe("active route resolution", () => {
     expect(resolveActiveNavId("/staff/settings/locations")).toBe("settings");
   });
 
+  it("services catalog is its own nav item", () => {
+    expect(resolveActiveNavId("/staff/services")).toBe("services");
+  });
+
   it("more hub resolves as more", () => {
     expect(resolveActiveNavId(MOBILE_MORE_HREF)).toBe("more");
   });

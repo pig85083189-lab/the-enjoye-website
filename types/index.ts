@@ -25,6 +25,11 @@ export interface Service {
    * Phase 4.9A commerce — optional for backward compatibility; adapter supplies fallback.
    */
   priceMinor?: number;
+  /**
+   * Catalog availability. Missing / undefined means active (seed backward compatible).
+   * Deactivate with false — never hard-delete referenced identities.
+   */
+  isActive?: boolean;
 }
 
 export interface CustomerPackage {

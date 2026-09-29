@@ -139,10 +139,10 @@ export function CheckoutPageClient() {
     () => localCustomerRepository.list({ organizationId: organization.id }),
     [] as Customer[],
   );
-  const catalog = useMemo(
-    () => getServicesForOrganization(organization.id),
-    [organization.id],
-  );
+  const catalog = useMemo(() => {
+    void commerceRev;
+    return getServicesForOrganization(organization.id);
+  }, [commerceRev, organization.id]);
 
   const appointments = useMemo(() => {
     void appointmentRev;

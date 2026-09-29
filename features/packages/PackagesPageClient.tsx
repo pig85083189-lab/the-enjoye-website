@@ -95,7 +95,10 @@ export function PackagesPageClient() {
   const locationId = currentLocation?.id ?? locations[0]?.id ?? "";
   const staffId = membership?.userId ?? "staff-001";
   const canAdjust = membership?.role === "OWNER" || membership?.role === "MANAGER";
-  const services = getServicesForOrganization(organization.id);
+  const services = useMemo(() => {
+    void commerceRev;
+    return getServicesForOrganization(organization.id);
+  }, [commerceRev, organization.id]);
   const serviceNames = useMemo(
     () => Object.fromEntries(services.map((service) => [service.id, service.name])),
     [services],

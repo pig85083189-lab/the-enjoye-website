@@ -80,9 +80,17 @@ export function PackagePlansPageClient() {
 
   const staffId = membership?.userId ?? "";
   const canManage = canManagePackagePlans(membership?.role);
-  const services = getServicesForOrganization(organization.id);
+  const services = useMemo(() => {
+    void commerceRev;
+    return getServicesForOrganization(organization.id);
+  }, [commerceRev, organization.id]);
   const serviceOptions = useMemo(
-    () => services.map((service) => ({ id: service.id, name: service.name })),
+    () =>
+      services.map((service) => ({
+        id: service.id,
+        name: service.name,
+        isActive: service.isActive !== false,
+      })),
     [services],
   );
   const serviceNames = useMemo(

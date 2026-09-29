@@ -71,7 +71,11 @@ export function CheckoutPanel({
   onClose,
   onCompleted,
 }: CheckoutPanelProps) {
-  useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
+  const commerceRev = useSyncExternalStore(
+    subscribeCommerce,
+    getCommerceRevision,
+    () => "",
+  );
   const liveDraft =
     (item.draftId
       ? getCheckoutDraft(organizationId, item.draftId)
@@ -127,10 +131,10 @@ export function CheckoutPanel({
   const visitLabel = checkoutVisitCountLabel(customer?.totalVisits);
   const profileHref = item.customerId ? `/staff/customers/${item.customerId}` : "";
 
-  const services = useMemo(
-    () => getServicesForOrganization(organizationId),
-    [organizationId],
-  );
+  const services = useMemo(() => {
+    void commerceRev;
+    return getServicesForOrganization(organizationId);
+  }, [commerceRev, organizationId]);
   const svBalance = item.customerId
     ? getCustomerStoredValueBalance(organizationId, item.customerId)
     : 0;
@@ -466,7 +470,9 @@ export function CheckoutPanel({
                             }}
                           >
                             <option value="">選擇服務…</option>
-                            {services.map((service) => (
+                            {services
+                              .filter((service) => service.isActive !== false)
+                              .map((service) => (
                               <option key={service.id} value={service.id}>
                                 {service.name}
                                 {typeof service.priceMinor === "number"

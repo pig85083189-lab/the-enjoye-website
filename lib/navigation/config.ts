@@ -1,6 +1,7 @@
 import {
   CalendarDays,
   ClipboardList,
+  Flower2,
   LayoutDashboard,
   Package,
   PiggyBank,
@@ -133,6 +134,17 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     status: "ready",
     description: "商品目錄、分店庫存與零售售價",
     requiredPermissions: ["product.read"],
+    roles: ["OWNER", "MANAGER", "RECEPTIONIST"],
+  },
+  {
+    id: "services",
+    label: "服務項目",
+    href: "/staff/services",
+    icon: Flower2,
+    group: "sales",
+    status: "ready",
+    description: "可預約、可銷售與套票適用的服務目錄",
+    requiredPermissions: ["service.read"],
     roles: ["OWNER", "MANAGER", "RECEPTIONIST"],
   },
   {
