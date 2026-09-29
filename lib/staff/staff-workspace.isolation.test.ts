@@ -359,7 +359,7 @@ describe("I–L schedule presentation", () => {
 describe("M–Q workspace chrome", () => {
   it("M does not invent a capability store", () => {
     expect(STAFF_HAS_SERVICE_CAPABILITY_STORE).toBe(false);
-    expect(STAFF_HAS_CREATE_FLOW).toBe(false);
+    expect(STAFF_HAS_CREATE_FLOW).toBe(true);
     expect(STAFF_HAS_CALENDAR_STAFF_PREFILTER).toBe(false);
   });
 
@@ -472,6 +472,8 @@ describe("R–T presentation + calendar contract", () => {
     expect(derived).not.toMatch(/getStaffAvailability|findAvailableStaff/);
     expect(derived).not.toMatch(/localStorage|staffWorkspaceStore|scheduleStoreV2/);
     expect(page).toMatch(/upsertWorkingHours|createBreak|createTimeOff/);
+    expect(page).toMatch(/StaffOnboardingDialog/);
+    expect(page).toMatch(/updateMembership/);
     expect(page).not.toMatch(/createStaffStore|staffWorkspaceStore/);
     expect(quickView).toMatch(/role="dialog"/);
     expect(quickView).toMatch(/aria-modal="true"/);

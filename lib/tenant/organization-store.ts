@@ -1,7 +1,14 @@
-import type { Organization, Location, StaffMembership, OrganizationSubscription } from "@/types/saas";
+import type {
+  Location,
+  Organization,
+  OrganizationSubscription,
+  StaffMembership,
+  StaffRole,
+} from "@/types/saas";
 import {
   CURRENT_ORG_STORAGE_KEY,
   LOCATION_OVERRIDES_STORAGE_KEY,
+  MEMBERSHIP_OVERRIDES_STORAGE_KEY,
   ORG_ENJOYE_ID,
   ORG_OVERRIDES_STORAGE_KEY,
 } from "@/lib/tenant/constants";
@@ -14,6 +21,7 @@ import {
 import { setActiveOrganizationId } from "@/lib/tenant/active-organization";
 import { migrateLegacyTenantStorage } from "@/lib/tenant/migration";
 import { emitCrmChange } from "@/lib/repositories/keys";
+import { newId } from "@/lib/repositories/storage";
 import {
   canAccessLocation,
   canAccessOrganization,
@@ -108,18 +116,117 @@ export function updateLocationLocal(
   return listLocations(all.organizationId).find((l) => l.id === locationId);
 }
 
-export function getMembership(
-  organizationId: string,
-  userId: string,
-): StaffMembership | undefined {
-  return SEED_MEMBERSHIPS.find(
-    (m) => m.organizationId === organizationId && m.userId === userId && m.isActive,
-  );
+const STAFF_ROLES: StaffRole[] = [
+  "OWNER",
+  "MANAGER",
+  "STAFF",
+  "RECEPTIONIST",
+  "ACCOUNTANT",
+];
+
+function readMembershipOverrides(): Record<string, StaffMembership> {
+  return readJson<Record<string, StaffMembership>>(MEMBERSHIP_OVERRIDES_STORAGE_KEY, {});
+}
+
+function writeMembershipOverrides(value: Record<string, StaffMembership>): void {
+  writeJson(MEMBERSHIP_OVERRIDES_STORAGE_KEY, value);
+}
+
+function isStaffRole(value: string): value is StaffRole {
+  return STAFF_ROLES.includes(value as StaffRole);
 }
 
 /** All org memberships, including inactive. Canonical StaffMembership read — not a parallel roster. */
 export function listMemberships(organizationId: string): StaffMembership[] {
-  return SEED_MEMBERSHIPS.filter((m) => m.organizationId === organizationId);
+  const overrides = readMembershipOverrides();
+  const seeded = SEED_MEMBERSHIPS.filter((item) => item.organizationId === organizationId).map(
+    (item) => {
+      const patch = overrides[item.id];
+      return patch ? { ...item, ...patch, id: item.id, userId: item.userId, organizationId: item.organizationId } : item;
+    },
+  );
+  const seededIds = new Set(seeded.map((item) => item.id));
+  const created = Object.values(overrides).filter(
+    (item) => item.organizationId === organizationId && !seededIds.has(item.id),
+  );
+  return [...seeded, ...created];
+}
+
+export function getMembership(
+  organizationId: string,
+  userId: string,
+): StaffMembership | undefined {
+  return listMemberships(organizationId).find(
+    (item) => item.userId === userId && item.isActive,
+  );
+}
+
+export interface CreateMembershipInput {
+  organizationId: string;
+  displayName: string;
+  role: StaffRole;
+  locationIds: string[];
+}
+
+export function createMembership(input: CreateMembershipInput): StaffMembership {
+  const displayName = input.displayName.trim();
+  if (!displayName) throw new Error("displayName is required");
+  if (!isStaffRole(input.role)) throw new Error("role is not a canonical StaffRole");
+  const locations = listLocations(input.organizationId);
+  const locationIds = [...new Set(input.locationIds)];
+  if (locationIds.length === 0) throw new Error("at least one location is required");
+  if (locationIds.some((id) => !locations.some((location) => location.id === id))) {
+    throw new Error("location does not belong to this organization");
+  }
+  const membership: StaffMembership = {
+    id: newId("mem"),
+    organizationId: input.organizationId,
+    userId: newId("staff"),
+    locationIds,
+    role: input.role,
+    displayName,
+    isActive: true,
+    createdAt: new Date().toISOString(),
+  };
+  const overrides = readMembershipOverrides();
+  overrides[membership.id] = membership;
+  writeMembershipOverrides(overrides);
+  emitOrgChange();
+  return membership;
+}
+
+export function updateMembership(
+  organizationId: string,
+  membershipId: string,
+  patch: Partial<Pick<StaffMembership, "displayName" | "role" | "locationIds" | "isActive">>,
+): StaffMembership {
+  const current = listMemberships(organizationId).find((item) => item.id === membershipId);
+  if (!current) throw new Error("Staff membership not found");
+  const displayName =
+    patch.displayName === undefined ? current.displayName : patch.displayName.trim();
+  if (!displayName) throw new Error("displayName is required");
+  const role = patch.role ?? current.role;
+  if (!isStaffRole(role)) throw new Error("role is not a canonical StaffRole");
+  const locationIds = patch.locationIds
+    ? [...new Set(patch.locationIds)]
+    : current.locationIds;
+  if (locationIds.length === 0) throw new Error("at least one location is required");
+  const locations = listLocations(organizationId);
+  if (locationIds.some((id) => !locations.some((location) => location.id === id))) {
+    throw new Error("location does not belong to this organization");
+  }
+  const next: StaffMembership = {
+    ...current,
+    displayName,
+    role,
+    locationIds,
+    isActive: patch.isActive ?? current.isActive,
+  };
+  const overrides = readMembershipOverrides();
+  overrides[next.id] = next;
+  writeMembershipOverrides(overrides);
+  emitOrgChange();
+  return next;
 }
 
 export function getSubscription(organizationId: string): OrganizationSubscription | undefined {
@@ -258,5 +365,5 @@ export function getOrganizationSnapshot(): string {
     orgId === "none"
       ? ""
       : (window.localStorage.getItem(getCurrentLocationStorageKey(orgId)) ?? "");
-  return `${orgId}|${window.localStorage.getItem(ORG_OVERRIDES_STORAGE_KEY) ?? ""}|${window.localStorage.getItem(LOCATION_OVERRIDES_STORAGE_KEY) ?? ""}|${locationPtr}`;
+  return `${orgId}|${window.localStorage.getItem(ORG_OVERRIDES_STORAGE_KEY) ?? ""}|${window.localStorage.getItem(LOCATION_OVERRIDES_STORAGE_KEY) ?? ""}|${window.localStorage.getItem(MEMBERSHIP_OVERRIDES_STORAGE_KEY) ?? ""}|${locationPtr}`;
 }

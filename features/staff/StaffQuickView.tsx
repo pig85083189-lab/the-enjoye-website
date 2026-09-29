@@ -10,6 +10,11 @@ import {
   type DayOfWeek,
 } from "@/lib/staff-schedule/domain";
 import {
+  STAFF_ONBOARDING_ROLES,
+  STAFF_ROLE_PRESENTATION,
+  toggleOnboardingLocation,
+} from "@/lib/staff/staff-onboarding-derived";
+import {
   STAFF_WORKSPACE_PANEL_WIDTH_PX,
   formatStaffHoursValue,
   listStaffBreakViews,
@@ -18,6 +23,7 @@ import {
   type StaffWorkspaceRow,
 } from "@/lib/staff/staff-workspace-derived";
 import type { StaffBreak, StaffTimeOff, StaffWorkingHours } from "@/lib/staff-schedule/domain";
+import type { Location, StaffRole } from "@/types/saas";
 import { cn } from "@/lib/utils";
 
 const DAYS: DayOfWeek[] = [1, 2, 3, 4, 5, 6, 0];
@@ -72,6 +78,15 @@ interface StaffQuickViewProps {
   onOffStart: (value: string) => void;
   onOffEnd: (value: string) => void;
   onOffReason: (value: string) => void;
+  canManage?: boolean;
+  locations?: Location[];
+  isCurrentUser?: boolean;
+  onSaveProfile?: (patch: {
+    displayName: string;
+    role: StaffRole;
+    locationIds: string[];
+  }) => void;
+  onSetActive?: (isActive: boolean) => void;
 }
 
 export function StaffQuickView({
@@ -111,6 +126,11 @@ export function StaffQuickView({
   onOffStart,
   onOffEnd,
   onOffReason,
+  canManage = false,
+  locations = [],
+  isCurrentUser = false,
+  onSaveProfile,
+  onSetActive,
 }: StaffQuickViewProps) {
   const upcoming = listUpcomingTimeOff({
     timeOff,
@@ -127,6 +147,10 @@ export function StaffQuickView({
   });
   const stats = weekRow?.stats;
   const [applyOpen, setApplyOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(row.displayName);
+  const [editRole, setEditRole] = useState<StaffRole>(row.role);
+  const [editLocationIds, setEditLocationIds] = useState(row.locationIds);
 
   return (
     <>
@@ -270,6 +294,111 @@ export function StaffQuickView({
                     </div>
                   </dl>
                 </section>
+
+                {canManage && onSaveProfile ? (
+                  <section
+                    data-staff-profile-edit
+                    className="space-y-2 rounded-2xl border border-border px-3.5 py-3.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[13px] font-medium text-text">員工資料</p>
+                      <button
+                        type="button"
+                        className="h-8 rounded-full border border-border px-2.5 text-[11px] text-secondary-text hover:bg-primary-light/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        onClick={() => {
+                          setEditing((open) => !open);
+                          setEditName(row.displayName);
+                          setEditRole(row.role);
+                          setEditLocationIds(row.locationIds);
+                        }}
+                      >
+                        {editing ? "取消編輯" : "編輯員工資料"}
+                      </button>
+                    </div>
+                    {editing ? (
+                      <div className="space-y-2">
+                        <label className="block text-[11px] text-secondary-text">
+                          員工姓名
+                          <input
+                            className="mt-1 h-10 min-h-10 w-full rounded-xl border border-border px-3 text-[13px]"
+                            value={editName}
+                            onChange={(event) => setEditName(event.target.value)}
+                          />
+                        </label>
+                        <label className="block text-[11px] text-secondary-text">
+                          角色
+                          <select
+                            className="mt-1 h-10 min-h-10 w-full rounded-xl border border-border px-3 text-[13px]"
+                            value={editRole}
+                            onChange={(event) =>
+                              setEditRole(event.target.value as StaffRole)
+                            }
+                          >
+                            {STAFF_ONBOARDING_ROLES.map((role) => (
+                              <option key={role} value={role}>
+                                {STAFF_ROLE_PRESENTATION[role]}（{role}）
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <fieldset>
+                          <legend className="text-[11px] text-secondary-text">分店</legend>
+                          <div className="mt-1 space-y-1">
+                            {locations.map((location) => (
+                              <label
+                                key={location.id}
+                                className="flex min-h-9 items-center gap-2 text-[13px]"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={editLocationIds.includes(location.id)}
+                                  onChange={() =>
+                                    setEditLocationIds(
+                                      toggleOnboardingLocation(editLocationIds, location.id),
+                                    )
+                                  }
+                                />
+                                {location.name}
+                              </label>
+                            ))}
+                          </div>
+                        </fieldset>
+                        <Button
+                          className="h-10 min-h-10 w-full rounded-full"
+                          onClick={() => {
+                            onSaveProfile({
+                              displayName: editName,
+                              role: editRole,
+                              locationIds: editLocationIds,
+                            });
+                            setEditing(false);
+                          }}
+                        >
+                          儲存員工資料
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-[12px] text-secondary-text">
+                        可改姓名、角色與分店。班表請使用上方分頁。
+                      </p>
+                    )}
+                    {onSetActive ? (
+                      <Button
+                        variant="outline"
+                        className="h-10 min-h-10 w-full rounded-full"
+                        disabled={isCurrentUser && row.isActive}
+                        onClick={() => onSetActive(!row.isActive)}
+                      >
+                        {row.isActive ? "停用員工" : "重新啟用"}
+                      </Button>
+                    ) : null}
+                    {isCurrentUser && row.isActive ? (
+                      <p className="text-[11px] text-secondary-text">
+                        無法停用目前登入使用中的員工資料
+                      </p>
+                    ) : null}
+                  </section>
+                ) : null}
               </div>
             ) : null}
 

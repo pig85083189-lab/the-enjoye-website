@@ -29,7 +29,7 @@ export const STAFF_WORKSPACE_PANEL_WIDTH_PX = 400;
 export const STAFF_WORKSPACE_INLINE_MIN_PX = 1200;
 export const STAFF_WORKSPACE_GAP_PX = 16;
 
-export const STAFF_HAS_CREATE_FLOW = false;
+export const STAFF_HAS_CREATE_FLOW = true;
 export const STAFF_HAS_CALENDAR_STAFF_PREFILTER = false;
 export const STAFF_HAS_SERVICE_CAPABILITY_STORE = false;
 export const STAFF_HAS_SPLIT_SHIFTS = false;
@@ -106,6 +106,7 @@ export interface StaffWorkspaceRow {
   initials: string;
   role: StaffRole;
   roleLabel: string;
+  locationIds: string[];
   locationLabel: string;
   isActive: boolean;
   employmentLabel: "在職" | "停用";
@@ -619,6 +620,7 @@ export function buildStaffWorkspace(input: {
       initials: staffInitials(membership.displayName),
       role: membership.role,
       roleLabel,
+      locationIds: membership.locationIds,
       locationLabel: input.locationName,
       isActive: membership.isActive,
       employmentLabel: membership.isActive ? "在職" : "停用",

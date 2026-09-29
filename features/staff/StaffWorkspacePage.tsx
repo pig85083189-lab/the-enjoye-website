@@ -8,12 +8,14 @@ import {
   type KeyboardEvent,
   type SyntheticEvent,
 } from "react";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { OrgLocationSwitcher } from "@/components/navigation/OrgLocationSwitcher";
+import { StaffOnboardingDialog } from "@/features/staff/StaffOnboardingDialog";
 import { StaffQuickView } from "@/features/staff/StaffQuickView";
+import { canManageStaff } from "@/lib/staff/staff-onboarding-derived";
 import { combineLocalDateTime, formatYmd, startOfDay } from "@/lib/appointments/domain";
 import type { DayOfWeek } from "@/lib/staff-schedule/domain";
 import {
@@ -50,8 +52,14 @@ import {
   type StaffWorkspaceView,
 } from "@/lib/staff/staff-workspace-derived";
 import { useIsClient } from "@/lib/repositories/use-crm-store";
-import { listMemberships } from "@/lib/tenant/organization-store";
+import {
+  getOrganizationSnapshot,
+  listMemberships,
+  subscribeOrganization,
+  updateMembership,
+} from "@/lib/tenant/organization-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
+import type { StaffRole } from "@/types/saas";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
 import { useClientNow } from "@/lib/use-client-now";
 import { cn } from "@/lib/utils";
@@ -77,9 +85,14 @@ function todayIndexInWeek(now: Date): number {
 }
 
 export function StaffWorkspacePage() {
-  const { organization, currentLocation, locations } = useOrganization();
+  const { organization, currentLocation, locations, membership } = useOrganization();
   const isClient = useIsClient();
   const clientNow = useClientNow();
+  const membershipRevision = useSyncExternalStore(
+    subscribeOrganization,
+    getOrganizationSnapshot,
+    () => "",
+  );
   const now = useMemo(
     () => (clientNow ? new Date(clientNow.getTime()) : new Date()),
     [clientNow],
@@ -111,11 +124,14 @@ export function StaffWorkspacePage() {
   const [offStart, setOffStart] = useState("09:00");
   const [offEnd, setOffEnd] = useState("21:00");
   const [offReason, setOffReason] = useState("");
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const canAddStaff = canManageStaff(membership?.role);
 
   const memberships = useMemo(() => {
+    void membershipRevision;
     if (!isClient) return [];
     return listMemberships(organization.id);
-  }, [isClient, organization.id]);
+  }, [isClient, membershipRevision, organization.id]);
 
   useEffect(() => {
     if (!isClient || !locationId) return;
@@ -248,6 +264,38 @@ export function StaffWorkspacePage() {
     });
   }
 
+  function handleStaffCreated(result: {
+    membership: { userId: string };
+    scheduleError: string | null;
+  }) {
+    setOnboardingOpen(false);
+    setFilter("all");
+    setQuery("");
+    setView("staff");
+    selectStaff(result.membership.userId);
+    if (result.scheduleError) {
+      setError(`員工已建立，但初始班表儲存失敗：${result.scheduleError}`);
+    }
+  }
+
+  function saveSelectedProfile(patch: {
+    displayName: string;
+    role: StaffRole;
+    locationIds: string[];
+  }) {
+    if (!selectedRow) return;
+    withError(() => {
+      updateMembership(organization.id, selectedRow.membershipId, patch);
+    });
+  }
+
+  function setSelectedActive(isActive: boolean) {
+    if (!selectedRow) return;
+    withError(() => {
+      updateMembership(organization.id, selectedRow.membershipId, { isActive });
+    });
+  }
+
   function applyPattern(pattern: "mon-fri" | "mon-sat") {
     if (!selectedStaffId) return;
     const drafts = planApplyWorkingHoursPattern({
@@ -286,8 +334,23 @@ export function StaffWorkspacePage() {
             <p className="text-[12px] text-secondary-text/80">{contextLabel}</p>
           ) : null}
         </div>
-        <div className="hidden w-[220px] shrink-0 min-[720px]:block">
-          <OrgLocationSwitcher compact />
+        <div className="flex shrink-0 items-start gap-2">
+          {canAddStaff ? (
+            <Button
+              data-staff-add
+              className="h-9 min-h-9 rounded-full px-3 text-[13px] sm:px-4"
+              onClick={() => {
+                setOnboardingOpen(true);
+                setError("");
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              新增員工
+            </Button>
+          ) : null}
+          <div className="hidden w-[220px] shrink-0 min-[720px]:block">
+            <OrgLocationSwitcher compact />
+          </div>
         </div>
       </header>
 
@@ -553,6 +616,11 @@ export function StaffWorkspacePage() {
               onOffStart={setOffStart}
               onOffEnd={setOffEnd}
               onOffReason={setOffReason}
+              canManage={canAddStaff}
+              locations={locations}
+              isCurrentUser={selectedRow.staffId === membership?.userId}
+              onSaveProfile={saveSelectedProfile}
+              onSetActive={setSelectedActive}
             />
           </div>
         ) : null}
@@ -622,8 +690,30 @@ export function StaffWorkspacePage() {
             onOffStart={setOffStart}
             onOffEnd={setOffEnd}
             onOffReason={setOffReason}
+            canManage={canAddStaff}
+            locations={locations}
+            isCurrentUser={selectedRow.staffId === membership?.userId}
+            onSaveProfile={saveSelectedProfile}
+            onSetActive={setSelectedActive}
           />
         </div>
+      ) : null}
+
+      {onboardingOpen ? (
+        <StaffOnboardingDialog
+          open
+          organizationId={organization.id}
+          locations={locations}
+          actorRole={membership?.role}
+          defaultLocationId={locationId}
+          onClose={() => {
+            setOnboardingOpen(false);
+            queueMicrotask(() => {
+              document.querySelector<HTMLElement>("[data-staff-add]")?.focus();
+            });
+          }}
+          onCreated={handleStaffCreated}
+        />
       ) : null}
     </div>
   );

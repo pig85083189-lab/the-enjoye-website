@@ -2,8 +2,8 @@ import type { Appointment } from "@/types";
 import { getAppointmentsForOrganization } from "@/data/mock-appointments";
 import { getCustomerById } from "@/data/mock-customers";
 import { getServiceById } from "@/data/mock-services";
-import { SEED_MEMBERSHIPS } from "@/data/seed-organizations";
 import { canAccessLocation } from "@/lib/tenant/access";
+import { listMemberships } from "@/lib/tenant/organization-store";
 import { getScheduleAppointmentsKey, getTenantStorageKey } from "@/lib/tenant/storage-keys";
 import { migrateLegacyTenantStorage } from "@/lib/tenant/migration";
 import { newId } from "@/lib/repositories/storage";
@@ -176,8 +176,8 @@ function assertOwnership(organizationId: string, input: CreateAppointmentInput):
   if (!service || service.organizationId !== organizationId) {
     throw new Error("Service does not belong to this organization");
   }
-  const membership = SEED_MEMBERSHIPS.find(
-    (m) => m.organizationId === organizationId && m.userId === input.staffId && m.isActive,
+  const membership = listMemberships(organizationId).find(
+    (m) => m.userId === input.staffId && m.isActive,
   );
   if (!membership) {
     throw new Error("Staff membership does not belong to this organization");

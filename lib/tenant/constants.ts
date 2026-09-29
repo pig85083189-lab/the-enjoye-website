@@ -33,6 +33,7 @@ export const TENANT_STORAGE_NAMESPACE = "beauty-os";
 export const CURRENT_ORG_STORAGE_KEY = "beauty-os:current-organization-id";
 export const ORG_OVERRIDES_STORAGE_KEY = "beauty-os:organization-overrides:v1";
 export const LOCATION_OVERRIDES_STORAGE_KEY = "beauty-os:location-overrides:v1";
+export const MEMBERSHIP_OVERRIDES_STORAGE_KEY = "beauty-os:membership-overrides:v1";
 export const MIGRATION_FLAG_KEY = "beauty-os:legacy-migration:v1";
 /** @deprecated Global location pointer — migrate to org-scoped key */
 export const LEGACY_GLOBAL_LOCATION_KEY = "beauty-os:current-location-id";

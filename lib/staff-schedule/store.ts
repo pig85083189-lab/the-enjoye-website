@@ -1,5 +1,5 @@
-import { SEED_MEMBERSHIPS } from "@/data/seed-organizations";
 import { canAccessLocation } from "@/lib/tenant/access";
+import { listMemberships } from "@/lib/tenant/organization-store";
 import {
   getStaffBreaksKey,
   getStaffTimeOffKey,
@@ -84,8 +84,8 @@ function assertStaffMembership(
   staffId: string,
   locationId: string,
 ): void {
-  const membership = SEED_MEMBERSHIPS.find(
-    (m) => m.organizationId === organizationId && m.userId === staffId && m.isActive,
+  const membership = listMemberships(organizationId).find(
+    (m) => m.userId === staffId && m.isActive,
   );
   if (!membership) {
     throw new Error("Staff membership does not belong to this organization");
@@ -124,9 +124,8 @@ function defaultHoursForStaff(
 
 /** Bookable staff for a location (from StaffMembership — no parallel mock roster). */
 export function listBookableStaff(organizationId: string, locationId: string) {
-  return SEED_MEMBERSHIPS.filter(
+  return listMemberships(organizationId).filter(
     (m) =>
-      m.organizationId === organizationId &&
       m.isActive &&
       canReceiveAppointments(m) &&
       (m.locationIds.length === 0 || m.locationIds.includes(locationId)),

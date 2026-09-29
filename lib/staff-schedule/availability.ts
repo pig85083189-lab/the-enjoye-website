@@ -3,7 +3,7 @@ import {
   rangesOverlap,
   type ScheduleAppointment,
 } from "@/lib/appointments/domain";
-import { SEED_MEMBERSHIPS } from "@/data/seed-organizations";
+import { listMemberships } from "@/lib/tenant/organization-store";
 import {
   AVAILABILITY_REASON_LABEL,
   dayOfWeekLocal,
@@ -66,9 +66,7 @@ export function getStaffAvailability(query: AvailabilityQuery): AvailabilityResu
   const details: string[] = [];
   let conflictingAppointmentId: string | undefined;
 
-  const membership = SEED_MEMBERSHIPS.find(
-    (m) => m.organizationId === organizationId && m.userId === staffId,
-  );
+  const membership = listMemberships(organizationId).find((m) => m.userId === staffId);
   if (!membership || !membership.isActive) {
     return {
       available: false,

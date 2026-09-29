@@ -48,6 +48,8 @@ export {
   updateLocationLocal,
   getMembership,
   listMemberships,
+  createMembership,
+  updateMembership,
   getSubscription,
   bootstrapOrganizationContext,
   persistOrganizationId,
