@@ -24,10 +24,12 @@ export function getAppointmentSummary(query: ReportQuery): AppointmentSummary {
   let completed = 0;
   let cancelled = 0;
   let noShow = 0;
+  let incomplete = 0;
   for (const a of list) {
     if (a.status === "COMPLETED") completed += 1;
     else if (a.status === "CANCELLED") cancelled += 1;
     else if (a.status === "NO_SHOW") noShow += 1;
+    else incomplete += 1;
   }
   const total = list.length;
   return {
@@ -35,8 +37,10 @@ export function getAppointmentSummary(query: ReportQuery): AppointmentSummary {
     completed,
     cancelled,
     noShow,
+    incomplete,
     completionRate: safeRate(completed, total),
     cancellationRate: safeRate(cancelled, total),
     noShowRate: safeRate(noShow, total),
+    incompleteRate: safeRate(incomplete, total),
   };
 }

@@ -21,11 +21,11 @@ export interface ReportQuery {
 }
 
 export interface RevenueSummary {
-  /** Sum of COMPLETED.transaction.total (VOIDED excluded; zero-total adds 0) */
+  /** Sum of COMPLETED external inflow (CASH / CARD / TRANSFER / OTHER) */
   revenueMinor: number;
-  /** COMPLETED txs with total > 0 (ops paid volume) */
+  /** COMPLETED txs with external inflow > 0 */
   transactionCount: number;
-  /** COMPLETED txs with total === 0 (e.g. package redemption) — not revenue */
+  /** COMPLETED txs with no external inflow (SV-only / package redemption) */
   zeroTotalCompletedCount: number;
   /** revenue / transactionCount, or 0 */
   averageTicketMinor: number;
@@ -52,10 +52,13 @@ export interface AppointmentSummary {
   completed: number;
   cancelled: number;
   noShow: number;
+  /** BOOKED / CONFIRMED / ARRIVED / IN_SERVICE */
+  incomplete: number;
   /** completed / total, or 0 */
   completionRate: number;
   cancellationRate: number;
   noShowRate: number;
+  incompleteRate: number;
 }
 
 export interface TreatmentSummary {

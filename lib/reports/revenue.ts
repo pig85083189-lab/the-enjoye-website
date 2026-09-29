@@ -3,6 +3,7 @@
  */
 import type { PaymentMethod, Transaction } from "@/lib/commerce/domain";
 import { listTransactions } from "@/lib/commerce/transaction-store";
+import { externalInflowMinor } from "@/lib/commerce/transactions-workspace-derived";
 import { formatYmd } from "@/lib/appointments/domain";
 import type {
   PaymentBreakdownRow,
@@ -36,8 +37,9 @@ export function listCompletedTransactionsForReport(
 }
 
 /**
- * Ops revenue = sum(COMPLETED.total).
- * Zero-total package redemptions contribute 0 and are excluded from transactionCount / AOV.
+ * Ops revenue = sum(external inflow) on COMPLETED txs.
+ * Reuses Transactions `externalInflowMinor` (CASH / CARD / TRANSFER / OTHER).
+ * Stored-value / package redemption is not new external revenue.
  * VOIDED excluded by list filter.
  */
 export function getRevenueSummary(query: ReportQuery): RevenueSummary {
@@ -46,9 +48,9 @@ export function getRevenueSummary(query: ReportQuery): RevenueSummary {
   let transactionCount = 0;
   let zeroTotalCompletedCount = 0;
   for (const t of txs) {
-    const total = Number.isFinite(t.total) ? t.total : 0;
-    if (total > 0) {
-      revenueMinor += total;
+    const external = externalInflowMinor(t);
+    if (external > 0) {
+      revenueMinor += external;
       transactionCount += 1;
     } else {
       zeroTotalCompletedCount += 1;
@@ -139,9 +141,10 @@ export function getRevenueByDay(query: ReportQuery): RevenueByDayRow[] {
     byDay.set(ymd, 0);
   }
   for (const t of txs) {
-    if (!(t.total > 0)) continue;
+    const external = externalInflowMinor(t);
+    if (!(external > 0)) continue;
     const ymd = formatYmd(new Date(t.completedAt));
-    byDay.set(ymd, (byDay.get(ymd) ?? 0) + t.total);
+    byDay.set(ymd, (byDay.get(ymd) ?? 0) + external);
   }
   return Array.from(byDay.entries()).map(([dateYmd, revenueMinor]) => ({
     dateYmd,

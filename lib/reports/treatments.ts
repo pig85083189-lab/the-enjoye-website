@@ -12,18 +12,20 @@ function matchesLocation(
   return locationId === filterLocationId;
 }
 
-export function getTreatmentSummary(query: ReportQuery): TreatmentSummary {
+export function listCompletedTreatmentsForReport(query: ReportQuery) {
   if (!query.organizationId) throw new Error("organizationId is required");
 
-  const completed = listCompletedTreatmentsForOrganization(
-    query.organizationId,
-  ).filter(
+  return listCompletedTreatmentsForOrganization(query.organizationId).filter(
     (t) =>
       t.organizationId === query.organizationId &&
       t.status === "completed" &&
       matchesLocation(t.locationId, query.locationId) &&
       isInstantInRange(t.updatedAt, query.range),
   );
+}
+
+export function getTreatmentSummary(query: ReportQuery): TreatmentSummary {
+  const completed = listCompletedTreatmentsForReport(query);
 
   const drafts = listOpenTreatmentDrafts(query.organizationId).filter((t) =>
     matchesLocation(t.locationId, query.locationId),
