@@ -58,3 +58,4 @@ next-env.d.ts
 .followups-qa/
 .reports-qa/
 .staff-qa/
+.settings-qa/
