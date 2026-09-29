@@ -54,3 +54,4 @@ next-env.d.ts
 .stored-value-qa/
 .packages-qa/
 .transactions-qa/
+.products-qa/
