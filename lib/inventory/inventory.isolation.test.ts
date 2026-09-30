@@ -96,6 +96,32 @@ describe("inventory domain", () => {
     expect(moves[0].quantityDelta).toBe(20);
   });
 
+  it("same createdAt lists movements in append order, not random id order", () => {
+    const p = product({ sku: "TIE-ORDER" });
+    stock(p.id, 10);
+    adjustInventory(ORG_ENJOYE_ID, {
+      productId: p.id,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      quantityDelta: -2,
+      reason: "同秒調整",
+      createdByStaffId: "staff-001",
+    });
+    const key = getInventoryMovementsKey(ORG_ENJOYE_ID);
+    const raw = localStorage.getItem(key);
+    expect(raw).toBeTruthy();
+    const collided = (
+      JSON.parse(raw!) as Array<Record<string, unknown>>
+    ).map((row) => ({ ...row, createdAt: "2026-09-30T00:00:00.000Z" }));
+    localStorage.setItem(key, JSON.stringify(collided));
+
+    const listed = listInventoryMovements(ORG_ENJOYE_ID, { productId: p.id });
+    expect(listed.map((m) => m.type)).toEqual(["RECEIVE", "ADJUSTMENT"]);
+    expect(listed.every((m) => m.createdAt === "2026-09-30T00:00:00.000Z")).toBe(
+      true,
+    );
+    expect(getProductStock(ORG_ENJOYE_ID, LOC_ENJOYE_PRIMARY_ID, p.id)).toBe(8);
+  });
+
   it("adjustment +/− works; negative blocked; reason required", () => {
     const p = product({ sku: "ADJ-1" });
     stock(p.id, 10);

@@ -4,6 +4,7 @@
  * via Inventory Ledger / getProductStock. Product catalog has no persisted stock.
  */
 import type { InventoryMovement } from "@/lib/inventory/domain";
+import { sortInventoryMovementsChronologically } from "@/lib/inventory/ordering";
 import type { Product } from "@/lib/products/domain";
 
 export const PRODUCTS_PANEL_WIDTH_PX = 400;
@@ -265,14 +266,11 @@ export function mapProductMovementViews(
     limit?: number;
   },
 ): ProductMovementView[] {
-  const scoped = movements
-    .filter((row) => row.productId === input.productId)
-    .filter((row) => !input.locationId || row.locationId === input.locationId)
-    .slice()
-    .sort((a, b) => {
-      const t = a.createdAt.localeCompare(b.createdAt);
-      return t !== 0 ? t : a.id.localeCompare(b.id);
-    });
+  const scoped = sortInventoryMovementsChronologically(
+    movements
+      .filter((row) => row.productId === input.productId)
+      .filter((row) => !input.locationId || row.locationId === input.locationId),
+  );
 
   const running = new Map<string, number>();
   const views = scoped.map((row) => {

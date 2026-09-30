@@ -48,6 +48,7 @@ import {
   shouldResetProductSelection,
   sumLocationProductStock,
 } from "@/lib/products/products-workspace-derived";
+import { getInventoryMovementsKey } from "@/lib/tenant/storage-keys";
 import {
   LOC_ENJOYE_PRIMARY_ID,
   LOC_ENJOYE_SECONDARY_ID,
@@ -58,6 +59,18 @@ import {
 beforeEach(() => {
   localStorage.clear();
 });
+
+/** Collapse ledger timestamps without changing prepend/append array order. */
+function forceSameCreatedAt(organizationId: string, createdAt: string) {
+  const key = getInventoryMovementsKey(organizationId);
+  const raw = localStorage.getItem(key);
+  if (!raw) return;
+  const rows = JSON.parse(raw) as Array<{ createdAt: string }>;
+  localStorage.setItem(
+    key,
+    JSON.stringify(rows.map((row) => ({ ...row, createdAt }))),
+  );
+}
 
 const LOCATIONS = [
   { id: LOC_ENJOYE_PRIMARY_ID, name: "主店" },
@@ -202,6 +215,7 @@ describe("product workspace presentation", () => {
       reason: "盤點更正",
       createdByStaffId: "staff-001",
     });
+    forceSameCreatedAt(ORG_ENJOYE_ID, "2026-09-30T00:00:00.000Z");
     const views = mapProductMovementViews(listInventoryMovements(ORG_ENJOYE_ID), {
       productId: product.id,
       locationId: LOC_ENJOYE_PRIMARY_ID,
@@ -210,9 +224,95 @@ describe("product workspace presentation", () => {
     const adjust = views.find((row) => row.type === "ADJUSTMENT");
     const receive = views.find((row) => row.type === "RECEIVE");
     expect(adjust?.quantityDelta).toBe(-2);
-    expect(adjust?.runningBalance).toBe(8);
     expect(receive?.runningBalance).toBe(10);
+    expect(adjust?.runningBalance).toBe(8);
     expect(adjust?.typeLabel).toBe("盤點調整");
+    expect(getProductStock(ORG_ENJOYE_ID, LOC_ENJOYE_PRIMARY_ID, product.id)).toBe(
+      8,
+    );
+  });
+
+  it("same createdAt keeps append order and derived running balances", () => {
+    const product = makeProduct("同秒入庫調整", "SKU-TIE-01");
+    receiveStock(ORG_ENJOYE_ID, {
+      productId: product.id,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      quantity: 10,
+      createdByStaffId: "staff-001",
+    });
+    adjustInventory(ORG_ENJOYE_ID, {
+      productId: product.id,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      quantityDelta: -2,
+      reason: "同秒盤點",
+      createdByStaffId: "staff-001",
+    });
+    forceSameCreatedAt(ORG_ENJOYE_ID, "2026-09-30T12:00:00.123Z");
+
+    const views = mapProductMovementViews(listInventoryMovements(ORG_ENJOYE_ID), {
+      productId: product.id,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      locations: LOCATIONS,
+    });
+    const chronological = [...views].reverse();
+    expect(chronological.map((row) => row.type)).toEqual(["RECEIVE", "ADJUSTMENT"]);
+    expect(chronological.map((row) => row.runningBalance)).toEqual([10, 8]);
+    expect(views.find((row) => row.type === "RECEIVE")?.runningBalance).toBe(10);
+    expect(views.find((row) => row.type === "ADJUSTMENT")?.runningBalance).toBe(8);
+    expect("runningBalance" in (listInventoryMovements(ORG_ENJOYE_ID)[0] ?? {})).toBe(
+      false,
+    );
+  });
+
+  it("three same-timestamp movements stay deterministic across remaps", () => {
+    const product = makeProduct("三筆同秒", "SKU-TIE-03");
+    receiveStock(ORG_ENJOYE_ID, {
+      productId: product.id,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      quantity: 10,
+      createdByStaffId: "staff-001",
+    });
+    adjustInventory(ORG_ENJOYE_ID, {
+      productId: product.id,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      quantityDelta: -2,
+      reason: "第二筆",
+      createdByStaffId: "staff-001",
+    });
+    adjustInventory(ORG_ENJOYE_ID, {
+      productId: product.id,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      quantityDelta: -3,
+      reason: "第三筆",
+      createdByStaffId: "staff-001",
+    });
+    forceSameCreatedAt(ORG_ENJOYE_ID, "2026-09-30T12:00:00.123Z");
+
+    const expectedTypes = ["RECEIVE", "ADJUSTMENT", "ADJUSTMENT"] as const;
+    const expectedBalances = [10, 8, 5];
+    let firstIds: string[] | undefined;
+    for (let i = 0; i < 20; i += 1) {
+      const chronological = [
+        ...mapProductMovementViews(listInventoryMovements(ORG_ENJOYE_ID), {
+          productId: product.id,
+          locationId: LOC_ENJOYE_PRIMARY_ID,
+          locations: LOCATIONS,
+        }),
+      ].reverse();
+      expect(chronological.map((row) => row.type)).toEqual([...expectedTypes]);
+      expect(chronological.map((row) => row.runningBalance)).toEqual(expectedBalances);
+      expect(chronological.map((row) => row.reason ?? "")).toEqual([
+        "",
+        "第二筆",
+        "第三筆",
+      ]);
+      const ids = chronological.map((row) => row.id);
+      if (!firstIds) firstIds = ids;
+      expect(ids).toEqual(firstIds);
+    }
+    expect(getProductStock(ORG_ENJOYE_ID, LOC_ENJOYE_PRIMARY_ID, product.id)).toBe(
+      5,
+    );
   });
 
   it("resets selection when the row leaves the filtered list", () => {

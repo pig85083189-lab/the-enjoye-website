@@ -10,6 +10,7 @@ import { newId } from "@/lib/repositories/storage";
 import { getProductById } from "@/lib/products/store";
 import type { StaffRole } from "@/types/saas";
 import type { InventoryMovement, InventoryMovementType } from "./domain";
+import { sortInventoryMovementsChronologically } from "./ordering";
 
 const CHANGE = "enjoye-commerce-change";
 
@@ -137,7 +138,8 @@ export function listInventoryMovements(
     transactionId?: string;
   },
 ): InventoryMovement[] {
-  let list = readAll(organizationId);
+  const stored = readAll(organizationId);
+  let list = stored;
   if (opts?.locationId) {
     list = list.filter((m) => m.locationId === opts.locationId);
   }
@@ -147,11 +149,7 @@ export function listInventoryMovements(
   if (opts?.transactionId) {
     list = list.filter((m) => m.transactionId === opts.transactionId);
   }
-  return [...list].sort((a, b) => {
-    const t = a.createdAt.localeCompare(b.createdAt);
-    if (t !== 0) return t;
-    return a.id.localeCompare(b.id);
-  });
+  return sortInventoryMovementsChronologically(list, stored);
 }
 
 /** Canonical stock at a location — SUM(quantityDelta). Never UI-reduced. */
