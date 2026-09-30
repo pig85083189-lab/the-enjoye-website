@@ -121,9 +121,12 @@ export function CheckoutPageClient() {
   const appointmentIdParam = searchParams.get("appointment");
   const draftIdParam = searchParams.get("draft");
   const treatmentIdParam = searchParams.get("treatment");
+  const packageIdParam = searchParams.get("package");
 
   const [filter, setFilter] = useState<CheckoutListFilter>("pending");
-  const [dateFilter, setDateFilter] = useState<CheckoutDateFilter>("today");
+  const [dateFilter, setDateFilter] = useState<CheckoutDateFilter>(() =>
+    appointmentIdParam ? "all" : "today",
+  );
   const [query, setQuery] = useState("");
   const [selectedCheckoutId, setSelectedCheckoutId] = useState<string | null>(() => {
     if (appointmentIdParam) return checkoutRowId("appointment", appointmentIdParam);
@@ -488,6 +491,8 @@ export function CheckoutPageClient() {
               customer={selectedCustomer}
               organizationId={organization.id}
               staffId={staffId}
+              treatmentId={treatmentIdParam}
+              preselectedPackageId={packageIdParam}
               onClose={closePanel}
               onCompleted={(txId) => router.push(`/staff/transactions?id=${txId}`)}
             />
@@ -503,6 +508,8 @@ export function CheckoutPageClient() {
             customer={selectedCustomer}
             organizationId={organization.id}
             staffId={staffId}
+            treatmentId={treatmentIdParam}
+            preselectedPackageId={packageIdParam}
             onClose={closePanel}
             onCompleted={(txId) => router.push(`/staff/transactions?id=${txId}`)}
           />

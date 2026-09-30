@@ -39,6 +39,8 @@ import {
 } from "@/lib/commerce/checkout-workspace-derived";
 import { getServicesForOrganization } from "@/data/mock-services";
 import { listUsablePackagesForService } from "@/lib/packages/store";
+import { applyPostTreatmentCheckoutIntent } from "@/lib/core-ops/post-treatment-checkout";
+import { buildPackageRedemptionSummary } from "@/lib/core-ops/post-treatment-derived";
 import { CHECKOUT_ITEM_TYPE_LABEL } from "@/lib/products/domain";
 import { searchProducts } from "@/lib/products/store";
 import { getProductStock } from "@/lib/inventory/store";
@@ -59,6 +61,8 @@ interface CheckoutPanelProps {
   customer: Customer | null;
   organizationId: string;
   staffId: string;
+  treatmentId?: string | null;
+  preselectedPackageId?: string | null;
   onClose: () => void;
   onCompleted?: (transactionId: string) => void;
 }
@@ -68,6 +72,8 @@ export function CheckoutPanel({
   customer,
   organizationId,
   staffId,
+  treatmentId,
+  preselectedPackageId,
   onClose,
   onCompleted,
 }: CheckoutPanelProps) {
@@ -89,13 +95,28 @@ export function CheckoutPanel({
     item.paid || item.kind === "transaction" || liveDraft?.status === "COMPLETED";
 
   useEffect(() => {
-    if (item.kind !== "appointment" || item.paid || liveDraft?.id) return;
+    if (item.kind !== "appointment" || item.paid) return;
     if (!item.appointmentId) return;
     try {
+      if (preselectedPackageId) {
+        if (liveDraft?.packageRedemption?.customerPackageId === preselectedPackageId) {
+          return;
+        }
+        applyPostTreatmentCheckoutIntent({
+          organizationId,
+          appointmentId: item.appointmentId,
+          createdByStaffId: staffId,
+          treatmentId: treatmentId ?? undefined,
+          customerPackageId: preselectedPackageId,
+        });
+        return;
+      }
+      if (liveDraft?.id) return;
       if (getOpenDraftForAppointment(organizationId, item.appointmentId)) return;
       createCheckoutFromAppointment(organizationId, {
         appointmentId: item.appointmentId,
         createdByStaffId: staffId,
+        treatmentId: treatmentId ?? undefined,
       });
     } catch {
       /* catalog preview remains until a draft can be created */
@@ -105,8 +126,11 @@ export function CheckoutPanel({
     item.paid,
     item.appointmentId,
     liveDraft?.id,
+    liveDraft?.packageRedemption?.customerPackageId,
     organizationId,
+    preselectedPackageId,
     staffId,
+    treatmentId,
   ]);
 
   const [tab, setTab] = useState<PanelTab>("consume");
@@ -148,6 +172,18 @@ export function CheckoutPanel({
           primaryService.referenceId,
         )
       : [];
+  const selectedUsable = usablePackages.find(
+    (pkg) => pkg.id === liveDraft?.packageRedemption?.customerPackageId,
+  );
+  const redemptionSummary =
+    liveDraft?.packageRedemption
+      ? buildPackageRedemptionSummary({
+          draft: liveDraft,
+          serviceName: primaryService?.nameSnapshot || item.serviceName,
+          packageName: selectedUsable?.nameSnapshot ?? "套票",
+          currentRemaining: selectedUsable?.usableBalance ?? 0,
+        })
+      : null;
 
   const lineItems = readOnly && transaction ? transaction.items : liveDraft?.items ?? [];
   const subtotal = readOnly && transaction ? transaction.subtotal : liveDraft?.subtotal ?? item.amountMinor ?? 0;
@@ -438,6 +474,65 @@ export function CheckoutPanel({
                     ))}
                   </ul>
                 )}
+
+                {redemptionSummary ? (
+                  <div
+                    data-package-redemption-summary
+                    className="rounded-xl border border-[#E8C9CB] bg-[#FBF4F3] px-3.5 py-3"
+                  >
+                    <p className="text-[12px] font-medium text-secondary-text">套票折抵</p>
+                    <dl className="mt-2 space-y-1.5 text-[13px]">
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-secondary-text">本次服務</dt>
+                        <dd className="min-w-0 truncate text-right font-medium text-text">
+                          {redemptionSummary.serviceName}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-secondary-text">原價</dt>
+                        <dd className="tabular-nums text-text">
+                          {redemptionSummary.originalPriceLabel}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-secondary-text">套票折抵</dt>
+                        <dd className="tabular-nums text-text">
+                          {redemptionSummary.packageDiscountLabel}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-3 border-t border-[#E8C9CB] pt-1.5">
+                        <dt className="font-semibold text-text">本次應收</dt>
+                        <dd className="font-semibold tabular-nums text-[#C56B70]">
+                          {redemptionSummary.dueLabel}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-3 pt-1">
+                        <dt className="text-secondary-text">使用套票</dt>
+                        <dd className="min-w-0 truncate text-right text-text">
+                          {redemptionSummary.packageName}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-secondary-text">本次扣除</dt>
+                        <dd className="tabular-nums text-text">
+                          {redemptionSummary.sessionsUsed} 堂
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-secondary-text">目前剩餘</dt>
+                        <dd className="tabular-nums text-text">
+                          {redemptionSummary.currentRemaining} 堂
+                        </dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-secondary-text">完成後剩餘</dt>
+                        <dd className="tabular-nums text-text">
+                          {redemptionSummary.remainingAfterSettle} 堂
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                ) : null}
 
                 {!readOnly && liveDraft ? (
                   <div>
@@ -852,7 +947,7 @@ export function CheckoutPanel({
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-border bg-surface px-5 py-3">
+        <div className="shrink-0 border-t border-border bg-surface px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {readOnly ? (
             <Link
               href={
@@ -878,7 +973,11 @@ export function CheckoutPanel({
                 });
               }}
             >
-              確認收款 {formatTwd(total)}
+              {liveDraft?.packageRedemption
+                ? total === 0
+                  ? "完成結帳"
+                  : `完成結帳 ${formatTwd(total)}`
+                : `確認收款 ${formatTwd(total)}`}
             </button>
           )}
         </div>

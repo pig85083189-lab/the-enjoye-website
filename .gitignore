@@ -60,3 +60,4 @@ next-env.d.ts
 .staff-qa/
 .settings-qa/
 .services-qa/
+.core-ops-qa/
