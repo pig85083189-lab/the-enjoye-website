@@ -1,0 +1,47 @@
+-- =============================================================================
+-- Owner bootstrap (optional SQL)
+--
+-- Maps an existing Supabase Auth user onto the existing operational Owner
+-- identity staff-001 / mem-enjoye-owner.
+--
+-- Do NOT put a real auth UUID, email, or password in git.
+-- Replace the placeholder at apply time, or skip this file and set
+-- NEXT_PUBLIC_BEAUTY_OS_OWNER_AUTH_USER_ID instead (server upserts the same row).
+--
+-- This does not create a second Owner staff id.
+-- This does not rewrite historical Appointment.staffId values.
+-- =============================================================================
+
+-- begin;
+--
+-- insert into public.staff_auth_memberships (
+--   id,
+--   user_id,
+--   auth_user_id,
+--   organization_id,
+--   role,
+--   display_name,
+--   email,
+--   is_active
+-- ) values (
+--   'mem-enjoye-owner',
+--   'staff-001',
+--   '00000000-0000-4000-8000-000000000000', -- replace with auth.users.id
+--   'org-the-enjoye',
+--   'OWNER',
+--   '怡蓁',
+--   null, -- optional login email; never a password
+--   true
+-- )
+-- on conflict (id) do update
+--   set auth_user_id = excluded.auth_user_id,
+--       is_active = true,
+--       user_id = 'staff-001';
+--
+-- insert into public.staff_auth_membership_locations (membership_id, location_id)
+-- values
+--   ('mem-enjoye-owner', 'loc-enjoye-main'),
+--   ('mem-enjoye-owner', 'loc-enjoye-gongyi')
+-- on conflict do nothing;
+--
+-- commit;

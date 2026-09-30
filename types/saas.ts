@@ -38,7 +38,15 @@ export type StaffRole = "OWNER" | "MANAGER" | "STAFF" | "RECEPTIONIST" | "ACCOUN
 export interface StaffMembership {
   id: string;
   organizationId: string;
+  /** Operational staff identity (staff-001). Never an auth UUID. */
   userId: string;
+  /**
+   * Supabase auth.users.id mapping (Strategy B).
+   * Null means this membership has no login binding yet.
+   */
+  authUserId?: string | null;
+  /** Invite / login contact. Never a join key. */
+  email?: string | null;
   locationIds: string[];
   role: StaffRole;
   displayName: string;
