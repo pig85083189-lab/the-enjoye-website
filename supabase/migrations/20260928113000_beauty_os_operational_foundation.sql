@@ -338,7 +338,9 @@ as $$
 $$;
 
 -- Honest replacements for foundation helpers. Not isolation SoT.
--- Returns a uuid only when the Auth user has exactly one active membership.
+-- Returns a uuid only when the Auth user has exactly one active membership
+-- that resolves through organizations.app_id. 0 or >1 → NULL.
+-- Do not aggregate uuid: min()/max() are undefined for uuid.
 create or replace function public.current_organization_id()
 returns uuid
 language sql
@@ -346,11 +348,23 @@ stable
 security definer
 set search_path = public
 as $$
-  select case when count(*) filter (where true) = 1 then min(o.id) else null end
-  from public.staff_auth_memberships m
-  join public.organizations o on o.app_id = m.organization_id
-  where m.auth_user_id = auth.uid()
-    and m.is_active = true;
+  select case
+    when (
+      select count(*)
+      from public.staff_auth_memberships m
+      join public.organizations o on o.app_id = m.organization_id
+      where m.auth_user_id = auth.uid()
+        and m.is_active = true
+    ) = 1
+    then (
+      select o.id
+      from public.staff_auth_memberships m
+      join public.organizations o on o.app_id = m.organization_id
+      where m.auth_user_id = auth.uid()
+        and m.is_active = true
+    )
+    else null
+  end;
 $$;
 
 create or replace function public.current_staff_role()

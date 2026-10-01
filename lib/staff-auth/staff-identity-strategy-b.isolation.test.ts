@@ -342,6 +342,46 @@ describe("Strategy B staff identity A–Q", () => {
     );
   });
 
+  it("R current_organization_id is count-gated scalar, not a uuid aggregate", () => {
+    const operational = read(OPERATIONAL_MIGRATION_FILE);
+    const start = operational.indexOf(
+      "create or replace function public.current_organization_id()",
+    );
+    const end = operational.indexOf(
+      "create or replace function public.current_staff_role()",
+    );
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const fn = operational.slice(start, end);
+    expect(fn).not.toMatch(/min\(\s*o\.id\s*\)/);
+    expect(fn).not.toMatch(/max\(\s*o\.id\s*\)/);
+    expect(fn).not.toMatch(/min\([^)]*::\s*text/);
+    expect(fn).not.toMatch(/from public\.profiles/);
+    expect(fn).toMatch(/select count\(\*\)/);
+    expect(fn).toMatch(/\) = 1/);
+    expect(fn).toMatch(/select o\.id/);
+    expect(fn).toMatch(/else null/);
+    expect(fn).toMatch(/join public\.organizations o on o\.app_id = m\.organization_id/);
+    expect(fn).toMatch(/m\.auth_user_id = auth\.uid\(\)/);
+    expect(fn).toMatch(/m\.is_active = true/);
+    expect(fn).not.toMatch(/m\.user_id = auth\.uid\(\)/);
+
+    const currentOrganizationIdFromActiveOrgIds = (
+      orgIds: readonly string[],
+    ): string | null => (orgIds.length === 1 ? orgIds[0] ?? null : null);
+
+    expect(currentOrganizationIdFromActiveOrgIds([])).toBeNull();
+    expect(
+      currentOrganizationIdFromActiveOrgIds(["11111111-1111-4111-8111-111111111111"]),
+    ).toBe("11111111-1111-4111-8111-111111111111");
+    expect(
+      currentOrganizationIdFromActiveOrgIds([
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+      ]),
+    ).toBeNull();
+  });
+
   it("P Core Ops lifecycle files are unchanged", () => {
     expect(gitDiffStat("lib/core-ops")).toBe("");
     expect(gitDiffStat("lib/appointments lib/treatments lib/treatment-draft.ts")).toBe("");
