@@ -1,5 +1,16 @@
+/**
+ * Live customer SoT for Phase 1B: sync localStorage + seed.
+ * Public UI keeps importing this repository (no import migration this round).
+ * OperationalPersistence.customers is the async port; the local adapter delegates here.
+ * Do not switch Today / Calendar / Customer UI to the async port until Phase 1C.
+ */
 import type { Customer } from "@/types";
-import type { CustomerRepository, OrgEntityQuery, OrgQuery } from "./interfaces";
+import type {
+  CustomerProfilePatch,
+  CustomerRepository,
+  OrgEntityQuery,
+  OrgQuery,
+} from "./interfaces";
 import { SEED_CUSTOMERS } from "@/data/seed-crm";
 import { SEED_LUMIERE_CUSTOMERS } from "@/data/seed-organizations";
 import { ORG_ENJOYE_ID, ORG_LUMIERE_ID } from "@/lib/tenant/constants";
@@ -7,24 +18,7 @@ import { normalizeOrganizationEntity } from "@/lib/tenant/access";
 import { normalizePhone, phonesMatch } from "@/lib/phone";
 import { readTenantJson, writeTenantJson } from "./tenant-read";
 
-/** Editable CRM profile fields — excludes clinical notes / preferences redesign. */
-export type CustomerProfilePatch = Partial<
-  Pick<
-    Customer,
-    | "name"
-    | "phone"
-    | "email"
-    | "lineId"
-    | "birthday"
-    | "gender"
-    | "occupation"
-    | "address"
-    | "source"
-    | "membership"
-    | "id"
-    | "organizationId"
-  >
->;
+export type { CustomerProfilePatch } from "./interfaces";
 
 function ageFromBirthday(birthday: string): number {
   const parts = birthday.split(/[/-]/).map(Number);

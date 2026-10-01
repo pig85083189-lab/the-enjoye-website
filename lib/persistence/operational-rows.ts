@@ -129,3 +129,67 @@ export interface StoredValueTableStore {
     dbId: string,
   ): DbStoredValueLedgerEntry | undefined;
 }
+
+export type RemoteCustomerStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED";
+
+export interface DbCustomer {
+  id: string;
+  organization_id: string;
+  app_id: string;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+  birthday: string | null;
+  gender: string | null;
+  line_user_id: string | null;
+  source: string | null;
+  membership_tier: string | null;
+  is_vip: boolean;
+  primary_staff_id: string | null;
+  status: RemoteCustomerStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbAppointment {
+  id: string;
+  organization_id: string;
+  location_id: string | null;
+  customer_id: string;
+  service_id: string;
+  staff_id: string | null;
+  app_id: string;
+  starts_at: string;
+  ends_at: string;
+  duration_minutes: number | null;
+  status: string;
+  customer_note: string | null;
+  internal_note: string | null;
+  customer_name_snapshot: string | null;
+  service_name_snapshot: string | null;
+  staff_name_snapshot: string | null;
+  status_reason: string | null;
+  cancelled_at: string | null;
+  cancelled_by: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerTableStore {
+  insertCustomer(row: DbCustomer): void;
+  updateCustomer(row: DbCustomer): void;
+  listCustomers(organizationDbId: string): DbCustomer[];
+  getCustomerByAppId(organizationDbId: string, appId: string): DbCustomer | undefined;
+  getCustomerByDbId(dbId: string): DbCustomer | undefined;
+  findCustomersByPhone(organizationDbId: string, phone: string): DbCustomer[];
+}
+
+export interface AppointmentTableStore {
+  insertAppointment(row: DbAppointment): void;
+  listAppointments(organizationDbId: string): DbAppointment[];
+  getAppointmentByAppId(organizationDbId: string, appId: string): DbAppointment | undefined;
+  getAppointmentByDbId(dbId: string): DbAppointment | undefined;
+}
