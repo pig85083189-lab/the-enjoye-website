@@ -30,7 +30,7 @@ export class AppointmentRemoteAdapter {
 
   async list(query: AppointmentListQuery): Promise<ScheduleAppointment[]> {
     const orgDbId = this.mapper.resolveOrganizationDbId(query.organizationId);
-    let rows = this.store.listAppointments(orgDbId);
+    const rows = this.store.listAppointments(orgDbId);
     const mapped = rows.map((row) => this.toDomain(query.organizationId, row));
     return mapped.filter((item) => {
       if (query.locationId && item.locationId !== query.locationId) return false;

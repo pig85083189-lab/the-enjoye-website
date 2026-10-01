@@ -3,7 +3,6 @@
  * CRM-only and local-only fields must not leak into the remote payload.
  */
 
-import { normalizePhone } from "@/lib/phone";
 import type { Customer, CustomerListStatus, MembershipTier } from "@/types";
 import type { DbCustomer, RemoteCustomerStatus } from "./operational-rows";
 

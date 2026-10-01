@@ -9,7 +9,6 @@ import {
 } from "./customer-mapping";
 import {
   ORG_A,
-  ORG_B,
   STAFF_A,
   seedTwoOrgs,
 } from "./test-identity-fixture";

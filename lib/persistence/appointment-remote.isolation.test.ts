@@ -104,11 +104,14 @@ describe("Phase 1B canonical appointment remote adapter", () => {
   it("unmapped service → appointment remote write throws and Supabase insert spy = 0", async () => {
     const { db, remote } = createMemoryRemotePersistence();
     seedTwoOrgs(db);
-    const supabaseInsert = vi.fn(async () => ({ data: null, error: null }));
-    const supabaseFrom = vi.fn((table: string) => {
+    const supabaseInsert = vi.fn<(payload: unknown) => Promise<{ data: null; error: null }>>();
+    supabaseInsert.mockResolvedValue({ data: null, error: null });
+    let fromCalls = 0;
+    const supabaseFrom = (table: string): { insert: typeof supabaseInsert } => {
+      fromCalls += 1;
       expect(table).toBe("appointments");
       return { insert: supabaseInsert };
-    });
+    };
     const spyStore: AppointmentTableStore = {
       insertAppointment: (row: DbAppointment) => {
         supabaseFrom("appointments").insert(remoteAppointmentPayload(row));
@@ -122,7 +125,7 @@ describe("Phase 1B canonical appointment remote adapter", () => {
     await expect(
       adapter.create(ORG_A, input({ serviceId: "svc-missing" })),
     ).rejects.toBeInstanceOf(UnmappedIdentityError);
-    expect(supabaseFrom).toHaveBeenCalledTimes(0);
+    expect(fromCalls).toBe(0);
     expect(supabaseInsert).toHaveBeenCalledTimes(0);
   });
 
