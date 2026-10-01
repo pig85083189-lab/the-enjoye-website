@@ -11,7 +11,7 @@ export type CustomerSource =
 
 export type CustomerGender = "female" | "male" | "other" | "unspecified";
 
-export type CustomerListStatus = "normal" | "needs_follow_up" | "inactive";
+export type CustomerListStatus = "normal" | "needs_follow_up" | "inactive" | "archived";
 
 export type PresetCustomerTagId =
   | "vip"
