@@ -186,7 +186,17 @@ create index if not exists idx_locations_organization_id
 -- Convert checkpointed foundation operational staff columns from
 -- uuid → profiles.id to text staff-*. Empty DB: USING staff_id::text is safe.
 -- profiles.id remains auth.users.id (auth profile metadata only).
+--
+-- Postgres cannot ALTER COLUMN TYPE while a policy expression depends on it.
+-- Foundation audit_logs_insert_org still compares actor_id = auth.uid()
+-- (Strategy A). Drop that coupling before conversion. Do not recast
+-- actor_id to keep auth.uid() — recreate Strategy B policies after
+-- user_has_org_membership exists: actor_id must equal the caller's
+-- staff_auth_memberships.user_id (staff-*), never auth.users.id.
 -- ---------------------------------------------------------------------------
+drop policy if exists audit_logs_insert_org on public.audit_logs;
+drop policy if exists audit_logs_select_managers on public.audit_logs;
+
 alter table public.appointments drop constraint if exists appointments_staff_id_fkey;
 alter table public.appointments drop constraint if exists appointments_created_by_fkey;
 alter table public.treatments drop constraint if exists treatments_staff_id_fkey;

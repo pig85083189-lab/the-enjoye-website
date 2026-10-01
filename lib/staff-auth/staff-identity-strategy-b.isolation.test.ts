@@ -308,6 +308,20 @@ describe("Strategy B staff identity A–Q", () => {
     );
   });
 
+  it("O drops Strategy A audit_logs actor_id policy before uuid→text conversion", () => {
+    const operational = read(OPERATIONAL_MIGRATION_FILE);
+    const dropAt = operational.indexOf(
+      "drop policy if exists audit_logs_insert_org on public.audit_logs",
+    );
+    const alterAt = operational.indexOf("alter column actor_id type text");
+    expect(dropAt).toBeGreaterThan(-1);
+    expect(alterAt).toBeGreaterThan(-1);
+    expect(dropAt).toBeLessThan(alterAt);
+    expect(operational).not.toMatch(/actor_id = auth\.uid\(\)/);
+    expect(operational).toMatch(/m\.user_id = actor_id/);
+    expect(operational).toMatch(/m\.auth_user_id = auth\.uid\(\)/);
+  });
+
   it("O RLS SQL source is Strategy B", () => {
     const operational = read(OPERATIONAL_MIGRATION_FILE);
     const identity = read(IDENTITY_MIGRATION_FILE);
