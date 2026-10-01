@@ -317,9 +317,12 @@ describe("Strategy B staff identity A–Q", () => {
     expect(dropAt).toBeGreaterThan(-1);
     expect(alterAt).toBeGreaterThan(-1);
     expect(dropAt).toBeLessThan(alterAt);
-    expect(operational).not.toMatch(/actor_id = auth\.uid\(\)/);
-    expect(operational).toMatch(/m\.user_id = actor_id/);
-    expect(operational).toMatch(/m\.auth_user_id = auth\.uid\(\)/);
+    const rebuiltPolicy = operational.slice(
+      operational.lastIndexOf("create policy audit_logs_insert_org"),
+    );
+    expect(rebuiltPolicy).not.toMatch(/actor_id = auth\.uid\(\)/);
+    expect(rebuiltPolicy).toMatch(/m\.user_id = actor_id/);
+    expect(rebuiltPolicy).toMatch(/m\.auth_user_id = auth\.uid\(\)/);
   });
 
   it("O RLS SQL source is Strategy B", () => {

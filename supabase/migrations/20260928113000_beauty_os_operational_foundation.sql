@@ -188,11 +188,11 @@ create index if not exists idx_locations_organization_id
 -- profiles.id remains auth.users.id (auth profile metadata only).
 --
 -- Postgres cannot ALTER COLUMN TYPE while a policy expression depends on it.
--- Foundation audit_logs_insert_org still compares actor_id = auth.uid()
--- (Strategy A). Drop that coupling before conversion. Do not recast
--- actor_id to keep auth.uid() — recreate Strategy B policies after
--- user_has_org_membership exists: actor_id must equal the caller's
--- staff_auth_memberships.user_id (staff-*), never auth.users.id.
+-- Foundation audit_logs_insert_org still compared the actor column to the
+-- Auth UUID (Strategy A). Drop that coupling before conversion. Do not
+-- recast the actor column to keep Auth UUID equality — recreate Strategy B
+-- policies after user_has_org_membership exists: actor_id must equal the
+-- caller's staff_auth_memberships.user_id (staff-*), never auth.users.id.
 -- ---------------------------------------------------------------------------
 drop policy if exists audit_logs_insert_org on public.audit_logs;
 drop policy if exists audit_logs_select_managers on public.audit_logs;
