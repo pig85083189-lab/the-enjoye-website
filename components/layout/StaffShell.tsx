@@ -8,13 +8,18 @@ import { StaffNavDrawer } from "@/components/layout/StaffNavDrawer";
 import { StaffSidebar } from "@/components/layout/StaffSidebar";
 import { DevTenantSwitcher } from "@/components/dev/DevTenantSwitcher";
 import { LeaveGuardProvider } from "@/features/treatments/LeaveGuard";
-import { getSessionRaw, subscribeAuth } from "@/lib/auth";
+import {
+  getStaffAuthSnapshot,
+  subscribeStaffAuth,
+  type StaffAuthUser,
+} from "@/lib/staff-auth/session";
 import { OrganizationProvider, useOrganization } from "@/lib/tenant/OrganizationContext";
 import { cn } from "@/lib/utils";
 import { isCustomerProfileWorkbenchPath } from "@/lib/customers/customer-360";
 
 interface StaffShellProps {
   children: ReactNode;
+  initialUser: StaffAuthUser | null;
 }
 
 function StaffShellChrome({ children }: { children: ReactNode }) {
@@ -126,17 +131,22 @@ function StaffShellChrome({ children }: { children: ReactNode }) {
   );
 }
 
-export function StaffShell({ children }: StaffShellProps) {
+export function StaffShell({ children, initialUser }: StaffShellProps) {
   const router = useRouter();
-  const sessionRaw = useSyncExternalStore(subscribeAuth, getSessionRaw, () => null);
+  const snapshot = useSyncExternalStore(
+    subscribeStaffAuth,
+    getStaffAuthSnapshot,
+    () => (initialUser ? `${initialUser.id}|${initialUser.email ?? ""}` : "none"),
+  );
+  const authenticated = snapshot !== "none";
 
   useEffect(() => {
-    if (sessionRaw === null) {
+    if (!authenticated) {
       router.replace("/staff/login");
     }
-  }, [sessionRaw, router]);
+  }, [authenticated, router]);
 
-  if (sessionRaw === null) {
+  if (!authenticated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-secondary-text">
         載入中…

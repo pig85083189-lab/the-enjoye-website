@@ -7,17 +7,10 @@ import { resolveStaffEntryHref } from "@/lib/auth";
 
 describe("resolveStaffEntryHref", () => {
   it("sends unauthenticated visitors to login", () => {
-    expect(resolveStaffEntryHref(null)).toBe("/staff/login");
+    expect(resolveStaffEntryHref(false)).toBe("/staff/login");
   });
 
   it("sends authenticated sessions to today", () => {
-    const raw = JSON.stringify({
-      staffId: "staff-001",
-      username: "yizhen",
-      name: "怡蓁",
-      avatarInitials: "怡",
-      remember: true,
-    });
-    expect(resolveStaffEntryHref(raw)).toBe("/staff/today");
+    expect(resolveStaffEntryHref(true)).toBe("/staff/today");
   });
 });

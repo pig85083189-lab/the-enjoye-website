@@ -4,6 +4,7 @@
  */
 
 import { resetHydratedRemoteMembershipsForTests } from "@/lib/staff-auth/membership-query";
+import { encodeStaffAuthSnapshot } from "@/lib/tenant/organization-snapshot";
 
 export interface StaffAuthUser {
   id: string;
@@ -41,8 +42,7 @@ export function subscribeStaffAuth(onChange: () => void): () => void {
 }
 
 export function getStaffAuthSnapshot(): string {
-  const user = getStaffAuthUser();
-  return user ? `${user.id}|${user.email ?? ""}` : "none";
+  return encodeStaffAuthSnapshot(getStaffAuthUser());
 }
 
 /** Test-only: bind a fake auth user without touching production fallback staff-001. */

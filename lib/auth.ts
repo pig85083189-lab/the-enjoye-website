@@ -1,5 +1,8 @@
+/**
+ * Legacy demo helpers. Production staff auth is Supabase cookies, not localStorage.
+ * Fake `enjoye-staff-auth` values cannot authenticate.
+ */
 import type { Staff } from "@/types";
-import { DEMO_STAFF } from "@/data/mock-staff";
 
 export const AUTH_KEY = "enjoye-staff-auth";
 
@@ -11,25 +14,17 @@ export interface AuthSession {
   remember: boolean;
 }
 
+/** Production login never accepts DEMO_STAFF credentials. */
 export function validateCredentials(username: string, password: string): Staff | null {
-  const normalized = username.trim().toLowerCase();
-  if (normalized === DEMO_STAFF.username && password === DEMO_STAFF.password) {
-    return DEMO_STAFF;
-  }
+  void username;
+  void password;
   return null;
 }
 
 export function saveSession(staff: Staff, remember: boolean): void {
-  if (typeof window === "undefined") return;
-  const session: AuthSession = {
-    staffId: staff.id,
-    username: staff.username,
-    name: staff.name,
-    avatarInitials: staff.avatarInitials,
-    remember,
-  };
-  localStorage.setItem(AUTH_KEY, JSON.stringify(session));
-  window.dispatchEvent(new Event("enjoye-auth-change"));
+  void staff;
+  void remember;
+  // Production session lives in Supabase cookies. Do not persist passwords or fake sessions.
 }
 
 export function getSessionRaw(): string | null {
@@ -57,14 +52,14 @@ export function clearSession(): void {
 }
 
 export function isAuthenticated(): boolean {
-  return getSession() !== null;
+  return false;
 }
 
-/** Staff root entry (`/staff`) — same session signal as StaffShell (raw localStorage). */
+/** Staff root entry (`/staff`) — cookie Auth, not localStorage. */
 export function resolveStaffEntryHref(
-  sessionRaw: string | null,
+  hasAuthUser: boolean,
 ): "/staff/login" | "/staff/today" {
-  return sessionRaw === null ? "/staff/login" : "/staff/today";
+  return hasAuthUser ? "/staff/today" : "/staff/login";
 }
 
 export function subscribeAuth(onStoreChange: () => void): () => void {

@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ChevronDown, LogOut } from "lucide-react";
 import { StaffNavLink } from "@/components/navigation/StaffNavLink";
 import { OrgLocationSwitcher } from "@/components/navigation/OrgLocationSwitcher";
-import { clearSession, getSession } from "@/lib/auth";
+import { signOutStaff } from "@/lib/staff-auth/sign-out";
 import {
   getVisibleNavigationItems,
   groupNavigationItems,
@@ -21,7 +21,7 @@ export function StaffSidebar({
   widthClass?: string;
 }) {
   const { organization, membership, currentLocation } = useOrganization();
-  const session = getSession();
+  const router = useRouter();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     sales: true,
     crm: true,
@@ -35,7 +35,7 @@ export function StaffSidebar({
     return groupNavigationItems(items);
   }, [membership?.role]);
 
-  const staffName = membership?.displayName ?? session?.name ?? "美容師";
+  const staffName = membership?.displayName ?? "美容師";
 
   return (
     <aside
@@ -134,14 +134,17 @@ export function StaffSidebar({
           <p className="mt-0.5 text-sm font-medium text-text">{staffName}</p>
           <p className="text-xs text-secondary-text">{membership?.role ?? "STAFF"}</p>
         </div>
-        <Link
-          href="/staff/login"
-          onClick={() => clearSession()}
+        <button
+          type="button"
+          onClick={async () => {
+            await signOutStaff();
+            router.replace("/staff/login");
+          }}
           className="flex min-h-11 items-center gap-2 rounded-2xl px-3 text-sm font-medium text-secondary-text transition-colors hover:bg-[#FAF7F5] hover:text-text"
         >
           <LogOut className="h-4 w-4" aria-hidden />
           登出
-        </Link>
+        </button>
       </div>
     </aside>
   );

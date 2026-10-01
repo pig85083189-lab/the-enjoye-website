@@ -1,13 +1,19 @@
 /**
- * Tenant access helpers (application-layer boundary).
+ * Tenant access helpers (application-layer UI boundary).
  *
- * Prototype only: client-side membership checks are NOT production security.
- * Future production must enforce Auth + server authorization + Postgres RLS.
- * Never treat a client-supplied organizationId as authorization proof.
+ * Client-side membership checks are NOT production security.
+ * Production authorization is Auth getUser() + staff_auth_memberships + RLS.
+ * Never treat activeOrganizationId / a client-supplied organizationId as
+ * the only authorization proof. Multi-org users may have several active
+ * memberships; UI selection is not a JWT current-org claim.
  */
 
-import { SEED_LOCATIONS, SEED_MEMBERSHIPS, SEED_ORGANIZATIONS } from "@/data/seed-organizations";
-import { getSession } from "@/lib/auth";
+import { SEED_LOCATIONS, SEED_ORGANIZATIONS } from "@/data/seed-organizations";
+import {
+  getMembership,
+  listAllMemberships,
+} from "@/lib/staff-auth/membership-query";
+import { getCurrentUserId as resolveCurrentUserId } from "@/lib/staff-auth/identity";
 import type { Organization, StaffMembership } from "@/types/saas";
 
 export class OrganizationAccessError extends Error {
@@ -24,24 +30,21 @@ export class LocationAccessError extends Error {
   }
 }
 
-/** Prototype current user — session when present, else demo staff for tests/SSR edges. */
+/** Operational staff-xxx for the signed-in Auth user. Empty when unresolved. Never staff-001 fallback. */
 export function getCurrentUserId(): string {
-  if (typeof window === "undefined") return "staff-001";
-  return getSession()?.staffId ?? "staff-001";
+  return resolveCurrentUserId();
 }
 
 export function getActiveMembership(
   organizationId: string,
   userId: string,
 ): StaffMembership | undefined {
-  return SEED_MEMBERSHIPS.find(
-    (m) => m.organizationId === organizationId && m.userId === userId && m.isActive,
-  );
+  return getMembership(organizationId, userId);
 }
 
 /** Application-layer membership gate (mock). Not a security boundary. */
 export function canAccessOrganization(userId: string, organizationId: string): boolean {
-  if (!organizationId) return false;
+  if (!organizationId || !userId) return false;
   if (!SEED_ORGANIZATIONS.some((o) => o.id === organizationId)) return false;
   return Boolean(getActiveMembership(organizationId, userId));
 }
@@ -53,10 +56,11 @@ export function assertCanAccessOrganization(userId: string, organizationId: stri
 }
 
 export function listAccessibleOrganizations(userId: string): Organization[] {
+  if (!userId) return [];
   const allowed = new Set(
-    SEED_MEMBERSHIPS.filter((m) => m.userId === userId && m.isActive).map(
-      (m) => m.organizationId,
-    ),
+    listAllMemberships()
+      .filter((m) => m.userId === userId && m.isActive)
+      .map((m) => m.organizationId),
   );
   return SEED_ORGANIZATIONS.filter((o) => allowed.has(o.id));
 }

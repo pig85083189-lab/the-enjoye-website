@@ -14,14 +14,21 @@ import {
 } from "@/lib/tenant/constants";
 import {
   SEED_LOCATIONS,
-  SEED_MEMBERSHIPS,
   SEED_ORGANIZATIONS,
   SEED_SUBSCRIPTIONS,
 } from "@/data/seed-organizations";
+import {
+  getMembership as getMembershipRow,
+  listMemberships as listMembershipRows,
+} from "@/lib/staff-auth/membership-query";
 import { setActiveOrganizationId } from "@/lib/tenant/active-organization";
 import { migrateLegacyTenantStorage } from "@/lib/tenant/migration";
 import { emitCrmChange } from "@/lib/repositories/keys";
 import { newId } from "@/lib/repositories/storage";
+import { assertCanManageStaff } from "@/lib/staff-auth/actors";
+import { getStaffAuthSnapshot, subscribeStaffAuth } from "@/lib/staff-auth/session";
+import { encodeOrganizationSnapshot } from "@/lib/tenant/organization-snapshot";
+import { isValidStaffEmail, normalizeStaffEmail } from "@/lib/staff-auth/email";
 import {
   canAccessLocation,
   canAccessOrganization,
@@ -138,27 +145,14 @@ function isStaffRole(value: string): value is StaffRole {
 
 /** All org memberships, including inactive. Canonical StaffMembership read — not a parallel roster. */
 export function listMemberships(organizationId: string): StaffMembership[] {
-  const overrides = readMembershipOverrides();
-  const seeded = SEED_MEMBERSHIPS.filter((item) => item.organizationId === organizationId).map(
-    (item) => {
-      const patch = overrides[item.id];
-      return patch ? { ...item, ...patch, id: item.id, userId: item.userId, organizationId: item.organizationId } : item;
-    },
-  );
-  const seededIds = new Set(seeded.map((item) => item.id));
-  const created = Object.values(overrides).filter(
-    (item) => item.organizationId === organizationId && !seededIds.has(item.id),
-  );
-  return [...seeded, ...created];
+  return listMembershipRows(organizationId);
 }
 
 export function getMembership(
   organizationId: string,
   userId: string,
 ): StaffMembership | undefined {
-  return listMemberships(organizationId).find(
-    (item) => item.userId === userId && item.isActive,
-  );
+  return getMembershipRow(organizationId, userId);
 }
 
 export interface CreateMembershipInput {
@@ -166,9 +160,14 @@ export interface CreateMembershipInput {
   displayName: string;
   role: StaffRole;
   locationIds: string[];
+  email?: string | null;
+  actorStaffId?: string;
 }
 
 export function createMembership(input: CreateMembershipInput): StaffMembership {
+  if (input.actorStaffId) {
+    assertCanManageStaff(input.organizationId, input.actorStaffId);
+  }
   const displayName = input.displayName.trim();
   if (!displayName) throw new Error("displayName is required");
   if (!isStaffRole(input.role)) throw new Error("role is not a canonical StaffRole");
@@ -177,6 +176,14 @@ export function createMembership(input: CreateMembershipInput): StaffMembership 
   if (locationIds.length === 0) throw new Error("at least one location is required");
   if (locationIds.some((id) => !locations.some((location) => location.id === id))) {
     throw new Error("location does not belong to this organization");
+  }
+  let email: string | null | undefined;
+  if (input.email !== undefined) {
+    const trimmed = input.email?.trim() ?? "";
+    if (trimmed && !isValidStaffEmail(trimmed)) {
+      throw new Error("email is invalid");
+    }
+    email = trimmed ? normalizeStaffEmail(trimmed) : null;
   }
   const membership: StaffMembership = {
     id: newId("mem"),
@@ -187,6 +194,8 @@ export function createMembership(input: CreateMembershipInput): StaffMembership 
     displayName,
     isActive: true,
     createdAt: new Date().toISOString(),
+    authUserId: null,
+    email: email ?? null,
   };
   const overrides = readMembershipOverrides();
   overrides[membership.id] = membership;
@@ -198,8 +207,14 @@ export function createMembership(input: CreateMembershipInput): StaffMembership 
 export function updateMembership(
   organizationId: string,
   membershipId: string,
-  patch: Partial<Pick<StaffMembership, "displayName" | "role" | "locationIds" | "isActive">>,
+  patch: Partial<
+    Pick<StaffMembership, "displayName" | "role" | "locationIds" | "isActive" | "email" | "authUserId">
+  >,
+  actorStaffId?: string,
 ): StaffMembership {
+  if (actorStaffId) {
+    assertCanManageStaff(organizationId, actorStaffId);
+  }
   const current = listMemberships(organizationId).find((item) => item.id === membershipId);
   if (!current) throw new Error("Staff membership not found");
   const displayName =
@@ -215,12 +230,25 @@ export function updateMembership(
   if (locationIds.some((id) => !locations.some((location) => location.id === id))) {
     throw new Error("location does not belong to this organization");
   }
+  let email = current.email ?? null;
+  if (patch.email !== undefined) {
+    const trimmed = patch.email?.trim() ?? "";
+    if (trimmed && !isValidStaffEmail(trimmed)) {
+      throw new Error("email is invalid");
+    }
+    email = trimmed ? normalizeStaffEmail(trimmed) : null;
+  }
   const next: StaffMembership = {
     ...current,
     displayName,
     role,
     locationIds,
     isActive: patch.isActive ?? current.isActive,
+    email,
+    authUserId: patch.authUserId !== undefined ? patch.authUserId : current.authUserId,
+    userId: current.userId,
+    id: current.id,
+    organizationId: current.organizationId,
   };
   const overrides = readMembershipOverrides();
   overrides[next.id] = next;
@@ -352,9 +380,11 @@ export function subscribeOrganization(onChange: () => void): () => void {
   const handler = () => onChange();
   window.addEventListener(ORG_CHANGE_EVENT, handler);
   window.addEventListener("storage", handler);
+  const unsubAuth = subscribeStaffAuth(handler);
   return () => {
     window.removeEventListener(ORG_CHANGE_EVENT, handler);
     window.removeEventListener("storage", handler);
+    unsubAuth();
   };
 }
 
@@ -365,5 +395,14 @@ export function getOrganizationSnapshot(): string {
     orgId === "none"
       ? ""
       : (window.localStorage.getItem(getCurrentLocationStorageKey(orgId)) ?? "");
-  return `${orgId}|${window.localStorage.getItem(ORG_OVERRIDES_STORAGE_KEY) ?? ""}|${window.localStorage.getItem(LOCATION_OVERRIDES_STORAGE_KEY) ?? ""}|${window.localStorage.getItem(MEMBERSHIP_OVERRIDES_STORAGE_KEY) ?? ""}|${locationPtr}`;
+  return encodeOrganizationSnapshot({
+    authSnapshot: getStaffAuthSnapshot(),
+    organizationId: orgId,
+    orgOverrides: window.localStorage.getItem(ORG_OVERRIDES_STORAGE_KEY) ?? "",
+    locationOverrides:
+      window.localStorage.getItem(LOCATION_OVERRIDES_STORAGE_KEY) ?? "",
+    membershipOverrides:
+      window.localStorage.getItem(MEMBERSHIP_OVERRIDES_STORAGE_KEY) ?? "",
+    locationPtr,
+  });
 }

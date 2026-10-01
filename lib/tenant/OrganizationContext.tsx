@@ -14,13 +14,14 @@ import type {
   OrganizationSubscription,
   StaffMembership,
 } from "@/types/saas";
+import { AccessUnavailablePanel } from "@/features/auth/AccessUnavailable";
+import { parseOrganizationId } from "@/lib/tenant/organization-snapshot";
 import {
   getMembership,
   getOrganizationById,
   getOrganizationSnapshot,
   getSubscription,
   listLocations,
-  listOrganizationsForUser,
   persistCurrentLocation,
   persistOrganizationId,
   resolveCurrentLocation,
@@ -29,6 +30,8 @@ import {
 import { getCurrentUserId } from "./access";
 import { canUseFeature } from "./entitlements";
 import type { FeatureKey } from "@/types/saas";
+import { resolveActiveMembershipsForAuthUser } from "@/lib/staff-auth/identity";
+import { getStaffAuthUserId } from "@/lib/staff-auth/session";
 
 interface OrganizationContextValue {
   organization: Organization;
@@ -45,19 +48,7 @@ interface OrganizationContextValue {
 
 const OrganizationContext = createContext<OrganizationContextValue | null>(null);
 
-function AccessUnavailablePanel() {
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-6 text-center">
-      <p className="text-lg font-semibold text-text">Access unavailable</p>
-      <p className="max-w-sm text-sm text-secondary-text">
-        目前帳號沒有可用的店家 membership。請重新登入，或聯絡平台管理員。
-      </p>
-      <p className="text-xs text-secondary-text">
-        Prototype application boundary · 非正式 security boundary
-      </p>
-    </div>
-  );
-}
+export { parseOrganizationId };
 
 export function OrganizationProvider({ children }: { children: ReactNode }) {
   const snapshot = useSyncExternalStore(
@@ -67,16 +58,21 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<OrganizationContextValue>(() => {
+    const authUserId = getStaffAuthUserId();
+    const authMemberships = resolveActiveMembershipsForAuthUser(authUserId);
     const userId = getCurrentUserId();
-    const organizationId = snapshot.split("|")[0];
-    const organizations = listOrganizationsForUser(userId);
-    // Avoid SSR→organizations[0] flash of the wrong tenant
+    const organizationId = parseOrganizationId(snapshot);
+    const organizations = authMemberships
+      .map((row) => getOrganizationById(row.organizationId))
+      .filter((org): org is Organization => Boolean(org));
     const organization =
       organizationId === "ssr" || organizationId === "none"
         ? undefined
         : getOrganizationById(organizationId);
 
-    if (!organization) {
+    const noMembership = Boolean(authUserId) && authMemberships.length === 0;
+
+    if (!organization || noMembership) {
       return {
         organization: {
           id: organizationId === "ssr" ? "ssr" : "none",
@@ -103,7 +99,9 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
 
     const locations = listLocations(organization.id);
     const currentLocation = resolveCurrentLocation(organization.id);
-    const membership = getMembership(organization.id, userId);
+    const membership =
+      authMemberships.find((row) => row.organizationId === organization.id) ??
+      getMembership(organization.id, userId);
     const subscription = getSubscription(organization.id);
 
     return {
@@ -114,7 +112,11 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
       membership,
       subscription,
       accessUnavailable: false,
-      switchOrganization: (id: string) => persistOrganizationId(id, userId),
+      switchOrganization: (id: string) => {
+        const target = authMemberships.find((row) => row.organizationId === id);
+        if (!target) return false;
+        return persistOrganizationId(id, target.userId);
+      },
       switchLocation: (locationId: string) =>
         persistCurrentLocation(organization.id, locationId),
       hasFeature: (feature: FeatureKey) =>
