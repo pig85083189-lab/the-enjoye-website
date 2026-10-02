@@ -2,6 +2,8 @@
  * Canonical appointment remote adapter.
  * Fail-closed: unmapped org/location/customer/service must throw BEFORE insert.
  * Never auto-creates customers or services. Never enabled in live UI.
+ * Database composite FKs / staff trigger are the final tenant-integrity authority;
+ * this adapter stays as defense-in-depth and is not weakened by the DB hardening.
  */
 
 import type { AppointmentListQuery, CreateAppointmentInput } from "@/lib/appointments/store";

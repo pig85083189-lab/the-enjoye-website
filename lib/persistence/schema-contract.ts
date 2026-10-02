@@ -16,6 +16,10 @@ export const IDENTITY_MIGRATION_FILE =
 export const FOUNDATION_MIGRATION_FILE =
   "supabase/migrations/20260918120000_beauty_os_foundation.sql";
 
+/** Phase 1C-5A.1 Appointment same-org / location NOT NULL hardening. */
+export const APPOINTMENT_INTEGRITY_MIGRATION_FILE =
+  "supabase/migrations/20261002120000_appointment_tenant_integrity.sql";
+
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [
   "remaining_sessions",

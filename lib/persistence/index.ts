@@ -11,6 +11,7 @@ export {
 export { localOperationalPersistence } from "./local-adapter";
 export { supabaseOperationalPersistence } from "./supabase-adapter";
 export {
+  APPOINTMENT_INTEGRITY_MIGRATION_FILE,
   FORBIDDEN_STORED_COLUMNS,
   OPERATIONAL_MIGRATION_FILE,
   OPERATIONAL_TABLES,
