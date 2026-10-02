@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -34,5 +34,10 @@ describe("Phase 1B UI persistence boundary", () => {
       if (/\.from\(\s*["']appointments["']\s*\)/.test(source)) offenders.push(`${file}:appointments`);
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("does not leave a customer bootstrap endpoint", () => {
+    expect(existsSync(path.join(ROOT, "app/staff/customer-bootstrap/page.tsx"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "lib/staff-auth/customer-bootstrap.ts"))).toBe(false);
   });
 });
