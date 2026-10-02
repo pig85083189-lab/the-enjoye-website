@@ -1,7 +1,9 @@
 /**
  * Async customer application boundary.
  * One Customer domain — delegates to OperationalPersistence.customers.
- * Live UI still uses localCustomerRepository this phase; do not switch pages here.
+ * Default persistence remains local. Phase 1C-3 list/detail may pass an
+ * authenticated CustomerRemoteAdapter through the Phase 1C-3 read pilot.
+ * Other live surfaces stay on localCustomerRepository.
  */
 
 import { normalizePhone } from "@/lib/phone";

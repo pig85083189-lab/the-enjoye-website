@@ -27,6 +27,10 @@ export {
   REMOTE_PERSISTENCE_REQUIRES_FLAGS,
 } from "./remote-factory";
 export { loadAuthenticatedIdentityCatalog } from "./authenticated-identity-catalog";
+export {
+  AuthenticatedCustomerReadStore,
+  CustomerRemoteReadOnlyError,
+} from "./authenticated-customer-read-store";
 export { SnapshotIdentityCatalog } from "./snapshot-identity-catalog";
 export { CustomerRemoteAdapter } from "./customer-remote-adapter";
 export { ServiceRemoteAdapter } from "./service-remote-adapter";
