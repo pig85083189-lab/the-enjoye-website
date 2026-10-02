@@ -129,6 +129,11 @@ describe("Phase 1C-4 service remote foundation UI boundary", () => {
 });
 
 describe("Phase 1C-5A appointment remote foundation UI boundary", () => {
+  it("does not leave an appointment bootstrap endpoint", () => {
+    expect(existsSync(path.join(ROOT, "app/staff/appointment-bootstrap/page.tsx"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "lib/staff-auth/appointment-bootstrap.ts"))).toBe(false);
+  });
+
   it("does not activate Appointment remote on live surfaces", () => {
     const surfaces = [
       "features/today/TodayDashboard.tsx",
@@ -153,10 +158,32 @@ describe("Phase 1C-5A appointment remote foundation UI boundary", () => {
   });
 });
 
-describe("Phase 1C-5B appointment bootstrap UI boundary", () => {
-  it("keeps the temporary Preview-only bootstrap off live Calendar / Today", () => {
-    expect(existsSync(path.join(ROOT, "app/staff/appointment-bootstrap/page.tsx"))).toBe(true);
-    expect(existsSync(path.join(ROOT, "lib/staff-auth/appointment-bootstrap.ts"))).toBe(true);
+describe("Phase 1C-5B appointment remote foundation UI boundary", () => {
+  it("does not leave an appointment bootstrap endpoint", () => {
+    expect(existsSync(path.join(ROOT, "app/staff/appointment-bootstrap/page.tsx"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "app/staff/appointment-bootstrap/AppointmentBootstrapClient.tsx"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "lib/staff-auth/appointment-bootstrap.ts"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "lib/staff-auth/appointment-bootstrap.isolation.test.ts"))).toBe(false);
+  });
+
+  it("does not keep temporary appointment bootstrap write helpers", () => {
+    const files = ["app", "lib", "features", "components"].flatMap(walkSource);
+    const offenders: string[] = [];
+    for (const file of files) {
+      if (file.endsWith("ui-boundary.isolation.test.ts")) continue;
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      if (
+        source.includes("createFirstRemoteQaAppointment") ||
+        source.includes("APPOINTMENT_BOOTSTRAP_ROUTE") ||
+        source.includes("/staff/appointment-bootstrap")
+      ) {
+        offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps live Calendar / Today off the appointment bootstrap path", () => {
     const surfaces = [
       "features/today/TodayDashboard.tsx",
       "features/calendar/CalendarPage.tsx",
