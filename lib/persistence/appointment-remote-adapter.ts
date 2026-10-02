@@ -15,6 +15,7 @@ import type { CanonicalIdMapper } from "./identity-map";
 import {
   appointmentFromRemoteRow,
   assertAppointmentTimeRange,
+  assertMappedAppointmentDependencies,
   mergeInternalNote,
   remoteAppointmentPayload,
   toRemoteAppointmentStatus,
@@ -81,10 +82,8 @@ export class AppointmentRemoteAdapter {
     });
     assertAppointmentTimeRange(input.startAt, input.endAt);
 
-    const orgDbId = this.mapper.resolveOrganizationDbId(organizationId);
-    const locationDbId = this.mapper.resolveLocationDbId(organizationId, input.locationId);
-    const customerDbId = this.mapper.resolveCustomerDbId(organizationId, input.customerId);
-    const serviceDbId = this.mapper.resolveServiceDbId(organizationId, input.serviceId);
+    const { organizationDbId: orgDbId, locationDbId, customerDbId, serviceDbId } =
+      assertMappedAppointmentDependencies(this.mapper, organizationId, input);
     const staffId = this.mapper.requireOperationalStaffId(organizationId, input.staffId);
     const createdBy = input.createdBy
       ? this.mapper.requireOperationalStaffId(organizationId, input.createdBy)

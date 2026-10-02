@@ -30,6 +30,7 @@ describe("Phase 1B UI persistence boundary", () => {
     for (const file of files) {
       const source = readFileSync(path.join(ROOT, file), "utf8");
       if (/\.from\(\s*["']customers["']\s*\)/.test(source)) offenders.push(`${file}:customers`);
+      if (/\.from\(\s*["']services["']\s*\)/.test(source)) offenders.push(`${file}:services`);
       if (/\.from\(\s*["']appointments["']\s*\)/.test(source)) offenders.push(`${file}:appointments`);
     }
     expect(offenders).toEqual([]);

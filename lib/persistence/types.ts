@@ -11,7 +11,8 @@ import type { TreatmentDraft } from "@/types/treatment";
 import type { FollowUpTask } from "@/lib/follow-ups/domain";
 import type { CustomerPackage, PackageLedgerEntry } from "@/lib/packages/domain";
 import type { StoredValueLedgerEntry } from "@/lib/stored-value/domain";
-import type { Customer } from "@/types";
+import type { Customer, Service } from "@/types";
+import type { CreateServiceInput } from "@/lib/services/store";
 import type {
   CustomerProfilePatch,
   OrgEntityQuery,
@@ -22,6 +23,13 @@ export interface AppointmentPersistence {
   list(query: AppointmentListQuery, anchorDay?: Date): ScheduleAppointment[];
   get(organizationId: string, appointmentId: string): ScheduleAppointment | undefined;
   create(organizationId: string, input: CreateAppointmentInput): ScheduleAppointment;
+}
+
+export interface ServicePersistence {
+  list(organizationId: string, opts?: { activeOnly?: boolean }): Promise<Service[]>;
+  getById(organizationId: string, serviceId: string): Promise<Service | undefined>;
+  create(organizationId: string, input: CreateServiceInput): Promise<Service>;
+  upsert(organizationId: string, service: Service, actorStaffId: string): Promise<Service>;
 }
 
 export interface CustomerPersistence {
@@ -91,6 +99,7 @@ export interface FollowUpPersistence {
 export interface OperationalPersistence {
   driver: "local" | "supabase";
   customers: CustomerPersistence;
+  services: ServicePersistence;
   appointments: AppointmentPersistence;
   treatments: TreatmentPersistence;
   checkout: CheckoutPersistence;

@@ -24,6 +24,12 @@ export const supabaseOperationalPersistence: OperationalPersistence = {
     updateProfile: disabled,
     findByPhone: disabled,
   },
+  services: {
+    list: disabled,
+    getById: disabled,
+    create: disabled,
+    upsert: disabled,
+  },
   appointments: {
     list: disabled,
     get: disabled,

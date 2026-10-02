@@ -5,6 +5,7 @@
 
 import type { CanonicalAppointmentStatus, ScheduleAppointment } from "@/lib/appointments/domain";
 import { normalizeAppointmentStatus } from "@/lib/appointments/domain";
+import type { CanonicalIdMapper } from "./identity-map";
 import type { DbAppointment } from "./operational-rows";
 
 export function mergeInternalNote(appointment: Pick<ScheduleAppointment, "internalNote" | "notes">): string | null {
@@ -23,6 +24,28 @@ export function assertAppointmentTimeRange(startAt: string, endAt: string): void
   if (!(new Date(endAt).getTime() > new Date(startAt).getTime())) {
     throw new Error("endAt must be after startAt");
   }
+}
+
+/**
+ * Appointment remote writes are impossible without all four mapped UUIDs.
+ * Never auto-create customer / service / org / location.
+ */
+export function assertMappedAppointmentDependencies(
+  mapper: CanonicalIdMapper,
+  organizationId: string,
+  input: { locationId: string; customerId: string; serviceId: string },
+): {
+  organizationDbId: string;
+  locationDbId: string;
+  customerDbId: string;
+  serviceDbId: string;
+} {
+  return {
+    organizationDbId: mapper.resolveOrganizationDbId(organizationId),
+    locationDbId: mapper.resolveLocationDbId(organizationId, input.locationId),
+    customerDbId: mapper.resolveCustomerDbId(organizationId, input.customerId),
+    serviceDbId: mapper.resolveServiceDbId(organizationId, input.serviceId),
+  };
 }
 
 export function appointmentFromRemoteRow(

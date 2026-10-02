@@ -81,6 +81,27 @@ describe("Phase 1B canonical appointment remote adapter", () => {
     expect(insert).toHaveBeenCalledTimes(1);
   });
 
+  it("unmapped location → no insert and no auto-create", async () => {
+    const { db, remote } = createMemoryRemotePersistence();
+    seedTwoOrgs(db);
+    const insert = vi.fn();
+    const spyStore: AppointmentTableStore = {
+      insertAppointment: (row) => {
+        insert(row);
+        db.insertAppointment(row);
+      },
+      listAppointments: (org) => db.listAppointments(org),
+      getAppointmentByAppId: (org, appId) => db.getAppointmentByAppId(org, appId),
+      getAppointmentByDbId: (id) => db.getAppointmentByDbId(id),
+    };
+    const adapter = new AppointmentRemoteAdapter(remote.mapper, spyStore);
+    await expect(
+      adapter.create(ORG_A, input({ locationId: "loc-missing" })),
+    ).rejects.toBeInstanceOf(UnmappedIdentityError);
+    expect(insert).toHaveBeenCalledTimes(0);
+    expect(db.locations.some((row) => row.appId === "loc-missing")).toBe(false);
+  });
+
   it("unmapped customer → no insert", async () => {
     const { db, remote } = createMemoryRemotePersistence();
     seedTwoOrgs(db);

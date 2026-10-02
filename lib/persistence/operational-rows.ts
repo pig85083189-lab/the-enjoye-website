@@ -193,3 +193,37 @@ export interface AppointmentTableStore {
   getAppointmentByAppId(organizationDbId: string, appId: string): DbAppointment | undefined;
   getAppointmentByDbId(dbId: string): DbAppointment | undefined;
 }
+
+export type RemoteServiceType =
+  | "BREAST"
+  | "BODY_SCULPTING"
+  | "FACIAL"
+  | "WOMB_CARE"
+  | "DETOX"
+  | "NAVEL_CANDLE"
+  | "EXFOLIATION"
+  | "WAXING"
+  | "OTHER";
+
+export interface DbService {
+  id: string;
+  organization_id: string;
+  app_id: string;
+  name: string;
+  service_type: RemoteServiceType;
+  duration_minutes: number;
+  price_minor: number | null;
+  currency: string;
+  category: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceTableStore {
+  insertService(row: DbService): void;
+  updateService(row: DbService): void;
+  listServices(organizationDbId: string): DbService[];
+  getServiceByAppId(organizationDbId: string, appId: string): DbService | undefined;
+  getServiceByDbId(dbId: string): DbService | undefined;
+}

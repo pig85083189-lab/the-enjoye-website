@@ -29,7 +29,9 @@ export {
 export { loadAuthenticatedIdentityCatalog } from "./authenticated-identity-catalog";
 export { SnapshotIdentityCatalog } from "./snapshot-identity-catalog";
 export { CustomerRemoteAdapter } from "./customer-remote-adapter";
+export { ServiceRemoteAdapter } from "./service-remote-adapter";
 export { AppointmentRemoteAdapter } from "./appointment-remote-adapter";
+export { assertMappedAppointmentDependencies } from "./appointment-mapping";
 export {
   DEMO_SEED_FLAG,
   isDemoSeedEnabled,
@@ -37,8 +39,9 @@ export {
   REMOTE_DEMO_PROMOTION_MESSAGE,
   assertRemoteCustomerAllowed,
   assertRemoteAppointmentAllowed,
+  assertRemoteServiceAllowed,
 } from "./demo-firewall";
-export type { OperationalPersistence, CustomerPersistence } from "./types";
+export type { OperationalPersistence, CustomerPersistence, ServicePersistence } from "./types";
 
 /**
  * Persistence port for Phase 5A-2. Existing stores are still the live path.

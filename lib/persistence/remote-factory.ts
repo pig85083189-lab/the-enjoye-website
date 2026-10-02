@@ -10,12 +10,14 @@ import { MemoryOperationalDb } from "./memory-operational-db";
 import { AppointmentRemoteAdapter } from "./appointment-remote-adapter";
 import { CustomerRemoteAdapter } from "./customer-remote-adapter";
 import { PackageRemoteAdapter } from "./package-remote-adapter";
+import { ServiceRemoteAdapter } from "./service-remote-adapter";
 import { StoredValueRemoteAdapter } from "./stored-value-remote-adapter";
 import type { IdentityCatalog } from "./identity-catalog";
 import type {
   AppointmentTableStore,
   CustomerTableStore,
   PackageTableStore,
+  ServiceTableStore,
   StoredValueTableStore,
 } from "./operational-rows";
 
@@ -27,12 +29,14 @@ export interface RemoteOperationalDb
     PackageTableStore,
     StoredValueTableStore,
     CustomerTableStore,
-    AppointmentTableStore {}
+    AppointmentTableStore,
+    ServiceTableStore {}
 
 export interface RemoteOperationalPersistence {
   driver: "supabase";
   mapper: CanonicalIdMapper;
   customers: CustomerRemoteAdapter;
+  services: ServiceRemoteAdapter;
   appointments: AppointmentRemoteAdapter;
   packages: PackageRemoteAdapter;
   storedValue: StoredValueRemoteAdapter;
@@ -51,6 +55,7 @@ export function createRemoteOperationalPersistence(
     driver: "supabase",
     mapper,
     customers: new CustomerRemoteAdapter(mapper, db, now),
+    services: new ServiceRemoteAdapter(mapper, db, now),
     appointments: new AppointmentRemoteAdapter(mapper, db, now),
     packages: new PackageRemoteAdapter(mapper, db, now),
     storedValue: new StoredValueRemoteAdapter(mapper, db, now),
