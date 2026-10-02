@@ -17,6 +17,24 @@ export class UnmappedIdentityError extends Error {
   }
 }
 
+export type IdentityCatalogFailureReason =
+  | "unauthenticated"
+  | "missing_membership"
+  | "ambiguous_membership"
+  | "ambiguous_mapping"
+  | "missing_mapping"
+  | "invalid_operational_staff";
+
+export class IdentityCatalogError extends Error {
+  readonly reason: IdentityCatalogFailureReason;
+
+  constructor(reason: IdentityCatalogFailureReason, message: string) {
+    super(message);
+    this.name = "IdentityCatalogError";
+    this.reason = reason;
+  }
+}
+
 export class UniqueEffectKeyError extends Error {
   constructor(message = "effect_key already exists") {
     super(message);

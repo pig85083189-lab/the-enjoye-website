@@ -18,10 +18,34 @@ export type OrgCustomerQuery = OrgScoped & {
   customerId: string;
 };
 
+/** Editable CRM profile fields — excludes clinical notes / preferences redesign. */
+export type CustomerProfilePatch = Partial<
+  Pick<
+    Customer,
+    | "name"
+    | "phone"
+    | "email"
+    | "lineId"
+    | "birthday"
+    | "gender"
+    | "occupation"
+    | "address"
+    | "source"
+    | "membership"
+    | "id"
+    | "organizationId"
+  >
+>;
+
 export interface CustomerRepository {
   list(query: OrgQuery): Customer[];
   getById(query: OrgEntityQuery): Customer | undefined;
   upsert(customer: Customer): Customer;
+  updateProfile(
+    organizationId: string,
+    customerId: string,
+    patch: CustomerProfilePatch,
+  ): Customer;
   findByPhone(query: OrgQuery & { phone: string }): Customer[];
 }
 
