@@ -71,6 +71,17 @@ export interface PackageLedgerEntry {
   createdAt: string;
 }
 
+export function deriveCustomerPackageStatus(
+  pkg: Pick<CustomerPackage, "status" | "expiresAt">,
+  ledgerBalance: number,
+  nowMs: number = Date.now(),
+): CustomerPackageStatus {
+  if (pkg.status === "VOIDED") return "VOIDED";
+  if (pkg.expiresAt && new Date(pkg.expiresAt).getTime() < nowMs) return "EXPIRED";
+  if (ledgerBalance <= 0) return "EXHAUSTED";
+  return "ACTIVE";
+}
+
 export const PACKAGE_LEDGER_TYPE_LABEL: Record<PackageLedgerType, string> = {
   PURCHASE: "購買",
   REDEMPTION: "核銷",
