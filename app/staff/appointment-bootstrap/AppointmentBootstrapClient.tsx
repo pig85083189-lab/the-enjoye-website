@@ -279,7 +279,8 @@ export function AppointmentBootstrapClient() {
         <p className="mt-8 font-medium">Created / PASS</p>
       ) : null}
 
-      {state.appointment ? (
+      {state.kind === "existing" || state.kind === "created" || state.kind === "conflict"
+        ? state.appointment && (
         <dl className="mt-6 space-y-3">
           <div>
             <dt className="text-secondary-text">domain app id</dt>
@@ -310,7 +311,8 @@ export function AppointmentBootstrapClient() {
             <dd className="font-medium">{state.appointment.status}</dd>
           </div>
         </dl>
-      ) : null}
+        )
+        : null}
     </main>
   );
 }

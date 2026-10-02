@@ -278,9 +278,13 @@ describe("Phase 1C-5B first remote appointment bootstrap", () => {
     await createAppointmentRecord(
       ORG_APP,
       {
-        ...FIRST_REMOTE_APPOINTMENT_PAYLOAD,
+        locationId: FIRST_REMOTE_APPOINTMENT_PAYLOAD.locationId,
         customerId: "cust-overlap-other",
-        customerName: "Overlap Other",
+        serviceId: FIRST_REMOTE_APPOINTMENT_PAYLOAD.serviceId,
+        staffId: FIRST_REMOTE_APPOINTMENT_PAYLOAD.staffId,
+        startAt: FIRST_REMOTE_APPOINTMENT_PAYLOAD.startAt,
+        endAt: FIRST_REMOTE_APPOINTMENT_PAYLOAD.endAt,
+        createdBy: FIRST_REMOTE_APPOINTMENT_PAYLOAD.createdBy,
       },
       remote,
     );
