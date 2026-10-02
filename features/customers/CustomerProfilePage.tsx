@@ -40,11 +40,13 @@ function isWalletSection(value: string | null): value is Customer360WalletSectio
 interface CustomerProfilePageProps {
   customerId: string;
   remoteReadPilot?: boolean;
+  appointmentRemoteReadPilot?: boolean;
 }
 
 export function CustomerProfilePage({
   customerId,
   remoteReadPilot = false,
+  appointmentRemoteReadPilot = false,
 }: CustomerProfilePageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -389,7 +391,11 @@ function Customer360Workspace({
             ) : null}
             {tab === "photos" ? <PhotosTab customerId={customer.id} /> : null}
             {tab === "appointments" ? (
-              <AppointmentsTab customerId={customer.id} createHref={snapshot.createHref} />
+              <AppointmentsTab
+                customerId={customer.id}
+                createHref={appointmentRemoteReadPilot ? undefined : snapshot.createHref}
+                remoteReadPilot={appointmentRemoteReadPilot}
+              />
             ) : null}
             {tab === "wallet" ? (
               <WalletTab

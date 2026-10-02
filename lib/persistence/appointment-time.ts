@@ -51,3 +51,17 @@ export function addMinutesToIso(iso: string, minutes: number): string {
   }
   return new Date(utc.getTime() + minutes * 60_000).toISOString();
 }
+
+/** Customer 360 Appointment pilot display: Taipei date + start–end, never server-local. */
+export function formatTaipeiAppointmentDisplay(
+  startAt: string,
+  endAt: string,
+): { date: string; time: string } {
+  const start = utcIsoToTaipeiLocal(startAt);
+  const end = utcIsoToTaipeiLocal(endAt);
+  const [year, month, day] = start.dateYmd.split("-");
+  return {
+    date: `${year}/${month}/${day}`,
+    time: `${start.hm}–${end.hm}`,
+  };
+}

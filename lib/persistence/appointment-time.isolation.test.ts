@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   APPOINTMENT_DISPLAY_TIMEZONE,
   addMinutesToIso,
+  formatTaipeiAppointmentDisplay,
   taipeiLocalToUtcIso,
   utcIsoToTaipeiLocal,
 } from "./appointment-time";
@@ -26,5 +27,10 @@ describe("Phase 1C-5A Taipei appointment time mapping", () => {
     expect(startAt).toBe("2026-10-09T02:00:00.000Z");
     expect(endAt).toBe("2026-10-09T03:40:00.000Z");
     expect(utcIsoToTaipeiLocal(endAt)).toEqual({ dateYmd: "2026-10-09", hm: "11:40" });
+    expect(formatTaipeiAppointmentDisplay(startAt, endAt)).toEqual({
+      date: "2026/10/09",
+      time: "10:00–11:40",
+    });
+    expect(formatTaipeiAppointmentDisplay(startAt, endAt).time).not.toMatch(/02:00|03:40/);
   });
 });

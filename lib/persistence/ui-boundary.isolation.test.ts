@@ -83,7 +83,7 @@ describe("Phase 1C-4 service remote foundation UI boundary", () => {
     const files = ["app", "lib", "features", "components"].flatMap(walkSource);
     const offenders: string[] = [];
     for (const file of files) {
-      if (file.endsWith("ui-boundary.isolation.test.ts")) continue;
+      if (file.endsWith(".isolation.test.ts")) continue;
       const source = readFileSync(path.join(ROOT, file), "utf8");
       if (
         source.includes("createFirstRemoteQaService") ||
@@ -158,6 +158,43 @@ describe("Phase 1C-5A appointment remote foundation UI boundary", () => {
   });
 });
 
+describe("Phase 1C-5C appointment remote read UI boundary", () => {
+  it("keeps Calendar / Today / Treatment / Checkout on local appointment reads", () => {
+    const surfaces = [
+      "features/today/TodayDashboard.tsx",
+      "features/calendar/CalendarPage.tsx",
+      "features/treatments/TreatmentPageClient.tsx",
+      "features/treatments/TreatmentsListPageClient.tsx",
+      "features/checkout/CheckoutPageClient.tsx",
+      "features/packages/PackagesPageClient.tsx",
+      "features/transactions/TransactionsPageClient.tsx",
+      "features/customers/CustomerListPage.tsx",
+      "features/customers/use-customer-360.ts",
+    ];
+    for (const file of surfaces) {
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      expect(source).not.toMatch(
+        /listRemotePilotAppointmentsByCustomer|getRemotePilotAppointment|useCustomerRemoteAppointments|BEAUTY_OS_APPOINTMENT_REMOTE_READ_PILOT/,
+      );
+    }
+  });
+
+  it("cuts remote Appointment read only at Customer 360 Appointments tab", () => {
+    const page = readFileSync(path.join(ROOT, "app/staff/(app)/customers/[id]/page.tsx"), "utf8");
+    const profile = readFileSync(path.join(ROOT, "features/customers/CustomerProfilePage.tsx"), "utf8");
+    const tab = readFileSync(path.join(ROOT, "features/customers/tabs/AppointmentsTab.tsx"), "utf8");
+    expect(page).toMatch(/isAppointmentRemoteReadPilotEnabled/);
+    expect(profile).toMatch(/appointmentRemoteReadPilot/);
+    expect(tab).toMatch(/useCustomerRemoteAppointments/);
+    expect(tab).toMatch(/formatTaipeiAppointmentDisplay/);
+    expect(tab).toMatch(/尚無預約紀錄/);
+    expect(tab).toMatch(/無法讀取預約紀錄/);
+    expect(profile).not.toMatch(/AppointmentRemoteAdapter|AuthenticatedAppointmentTableStore|createAppointmentRecord/);
+    expect(tab).not.toMatch(/\.from\(\s*["']appointments["']\s*\)/);
+    expect(tab).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+  });
+});
+
 describe("Phase 1C-5B appointment remote foundation UI boundary", () => {
   it("does not leave an appointment bootstrap endpoint", () => {
     expect(existsSync(path.join(ROOT, "app/staff/appointment-bootstrap/page.tsx"))).toBe(false);
@@ -170,7 +207,7 @@ describe("Phase 1C-5B appointment remote foundation UI boundary", () => {
     const files = ["app", "lib", "features", "components"].flatMap(walkSource);
     const offenders: string[] = [];
     for (const file of files) {
-      if (file.endsWith("ui-boundary.isolation.test.ts")) continue;
+      if (file.endsWith(".isolation.test.ts")) continue;
       const source = readFileSync(path.join(ROOT, file), "utf8");
       if (
         source.includes("createFirstRemoteQaAppointment") ||

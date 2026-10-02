@@ -41,8 +41,13 @@ export {
   APPOINTMENT_INSERT_ONLY_MESSAGE,
 } from "./authenticated-appointment-store";
 export {
+  AuthenticatedAppointmentReadStore,
+  AppointmentRemoteReadOnlyError,
+} from "./authenticated-appointment-read-store";
+export {
   taipeiLocalToUtcIso,
   utcIsoToTaipeiLocal,
+  formatTaipeiAppointmentDisplay,
   APPOINTMENT_DISPLAY_TIMEZONE,
 } from "./appointment-time";
 export { SnapshotIdentityCatalog } from "./snapshot-identity-catalog";

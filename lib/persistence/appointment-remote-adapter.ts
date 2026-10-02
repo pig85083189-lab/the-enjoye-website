@@ -57,6 +57,30 @@ export class AppointmentRemoteAdapter {
     return this.toDomain(organizationId, row);
   }
 
+  /**
+   * Customer-scoped read. Filters on mapped customer_id FK, never snapshots.
+   * Uses store.listAppointmentsByCustomer when the store exposes it.
+   */
+  async listByCustomerId(
+    organizationId: string,
+    customerId: string,
+  ): Promise<ScheduleAppointment[]> {
+    const orgDbId = this.mapper.resolveOrganizationDbId(organizationId);
+    const customerDbId = this.mapper.resolveCustomerDbId(organizationId, customerId);
+    const scoped = this.store as AppointmentTableStore & {
+      listAppointmentsByCustomer?(
+        organizationDbId: string,
+        customerDbId: string,
+      ): Promise<DbAppointment[]>;
+    };
+    const rows = scoped.listAppointmentsByCustomer
+      ? await scoped.listAppointmentsByCustomer(orgDbId, customerDbId)
+      : (await this.store.listAppointments(orgDbId)).filter(
+          (row) => row.customer_id === customerDbId,
+        );
+    return rows.map((row) => this.toDomain(organizationId, row));
+  }
+
   async create(
     organizationId: string,
     input: CreateAppointmentInput &
