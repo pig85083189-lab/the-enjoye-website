@@ -223,9 +223,9 @@ export interface DbService {
 }
 
 export interface ServiceTableStore {
-  insertService(row: DbService): void;
-  updateService(row: DbService): void;
-  listServices(organizationDbId: string): DbService[];
-  getServiceByAppId(organizationDbId: string, appId: string): DbService | undefined;
-  getServiceByDbId(dbId: string): DbService | undefined;
+  insertService(row: DbService): MaybePromise<void>;
+  updateService(row: DbService): MaybePromise<void>;
+  listServices(organizationDbId: string): MaybePromise<DbService[]>;
+  getServiceByAppId(organizationDbId: string, appId: string): MaybePromise<DbService | undefined>;
+  getServiceByDbId(dbId: string): MaybePromise<DbService | undefined>;
 }

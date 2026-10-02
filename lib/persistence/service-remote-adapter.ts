@@ -39,14 +39,16 @@ export class ServiceRemoteAdapter {
 
   async list(organizationId: string, opts?: { activeOnly?: boolean }): Promise<Service[]> {
     const orgDbId = this.mapper.resolveOrganizationDbId(organizationId);
-    let rows = this.store.listServices(orgDbId).map((row) => serviceFromRemoteRow(organizationId, row));
+    let rows = (await this.store.listServices(orgDbId)).map((row) =>
+      serviceFromRemoteRow(organizationId, row),
+    );
     if (opts?.activeOnly) rows = rows.filter((row) => row.isActive !== false);
     return rows;
   }
 
   async getById(organizationId: string, serviceId: string): Promise<Service | undefined> {
     const orgDbId = this.mapper.resolveOrganizationDbId(organizationId);
-    const row = this.store.getServiceByAppId(orgDbId, serviceId);
+    const row = await this.store.getServiceByAppId(orgDbId, serviceId);
     if (!row) return undefined;
     return serviceFromRemoteRow(organizationId, row);
   }
@@ -73,7 +75,7 @@ export class ServiceRemoteAdapter {
     assertRemoteServiceAllowed(service);
     this.mapper.requireOperationalStaffId(organizationId, actorStaffId);
     const orgDbId = this.mapper.resolveOrganizationDbId(organizationId);
-    const existing = this.store.getServiceByAppId(orgDbId, service.id);
+    const existing = await this.store.getServiceByAppId(orgDbId, service.id);
     const stamp = this.now().toISOString();
     const row: DbService = {
       id: existing?.id ?? crypto.randomUUID(),
@@ -93,8 +95,8 @@ export class ServiceRemoteAdapter {
       updated_at: stamp,
     };
     remoteServicePayload(row);
-    if (existing) this.store.updateService(row);
-    else this.store.insertService(row);
+    if (existing) await this.store.updateService(row);
+    else await this.store.insertService(row);
     this.mapper.rememberService(orgDbId, row.app_id, row.id);
     return serviceFromRemoteRow(organizationId, row);
   }

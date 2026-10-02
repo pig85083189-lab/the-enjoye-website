@@ -31,6 +31,10 @@ export {
   AuthenticatedCustomerReadStore,
   CustomerRemoteReadOnlyError,
 } from "./authenticated-customer-read-store";
+export {
+  AuthenticatedServiceTableStore,
+  SERVICE_INSERT_ONLY_MESSAGE,
+} from "./authenticated-service-store";
 export { SnapshotIdentityCatalog } from "./snapshot-identity-catalog";
 export { CustomerRemoteAdapter } from "./customer-remote-adapter";
 export { ServiceRemoteAdapter } from "./service-remote-adapter";

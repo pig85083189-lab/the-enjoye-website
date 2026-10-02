@@ -71,3 +71,22 @@ describe("Phase 1C-3 customer remote read UI boundary", () => {
     }
   });
 });
+
+describe("Phase 1C-4 service bootstrap UI boundary", () => {
+  it("does not query raw service tables from React modules", () => {
+    const files = UI_DIRS.flatMap(walkTsx);
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      if (/\.from\(\s*["']services["']\s*\)/.test(source)) offenders.push(file);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the Customer remote read pilot wired", () => {
+    const list = readFileSync(path.join(ROOT, "app/staff/(app)/customers/page.tsx"), "utf8");
+    const detail = readFileSync(path.join(ROOT, "app/staff/(app)/customers/[id]/page.tsx"), "utf8");
+    expect(list).toMatch(/isCustomerRemoteReadPilotEnabled/);
+    expect(detail).toMatch(/isCustomerRemoteReadPilotEnabled/);
+  });
+});
