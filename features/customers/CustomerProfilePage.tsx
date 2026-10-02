@@ -153,6 +153,7 @@ export function CustomerProfilePage({
   return (
     <Customer360Workspace
       remoteReadPilot={remoteReadPilot}
+      appointmentRemoteReadPilot={appointmentRemoteReadPilot}
       customer={customer}
       tab={tab}
       walletSection={walletSection}
@@ -178,6 +179,7 @@ export function CustomerProfilePage({
 
 function Customer360Workspace({
   remoteReadPilot = false,
+  appointmentRemoteReadPilot = false,
   customer,
   tab,
   walletSection,
@@ -190,6 +192,7 @@ function Customer360Workspace({
   onSelectTab,
 }: {
   remoteReadPilot?: boolean;
+  appointmentRemoteReadPilot?: boolean;
   customer: Customer;
   tab: Customer360TabId;
   walletSection?: Customer360WalletSection;
@@ -291,7 +294,7 @@ function Customer360Workspace({
             >
               開始療程紀錄
             </Button>
-            {remoteReadPilot ? (
+            {remoteReadPilot || appointmentRemoteReadPilot ? (
               <Button variant="secondary" className="min-h-11" disabled>
                 新增預約
               </Button>
@@ -344,7 +347,7 @@ function Customer360Workspace({
             onNotes={() => onSelectTab("notes")}
             onFollowUp={() => onSelectTab("follow-ups")}
             includeEdit={!remoteReadPilot}
-            createHref={remoteReadPilot ? undefined : snapshot.createHref}
+            createHref={remoteReadPilot || appointmentRemoteReadPilot ? undefined : snapshot.createHref}
             readOnly={remoteReadPilot}
           />
         </div>
