@@ -55,7 +55,7 @@ const AUTH_NONE = "33333333-3333-4333-8333-333333333333";
 
 const PHASE_5A_FILES: Record<string, string> = {
   "lib/packages/domain.ts":
-    "1f058e7f3649daf282712ee9009e878e60f79f76f86257c3646d5094e8c25545",
+    "e47e86586dcf4f116563ea8282df7f7077d9651f298643f1fe3580cf09d64a7f",
   "lib/packages/store.ts":
     "d65cfced0ccd48edc120fc38ca03780360fc68e1e1987721823c4978feb424a8",
   "types/database.ts":
