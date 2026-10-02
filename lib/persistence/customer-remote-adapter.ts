@@ -39,14 +39,13 @@ export class CustomerRemoteAdapter {
 
   async list(query: OrgQuery): Promise<Customer[]> {
     const orgDbId = this.mapper.resolveOrganizationDbId(query.organizationId);
-    return this.store
-      .listCustomers(orgDbId)
-      .map((row) => customerFromRemoteRow(query.organizationId, row));
+    const rows = await this.store.listCustomers(orgDbId);
+    return rows.map((row) => customerFromRemoteRow(query.organizationId, row));
   }
 
   async getById(query: OrgEntityQuery): Promise<Customer | undefined> {
     const orgDbId = this.mapper.resolveOrganizationDbId(query.organizationId);
-    const row = this.store.getCustomerByAppId(orgDbId, query.id);
+    const row = await this.store.getCustomerByAppId(orgDbId, query.id);
     if (!row) return undefined;
     return customerFromRemoteRow(query.organizationId, row);
   }
@@ -55,8 +54,8 @@ export class CustomerRemoteAdapter {
     const normalized = normalizePhone(query.phone);
     if (!normalized) return [];
     const orgDbId = this.mapper.resolveOrganizationDbId(query.organizationId);
-    return this.store
-      .listCustomers(orgDbId)
+    const rows = await this.store.listCustomers(orgDbId);
+    return rows
       .filter((row) => row.phone != null && phonesMatch(row.phone, normalized))
       .map((row) => customerFromRemoteRow(query.organizationId, row));
   }
@@ -65,11 +64,11 @@ export class CustomerRemoteAdapter {
     assertRemoteCustomerAllowed(customer);
     requireOrgMatch(customer.organizationId, customer);
     const orgDbId = this.mapper.resolveOrganizationDbId(customer.organizationId);
-    const existing = this.store.getCustomerByAppId(orgDbId, customer.id);
+    const existing = await this.store.getCustomerByAppId(orgDbId, customer.id);
     const row = this.toRow(customer, orgDbId, existing);
     remoteCustomerPayload(row);
-    if (existing) this.store.updateCustomer(row);
-    else this.store.insertCustomer(row);
+    if (existing) await this.store.updateCustomer(row);
+    else await this.store.insertCustomer(row);
     this.mapper.rememberCustomer(orgDbId, row.app_id, row.id);
     return customerFromRemoteRow(customer.organizationId, row);
   }

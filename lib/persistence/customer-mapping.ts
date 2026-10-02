@@ -26,7 +26,7 @@ export const DEMO_RESIDUE_CUSTOMER_FIELDS = [
   "remainingSessions",
 ] as const;
 
-const REMOTE_CUSTOMER_COLUMNS = [
+export const REMOTE_CUSTOMER_COLUMNS = [
   "id",
   "organization_id",
   "app_id",

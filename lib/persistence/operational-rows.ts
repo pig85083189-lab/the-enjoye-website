@@ -178,13 +178,15 @@ export interface DbAppointment {
   updated_at: string;
 }
 
+export type MaybePromise<T> = T | Promise<T>;
+
 export interface CustomerTableStore {
-  insertCustomer(row: DbCustomer): void;
-  updateCustomer(row: DbCustomer): void;
-  listCustomers(organizationDbId: string): DbCustomer[];
-  getCustomerByAppId(organizationDbId: string, appId: string): DbCustomer | undefined;
-  getCustomerByDbId(dbId: string): DbCustomer | undefined;
-  findCustomersByPhone(organizationDbId: string, phone: string): DbCustomer[];
+  insertCustomer(row: DbCustomer): MaybePromise<void>;
+  updateCustomer(row: DbCustomer): MaybePromise<void>;
+  listCustomers(organizationDbId: string): MaybePromise<DbCustomer[]>;
+  getCustomerByAppId(organizationDbId: string, appId: string): MaybePromise<DbCustomer | undefined>;
+  getCustomerByDbId(dbId: string): MaybePromise<DbCustomer | undefined>;
+  findCustomersByPhone(organizationDbId: string, phone: string): MaybePromise<DbCustomer[]>;
 }
 
 export interface AppointmentTableStore {
