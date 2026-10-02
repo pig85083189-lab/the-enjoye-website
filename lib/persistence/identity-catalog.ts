@@ -46,6 +46,7 @@ export interface IdentityCatalog {
 
   findStaffByAppId(organizationDbId: string, staffAppId: string): MappedStaff | undefined;
   findStaffByProfileDbId(organizationDbId: string, profileDbId: string): MappedStaff | undefined;
+  findStaffByAuthUserId(organizationDbId: string, authUserId: string): MappedStaff | undefined;
 
   findPackageDefinitionByAppId(organizationDbId: string, appId: string): MappedOrgScoped | undefined;
   findPackageDefinitionByDbId(dbId: string): MappedOrgScoped | undefined;

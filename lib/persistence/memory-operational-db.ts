@@ -7,12 +7,18 @@
 import type { IdentityCatalog, MappedOrgScoped, MappedOrganization, MappedStaff } from "./identity-catalog";
 import { UniqueEffectKeyError } from "./identity-errors";
 import type {
+  DbAppointment,
+  DbCustomer,
   DbCustomerPackage,
   DbPackageDefinition,
   DbPackageLedgerEntry,
   DbStoredValueAccount,
   DbStoredValueLedgerEntry,
+  AppointmentTableStore,
+  CustomerTableStore,
+  DbService,
   PackageTableStore,
+  ServiceTableStore,
   StoredValueTableStore,
 } from "./operational-rows";
 import type { CustomerPackageStatus } from "@/lib/packages/domain";
@@ -28,12 +34,21 @@ interface ScopedRow extends MappedOrgScoped {
   name?: string;
 }
 
-export class MemoryOperationalDb implements IdentityCatalog, PackageTableStore, StoredValueTableStore {
+export class MemoryOperationalDb
+  implements
+    IdentityCatalog,
+    PackageTableStore,
+    StoredValueTableStore,
+    CustomerTableStore,
+    AppointmentTableStore,
+    ServiceTableStore
+{
   readonly organizations: OrgRow[] = [];
   readonly locations: ScopedRow[] = [];
-  readonly customers: ScopedRow[] = [];
-  readonly services: ScopedRow[] = [];
+  readonly customers: DbCustomer[] = [];
+  readonly services: DbService[] = [];
   readonly staff: MappedStaff[] = [];
+  readonly appointments: DbAppointment[] = [];
   readonly packageDefinitions: DbPackageDefinition[] = [];
   readonly customerPackages: DbCustomerPackage[] = [];
   readonly packageLedger: DbPackageLedgerEntry[] = [];
@@ -52,16 +67,49 @@ export class MemoryOperationalDb implements IdentityCatalog, PackageTableStore, 
     return row;
   }
 
-  seedCustomer(organizationDbId: string, appId: string, name: string): ScopedRow {
-    const row = { dbId: uuid(), appId, organizationDbId, name };
+  seedCustomer(organizationDbId: string, appId: string, name: string): MappedOrgScoped {
+    const stamp = new Date().toISOString();
+    const row: DbCustomer = {
+      id: uuid(),
+      organization_id: organizationDbId,
+      app_id: appId,
+      full_name: name,
+      phone: null,
+      email: null,
+      birthday: null,
+      gender: null,
+      line_user_id: null,
+      source: null,
+      membership_tier: null,
+      is_vip: false,
+      primary_staff_id: null,
+      status: "ACTIVE",
+      notes: null,
+      created_at: stamp,
+      updated_at: stamp,
+    };
     this.customers.push(row);
-    return row;
+    return { dbId: row.id, appId: row.app_id, organizationDbId: row.organization_id };
   }
 
-  seedService(organizationDbId: string, appId: string, name: string): ScopedRow {
-    const row = { dbId: uuid(), appId, organizationDbId, name };
+  seedService(organizationDbId: string, appId: string, name: string): MappedOrgScoped {
+    const stamp = new Date().toISOString();
+    const row: DbService = {
+      id: uuid(),
+      organization_id: organizationDbId,
+      app_id: appId,
+      name,
+      service_type: "OTHER",
+      duration_minutes: 60,
+      price_minor: null,
+      currency: "TWD",
+      category: null,
+      is_active: true,
+      created_at: stamp,
+      updated_at: stamp,
+    };
     this.services.push(row);
-    return row;
+    return { dbId: row.id, appId: row.app_id, organizationDbId: row.organization_id };
   }
 
   /** Auth uuid is generated and must not equal operational staff app_id. */
@@ -105,16 +153,20 @@ export class MemoryOperationalDb implements IdentityCatalog, PackageTableStore, 
     return this.locations.find((r) => r.dbId === dbId);
   }
   findCustomerByAppId(organizationDbId: string, appId: string) {
-    return this.customers.find((r) => r.organizationDbId === organizationDbId && r.appId === appId);
+    return this.toScoped(
+      this.customers.find((r) => r.organization_id === organizationDbId && r.app_id === appId),
+    );
   }
   findCustomerByDbId(dbId: string) {
-    return this.customers.find((r) => r.dbId === dbId);
+    return this.toScoped(this.customers.find((r) => r.id === dbId));
   }
   findServiceByAppId(organizationDbId: string, appId: string) {
-    return this.services.find((r) => r.organizationDbId === organizationDbId && r.appId === appId);
+    return this.toScoped(
+      this.services.find((r) => r.organization_id === organizationDbId && r.app_id === appId),
+    );
   }
   findServiceByDbId(dbId: string) {
-    return this.services.find((r) => r.dbId === dbId);
+    return this.toScoped(this.services.find((r) => r.id === dbId));
   }
   findStaffByAppId(organizationDbId: string, staffAppId: string) {
     return this.staff.find((r) => r.organizationDbId === organizationDbId && r.staffAppId === staffAppId);
@@ -122,6 +174,11 @@ export class MemoryOperationalDb implements IdentityCatalog, PackageTableStore, 
   findStaffByProfileDbId(organizationDbId: string, profileDbId: string) {
     return this.staff.find(
       (r) => r.organizationDbId === organizationDbId && r.profileDbId === profileDbId,
+    );
+  }
+  findStaffByAuthUserId(organizationDbId: string, authUserId: string) {
+    return this.staff.find(
+      (r) => r.organizationDbId === organizationDbId && r.authUserId === authUserId,
     );
   }
 
@@ -246,6 +303,62 @@ export class MemoryOperationalDb implements IdentityCatalog, PackageTableStore, 
   }
   getStoredValueLedger(organizationDbId: string, dbId: string) {
     return this.storedValueLedger.find((r) => r.organization_id === organizationDbId && r.id === dbId);
+  }
+
+  insertCustomer(row: DbCustomer): void {
+    this.customers.push(row);
+  }
+  updateCustomer(row: DbCustomer): void {
+    const idx = this.customers.findIndex((r) => r.id === row.id);
+    if (idx < 0) throw new Error("customer not found");
+    this.customers[idx] = row;
+  }
+  listCustomers(organizationDbId: string) {
+    return this.customers.filter((r) => r.organization_id === organizationDbId);
+  }
+  getCustomerByAppId(organizationDbId: string, appId: string) {
+    return this.customers.find((r) => r.organization_id === organizationDbId && r.app_id === appId);
+  }
+  getCustomerByDbId(dbId: string) {
+    return this.customers.find((r) => r.id === dbId);
+  }
+  findCustomersByPhone(organizationDbId: string, phone: string) {
+    return this.customers.filter(
+      (r) => r.organization_id === organizationDbId && r.phone === phone,
+    );
+  }
+
+  insertAppointment(row: DbAppointment): void {
+    this.appointments.push(row);
+  }
+  listAppointments(organizationDbId: string) {
+    return this.appointments.filter((r) => r.organization_id === organizationDbId);
+  }
+  getAppointmentByAppId(organizationDbId: string, appId: string) {
+    return this.appointments.find(
+      (r) => r.organization_id === organizationDbId && r.app_id === appId,
+    );
+  }
+  getAppointmentByDbId(dbId: string) {
+    return this.appointments.find((r) => r.id === dbId);
+  }
+
+  insertService(row: DbService): void {
+    this.services.push(row);
+  }
+  updateService(row: DbService): void {
+    const idx = this.services.findIndex((r) => r.id === row.id);
+    if (idx < 0) throw new Error("service not found");
+    this.services[idx] = row;
+  }
+  listServices(organizationDbId: string) {
+    return this.services.filter((r) => r.organization_id === organizationDbId);
+  }
+  getServiceByAppId(organizationDbId: string, appId: string) {
+    return this.services.find((r) => r.organization_id === organizationDbId && r.app_id === appId);
+  }
+  getServiceByDbId(dbId: string) {
+    return this.services.find((r) => r.id === dbId);
   }
 
   private assertEffectKey(organizationDbId: string, effectKey: string | null, kind: string): void {
