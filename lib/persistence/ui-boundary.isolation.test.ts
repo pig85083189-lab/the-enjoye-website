@@ -5,14 +5,14 @@ import { describe, expect, it } from "vitest";
 const ROOT = process.cwd();
 const UI_DIRS = ["app", "components", "features"];
 
-function walkTsx(dir: string): string[] {
+function walkSource(dir: string): string[] {
   const abs = path.join(ROOT, dir);
   const out: string[] = [];
   for (const name of readdirSync(abs)) {
     const full = path.join(abs, name);
     const st = statSync(full);
     if (st.isDirectory()) {
-      out.push(...walkTsx(path.relative(ROOT, full)));
+      out.push(...walkSource(path.relative(ROOT, full)));
       continue;
     }
     if (name.endsWith(".ts") || name.endsWith(".tsx")) {
@@ -24,7 +24,7 @@ function walkTsx(dir: string): string[] {
 
 describe("Phase 1B UI persistence boundary", () => {
   it("does not query customers or appointments from React modules", () => {
-    const files = UI_DIRS.flatMap(walkTsx);
+    const files = UI_DIRS.flatMap(walkSource);
     expect(files.length).toBeGreaterThan(10);
     const offenders: string[] = [];
     for (const file of files) {
@@ -72,9 +72,32 @@ describe("Phase 1C-3 customer remote read UI boundary", () => {
   });
 });
 
-describe("Phase 1C-4 service bootstrap UI boundary", () => {
+describe("Phase 1C-4 service remote foundation UI boundary", () => {
+  it("does not leave a service bootstrap endpoint", () => {
+    expect(existsSync(path.join(ROOT, "app/staff/service-bootstrap/page.tsx"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "app/staff/service-bootstrap/ServiceBootstrapClient.tsx"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "lib/staff-auth/service-bootstrap.ts"))).toBe(false);
+  });
+
+  it("does not keep temporary service bootstrap write helpers", () => {
+    const files = ["app", "lib", "features", "components"].flatMap(walkSource);
+    const offenders: string[] = [];
+    for (const file of files) {
+      if (file.endsWith("ui-boundary.isolation.test.ts")) continue;
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      if (
+        source.includes("createFirstRemoteQaService") ||
+        source.includes("SERVICE_BOOTSTRAP_ROUTE") ||
+        source.includes("/staff/service-bootstrap")
+      ) {
+        offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it("does not query raw service tables from React modules", () => {
-    const files = UI_DIRS.flatMap(walkTsx);
+    const files = UI_DIRS.flatMap(walkSource);
     const offenders: string[] = [];
     for (const file of files) {
       const source = readFileSync(path.join(ROOT, file), "utf8");
@@ -88,5 +111,19 @@ describe("Phase 1C-4 service bootstrap UI boundary", () => {
     const detail = readFileSync(path.join(ROOT, "app/staff/(app)/customers/[id]/page.tsx"), "utf8");
     expect(list).toMatch(/isCustomerRemoteReadPilotEnabled/);
     expect(detail).toMatch(/isCustomerRemoteReadPilotEnabled/);
+  });
+
+  it("keeps Today / Calendar / Checkout / Treatment off the Service remote write path", () => {
+    const surfaces = [
+      "features/today/TodayDashboard.tsx",
+      "features/calendar/CalendarPage.tsx",
+      "features/checkout/CheckoutPageClient.tsx",
+      "features/treatments/TreatmentPageClient.tsx",
+      "features/treatments/TreatmentsListPageClient.tsx",
+    ];
+    for (const file of surfaces) {
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      expect(source).not.toMatch(/AuthenticatedServiceTableStore|ServiceRemoteAdapter|createServiceRecord/);
+    }
   });
 });

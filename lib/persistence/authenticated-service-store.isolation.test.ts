@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AuthenticatedServiceTableStore,
@@ -109,5 +111,13 @@ describe("AuthenticatedServiceTableStore", () => {
     expect(inserted).toHaveLength(1);
     expect(remoteServicePayload(inserted[0] as unknown as DbService)).not.toHaveProperty("price");
     expect(inserted[0]).not.toHaveProperty("location_id");
+  });
+
+  it("does not use a service-role client", () => {
+    const source = readFileSync(
+      path.join(process.cwd(), "lib/persistence/authenticated-service-store.ts"),
+      "utf8",
+    );
+    expect(source).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
   });
 });

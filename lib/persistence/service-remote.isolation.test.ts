@@ -1,12 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import { UnmappedIdentityError } from "./identity-errors";
+import { CanonicalIdMapper } from "./identity-map";
 import { createMemoryRemotePersistence } from "./remote-factory";
 import { ServiceRemoteAdapter } from "./service-remote-adapter";
-import { remoteServicePayload, toRemoteServiceType } from "./service-mapping";
-import { REMOTE_DEMO_SERVICE_MESSAGE } from "./demo-firewall";
+import {
+  fromRemoteServiceType,
+  remoteServicePayload,
+  serviceFromRemoteRow,
+  toRemoteServiceType,
+} from "./service-mapping";
+import { isGeneratedServiceAppId, REMOTE_DEMO_SERVICE_MESSAGE } from "./demo-firewall";
+import { SnapshotIdentityCatalog } from "./snapshot-identity-catalog";
 import { ORG_A, ORG_B, STAFF_A, seedTwoOrgs } from "./test-identity-fixture";
 import type { Service } from "@/types";
-import type { ServiceTableStore } from "./operational-rows";
+import type { DbService, ServiceTableStore } from "./operational-rows";
 
 function realService(overrides: Partial<Service> = {}): Service {
   return {
@@ -98,5 +105,48 @@ describe("Phase 1C-1 service remote adapter", () => {
       }),
     ).rejects.toBeInstanceOf(UnmappedIdentityError);
     expect(insert).toHaveBeenCalledTimes(0);
+  });
+
+  it("maps the first real remote Service app id and UUID bidirectionally", () => {
+    const orgDbId = "62bd49b6-a4c3-4da1-b53e-4746923685f1";
+    const domainAppId = "svc-muqm5pht-nqlpr3";
+    const databaseUuid = "bd4c1822-5375-48b6-a4f4-dd231da10ef2";
+    const catalog = new SnapshotIdentityCatalog(
+      [{ appId: "org-the-enjoye", dbId: orgDbId }],
+      [],
+      [],
+      [{ organizationDbId: orgDbId, appId: domainAppId, dbId: databaseUuid }],
+    );
+    const mapper = new CanonicalIdMapper(catalog);
+    const row: DbService = {
+      id: databaseUuid,
+      organization_id: orgDbId,
+      app_id: domainAppId,
+      name: "Remote QA Bust Care",
+      service_type: "BREAST",
+      duration_minutes: 100,
+      price_minor: 3200,
+      currency: "TWD",
+      category: "美胸",
+      is_active: true,
+      created_at: "2026-10-02T07:00:18.758Z",
+      updated_at: "2026-10-02T07:00:18.758Z",
+    };
+    const domain = serviceFromRemoteRow("org-the-enjoye", row);
+    expect(isGeneratedServiceAppId(domainAppId)).toBe(true);
+    expect(domainAppId).not.toBe(databaseUuid);
+    expect(domain.id).toBe(domainAppId);
+    expect(domain.organizationId).toBe("org-the-enjoye");
+    expect(domain.name).toBe("Remote QA Bust Care");
+    expect(domain.durationMinutes).toBe(100);
+    expect(domain.priceMinor).toBe(3200);
+    expect(domain.serviceType).toBe("BREAST");
+    expect(domain.serviceType).toBe(fromRemoteServiceType(row.service_type));
+    expect(toRemoteServiceType(domain.serviceType)).toBe("BREAST");
+    expect(domain.isActive).toBe(true);
+    expect(mapper.resolveServiceDbId("org-the-enjoye", domainAppId)).toBe(databaseUuid);
+    expect(mapper.toServiceAppId(databaseUuid)).toBe(domainAppId);
+    expect(remoteServicePayload(row)).not.toHaveProperty("price");
+    expect(remoteServicePayload(row)).not.toHaveProperty("location_id");
   });
 });
