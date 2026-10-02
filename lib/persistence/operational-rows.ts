@@ -190,10 +190,13 @@ export interface CustomerTableStore {
 }
 
 export interface AppointmentTableStore {
-  insertAppointment(row: DbAppointment): void;
-  listAppointments(organizationDbId: string): DbAppointment[];
-  getAppointmentByAppId(organizationDbId: string, appId: string): DbAppointment | undefined;
-  getAppointmentByDbId(dbId: string): DbAppointment | undefined;
+  insertAppointment(row: DbAppointment): MaybePromise<void>;
+  listAppointments(organizationDbId: string): MaybePromise<DbAppointment[]>;
+  getAppointmentByAppId(
+    organizationDbId: string,
+    appId: string,
+  ): MaybePromise<DbAppointment | undefined>;
+  getAppointmentByDbId(dbId: string): MaybePromise<DbAppointment | undefined>;
 }
 
 export type RemoteServiceType =

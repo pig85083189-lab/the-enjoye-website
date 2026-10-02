@@ -31,7 +31,7 @@ export class AppointmentRemoteAdapter {
 
   async list(query: AppointmentListQuery): Promise<ScheduleAppointment[]> {
     const orgDbId = this.mapper.resolveOrganizationDbId(query.organizationId);
-    const rows = this.store.listAppointments(orgDbId);
+    const rows = await this.store.listAppointments(orgDbId);
     const mapped = rows.map((row) => this.toDomain(query.organizationId, row));
     return mapped.filter((item) => {
       if (query.locationId && item.locationId !== query.locationId) return false;
@@ -50,7 +50,7 @@ export class AppointmentRemoteAdapter {
 
   async get(organizationId: string, appointmentId: string): Promise<ScheduleAppointment | undefined> {
     const orgDbId = this.mapper.resolveOrganizationDbId(organizationId);
-    const row = this.store.getAppointmentByAppId(orgDbId, appointmentId);
+    const row = await this.store.getAppointmentByAppId(orgDbId, appointmentId);
     if (!row) return undefined;
     return this.toDomain(organizationId, row);
   }
@@ -125,7 +125,7 @@ export class AppointmentRemoteAdapter {
       updated_at: stamp,
     };
     remoteAppointmentPayload(row);
-    this.store.insertAppointment(row);
+    await this.store.insertAppointment(row);
     this.mapper.rememberAppointment(orgDbId, row.app_id, row.id);
     return this.toDomain(organizationId, row);
   }

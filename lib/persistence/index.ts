@@ -35,11 +35,21 @@ export {
   AuthenticatedServiceTableStore,
   SERVICE_INSERT_ONLY_MESSAGE,
 } from "./authenticated-service-store";
+export {
+  AuthenticatedAppointmentTableStore,
+  APPOINTMENT_INSERT_ONLY_MESSAGE,
+} from "./authenticated-appointment-store";
+export {
+  taipeiLocalToUtcIso,
+  utcIsoToTaipeiLocal,
+  APPOINTMENT_DISPLAY_TIMEZONE,
+} from "./appointment-time";
 export { SnapshotIdentityCatalog } from "./snapshot-identity-catalog";
 export { CustomerRemoteAdapter } from "./customer-remote-adapter";
 export { ServiceRemoteAdapter } from "./service-remote-adapter";
 export { AppointmentRemoteAdapter } from "./appointment-remote-adapter";
 export { assertMappedAppointmentDependencies } from "./appointment-mapping";
+export { isGeneratedAppointmentAppId } from "./demo-firewall";
 export {
   DEMO_SEED_FLAG,
   isDemoSeedEnabled,

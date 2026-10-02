@@ -143,6 +143,10 @@ export function isGeneratedServiceAppId(id: string): boolean {
   return /^svc-[a-z0-9]+-[a-z0-9]+$/i.test(id) && !isDemoServiceId(id);
 }
 
+export function isGeneratedAppointmentAppId(id: string): boolean {
+  return /^apt-[a-z0-9]+-[a-z0-9]+$/i.test(id) && !isDemoAppointmentId(id);
+}
+
 /** Always fail closed — seed remaining must never become a PURCHASE ledger. */
 export function promoteDemoRemainingSessionsToRemote(): never {
   throw new Error(REMOTE_DEMO_PROMOTION_MESSAGE);

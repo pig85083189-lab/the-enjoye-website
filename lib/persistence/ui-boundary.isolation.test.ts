@@ -127,3 +127,33 @@ describe("Phase 1C-4 service remote foundation UI boundary", () => {
     }
   });
 });
+
+describe("Phase 1C-5A appointment remote foundation UI boundary", () => {
+  it("does not leave an appointment bootstrap endpoint", () => {
+    expect(existsSync(path.join(ROOT, "app/staff/appointment-bootstrap/page.tsx"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "lib/staff-auth/appointment-bootstrap.ts"))).toBe(false);
+  });
+
+  it("does not activate Appointment remote on live surfaces", () => {
+    const surfaces = [
+      "features/today/TodayDashboard.tsx",
+      "features/calendar/CalendarPage.tsx",
+      "features/customers/CustomerListPage.tsx",
+      "features/customers/CustomerProfilePage.tsx",
+      "features/treatments/TreatmentPageClient.tsx",
+      "features/treatments/TreatmentsListPageClient.tsx",
+      "features/checkout/CheckoutPageClient.tsx",
+      "features/packages/PackagesPageClient.tsx",
+      "features/transactions/TransactionsPageClient.tsx",
+      "features/services/ServiceCatalogPageClient.tsx",
+    ];
+    for (const file of surfaces) {
+      if (!existsSync(path.join(ROOT, file))) continue;
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      expect(source).not.toMatch(
+        /AppointmentRemoteAdapter|AuthenticatedAppointmentTableStore|createAppointmentRecord|taipeiLocalToUtcIso/,
+      );
+      expect(source).not.toMatch(/BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE/);
+    }
+  });
+});
