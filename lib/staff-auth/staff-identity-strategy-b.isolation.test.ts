@@ -86,7 +86,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe("Strategy B staff identity A–Q", () => {
+describe("Strategy B staff identity A–S", () => {
   it("A auth UUID and operational staff ID are different identities", () => {
     expect(isAuthUuid(AUTH_A)).toBe(true);
     expect(isAuthUuid("staff-001")).toBe(false);
@@ -308,6 +308,28 @@ describe("Strategy B staff identity A–Q", () => {
     );
   });
 
+  it("O drops Strategy A audit_logs actor_id policy before uuid→text conversion", () => {
+    const operational = read(OPERATIONAL_MIGRATION_FILE);
+    const dropAt = operational.indexOf(
+      "drop policy if exists audit_logs_insert_org on public.audit_logs",
+    );
+    const alterAt = operational.indexOf("alter column actor_id type text");
+    expect(dropAt).toBeGreaterThan(-1);
+    expect(alterAt).toBeGreaterThan(-1);
+    expect(dropAt).toBeLessThan(alterAt);
+    const rebuiltPolicy = operational.slice(
+      operational.lastIndexOf("create policy audit_logs_insert_org"),
+    );
+    expect(rebuiltPolicy).not.toMatch(/actor_id = auth\.uid\(\)/);
+    expect(rebuiltPolicy).toMatch(/m\.user_id = audit_logs\.actor_id/);
+    expect(rebuiltPolicy).toMatch(/m\.auth_user_id = auth\.uid\(\)/);
+    expect(rebuiltPolicy).toMatch(/o\.id = audit_logs\.organization_id/);
+    expect(rebuiltPolicy).toMatch(/m\.organization_id = o\.app_id/);
+    expect(rebuiltPolicy).toMatch(/m\.is_active = true/);
+    expect(rebuiltPolicy).not.toMatch(/o\.id\s*=\s*organization_id\b/);
+    expect(rebuiltPolicy).not.toMatch(/m\.user_id\s*=\s*actor_id\b/);
+  });
+
   it("O RLS SQL source is Strategy B", () => {
     const operational = read(OPERATIONAL_MIGRATION_FILE);
     const identity = read(IDENTITY_MIGRATION_FILE);
@@ -323,6 +345,108 @@ describe("Strategy B staff identity A–Q", () => {
     expect(operational).toContain(
       "-- Limitation: JWT has no request-scoped current organization.",
     );
+  });
+
+  it("R current_organization_id is count-gated scalar, not a uuid aggregate", () => {
+    const operational = read(OPERATIONAL_MIGRATION_FILE);
+    const start = operational.indexOf(
+      "create or replace function public.current_organization_id()",
+    );
+    const end = operational.indexOf(
+      "create or replace function public.current_staff_role()",
+    );
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const fn = operational.slice(start, end);
+    expect(fn).not.toMatch(/min\(\s*o\.id\s*\)/);
+    expect(fn).not.toMatch(/max\(\s*o\.id\s*\)/);
+    expect(fn).not.toMatch(/min\([^)]*::\s*text/);
+    expect(fn).not.toMatch(/from public\.profiles/);
+    expect(fn).toMatch(/select count\(\*\)/);
+    expect(fn).toMatch(/\) = 1/);
+    expect(fn).toMatch(/select o\.id/);
+    expect(fn).toMatch(/else null/);
+    expect(fn).toMatch(/join public\.organizations o on o\.app_id = m\.organization_id/);
+    expect(fn).toMatch(/m\.auth_user_id = auth\.uid\(\)/);
+    expect(fn).toMatch(/m\.is_active = true/);
+    expect(fn).not.toMatch(/m\.user_id = auth\.uid\(\)/);
+
+    const currentOrganizationIdFromActiveOrgIds = (
+      orgIds: readonly string[],
+    ): string | null => (orgIds.length === 1 ? orgIds[0] ?? null : null);
+
+    expect(currentOrganizationIdFromActiveOrgIds([])).toBeNull();
+    expect(
+      currentOrganizationIdFromActiveOrgIds(["11111111-1111-4111-8111-111111111111"]),
+    ).toBe("11111111-1111-4111-8111-111111111111");
+    expect(
+      currentOrganizationIdFromActiveOrgIds([
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+      ]),
+    ).toBeNull();
+  });
+
+  it("S RLS policies qualify outer columns and do not cast uuid/text", () => {
+    const operational = read(OPERATIONAL_MIGRATION_FILE);
+    const policyStart = operational.indexOf("create policy customers_select_org");
+    expect(policyStart).toBeGreaterThan(-1);
+    const policySql = operational.slice(policyStart);
+    const createPolicies = [...policySql.matchAll(/create policy[\s\S]*?;/gi)].map(
+      (match) => match[0],
+    );
+    expect(createPolicies.length).toBeGreaterThan(20);
+
+    const auditInsert = createPolicies.find((sql) =>
+      sql.startsWith("create policy audit_logs_insert_org"),
+    );
+    expect(auditInsert).toBeDefined();
+    expect(auditInsert).toContain("o.id = audit_logs.organization_id");
+    expect(auditInsert).toContain("m.organization_id = o.app_id");
+    expect(auditInsert).toContain("m.user_id = audit_logs.actor_id");
+    expect(auditInsert).toContain("m.auth_user_id = auth.uid()");
+    expect(auditInsert).toContain("m.is_active = true");
+    expect(auditInsert).not.toMatch(/o\.id\s*=\s*organization_id\b/);
+    expect(auditInsert).not.toMatch(/m\.user_id\s*=\s*actor_id\b/);
+
+    for (const sql of createPolicies) {
+      expect(sql).not.toMatch(/o\.id\s*=\s*organization_id\b/);
+      expect(sql).not.toMatch(/m\.user_id\s*=\s*actor_id\b/);
+      expect(sql).not.toMatch(/::\s*uuid\b/);
+      expect(sql).not.toMatch(/::\s*text\b/);
+      expect(sql).not.toMatch(/\b(?:actor_id|user_id|staff_id)\s*=\s*auth\.uid\(\)/);
+      expect(sql).not.toMatch(/auth\.uid\(\)\s*=\s*\b(?:actor_id|user_id|staff_id)\b/);
+
+      const authUidComparisons = [...sql.matchAll(/([.\w]+)\s*=\s*auth\.uid\(\)/g)].map(
+        (match) => match[1],
+      );
+      for (const left of authUidComparisons) {
+        expect(["m.auth_user_id", "staff_auth_memberships.auth_user_id", "profiles.id"]).toContain(
+          left,
+        );
+      }
+
+      const staffTextComparisons = [
+        ...sql.matchAll(/m\.user_id\s*=\s*([.\w]+)/g),
+        ...sql.matchAll(/([.\w]+)\s*=\s*m\.user_id/g),
+      ].map((match) => match[1]);
+      for (const other of staffTextComparisons) {
+        expect(other).toMatch(/^(?:audit_logs\.)?actor_id$|^m\.user_id$/);
+        if (other.endsWith("actor_id")) {
+          expect(other).toBe("audit_logs.actor_id");
+        }
+      }
+
+      const orgIdRefs = [...sql.matchAll(/\borganization_id\b/g)];
+      const qualifiedOrgIdRefs = [
+        ...sql.matchAll(/\b(?:[a-z_][a-z0-9_]*\.)organization_id\b/g),
+      ];
+      expect(qualifiedOrgIdRefs.length).toBe(orgIdRefs.length);
+
+      const actorIdRefs = [...sql.matchAll(/\bactor_id\b/g)];
+      const qualifiedActorIdRefs = [...sql.matchAll(/\baudit_logs\.actor_id\b/g)];
+      expect(qualifiedActorIdRefs.length).toBe(actorIdRefs.length);
+    }
   });
 
   it("P Core Ops lifecycle files are unchanged", () => {

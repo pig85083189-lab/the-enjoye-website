@@ -34,6 +34,10 @@ describe("Phase 5A-2 canonical ID mapper", () => {
     expect(() => mapper.requireOperationalStaffId(ORG_A, profileDbId)).toThrow(
       UnmappedIdentityError,
     );
+    expect(mapper.resolveOperationalStaffFromAuth(ORG_A, staffA.authUserId!)).toBe(STAFF_A);
+    expect(() => mapper.resolveOperationalStaffFromAuth(ORG_A, STAFF_A)).toThrow(
+      UnmappedIdentityError,
+    );
   });
 
   it("isolates the same customer app_id across organizations", () => {
