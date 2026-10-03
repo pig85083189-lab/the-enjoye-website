@@ -550,7 +550,7 @@ describe("Phase 1C-5D calendar remote read pilot", () => {
     expect(store).toMatch(/listAppointmentsByLocationAndRange/);
   });
 
-  it("Today remains local and does not surface the remote appointment", () => {
+  it("Today does not use the Calendar remote path and local Today store excludes the remote appointment", () => {
     const today = readFileSync(
       path.join(process.cwd(), "features/today/TodayDashboard.tsx"),
       "utf8",

@@ -357,3 +357,89 @@ describe("Phase 1C-5D calendar remote read UI boundary", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("Phase 1C-5E Today remote read UI boundary", () => {
+  it("cuts Today remote appointment read only at TodayDashboard", () => {
+    const page = readFileSync(path.join(ROOT, "app/staff/(app)/today/page.tsx"), "utf8");
+    const today = readFileSync(path.join(ROOT, "features/today/TodayDashboard.tsx"), "utf8");
+    const flag = readFileSync(
+      path.join(ROOT, "lib/appointments/today-remote-read-flag.ts"),
+      "utf8",
+    );
+    expect(page).toMatch(/isTodayRemoteReadPilotEnabled/);
+    expect(page).toMatch(/today-remote-read-flag/);
+    expect(page).not.toMatch(/today-remote-read-pilot/);
+    expect(page).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    expect(today).toMatch(/useTodayRemoteAppointments/);
+    expect(today).toMatch(/無法讀取今日預約資料|TodayRemoteReadErrorFallback/);
+    expect(today).toMatch(/listTodayAppointments/);
+    expect(today).not.toMatch(/AppointmentRemoteAdapter|createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    expect(today).not.toMatch(/useCalendarRemoteAppointments|BEAUTY_OS_CALENDAR_REMOTE_READ_PILOT/);
+    expect(today).not.toMatch(/useCustomerRemoteAppointments|BEAUTY_OS_APPOINTMENT_REMOTE_READ_PILOT/);
+    expect(flag).not.toMatch(/AppointmentRemoteAdapter|loadAuthenticatedIdentityCatalog|IdentitySupabaseClient/);
+  });
+
+  it("keeps Calendar and Customer 360 off the Today remote read path", () => {
+    const surfaces = [
+      "features/calendar/CalendarPage.tsx",
+      "features/calendar/AppointmentQuickView.tsx",
+      "features/customers/tabs/AppointmentsTab.tsx",
+      "features/customers/CustomerProfilePage.tsx",
+      "features/treatments/TreatmentPageClient.tsx",
+      "features/treatments/TreatmentsListPageClient.tsx",
+      "features/checkout/CheckoutPageClient.tsx",
+      "features/packages/PackagesPageClient.tsx",
+      "features/transactions/TransactionsPageClient.tsx",
+      "features/customers/use-customer-360.ts",
+    ];
+    for (const file of surfaces) {
+      if (!existsSync(path.join(ROOT, file))) continue;
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      expect(source).not.toMatch(
+        /useTodayRemoteAppointments|listRemoteTodayAppointmentsByLocation|BEAUTY_OS_TODAY_REMOTE_READ_PILOT/,
+      );
+    }
+  });
+
+  it("keeps Calendar and Customer 360 remote pilots independent", () => {
+    const calendarPage = readFileSync(path.join(ROOT, "app/staff/(app)/calendar/page.tsx"), "utf8");
+    const customerPage = readFileSync(
+      path.join(ROOT, "app/staff/(app)/customers/[id]/page.tsx"),
+      "utf8",
+    );
+    const tab = readFileSync(path.join(ROOT, "features/customers/tabs/AppointmentsTab.tsx"), "utf8");
+    expect(calendarPage).toMatch(/isCalendarRemoteReadPilotEnabled/);
+    expect(calendarPage).not.toMatch(/isTodayRemoteReadPilotEnabled|today-remote-read/);
+    expect(customerPage).toMatch(/isAppointmentRemoteReadPilotEnabled/);
+    expect(customerPage).not.toMatch(/isTodayRemoteReadPilotEnabled|today-remote-read/);
+    expect(tab).toMatch(/useCustomerRemoteAppointments/);
+    expect(tab).not.toMatch(/useTodayRemoteAppointments/);
+  });
+
+  it("does not leave temporary Today diagnostic or bootstrap routes", () => {
+    expect(existsSync(path.join(ROOT, "app/staff/(app)/today-read-diagnostic/page.tsx"))).toBe(
+      false,
+    );
+    expect(existsSync(path.join(ROOT, "app/staff/today-bootstrap/page.tsx"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "features/today/TodayReadDiagnosticPage.tsx"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "lib/appointments/today-read-diagnostic.ts"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "lib/appointments/today-read-diagnostic-flag.ts"))).toBe(
+      false,
+    );
+    const files = ["app", "lib", "features", "components"].flatMap(walkSource);
+    const offenders: string[] = [];
+    for (const file of files) {
+      if (file.endsWith(".isolation.test.ts")) continue;
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      if (
+        source.includes("/staff/today-read-diagnostic") ||
+        source.includes("/staff/today-bootstrap") ||
+        source.includes("TodayReadDiagnosticPage") ||
+        source.includes("isTodayReadDiagnosticEnabled")
+      ) {
+        offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

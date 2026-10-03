@@ -1,6 +1,7 @@
 /**
- * Authenticated, RLS-bound appointment table access for the Phase 1C-5C / 1C-5D
- * read pilots. Uses the publishable/session client only. Writes are refused.
+ * Authenticated, RLS-bound appointment table access for the Phase 1C-5C /
+ * 1C-5D / 1C-5E read pilots. Uses the publishable/session client only.
+ * Writes are refused.
  */
 
 import type {

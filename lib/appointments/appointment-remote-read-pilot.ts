@@ -9,8 +9,7 @@
  * BEAUTY_OS_PERSISTENCE or BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
  * Preview activation: BEAUTY_OS_APPOINTMENT_REMOTE_READ_PILOT=1
  * Production is always off, even if that env is present.
- * Today stays on the local appointment store. Calendar has its own
- * independent BEAUTY_OS_CALENDAR_REMOTE_READ_PILOT flag.
+ * Today and Calendar stay on their own independent pilot flags.
  */
 
 import type { ScheduleAppointment } from "@/lib/appointments/domain";

@@ -67,6 +67,21 @@ export function layoutCalendarAppointmentBlock(
   });
 }
 
+/** Instant → Asia/Taipei business calendar day, never browser-local getters. */
+export function taipeiBusinessYmdFromInstant(instant: string | Date): string {
+  const iso = instant instanceof Date ? instant.toISOString() : instant;
+  return utcIsoToTaipeiLocal(iso).dateYmd;
+}
+
+export function todayRemoteQueryRangeFromInstant(instant: string | Date): {
+  dateYmd: string;
+  startsAt: string;
+  endsAt: string;
+} {
+  const dateYmd = taipeiBusinessYmdFromInstant(instant);
+  return { dateYmd, ...taipeiDayRangeUtc(dateYmd) };
+}
+
 export function taipeiDayRangeUtc(dateYmd: string): { startsAt: string; endsAt: string } {
   const startsAt = taipeiLocalToUtcIso(dateYmd, "00:00");
   return {
