@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { listRemoteCalendarAppointmentsByLocationAndRange } from "@/lib/appointments/calendar-remote-read-pilot";
+import { useAppointmentRemoteWriteRevision } from "@/lib/appointments/use-appointment-remote-write-revision";
 import type { ScheduleAppointment } from "@/lib/appointments/domain";
 import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-identity-catalog";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
@@ -26,12 +27,14 @@ export function useCalendarRemoteAppointments(input: {
   endsAt: string;
   enabled: boolean;
 }): CalendarRemoteReadState {
+  const writeRevision = useAppointmentRemoteWriteRevision();
   const requestKey = [
     "calendar",
     input.organizationId,
     input.locationAppId,
     input.startsAt,
     input.endsAt,
+    String(writeRevision),
   ].join(":");
   const [result, setResult] = useState<{
     key: string;

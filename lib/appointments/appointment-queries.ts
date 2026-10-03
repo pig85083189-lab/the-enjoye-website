@@ -11,6 +11,8 @@ import {
 } from "@/lib/appointments/domain";
 import { isGeneratedAppointmentAppId } from "@/lib/persistence/demo-firewall";
 import type { AppointmentRemoteAdapter } from "@/lib/persistence/appointment-remote-adapter";
+import { newId } from "@/lib/repositories/storage";
+import { allocateAppointmentWriteAppId } from "./appointment-write-command";
 
 export const APPOINTMENT_STAFF_OVERLAP_MESSAGE =
   "Overlapping appointment already exists for this staff; insert-only (no upsert)";
@@ -39,15 +41,22 @@ export async function findStaffTimeOverlap(
 
 export async function createAppointmentRecord(
   organizationId: string,
-  input: CreateAppointmentInput,
+  input: CreateAppointmentInput & { id?: string },
   persistence: AppointmentRemoteHost,
+  generateId: () => string = () => newId("apt"),
 ): Promise<ScheduleAppointment> {
+  const appointmentId = allocateAppointmentWriteAppId(
+    input.id ? () => input.id! : generateId,
+  );
   const overlap = await findStaffTimeOverlap(organizationId, input, persistence);
   if (overlap) {
     throw new Error(APPOINTMENT_STAFF_OVERLAP_MESSAGE);
   }
-  const created = await persistence.appointments.create(organizationId, input);
-  if (!isGeneratedAppointmentAppId(created.id)) {
+  const created = await persistence.appointments.create(organizationId, {
+    ...input,
+    id: appointmentId,
+  });
+  if (!isGeneratedAppointmentAppId(created.id) || created.id !== appointmentId) {
     throw new Error('Appointment app id must be generated via newId("apt")');
   }
   return created;

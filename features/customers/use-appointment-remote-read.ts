@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { listRemotePilotAppointmentsByCustomer } from "@/lib/appointments/appointment-remote-read-pilot";
+import { useAppointmentRemoteWriteRevision } from "@/lib/appointments/use-appointment-remote-write-revision";
 import type { ScheduleAppointment } from "@/lib/appointments/domain";
 import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-identity-catalog";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
@@ -24,7 +25,8 @@ export function useCustomerRemoteAppointments(
   customerId: string,
   enabled: boolean,
 ): AppointmentRemoteReadState {
-  const requestKey = `appointments:${organizationId}:${customerId}`;
+  const writeRevision = useAppointmentRemoteWriteRevision();
+  const requestKey = `appointments:${organizationId}:${customerId}:${writeRevision}`;
   const [result, setResult] = useState<{
     key: string;
     state: Settled;

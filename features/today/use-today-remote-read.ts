@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { listRemoteTodayAppointmentsByLocation } from "@/lib/appointments/today-remote-read-pilot";
+import { useAppointmentRemoteWriteRevision } from "@/lib/appointments/use-appointment-remote-write-revision";
 import type { ScheduleAppointment } from "@/lib/appointments/domain";
 import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-identity-catalog";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
@@ -25,11 +26,13 @@ export function useTodayRemoteAppointments(input: {
   nowIso: string | null;
   enabled: boolean;
 }): TodayRemoteReadState {
+  const writeRevision = useAppointmentRemoteWriteRevision();
   const requestKey = [
     "today",
     input.organizationId,
     input.locationAppId,
     input.nowIso ?? "",
+    String(writeRevision),
   ].join(":");
   const [result, setResult] = useState<{
     key: string;

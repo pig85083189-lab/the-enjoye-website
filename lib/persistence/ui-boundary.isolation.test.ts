@@ -447,3 +447,37 @@ describe("Phase 1C-5E Today remote read UI boundary", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("Phase 1C-6B.1 appointment remote write UI boundary", () => {
+  it("keeps Calendar RSC on the read flag and does not import the write graph", () => {
+    const page = readFileSync(path.join(ROOT, "app/staff/(app)/calendar/page.tsx"), "utf8");
+    const calendar = readFileSync(path.join(ROOT, "features/calendar/CalendarPage.tsx"), "utf8");
+    const flag = readFileSync(
+      path.join(ROOT, "lib/appointments/appointment-remote-write-flag.ts"),
+      "utf8",
+    );
+    expect(page).toMatch(/isCalendarRemoteReadPilotEnabled/);
+    expect(page).not.toMatch(/appointment-remote-write-pilot|AuthenticatedAppointmentTableStore|AppointmentRemoteAdapter/);
+    expect(page).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    expect(calendar).not.toMatch(
+      /createAuthenticatedAppointmentWritePersistence|runAuthenticatedAppointmentWriteCreate|BEAUTY_OS_APPOINTMENT_REMOTE_WRITE_PILOT/,
+    );
+    expect(flag).not.toMatch(
+      /AppointmentRemoteAdapter|AuthenticatedAppointmentTableStore|loadAuthenticatedIdentityCatalog|IdentitySupabaseClient/,
+    );
+  });
+
+  it("does not leave Treatment or Checkout on the write-pilot path", () => {
+    for (const file of [
+      "features/treatments/TreatmentWorkspace.tsx",
+      "features/treatments/TreatmentPageClient.tsx",
+      "features/checkout/CheckoutPageClient.tsx",
+    ]) {
+      if (!existsSync(path.join(ROOT, file))) continue;
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      expect(source).not.toMatch(
+        /createAuthenticatedAppointmentWritePersistence|runAuthenticatedAppointmentWriteCreate|BEAUTY_OS_APPOINTMENT_REMOTE_WRITE_PILOT/,
+      );
+    }
+  });
+});
