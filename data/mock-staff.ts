@@ -4,9 +4,9 @@ export const DEMO_STAFF: Staff = {
   id: "staff-001",
   username: "yizhen",
   password: "123456",
-  name: "怡蓁",
-  displayName: "怡蓁",
-  avatarInitials: "怡",
+  name: "測試帳號",
+  displayName: "測試帳號",
+  avatarInitials: "測",
   title: "美容師",
 };
 

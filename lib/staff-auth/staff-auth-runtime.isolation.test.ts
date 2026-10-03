@@ -50,7 +50,7 @@ function ownerMembership(): StaffMembership {
     userId: "staff-001",
     locationIds: [LOC_ENJOYE_PRIMARY_ID],
     role: "OWNER",
-    displayName: "怡蓁",
+    displayName: "測試帳號",
     isActive: true,
     createdAt: "2025-01-01T00:00:00+08:00",
     authUserId: AUTH_OWNER,

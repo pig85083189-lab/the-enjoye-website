@@ -131,7 +131,7 @@ function validTables(overrides?: Partial<Record<string, Row[]>>): Record<string,
         organization_id: ORG_APP,
         role: "OWNER",
         is_active: true,
-        display_name: "怡蓁",
+        display_name: "測試帳號",
       },
     ],
     organizations: [{ id: ORG_UUID, app_id: ORG_APP }],
@@ -243,7 +243,7 @@ describe("Phase 1C-6D.2A appointment write staff catalog", () => {
             organization_id: ORG_APP,
             role: "OWNER",
             is_active: true,
-            display_name: "怡蓁",
+            display_name: "測試帳號",
           },
           {
             id: "mem-enjoye-colleague",
@@ -281,8 +281,8 @@ describe("Phase 1C-6D.2A appointment write staff catalog", () => {
       }),
     );
     expect(catalog.staff.map((row) => row.id).sort()).toEqual(["staff-001", "staff-002"]);
-    expect(catalog.staff.map((row) => row.name).sort()).toEqual(["小美", "怡蓁"]);
-    expect(catalog.staff.some((row) => row.name === "怡蓁" && catalog.staff.length === 1)).toBe(
+    expect(catalog.staff.map((row) => row.name).sort()).toEqual(["小美", "測試帳號"]);
+    expect(catalog.staff.some((row) => row.name === "測試帳號" && catalog.staff.length === 1)).toBe(
       false,
     );
     expect(filterAppointmentWriteStaff(catalog.staff, LOC_APP).map((row) => row.id).sort()).toEqual([
@@ -301,7 +301,7 @@ describe("Phase 1C-6D.2A appointment write staff catalog", () => {
     expect(catalog.staff).toEqual([
       {
         id: STAFF_APP,
-        name: "怡蓁",
+        name: "測試帳號",
         role: "OWNER",
         locationIds: [],
       },

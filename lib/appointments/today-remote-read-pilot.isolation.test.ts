@@ -357,7 +357,7 @@ describe("Phase 1C-5E Today remote read pilot", () => {
     expect(view.id).not.toBe(APT_DB_ID);
     expect(view.customerName).toBe("Remote QA Customer");
     expect(view.serviceName).toBe("Remote QA Bust Care");
-    expect(view.staffName).toBe("怡蓁");
+    expect(view.staffName).toBe("測試帳號");
     expect(view.time).toBe("10:00");
     expect(view.time).not.toBe("02:00");
   });

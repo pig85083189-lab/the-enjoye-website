@@ -67,6 +67,7 @@ import {
   transitionAppointmentStatus,
   updateAppointment,
 } from "@/lib/appointments/store";
+import { applyRosterStaffDisplayNames } from "@/lib/staff-auth/roster-display-name";
 import {
   resolveSelectedAppointment,
   shouldRenderQuickView,
@@ -261,10 +262,12 @@ export function CalendarPage({
         organizationId: organization.id,
         locationId,
       });
-  const appointments =
+  const appointments = applyRosterStaffDisplayNames(
     calendarRemoteReadPilot && remoteState.status === "data"
       ? remoteState.value
-      : localAppointments;
+      : localAppointments,
+    staffRoster,
+  );
   const scheduleDay = view === "day" ? anchor : (now ?? anchor);
   const rangeFromYmd = formatYmd(rangeFrom);
   const rangeToYmd = formatYmd(rangeTo);

@@ -101,8 +101,8 @@ function mergeMembershipSources(
       identity.organizationId,
     role: overlay?.role ?? remote?.role ?? seed?.role ?? identity.role,
     displayName:
-      overlay?.displayName ??
       remote?.displayName ??
+      overlay?.displayName ??
       seed?.displayName ??
       identity.displayName,
     createdAt:
@@ -125,21 +125,28 @@ function mergeMembershipSources(
 export function listMemberships(organizationId: string): StaffMembership[] {
   const overrides = readOverrides();
   const remote = hydratedRemote;
+  const remoteForOrg = Object.values(remote).filter(
+    (row) => row.organizationId === organizationId,
+  );
+  const remoteCanonical = remoteForOrg.length > 0;
   const ids = new Set<string>();
-  for (const row of SEED_MEMBERSHIPS) {
-    if (row.organizationId === organizationId) ids.add(row.id);
-  }
-  for (const row of Object.values(overrides)) {
-    if (row.organizationId === organizationId) ids.add(row.id);
-  }
-  for (const row of Object.values(remote)) {
-    if (row.organizationId === organizationId) ids.add(row.id);
+  if (remoteCanonical) {
+    for (const row of remoteForOrg) ids.add(row.id);
+  } else {
+    for (const row of SEED_MEMBERSHIPS) {
+      if (row.organizationId === organizationId) ids.add(row.id);
+    }
+    for (const row of Object.values(overrides)) {
+      if (row.organizationId === organizationId) ids.add(row.id);
+    }
   }
   return [...ids].map((id) =>
     mergeMembershipSources(
-      SEED_MEMBERSHIPS.find(
-        (item) => item.id === id && item.organizationId === organizationId,
-      ),
+      remoteCanonical
+        ? undefined
+        : SEED_MEMBERSHIPS.find(
+            (item) => item.id === id && item.organizationId === organizationId,
+          ),
       remote[id]?.organizationId === organizationId ? remote[id] : undefined,
       overrides[id]?.organizationId === organizationId ? overrides[id] : undefined,
     ),

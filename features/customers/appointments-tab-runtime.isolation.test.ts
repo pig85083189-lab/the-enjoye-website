@@ -101,7 +101,7 @@ describe("Phase 1C-5C AppointmentsTab runtime", () => {
     });
     roots.push(root);
     expect(host.textContent).toContain("Remote QA Bust Care");
-    expect(host.textContent).toContain("怡蓁");
+    expect(host.textContent).toContain("測試帳號");
     expect(host.textContent).toContain("2026/10/09");
     expect(host.textContent).toContain("10:00–11:40");
     expect(host.textContent).not.toContain("02:00–03:40");

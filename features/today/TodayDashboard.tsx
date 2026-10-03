@@ -27,6 +27,8 @@ import {
 } from "@/lib/appointment-store";
 import { listTodayAppointments } from "@/lib/appointments/store";
 import { todayBucket } from "@/lib/appointments/domain";
+import { applyRosterStaffDisplayNames } from "@/lib/staff-auth/roster-display-name";
+import { listMemberships } from "@/lib/tenant/organization-store";
 import { getSessionRaw, parseSession, subscribeAuth } from "@/lib/auth";
 import { taipeiBusinessYmdFromInstant } from "@/lib/calendar/calendar-appointment-time";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
@@ -63,10 +65,12 @@ export function TodayDashboard({
         currentLocation?.id,
         day,
       );
-  const schedule =
+  const schedule = applyRosterStaffDisplayNames(
     todayRemoteReadPilot && remoteState.status === "data"
       ? remoteState.value
-      : localSchedule;
+      : localSchedule,
+    listMemberships(organization.id),
+  );
   const activeSchedule = schedule.filter(
     (item) => todayBucket(item.status) !== "muted",
   );

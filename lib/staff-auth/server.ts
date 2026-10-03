@@ -122,6 +122,21 @@ async function ensureOwnerBootstrapRow(authUserId: string): Promise<void> {
   if (!bootstrap || bootstrap !== authUserId) return;
   const admin = createServiceRoleClient();
   if (!admin) return;
+  const existing = await fetchStaffAuthMembershipsByOrganizationId(
+    admin,
+    ORG_ENJOYE_ID,
+  );
+  const owner = existing.find((item) => item.id === MEMBERSHIP_ENJOYE_OWNER_ID);
+  if (owner) {
+    if (!owner.authUserId) {
+      await bindStaffAuthMembershipAuthUser(
+        admin,
+        MEMBERSHIP_ENJOYE_OWNER_ID,
+        bootstrap,
+      );
+    }
+    return;
+  }
   const seeded = SEED_MEMBERSHIPS.find((item) => item.id === MEMBERSHIP_ENJOYE_OWNER_ID);
   if (!seeded) return;
   await upsertStaffAuthMembership(admin, {

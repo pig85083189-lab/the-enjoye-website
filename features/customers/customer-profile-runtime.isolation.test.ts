@@ -159,7 +159,7 @@ describe("Phase 1C-5C Customer Profile runtime", () => {
     const { host, root } = renderProfile();
     roots.push(root);
     expect(host.textContent).toContain("Remote QA Bust Care");
-    expect(host.textContent).toContain("怡蓁");
+    expect(host.textContent).toContain("測試帳號");
     expect(host.textContent).toContain("2026/10/09");
     expect(host.textContent).toContain("已預約");
     expect(host.textContent).not.toContain("This page couldn’t load");

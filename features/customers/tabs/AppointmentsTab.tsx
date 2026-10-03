@@ -9,6 +9,8 @@ import {
   subscribeAppointments,
 } from "@/lib/appointment-store";
 import { listAppointments } from "@/lib/appointments/store";
+import { applyRosterStaffDisplayNames } from "@/lib/staff-auth/roster-display-name";
+import { listMemberships } from "@/lib/tenant/organization-store";
 import {
   STATUS_LABEL,
   formatHm,
@@ -253,7 +255,10 @@ export function AppointmentsTab({
     if (remote.status === "error") {
       return <AppointmentRemoteReadErrorFallback message={remote.message} />;
     }
-    const items = remote.status === "data" ? remote.value : [];
+    const items = applyRosterStaffDisplayNames(
+      remote.status === "data" ? remote.value : [],
+      listMemberships(organization.id),
+    );
     return (
       <AppointmentRemoteReadErrorBoundary>
         <AppointmentSections
@@ -268,10 +273,13 @@ export function AppointmentsTab({
     );
   }
 
-  const all = listAppointments({
-    organizationId: organization.id,
-    customerId,
-  });
+  const all = applyRosterStaffDisplayNames(
+    listAppointments({
+      organizationId: organization.id,
+      customerId,
+    }),
+    listMemberships(organization.id),
+  );
 
   return (
     <AppointmentSections

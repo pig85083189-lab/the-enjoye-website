@@ -447,7 +447,7 @@ describe("Phase 1C-5D calendar remote read pilot", () => {
     expect(resolveSelectedAppointment(rows, APT_DB_ID)).toBeNull();
     expect(item.customerName).toBe("Remote QA Customer");
     expect(item.serviceName).toBe("Remote QA Bust Care");
-    expect(item.staffName).toBe("怡蓁");
+    expect(item.staffName).toBe("測試帳號");
     expect(item.status).toBe("BOOKED");
     expect(formatCalendarAppointmentDisplay(item.startAt, item.endAt, true)).toEqual({
       date: "2026/10/09",
