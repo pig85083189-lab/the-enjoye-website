@@ -37,6 +37,10 @@ import {
   shouldResetCustomerSelection,
   type CustomerRelationshipStatus,
 } from "@/lib/customers/crm-derived";
+import {
+  customersFromRemoteListState,
+  useCustomerRemoteList,
+} from "@/features/customers/use-customer-remote-read";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
@@ -44,6 +48,7 @@ import { getCompletedTreatmentsForCustomer } from "@/lib/treatment-draft";
 import { cn } from "@/lib/utils";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
 import type { Customer } from "@/types";
+import { resolveCustomerListCreateSurface } from "@/lib/customers/customer-create-surface";
 import {
   FILTER_OPTIONS,
   SORT_OPTIONS,
@@ -74,13 +79,26 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
   event.preventDefault();
 }
 
-export function CustomerListPage() {
+export function CustomerListPage({
+  remoteReadPilot = false,
+  remoteWritePilot = false,
+}: {
+  remoteReadPilot?: boolean;
+  remoteWritePilot?: boolean;
+}) {
   const { organization } = useOrganization();
   const isClient = useIsClient();
-  const customers = useCrmJson(
-    () => localCustomerRepository.list({ organizationId: organization.id }),
+  const localCustomers = useCrmJson(
+    () =>
+      remoteReadPilot
+        ? ([] as Customer[])
+        : localCustomerRepository.list({ organizationId: organization.id }),
     [] as Customer[],
   );
+  const remote = useCustomerRemoteList(organization.id, remoteReadPilot);
+  const customers = remoteReadPilot
+    ? customersFromRemoteListState(remote)
+    : localCustomers;
   useSyncExternalStore(
     subscribeAppointments,
     getAppointmentStatusRaw,
@@ -164,9 +182,19 @@ export function CustomerListPage() {
     ? treatmentExtras(organization.id, selectedCustomer.id)
     : [];
 
+  const remotePending =
+    remoteReadPilot && (!isClient || remote.status === "loading");
+  const remoteFailed = remoteReadPilot && remote.status === "error";
+  const showCounts = isClient && !remotePending && !remoteFailed;
+  const createSurface = resolveCustomerListCreateSurface({
+    remoteReadPilot,
+    remoteWritePilot,
+  });
+
   return (
     <div
       data-customer-workspace
+      data-customer-read-source={remoteReadPilot ? "remote-pilot" : "local"}
       data-has-quickview={showQuickView ? "true" : "false"}
       className="min-w-0"
     >
@@ -182,28 +210,49 @@ export function CustomerListPage() {
             管理客戶資料、諮詢紀錄與療程歷史
           </p>
         </div>
-        <Link href="/staff/customers/new" className="shrink-0">
-          <Button className="h-9 min-h-9 rounded-full px-4 text-[13px]">
-            <Plus className="h-3.5 w-3.5" aria-hidden />
-            新增客戶
-          </Button>
-        </Link>
+        {createSurface.mode === "remote-read-only" ? (
+          <div className="shrink-0 text-right">
+            <Button
+              disabled
+              data-customer-create="remote-read-only"
+              title={createSurface.reason}
+              aria-label={`新增客戶，${createSurface.reason}`}
+              className="h-9 min-h-9 rounded-full px-4 text-[13px]"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              新增客戶
+            </Button>
+            <p className="mt-1 max-w-[9.5rem] text-[11px] leading-4 text-secondary-text">
+              {createSurface.reason}
+            </p>
+          </div>
+        ) : (
+          <Link href={createSurface.href} className="shrink-0">
+            <Button
+              data-customer-create={createSurface.mode}
+              className="h-9 min-h-9 rounded-full px-4 text-[13px]"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              新增客戶
+            </Button>
+          </Link>
+        )}
       </header>
 
       <section className="mb-4 grid grid-cols-2 gap-2 min-[1200px]:grid-cols-4 min-[1200px]:gap-3">
-        <StatCard label="全部客戶" value={isClient ? summary.total : "—"} />
+        <StatCard label="全部客戶" value={showCounts ? summary.total : "—"} />
         <StatCard
           label="本月新客"
-          value={isClient ? summary.newThisMonth : "—"}
+          value={showCounts ? summary.newThisMonth : "—"}
         />
         <StatCard
           label="需要追蹤"
-          value={isClient ? summary.needsFollowUp : "—"}
+          value={showCounts ? summary.needsFollowUp : "—"}
           accent="warning"
         />
         <StatCard
           label="VIP 客戶"
-          value={isClient ? summary.vip : "—"}
+          value={showCounts ? summary.vip : "—"}
           accent="primary"
         />
       </section>
@@ -270,10 +319,24 @@ export function CustomerListPage() {
             </div>
           </div>
 
-          {!isClient ? (
+          {remotePending ? (
+            <ListSkeleton />
+          ) : remoteFailed ? (
+            <Card padding="lg" className="text-center" data-customer-read-state="error">
+              <Users className="mx-auto h-10 w-10 text-primary/50" aria-hidden />
+              <p className="mt-3 text-[15px] font-medium text-text">無法載入客戶資料</p>
+              <p className="mt-1 text-sm text-secondary-text">
+                Access unavailable — remote customer read failed. 不會改用本機示範資料。
+              </p>
+            </Card>
+          ) : !isClient ? (
             <ListSkeleton />
           ) : visible.length === 0 ? (
-            <Card padding="lg" className="text-center">
+            <Card
+              padding="lg"
+              className="text-center"
+              data-customer-read-state={remoteReadPilot ? "empty" : "local-empty"}
+            >
               <Users className="mx-auto h-10 w-10 text-primary/50" aria-hidden />
               <p className="mt-3 text-[15px] font-medium text-text">
                 {query || filter !== "all" ? "找不到符合的客戶" : "尚無客戶資料"}
@@ -281,7 +344,9 @@ export function CustomerListPage() {
               <p className="mt-1 text-sm text-secondary-text">
                 {query || filter !== "all"
                   ? "試試調整搜尋或篩選條件"
-                  : "點右上角新增第一位客戶"}
+                  : remoteReadPilot
+                    ? "遠端目前沒有客戶，不會改用本機示範資料。"
+                    : "點右上角新增第一位客戶"}
               </p>
             </Card>
           ) : (

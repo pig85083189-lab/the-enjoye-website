@@ -8,8 +8,8 @@ import {
 import {
   STATUS_LABEL,
   combineLocalDateTime,
-  formatHm,
   formatYmd,
+  occupiesCalendarSlot,
   startOfDay,
   type ScheduleAppointment,
 } from "@/lib/appointments/domain";
@@ -41,6 +41,12 @@ import {
 } from "@/lib/calendar/schedule-status";
 import { isAppointmentKeyboardActivation } from "@/lib/calendar/selection";
 import { absoluteMinutesFromDate } from "@/lib/appointments/visible-range";
+import {
+  absoluteTaipeiMinutesFromIso,
+  calendarAppointmentHm,
+  calendarAppointmentYmd,
+  layoutCalendarAppointmentBlock,
+} from "@/lib/calendar/calendar-appointment-time";
 import { useClientNow } from "@/lib/use-client-now";
 import { cn } from "@/lib/utils";
 import type { StaffMembership } from "@/types/saas";
@@ -156,12 +162,14 @@ export function AppointmentBlock({
   top,
   height,
   hideStaffName,
+  useTaipeiTime = false,
   onSelect,
 }: {
   item: ScheduleAppointment;
   top: number;
   height: number;
   hideStaffName?: boolean;
+  useTaipeiTime?: boolean;
   onSelect: (item: ScheduleAppointment) => void;
 }) {
   const showTimeRange = height >= 36;
@@ -184,8 +192,10 @@ export function AppointmentBlock({
     : item.status === "COMPLETED"
       ? STATUS_ACCENT.COMPLETED
       : (typeTone?.accent ?? STATUS_ACCENT[item.status]);
+  const startHm = calendarAppointmentHm(item.startAt, useTaipeiTime);
+  const endHm = calendarAppointmentHm(item.endAt, useTaipeiTime);
   const tooltip = [
-    `${formatHm(new Date(item.startAt))}–${formatHm(new Date(item.endAt))}`,
+    `${startHm}–${endHm}`,
     item.customerName,
     item.serviceName,
     hideStaffName ? null : item.staffName,
@@ -242,7 +252,7 @@ export function AppointmentBlock({
         {showTimeRange ? (
           <p className="flex shrink-0 items-center gap-1 text-[11px] font-medium leading-tight tabular-nums text-text/80">
             <span className="truncate">
-              {formatHm(new Date(item.startAt))}–{formatHm(new Date(item.endAt))}
+              {startHm}–{endHm}
             </span>
             {isVip ? (
               <Crown
@@ -254,7 +264,7 @@ export function AppointmentBlock({
           </p>
         ) : (
           <p className="shrink-0 text-[11px] font-medium tabular-nums text-text/80">
-            {formatHm(new Date(item.startAt))}
+            {startHm}
           </p>
         )}
         <p className="truncate text-[12px] font-semibold leading-tight text-text">
@@ -296,6 +306,7 @@ function StaffColumn({
   appointments,
   allAppointments,
   hideStaffName,
+  useTaipeiTime = false,
   onSelect,
   onEmptySlot,
   onBlockedSlot,
@@ -310,6 +321,7 @@ function StaffColumn({
   appointments: ScheduleAppointment[];
   allAppointments: ScheduleAppointment[];
   hideStaffName?: boolean;
+  useTaipeiTime?: boolean;
   onSelect: (item: ScheduleAppointment) => void;
   onEmptySlot: (hm: string) => void;
   onBlockedSlot: (message: string) => void;
@@ -480,13 +492,18 @@ function StaffColumn({
           })
         : null}
 
-      {appointments.map((item) => {
-        const layout = layoutTimedBlock(new Date(item.startAt), new Date(item.endAt));
+      {appointments.filter((item) => occupiesCalendarSlot(item.status)).map((item) => {
+        const layout = layoutCalendarAppointmentBlock(
+          item.startAt,
+          item.endAt,
+          useTaipeiTime,
+        );
         if (!layout.visible) return null;
         return (
           <AppointmentBlock
             key={item.id}
             item={item}
+            useTaipeiTime={useTaipeiTime}
             top={layout.topPx}
             height={layout.heightPx}
             hideStaffName={hideStaffName}
@@ -507,6 +524,7 @@ export function StaffDayGrid({
   onSelect,
   onEmptySlot,
   onBlockedSlot,
+  useTaipeiTime = false,
 }: {
   day: Date;
   organizationId: string;
@@ -516,6 +534,7 @@ export function StaffDayGrid({
   onSelect: (item: ScheduleAppointment) => void;
   onEmptySlot: (staffId: string, hm: string) => void;
   onBlockedSlot: (message: string) => void;
+  useTaipeiTime?: boolean;
 }) {
   const dayYmd = formatYmd(day);
   const dayStart = startOfDay(day);
@@ -538,8 +557,12 @@ export function StaffDayGrid({
         ? headerEl.offsetHeight
         : STAFF_DAY_HEADER_STICKY_PX;
     const appointmentStartMinutes = appointments
-      .filter((a) => formatYmd(new Date(a.startAt)) === dayYmd)
-      .map((a) => absoluteMinutesFromDate(new Date(a.startAt)));
+      .filter((a) => calendarAppointmentYmd(a.startAt, useTaipeiTime) === dayYmd)
+      .map((a) =>
+        useTaipeiTime
+          ? absoluteTaipeiMinutesFromIso(a.startAt)
+          : absoluteMinutesFromDate(new Date(a.startAt)),
+      );
     el.scrollTop = resolveDayViewScrollTop({
       now,
       isToday: true,
@@ -551,7 +574,7 @@ export function StaffDayGrid({
       stickyHeaderPx,
       viewportPx: el.clientHeight,
     });
-  }, [day, dayYmd, now, appointments]);
+  }, [day, dayYmd, now, appointments, useTaipeiTime]);
 
   if (staff.length === 0) {
     return (
@@ -589,8 +612,9 @@ export function StaffDayGrid({
               });
               const apptCount = appointments.filter(
                 (a) =>
+                  occupiesCalendarSlot(a.status) &&
                   a.staffId === s.userId &&
-                  formatYmd(new Date(a.startAt)) === dayYmd,
+                  calendarAppointmentYmd(a.startAt, useTaipeiTime) === dayYmd,
               ).length;
               const meta = formatStaffDayHeaderMeta(schedule, apptCount);
               return (
@@ -658,8 +682,9 @@ export function StaffDayGrid({
               }).filter((t) => t.status === "APPROVED");
               const columnAppts = appointments.filter(
                 (a) =>
+                  occupiesCalendarSlot(a.status) &&
                   a.staffId === s.userId &&
-                  formatYmd(new Date(a.startAt)) === dayYmd,
+                  calendarAppointmentYmd(a.startAt, useTaipeiTime) === dayYmd,
               );
               return (
                 <StaffColumn
@@ -674,6 +699,7 @@ export function StaffDayGrid({
                   appointments={columnAppts}
                   allAppointments={appointments}
                   hideStaffName
+                  useTaipeiTime={useTaipeiTime}
                   onSelect={onSelect}
                   onEmptySlot={(hm) => onEmptySlot(s.userId, hm)}
                   onBlockedSlot={onBlockedSlot}
@@ -698,11 +724,13 @@ export function WeekGrid({
   appointments,
   onSelect,
   now,
+  useTaipeiTime = false,
 }: {
   days: Date[];
   appointments: ScheduleAppointment[];
   onSelect: (item: ScheduleAppointment) => void;
   now: Date | null;
+  useTaipeiTime?: boolean;
 }) {
   const columns = `${TIME_COL_PX}px repeat(7, minmax(0, 1fr))`;
   const weekMinWidth = TIME_COL_PX + 7 * 96;
@@ -744,7 +772,9 @@ export function WeekGrid({
               const ymd = formatYmd(day);
               const isToday = todayYmd === ymd;
               const dayAppts = appointments.filter(
-                (a) => formatYmd(new Date(a.startAt)) === ymd,
+                (a) =>
+                  occupiesCalendarSlot(a.status) &&
+                  calendarAppointmentYmd(a.startAt, useTaipeiTime) === ymd,
               );
               return (
                 <div
@@ -757,9 +787,10 @@ export function WeekGrid({
                 >
                   <SlotLines />
                   {dayAppts.map((item) => {
-                    const layout = layoutTimedBlock(
-                      new Date(item.startAt),
-                      new Date(item.endAt),
+                    const layout = layoutCalendarAppointmentBlock(
+                      item.startAt,
+                      item.endAt,
+                      useTaipeiTime,
                     );
                     if (!layout.visible) return null;
                     return (
@@ -768,6 +799,7 @@ export function WeekGrid({
                         item={item}
                         top={layout.topPx}
                         height={layout.heightPx}
+                        useTaipeiTime={useTaipeiTime}
                         onSelect={onSelect}
                       />
                     );
@@ -793,6 +825,7 @@ export function MobileStaffDayView({
   onSelect,
   onEmptySlot,
   onBlockedSlot,
+  useTaipeiTime = false,
 }: {
   day: Date;
   organizationId: string;
@@ -802,6 +835,7 @@ export function MobileStaffDayView({
   onSelect: (item: ScheduleAppointment) => void;
   onEmptySlot: (staffId: string, hm: string) => void;
   onBlockedSlot: (message: string) => void;
+  useTaipeiTime?: boolean;
 }) {
   if (!staff) {
     return (
@@ -839,8 +873,9 @@ export function MobileStaffDayView({
   });
   const columnAppts = appointments.filter(
     (a) =>
+      occupiesCalendarSlot(a.status) &&
       a.staffId === staff.userId &&
-      formatYmd(new Date(a.startAt)) === formatYmd(day),
+      calendarAppointmentYmd(a.startAt, useTaipeiTime) === formatYmd(day),
   );
   const meta = formatStaffDayHeaderMeta(schedule, columnAppts.length);
 
@@ -879,6 +914,7 @@ export function MobileStaffDayView({
             appointments={columnAppts}
             allAppointments={appointments}
             hideStaffName
+            useTaipeiTime={useTaipeiTime}
             onSelect={onSelect}
             onEmptySlot={(hm) => onEmptySlot(staff.userId, hm)}
             onBlockedSlot={onBlockedSlot}

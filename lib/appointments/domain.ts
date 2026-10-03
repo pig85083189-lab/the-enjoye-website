@@ -123,6 +123,23 @@ export function allowedTransitions(
   return [...TRANSITIONS[from]];
 }
 
+/** Table authority only. Same-status is not a Cancel transition. */
+export function isAppointmentCancellable(
+  status: CanonicalAppointmentStatus,
+): boolean {
+  return allowedTransitions(status).includes("CANCELLED");
+}
+
+/**
+ * Active Calendar occupancy. Matches hasAppointmentConflict and
+ * appointments_staff_active_no_overlap: CANCELLED / NO_SHOW do not block.
+ */
+export function occupiesCalendarSlot(
+  status: CanonicalAppointmentStatus,
+): boolean {
+  return status !== "CANCELLED" && status !== "NO_SHOW";
+}
+
 /** Today visual buckets — cancelled/no-show stay visible but muted */
 export function todayBucket(
   status: CanonicalAppointmentStatus,
