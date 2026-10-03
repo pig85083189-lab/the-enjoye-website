@@ -186,7 +186,7 @@ describe("Phase 1C-5C appointment remote read UI boundary", () => {
     expect(page).toMatch(/isAppointmentRemoteReadPilotEnabled/);
     expect(page).toMatch(/appointment-remote-read-flag/);
     expect(page).not.toMatch(/appointment-remote-read-pilot/);
-    expect(page).not.toMatch(/appointment-read-diagnostic/);
+    expect(page).not.toMatch(/appointment-read-diagnostic|customer-profile-isolation/);
     expect(profile).toMatch(/appointmentRemoteReadPilot/);
     expect(tab).toMatch(/useCustomerRemoteAppointments/);
     expect(tab).toMatch(/formatTaipeiAppointmentDisplay/);
@@ -195,6 +195,41 @@ describe("Phase 1C-5C appointment remote read UI boundary", () => {
     expect(profile).not.toMatch(/AppointmentRemoteAdapter|AuthenticatedAppointmentTableStore|createAppointmentRecord/);
     expect(tab).not.toMatch(/\.from\(\s*["']appointments["']\s*\)/);
     expect(tab).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+  });
+
+  it("does not leave temporary appointment or customer-profile diagnostic routes", () => {
+    expect(existsSync(path.join(ROOT, "app/staff/(app)/appointment-read-diagnostic/page.tsx"))).toBe(
+      false,
+    );
+    expect(existsSync(path.join(ROOT, "features/appointments/AppointmentReadDiagnosticPage.tsx"))).toBe(
+      false,
+    );
+    expect(existsSync(path.join(ROOT, "lib/appointments/appointment-read-diagnostic.ts"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "lib/appointments/appointment-read-diagnostic-flag.ts"))).toBe(
+      false,
+    );
+    expect(
+      existsSync(path.join(ROOT, "app/staff/(app)/customer-profile-isolation/page.tsx")),
+    ).toBe(false);
+    expect(existsSync(path.join(ROOT, "features/customers/CustomerProfileIsolationPage.tsx"))).toBe(
+      false,
+    );
+    const files = ["app", "lib", "features", "components"].flatMap(walkSource);
+    const offenders: string[] = [];
+    for (const file of files) {
+      if (file.endsWith(".isolation.test.ts")) continue;
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      if (
+        source.includes("/staff/appointment-read-diagnostic") ||
+        source.includes("/staff/customer-profile-isolation") ||
+        source.includes("AppointmentReadDiagnosticPage") ||
+        source.includes("CustomerProfileIsolationPage") ||
+        source.includes("isAppointmentReadDiagnosticEnabled")
+      ) {
+        offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
 

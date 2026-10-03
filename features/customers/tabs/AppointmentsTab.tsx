@@ -3,10 +3,7 @@
 import { Component, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
-import {
-  useCustomerRemoteAppointments,
-  type AppointmentRemoteReadState,
-} from "@/features/customers/use-appointment-remote-read";
+import { useCustomerRemoteAppointments } from "@/features/customers/use-appointment-remote-read";
 import {
   getAppointmentStatusRaw,
   subscribeAppointments,
@@ -139,10 +136,9 @@ interface AppointmentsTabProps {
   customerId: string;
   createHref?: string;
   remoteReadPilot?: boolean;
-  isolationRemoteState?: AppointmentRemoteReadState;
 }
 
-export function AppointmentSections({
+function AppointmentSections({
   items,
   createHref,
   formatDisplay,
@@ -236,19 +232,17 @@ export function AppointmentsTab({
   customerId,
   createHref,
   remoteReadPilot = false,
-  isolationRemoteState,
 }: AppointmentsTabProps) {
   const { organization } = useOrganization();
   useSyncExternalStore(subscribeAppointments, getAppointmentStatusRaw, () => "");
   const remote = useCustomerRemoteAppointments(
     organization.id,
     customerId,
-    remoteReadPilot && !isolationRemoteState,
+    remoteReadPilot,
   );
-  const resolved = isolationRemoteState ?? remote;
 
   if (remoteReadPilot) {
-    if (resolved.status === "loading") {
+    if (remote.status === "loading") {
       return (
         <div className="space-y-3">
           <div className="h-16 animate-pulse rounded-2xl bg-primary-light/40" />
@@ -256,10 +250,10 @@ export function AppointmentsTab({
         </div>
       );
     }
-    if (resolved.status === "error") {
-      return <AppointmentRemoteReadErrorFallback message={resolved.message} />;
+    if (remote.status === "error") {
+      return <AppointmentRemoteReadErrorFallback message={remote.message} />;
     }
-    const items = resolved.status === "data" ? resolved.value : [];
+    const items = remote.status === "data" ? remote.value : [];
     return (
       <AppointmentRemoteReadErrorBoundary>
         <AppointmentSections

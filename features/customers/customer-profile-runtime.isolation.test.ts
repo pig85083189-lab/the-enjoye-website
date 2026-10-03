@@ -1,17 +1,65 @@
 /**
- * Runtime isolation for Customer Profile + appointments tab.
- * Proves which layer throws after Owner diagnostic A–I already passed.
+ * Runtime regression for Phase 1C-5C Customer 360 + remote Appointment.
+ * A remote-only customer must not crash Customer360Workspace / Appointments tab.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { FUTURE_QA_APPOINTMENT } from "@/lib/appointments/remote-readiness";
+import { FUTURE_QA_APPOINTMENT, futureQaAppointmentUtcRange } from "@/lib/appointments/remote-readiness";
+import type { ScheduleAppointment } from "@/lib/appointments/domain";
 import { getCustomerStoredValueBalance } from "@/lib/stored-value/store";
 import type { Customer } from "@/types";
 import type { AppointmentRemoteReadState } from "@/features/customers/use-appointment-remote-read";
 import { CustomerProfilePage } from "@/features/customers/CustomerProfilePage";
-import { liveMappedAppointment, liveRemoteCustomerShape } from "./isolation/live-appointment-fixture";
+
+const { startAt, endAt } = futureQaAppointmentUtcRange();
+
+function liveMappedAppointment(
+  overrides: Partial<ScheduleAppointment> = {},
+): ScheduleAppointment {
+  return {
+    id: "apt-muqrindw-yt0l5z",
+    organizationId: FUTURE_QA_APPOINTMENT.organizationAppId,
+    locationId: FUTURE_QA_APPOINTMENT.locationAppId,
+    customerId: FUTURE_QA_APPOINTMENT.customerAppId,
+    customerName: FUTURE_QA_APPOINTMENT.customerName,
+    serviceId: FUTURE_QA_APPOINTMENT.serviceAppId,
+    serviceName: FUTURE_QA_APPOINTMENT.serviceName,
+    staffId: FUTURE_QA_APPOINTMENT.staffAppId,
+    staffName: FUTURE_QA_APPOINTMENT.staffName,
+    startAt,
+    endAt,
+    durationMinutes: 100,
+    status: "BOOKED",
+    notes: [],
+    createdAt: "2026-10-02T09:30:20.517Z",
+    updatedAt: "2026-10-02T09:30:20.517Z",
+    ...overrides,
+  };
+}
+
+function liveRemoteCustomerShape(): Customer {
+  return {
+    id: FUTURE_QA_APPOINTMENT.customerAppId,
+    organizationId: FUTURE_QA_APPOINTMENT.organizationAppId,
+    name: FUTURE_QA_APPOINTMENT.customerName,
+    phone: "0911000001",
+    birthday: "",
+    age: 0,
+    membership: "new",
+    lastVisit: "",
+    totalVisits: 0,
+    packages: [],
+    lastServiceNotes: [],
+    trackingFocus: [],
+    alerts: [],
+    tags: [],
+    joinedAt: "2026/10/02",
+    createdAt: "2026-10-02T04:30:00.000Z",
+    updatedAt: "2026-10-02T04:30:00.000Z",
+  };
+}
 
 const remoteCustomer: { current: Customer } = {
   current: liveRemoteCustomerShape(),
@@ -56,10 +104,7 @@ vi.mock("@/features/customers/use-appointment-remote-read", () => ({
   useCustomerRemoteAppointments: () => remoteAppointments.current,
 }));
 
-function renderProfile(props: Record<string, unknown> = {}): {
-  host: HTMLDivElement;
-  root: Root;
-} {
+function renderProfile(): { host: HTMLDivElement; root: Root } {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -69,14 +114,13 @@ function renderProfile(props: Record<string, unknown> = {}): {
         customerId: FUTURE_QA_APPOINTMENT.customerAppId,
         remoteReadPilot: true,
         appointmentRemoteReadPilot: true,
-        ...props,
       }),
     );
   });
   return { host, root };
 }
 
-describe("Phase 1C-5C Customer Profile runtime isolation", () => {
+describe("Phase 1C-5C Customer Profile runtime", () => {
   const roots: Root[] = [];
 
   afterEach(() => {
@@ -103,31 +147,21 @@ describe("Phase 1C-5C Customer Profile runtime isolation", () => {
     ).toBe(0);
   });
 
-  it("renders CustomerProfilePage shell without Customer360Workspace", () => {
-    const { host, root } = renderProfile({ isolationLayer: "shell" });
-    roots.push(root);
-    expect(host.textContent).toContain("CustomerProfilePage shell");
-    expect(host.textContent).toContain("Remote QA Customer");
-    expect(host.textContent).not.toContain("即將到來");
-  });
-
-  it("renders Customer360Workspace without throwing on a remote-shaped customer", () => {
+  it("renders Customer360Workspace for a remote-shaped customer without throwing", () => {
     search.current = "";
-    const { host, root } = renderProfile({ isolationLayer: "workspace" });
+    const { host, root } = renderProfile();
     roots.push(root);
     expect(host.textContent).toContain("Remote QA Customer");
     expect(host.textContent).not.toContain("This page couldn’t load");
   });
 
-  it("renders the full appointments tab inside Customer Profile without throwing", () => {
-    const { host, root } = renderProfile({
-      isolationLayer: "full",
-      isolationTab: "appointments",
-    });
+  it("renders the appointments tab inside Customer Profile without throwing", () => {
+    const { host, root } = renderProfile();
     roots.push(root);
     expect(host.textContent).toContain("Remote QA Bust Care");
     expect(host.textContent).toContain("怡蓁");
     expect(host.textContent).toContain("2026/10/09");
+    expect(host.textContent).toContain("已預約");
     expect(host.textContent).not.toContain("This page couldn’t load");
   });
 });
