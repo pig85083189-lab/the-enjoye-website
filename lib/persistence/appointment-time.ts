@@ -32,11 +32,24 @@ export function taipeiLocalToUtcIso(dateYmd: string, hm: string): string {
   return new Date(Date.UTC(y, m - 1, d, hh, mm) - TAIPEI_OFFSET_MINUTES * 60_000).toISOString();
 }
 
-export function utcIsoToTaipeiLocal(iso: string): { dateYmd: string; hm: string } {
-  const utc = new Date(iso);
-  if (Number.isNaN(utc.getTime())) {
+/**
+ * Parse PostgREST / Postgres timestamptz shapes used by remote appointments:
+ * Z, +00:00, fractional microseconds. Minutes are what Calendar positions on.
+ */
+export function parseAppointmentTimestamptz(iso: string): Date {
+  const trimmed = iso.trim();
+  const direct = new Date(trimmed);
+  if (!Number.isNaN(direct.getTime())) return direct;
+  const normalized = trimmed.replace(/(\.\d{3})\d+/, "$1");
+  const fallback = new Date(normalized);
+  if (Number.isNaN(fallback.getTime())) {
     throw new Error(`Invalid timestamptz ${JSON.stringify(iso)}`);
   }
+  return fallback;
+}
+
+export function utcIsoToTaipeiLocal(iso: string): { dateYmd: string; hm: string } {
+  const utc = parseAppointmentTimestamptz(iso);
   const taipei = new Date(utc.getTime() + TAIPEI_OFFSET_MINUTES * 60_000);
   return {
     dateYmd: `${taipei.getUTCFullYear()}-${pad2(taipei.getUTCMonth() + 1)}-${pad2(taipei.getUTCDate())}`,
@@ -45,8 +58,8 @@ export function utcIsoToTaipeiLocal(iso: string): { dateYmd: string; hm: string 
 }
 
 export function addMinutesToIso(iso: string, minutes: number): string {
-  const utc = new Date(iso);
-  if (Number.isNaN(utc.getTime()) || !Number.isInteger(minutes)) {
+  const utc = parseAppointmentTimestamptz(iso);
+  if (!Number.isInteger(minutes)) {
     throw new Error("Invalid ISO timestamp or minutes");
   }
   return new Date(utc.getTime() + minutes * 60_000).toISOString();

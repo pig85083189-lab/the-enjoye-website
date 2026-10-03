@@ -50,6 +50,22 @@ class FakeQuery implements IdentityQueryBuilder {
     return new FakeQuery(this.rows, [...this.filters, { column, values }], this.error);
   }
 
+  gte(column: string, value: string): IdentityQueryBuilder {
+    return this.eq(column, value);
+  }
+
+  lte(column: string, value: string): IdentityQueryBuilder {
+    return this.eq(column, value);
+  }
+
+  gt(column: string, value: string): IdentityQueryBuilder {
+    return this.eq(column, value);
+  }
+
+  lt(column: string, value: string): IdentityQueryBuilder {
+    return this.eq(column, value);
+  }
+
   then<TResult1 = IdentityQueryResult, TResult2 = never>(
     onfulfilled?: ((value: IdentityQueryResult) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,

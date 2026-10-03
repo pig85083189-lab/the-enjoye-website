@@ -159,10 +159,9 @@ describe("Phase 1C-5A appointment remote foundation UI boundary", () => {
 });
 
 describe("Phase 1C-5C appointment remote read UI boundary", () => {
-  it("keeps Calendar / Today / Treatment / Checkout on local appointment reads", () => {
+  it("keeps Today / Treatment / Checkout on local appointment reads", () => {
     const surfaces = [
       "features/today/TodayDashboard.tsx",
-      "features/calendar/CalendarPage.tsx",
       "features/treatments/TreatmentPageClient.tsx",
       "features/treatments/TreatmentsListPageClient.tsx",
       "features/checkout/CheckoutPageClient.tsx",
@@ -177,6 +176,13 @@ describe("Phase 1C-5C appointment remote read UI boundary", () => {
         /listRemotePilotAppointmentsByCustomer|getRemotePilotAppointment|useCustomerRemoteAppointments|BEAUTY_OS_APPOINTMENT_REMOTE_READ_PILOT/,
       );
     }
+  });
+
+  it("keeps Calendar off the Customer 360 appointment remote hook", () => {
+    const source = readFileSync(path.join(ROOT, "features/calendar/CalendarPage.tsx"), "utf8");
+    expect(source).not.toMatch(
+      /listRemotePilotAppointmentsByCustomer|getRemotePilotAppointment|useCustomerRemoteAppointments|BEAUTY_OS_APPOINTMENT_REMOTE_READ_PILOT/,
+    );
   });
 
   it("cuts remote Appointment read only at Customer 360 Appointments tab", () => {
@@ -274,5 +280,51 @@ describe("Phase 1C-5B appointment remote foundation UI boundary", () => {
       const source = readFileSync(path.join(ROOT, file), "utf8");
       expect(source).not.toMatch(/createFirstRemoteQaAppointment|APPOINTMENT_BOOTSTRAP_ROUTE|\/staff\/appointment-bootstrap/);
     }
+  });
+});
+
+describe("Phase 1C-5D calendar remote read UI boundary", () => {
+  it("cuts Calendar remote appointment read only at CalendarPage", () => {
+    const page = readFileSync(path.join(ROOT, "app/staff/(app)/calendar/page.tsx"), "utf8");
+    const calendar = readFileSync(path.join(ROOT, "features/calendar/CalendarPage.tsx"), "utf8");
+    const flag = readFileSync(
+      path.join(ROOT, "lib/appointments/calendar-remote-read-flag.ts"),
+      "utf8",
+    );
+    expect(page).toMatch(/isCalendarRemoteReadPilotEnabled/);
+    expect(page).toMatch(/calendar-remote-read-flag/);
+    expect(page).not.toMatch(/calendar-remote-read-pilot/);
+    expect(page).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    expect(calendar).toMatch(/useCalendarRemoteAppointments/);
+    expect(calendar).toMatch(/無法讀取預約資料|CalendarRemoteReadErrorFallback/);
+    expect(calendar).not.toMatch(/AppointmentRemoteAdapter|createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    expect(flag).not.toMatch(/AppointmentRemoteAdapter|loadAuthenticatedIdentityCatalog|IdentitySupabaseClient/);
+  });
+
+  it("keeps Today and other live surfaces off the Calendar remote read path", () => {
+    const surfaces = [
+      "features/today/TodayDashboard.tsx",
+      "features/treatments/TreatmentPageClient.tsx",
+      "features/treatments/TreatmentsListPageClient.tsx",
+      "features/checkout/CheckoutPageClient.tsx",
+      "features/packages/PackagesPageClient.tsx",
+      "features/transactions/TransactionsPageClient.tsx",
+      "features/customers/use-customer-360.ts",
+    ];
+    for (const file of surfaces) {
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      expect(source).not.toMatch(
+        /useCalendarRemoteAppointments|listRemoteCalendarAppointmentsByLocationAndRange|BEAUTY_OS_CALENDAR_REMOTE_READ_PILOT/,
+      );
+    }
+  });
+
+  it("keeps Customer 360 appointment remote read independent", () => {
+    const page = readFileSync(path.join(ROOT, "app/staff/(app)/customers/[id]/page.tsx"), "utf8");
+    const tab = readFileSync(path.join(ROOT, "features/customers/tabs/AppointmentsTab.tsx"), "utf8");
+    expect(page).toMatch(/isAppointmentRemoteReadPilotEnabled/);
+    expect(page).not.toMatch(/isCalendarRemoteReadPilotEnabled|calendar-remote-read/);
+    expect(tab).toMatch(/useCustomerRemoteAppointments/);
+    expect(tab).not.toMatch(/useCalendarRemoteAppointments/);
   });
 });

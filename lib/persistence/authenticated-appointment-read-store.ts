@@ -1,6 +1,6 @@
 /**
- * Authenticated, RLS-bound appointment table access for the Phase 1C-5C read pilot.
- * Uses the publishable/session client only. Writes are refused.
+ * Authenticated, RLS-bound appointment table access for the Phase 1C-5C / 1C-5D
+ * read pilots. Uses the publishable/session client only. Writes are refused.
  */
 
 import type {
@@ -120,6 +120,21 @@ export class AuthenticatedAppointmentReadStore implements AppointmentTableStore 
   ): Promise<DbAppointment[]> {
     return readAppointmentRows(this.client, (builder) =>
       builder.eq("organization_id", organizationDbId).eq("customer_id", customerDbId),
+    );
+  }
+
+  async listAppointmentsByLocationAndRange(input: {
+    organizationDbId: string;
+    locationDbId: string;
+    startsAt: string;
+    endsAt: string;
+  }): Promise<DbAppointment[]> {
+    return readAppointmentRows(this.client, (builder) =>
+      builder
+        .eq("organization_id", input.organizationDbId)
+        .eq("location_id", input.locationDbId)
+        .lt("starts_at", input.endsAt)
+        .gt("ends_at", input.startsAt),
     );
   }
 

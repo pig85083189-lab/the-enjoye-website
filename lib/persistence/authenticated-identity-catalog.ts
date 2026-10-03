@@ -19,6 +19,10 @@ export interface IdentityQueryBuilder<T = Record<string, unknown>>
   extends PromiseLike<IdentityQueryResult<T>> {
   eq(column: string, value: string): IdentityQueryBuilder<T>;
   in(column: string, values: string[]): IdentityQueryBuilder<T>;
+  gte(column: string, value: string): IdentityQueryBuilder<T>;
+  lte(column: string, value: string): IdentityQueryBuilder<T>;
+  gt(column: string, value: string): IdentityQueryBuilder<T>;
+  lt(column: string, value: string): IdentityQueryBuilder<T>;
 }
 
 export interface IdentitySupabaseClient {

@@ -10,10 +10,15 @@ import {
   CancelAppointmentDialog,
 } from "@/features/calendar/AppointmentQuickView";
 import {
+  CalendarRemoteReadErrorBoundary,
+  CalendarRemoteReadErrorFallback,
+} from "@/features/calendar/calendar-remote-read-boundary";
+import {
   MobileStaffDayView,
   StaffDayGrid,
   WeekGrid,
 } from "@/features/calendar/CalendarViews";
+import { useCalendarRemoteAppointments } from "@/features/calendar/use-calendar-remote-read";
 import {
   addDays,
   CALENDAR_ROSE_FILL,
@@ -68,6 +73,7 @@ import {
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { getServicesForOrganization } from "@/data/mock-services";
 import { selectableServicesForBooking } from "@/lib/services/service-catalog-derived";
+import { calendarViewRangeUtc } from "@/lib/calendar/calendar-appointment-time";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { useClientNow } from "@/lib/use-client-now";
 import { cn } from "@/lib/utils";
@@ -142,7 +148,11 @@ function formatWeekTitle(weekStart: Date): string {
   return `${weekStart.getMonth() + 1}月${weekStart.getDate()}日 – ${end.getMonth() + 1}月${end.getDate()}日`;
 }
 
-export function CalendarPage() {
+export function CalendarPage({
+  calendarRemoteReadPilot = false,
+}: {
+  calendarRemoteReadPilot?: boolean;
+}) {
   const { organization, currentLocation, locations, membership } =
     useOrganization();
   const revision = useSyncExternalStore(
@@ -184,16 +194,33 @@ export function CalendarPage() {
       ? staffRoster
       : staffRoster.filter((s) => staffFilter.includes(s.userId));
 
-  const appointments = listAppointments({
-    organizationId: organization.id,
-    locationId,
-  });
-
   const weekStart = startOfWeek(anchor);
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const rangeFrom = view === "week" ? weekStart : startOfDayLocal(anchor);
   const rangeTo =
     view === "week" ? addDays(weekStart, 6) : startOfDayLocal(anchor);
+  const remoteRange = calendarViewRangeUtc({
+    view,
+    dayYmd: formatYmd(anchor),
+    weekStartYmd: formatYmd(weekStart),
+  });
+  const remoteState = useCalendarRemoteAppointments({
+    organizationId: organization.id,
+    locationAppId: locationId,
+    startsAt: remoteRange.startsAt,
+    endsAt: remoteRange.endsAt,
+    enabled: calendarRemoteReadPilot,
+  });
+  const localAppointments = calendarRemoteReadPilot
+    ? []
+    : listAppointments({
+        organizationId: organization.id,
+        locationId,
+      });
+  const appointments =
+    calendarRemoteReadPilot && remoteState.status === "data"
+      ? remoteState.value
+      : localAppointments;
   const scheduleDay = view === "day" ? anchor : (now ?? anchor);
   const rangeFromYmd = formatYmd(rangeFrom);
   const rangeToYmd = formatYmd(rangeTo);
@@ -241,6 +268,7 @@ export function CalendarPage() {
   }
 
   function openCreate(nextPrefill?: CreatePrefill) {
+    if (calendarRemoteReadPilot) return;
     setSelectedId(null);
     setEditing(false);
     setPrefill(nextPrefill ?? null);
@@ -253,6 +281,7 @@ export function CalendarPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (calendarRemoteReadPilot) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("create") !== "1") return;
     const nextPrefill: CreatePrefill = {
@@ -273,7 +302,7 @@ export function CalendarPage() {
       setPrefill(nextPrefill);
       setCreating(true);
     });
-  }, [organization.id]);
+  }, [organization.id, calendarRemoteReadPilot]);
 
   function toggleStaffFilter(staffId: string) {
     const next = staffFilter.includes(staffId)
@@ -301,9 +330,14 @@ export function CalendarPage() {
       view,
       anchor,
       weekStart,
+      useTaipeiTime: calendarRemoteReadPilot,
     })
       ? resolved
       : null;
+  const knownStaffIds = new Set(staffRoster.map((s) => s.userId));
+  const unmappedStaffCount = appointments.filter(
+    (item) => item.staffId && !knownStaffIds.has(item.staffId),
+  ).length;
 
   const mobileStaff =
     staffRoster.find((s) => s.userId === mobileStaffId) ??
@@ -404,7 +438,15 @@ export function CalendarPage() {
               CALENDAR_ROSE_HOVER,
             )}
             onClick={() => openCreate()}
-            aria-label="新增預約"
+            disabled={calendarRemoteReadPilot}
+            aria-label={
+              calendarRemoteReadPilot
+                ? "新增預約（行事曆遠端讀取試點為唯讀）"
+                : "新增預約"
+            }
+            title={
+              calendarRemoteReadPilot ? "行事曆遠端讀取試點為唯讀" : undefined
+            }
           >
             <Plus className="h-3.5 w-3.5" />
             新增預約
@@ -428,6 +470,24 @@ export function CalendarPage() {
           role="status"
         >
           此時段不可預約 · {blockedMsg}
+        </p>
+      ) : null}
+
+      {calendarRemoteReadPilot && remoteState.status === "loading" ? (
+        <p className="text-[13px] text-secondary-text" role="status">
+          讀取預約中…
+        </p>
+      ) : null}
+      {calendarRemoteReadPilot && remoteState.status === "error" ? (
+        <CalendarRemoteReadErrorFallback message={remoteState.message} />
+      ) : null}
+      {calendarRemoteReadPilot && unmappedStaffCount > 0 ? (
+        <p
+          data-calendar-unmapped-staff
+          className="rounded-2xl border border-[#E8DDD4] bg-[#F8F3EE] px-4 py-2.5 text-sm text-[#B07A4A]"
+          role="status"
+        >
+          {unmappedStaffCount} 筆預約無法對應美容師欄位
         </p>
       ) : null}
 
@@ -469,25 +529,32 @@ export function CalendarPage() {
             </select>
           </label>
         ) : null}
-        <MobileStaffDayView
-          day={mobileDay}
-          organizationId={organization.id}
-          locationId={locationId}
-          staff={mobileStaff}
-          appointments={filteredAppointments}
-          onSelect={selectAppointment}
-          onEmptySlot={(staffId, hm) =>
-            openCreate({
-              staffId,
-              dateYmd: formatYmd(mobileDay),
-              startHm: hm,
-            })
-          }
-          onBlockedSlot={setBlockedMsg}
-        />
+        <CalendarRemoteReadErrorBoundary>
+          <MobileStaffDayView
+            day={mobileDay}
+            organizationId={organization.id}
+            locationId={locationId}
+            staff={mobileStaff}
+            appointments={filteredAppointments}
+            useTaipeiTime={calendarRemoteReadPilot}
+            onSelect={selectAppointment}
+            onEmptySlot={(staffId, hm) =>
+              openCreate({
+                staffId,
+                dateYmd: formatYmd(mobileDay),
+                startHm: hm,
+              })
+            }
+            onBlockedSlot={setBlockedMsg}
+          />
+        </CalendarRemoteReadErrorBoundary>
         <Button
           fullWidth
           className="min-h-11 sticky bottom-4"
+          disabled={calendarRemoteReadPilot}
+          title={
+            calendarRemoteReadPilot ? "行事曆遠端讀取試點為唯讀" : undefined
+          }
           onClick={() =>
             openCreate({
               staffId: mobileStaff?.userId,
@@ -506,31 +573,35 @@ export function CalendarPage() {
         className="hidden min-h-0 min-[720px]:flex min-[720px]:flex-1 min-[720px]:gap-4"
       >
         <div data-calendar-grid className="min-h-0 min-w-0 flex-1">
-          {view === "day" ? (
-            <StaffDayGrid
-              day={anchor}
-              organizationId={organization.id}
-              locationId={locationId}
-              staff={visibleStaff}
-              appointments={filteredAppointments}
-              onSelect={selectAppointment}
-              onEmptySlot={(staffId, hm) =>
-                openCreate({
-                  staffId,
-                  dateYmd: formatYmd(anchor),
-                  startHm: hm,
-                })
-              }
-              onBlockedSlot={setBlockedMsg}
-            />
-          ) : (
-            <WeekGrid
-              days={weekDays}
-              appointments={filteredAppointments}
-              onSelect={selectAppointment}
-              now={now}
-            />
-          )}
+          <CalendarRemoteReadErrorBoundary>
+            {view === "day" ? (
+              <StaffDayGrid
+                day={anchor}
+                organizationId={organization.id}
+                locationId={locationId}
+                staff={visibleStaff}
+                appointments={filteredAppointments}
+                useTaipeiTime={calendarRemoteReadPilot}
+                onSelect={selectAppointment}
+                onEmptySlot={(staffId, hm) =>
+                  openCreate({
+                    staffId,
+                    dateYmd: formatYmd(anchor),
+                    startHm: hm,
+                  })
+                }
+                onBlockedSlot={setBlockedMsg}
+              />
+            ) : (
+              <WeekGrid
+                days={weekDays}
+                appointments={filteredAppointments}
+                useTaipeiTime={calendarRemoteReadPilot}
+                onSelect={selectAppointment}
+                now={now}
+              />
+            )}
+          </CalendarRemoteReadErrorBoundary>
         </div>
         {showQuickView && selected ? (
           <AppointmentQuickView
@@ -539,10 +610,19 @@ export function CalendarPage() {
               locations.find((l) => l.id === selected.locationId)?.name ??
               currentLocation?.name
             }
+            readOnly={calendarRemoteReadPilot}
+            useTaipeiTime={calendarRemoteReadPilot}
             onClose={() => setSelectedId(null)}
-            onEdit={() => setEditing(true)}
-            onRequestCancel={() => setCancelTarget(selected)}
+            onEdit={() => {
+              if (calendarRemoteReadPilot) return;
+              setEditing(true);
+            }}
+            onRequestCancel={() => {
+              if (calendarRemoteReadPilot) return;
+              setCancelTarget(selected);
+            }}
             onTransition={(status) => {
+              if (calendarRemoteReadPilot) return;
               const next = transitionAppointmentStatus(
                 organization.id,
                 selected.id,
@@ -555,7 +635,7 @@ export function CalendarPage() {
         ) : null}
       </div>
 
-      {creating || editing ? (
+      {!calendarRemoteReadPilot && (creating || editing) ? (
         <AppointmentEditor
           organizationId={organization.id}
           locationId={locationId}
@@ -585,10 +665,19 @@ export function CalendarPage() {
               locations.find((l) => l.id === selected.locationId)?.name ??
               currentLocation?.name
             }
+            readOnly={calendarRemoteReadPilot}
+            useTaipeiTime={calendarRemoteReadPilot}
             onClose={() => setSelectedId(null)}
-            onEdit={() => setEditing(true)}
-            onRequestCancel={() => setCancelTarget(selected)}
+            onEdit={() => {
+              if (calendarRemoteReadPilot) return;
+              setEditing(true);
+            }}
+            onRequestCancel={() => {
+              if (calendarRemoteReadPilot) return;
+              setCancelTarget(selected);
+            }}
             onTransition={(status) => {
+              if (calendarRemoteReadPilot) return;
               const next = transitionAppointmentStatus(
                 organization.id,
                 selected.id,
@@ -601,7 +690,7 @@ export function CalendarPage() {
         </div>
       ) : null}
 
-      {cancelTarget ? (
+      {!calendarRemoteReadPilot && cancelTarget ? (
         <CancelAppointmentDialog
           item={cancelTarget}
           onClose={() => setCancelTarget(null)}

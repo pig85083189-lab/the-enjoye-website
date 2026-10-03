@@ -8,6 +8,7 @@
 
 import type { AppointmentListQuery, CreateAppointmentInput } from "@/lib/appointments/store";
 import { durationBetween, type ScheduleAppointment } from "@/lib/appointments/domain";
+import { isAuthUuid } from "@/lib/staff-auth/staff-id";
 import { newId } from "@/lib/repositories/storage";
 import {
   assertNotDemoResiduePayload,
@@ -55,6 +56,47 @@ export class AppointmentRemoteAdapter {
     const row = await this.store.getAppointmentByAppId(orgDbId, appointmentId);
     if (!row) return undefined;
     return this.toDomain(organizationId, row);
+  }
+
+  /**
+   * Location + overlapping timestamptz window. Maps loc-* app id → location UUID
+   * and filters on location_id / starts_at / ends_at when the store supports it.
+   */
+  async listByLocationAndRange(input: {
+    organizationId: string;
+    locationAppId: string;
+    startsAt: string;
+    endsAt: string;
+  }): Promise<ScheduleAppointment[]> {
+    const orgDbId = this.mapper.resolveOrganizationDbId(input.organizationId);
+    const locationDbId = this.mapper.resolveLocationDbId(
+      input.organizationId,
+      input.locationAppId,
+    );
+    const scoped = this.store as AppointmentTableStore & {
+      listAppointmentsByLocationAndRange?(args: {
+        organizationDbId: string;
+        locationDbId: string;
+        startsAt: string;
+        endsAt: string;
+      }): Promise<DbAppointment[]>;
+    };
+    const rows = scoped.listAppointmentsByLocationAndRange
+      ? await scoped.listAppointmentsByLocationAndRange({
+          organizationDbId: orgDbId,
+          locationDbId,
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
+        })
+      : (await this.store.listAppointments(orgDbId)).filter((row) => {
+          if (row.location_id !== locationDbId) return false;
+          const start = new Date(row.starts_at).getTime();
+          const end = new Date(row.ends_at).getTime();
+          const from = new Date(input.startsAt).getTime();
+          const to = new Date(input.endsAt).getTime();
+          return start < to && end > from;
+        });
+    return rows.map((row) => this.toDomain(input.organizationId, row));
   }
 
   /**
@@ -170,7 +212,16 @@ export class AppointmentRemoteAdapter {
       row,
     );
     if (domain.staffId) {
-      domain.staffId = this.mapper.requireOperationalStaffId(organizationAppId, domain.staffId);
+      try {
+        domain.staffId = this.mapper.requireOperationalStaffId(
+          organizationAppId,
+          domain.staffId,
+        );
+      } catch {
+        if (isAuthUuid(domain.staffId)) {
+          domain.staffId = "";
+        }
+      }
     }
     return domain;
   }

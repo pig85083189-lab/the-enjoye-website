@@ -3,6 +3,7 @@ import {
   APPOINTMENT_DISPLAY_TIMEZONE,
   addMinutesToIso,
   formatTaipeiAppointmentDisplay,
+  parseAppointmentTimestamptz,
   taipeiLocalToUtcIso,
   utcIsoToTaipeiLocal,
 } from "./appointment-time";
@@ -32,5 +33,18 @@ describe("Phase 1C-5A Taipei appointment time mapping", () => {
       time: "10:00–11:40",
     });
     expect(formatTaipeiAppointmentDisplay(startAt, endAt).time).not.toMatch(/02:00|03:40/);
+  });
+
+  it("parses PostgREST timestamptz shapes Z, +00:00, and microseconds", () => {
+    const shapes = [
+      "2026-10-09T02:00:00Z",
+      "2026-10-09T02:00:00+00:00",
+      "2026-10-09T02:00:00.000Z",
+      "2026-10-09T02:00:00.123456+00:00",
+    ];
+    for (const iso of shapes) {
+      expect(utcIsoToTaipeiLocal(iso)).toEqual({ dateYmd: "2026-10-09", hm: "10:00" });
+      expect(parseAppointmentTimestamptz(iso).getUTCHours()).toBe(2);
+    }
   });
 });

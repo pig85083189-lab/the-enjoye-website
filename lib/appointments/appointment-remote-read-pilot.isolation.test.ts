@@ -38,19 +38,42 @@ const FOREIGN_SVC_DB = "66666666-6666-4666-8666-666666666666";
 
 type Row = Record<string, unknown>;
 
+type FilterOp = "eq" | "in" | "gte" | "lte" | "gt" | "lt";
+
 class FakeQuery implements IdentityQueryBuilder {
   constructor(
     private readonly rows: Row[],
-    private readonly filters: Array<{ column: string; value?: string; values?: string[] }> = [],
+    private readonly filters: Array<{
+      column: string;
+      value?: string;
+      values?: string[];
+      op?: FilterOp;
+    }> = [],
     private readonly error: { message: string } | null = null,
   ) {}
 
   eq(column: string, value: string): IdentityQueryBuilder {
-    return new FakeQuery(this.rows, [...this.filters, { column, value }], this.error);
+    return new FakeQuery(this.rows, [...this.filters, { column, value, op: "eq" }], this.error);
   }
 
   in(column: string, values: string[]): IdentityQueryBuilder {
-    return new FakeQuery(this.rows, [...this.filters, { column, values }], this.error);
+    return new FakeQuery(this.rows, [...this.filters, { column, values, op: "in" }], this.error);
+  }
+
+  gte(column: string, value: string): IdentityQueryBuilder {
+    return new FakeQuery(this.rows, [...this.filters, { column, value, op: "gte" }], this.error);
+  }
+
+  lte(column: string, value: string): IdentityQueryBuilder {
+    return new FakeQuery(this.rows, [...this.filters, { column, value, op: "lte" }], this.error);
+  }
+
+  gt(column: string, value: string): IdentityQueryBuilder {
+    return new FakeQuery(this.rows, [...this.filters, { column, value, op: "gt" }], this.error);
+  }
+
+  lt(column: string, value: string): IdentityQueryBuilder {
+    return new FakeQuery(this.rows, [...this.filters, { column, value, op: "lt" }], this.error);
   }
 
   then<TResult1 = IdentityQueryResult, TResult2 = never>(
@@ -61,14 +84,34 @@ class FakeQuery implements IdentityQueryBuilder {
       return Promise.resolve({ data: null, error: this.error }).then(onfulfilled, onrejected);
     }
     const data = this.rows.filter((row) =>
-      this.filters.every((filter) => {
-        const current = row[filter.column];
-        if (filter.values) return filter.values.includes(String(current));
-        return current === filter.value;
-      }),
+      this.filters.every((filter) => matchesFilter(row[filter.column], filter)),
     );
     return Promise.resolve({ data, error: null }).then(onfulfilled, onrejected);
   }
+}
+
+function matchesFilter(
+  current: unknown,
+  filter: { column: string; value?: string; values?: string[]; op?: FilterOp },
+): boolean {
+  if (filter.values) return filter.values.includes(String(current));
+  if (filter.value == null) return true;
+  const op = filter.op ?? "eq";
+  if (op === "eq") return String(current) === filter.value;
+  const left = Date.parse(String(current));
+  const right = Date.parse(filter.value);
+  if (!Number.isNaN(left) && !Number.isNaN(right)) {
+    if (op === "gte") return left >= right;
+    if (op === "lte") return left <= right;
+    if (op === "gt") return left > right;
+    return left < right;
+  }
+  const a = String(current);
+  const b = filter.value;
+  if (op === "gte") return a >= b;
+  if (op === "lte") return a <= b;
+  if (op === "gt") return a > b;
+  return a < b;
 }
 
 function fakeClient(input: {
@@ -435,7 +478,6 @@ describe("Phase 1C-5C appointment remote read pilot", () => {
     );
     const surfaces = [
       "features/today/TodayDashboard.tsx",
-      "features/calendar/CalendarPage.tsx",
       "features/treatments/TreatmentPageClient.tsx",
       "features/treatments/TreatmentsListPageClient.tsx",
       "features/checkout/CheckoutPageClient.tsx",
@@ -445,9 +487,17 @@ describe("Phase 1C-5C appointment remote read pilot", () => {
     for (const file of surfaces) {
       const source = readFileSync(path.join(process.cwd(), file), "utf8");
       expect(source).not.toMatch(
-        /listRemotePilotAppointmentsByCustomer|useCustomerRemoteAppointments|AppointmentRemoteAdapter/,
+        /listRemotePilotAppointmentsByCustomer|useCustomerRemoteAppointments|AppointmentRemoteAdapter|listRemoteCalendarAppointmentsByLocationAndRange/,
       );
       expect(source).toMatch(/listAppointments|listTodayAppointments|appointment-store/);
     }
+    const calendar = readFileSync(
+      path.join(process.cwd(), "features/calendar/CalendarPage.tsx"),
+      "utf8",
+    );
+    expect(calendar).not.toMatch(
+      /listRemotePilotAppointmentsByCustomer|useCustomerRemoteAppointments|AppointmentRemoteAdapter/,
+    );
+    expect(calendar).toMatch(/listAppointments|useCalendarRemoteAppointments/);
   });
 });
