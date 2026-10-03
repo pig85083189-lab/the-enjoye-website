@@ -30,6 +30,9 @@ describe("Phase 1C-6B.1 appointment write command", () => {
     expect(range.durationMinutes).toBe(100);
     const browserLocal = combineLocalDateTime("2026-10-09", "10:00").toISOString();
     expect(range.startsAt).not.toBe(browserLocal);
+    const afternoon = appointmentWriteRangeFromTaipei("2026-10-09", "13:00", 100);
+    expect(afternoon.startsAt).toBe("2026-10-09T05:00:00.000Z");
+    expect(afternoon.endsAt).toBe("2026-10-09T06:40:00.000Z");
   });
 
   it("fails closed on invalid local input", () => {

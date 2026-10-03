@@ -338,12 +338,13 @@ describe("Phase 1C-6B.1 appointment remote write foundation", () => {
       path.join(process.cwd(), "lib/appointments/appointment-write-create.ts"),
       "utf8",
     );
-    expect(page).toMatch(/calendar-remote-read-flag/);
+    expect(page).toMatch(/calendar-remote-read-flag|appointment-remote-write-flag/);
     expect(page).not.toMatch(/appointment-remote-write-pilot|AuthenticatedAppointmentTableStore|AppointmentRemoteAdapter/);
     expect(calendar).not.toMatch(
-      /createAuthenticatedAppointmentWritePersistence|runAuthenticatedAppointmentWriteCreate|appointment-remote-write-pilot/,
+      /createAuthenticatedAppointmentWritePersistence|AuthenticatedAppointmentTableStore|AppointmentRemoteAdapter/,
     );
     expect(calendar).toMatch(/createAppointment/);
+    expect(calendar).toMatch(/use-calendar-remote-write|submitCalendarRemoteAppointmentCreate/);
     expect(flag).not.toMatch(
       /AppointmentRemoteAdapter|AuthenticatedAppointmentTableStore|loadAuthenticatedIdentityCatalog|createServiceRoleClient/,
     );

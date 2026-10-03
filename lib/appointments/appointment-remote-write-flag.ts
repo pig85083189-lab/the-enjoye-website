@@ -5,10 +5,9 @@
  * The write factory pulls the adapter / table-store graph; sharing that graph
  * with the Calendar RSC page would recreate the 1C-5C client global-error.
  *
- * Design only for Phase 1C-6B.1. Do not set the env.
- * Production is always off, even if the env is present.
+ * Preview-only Owner Calendar create. Production is always off.
  * Independent of BEAUTY_OS_PERSISTENCE / BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
- * Requires the Calendar remote-read foundation (intended create surface).
+ * Requires the Calendar remote-read foundation.
  */
 
 import { isCalendarRemoteReadPilotEnabled } from "./calendar-remote-read-flag";

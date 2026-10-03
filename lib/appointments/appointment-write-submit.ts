@@ -1,6 +1,6 @@
 /**
- * Reusable create submission state for a future Calendar Save button.
- * Not wired to live Calendar in 1C-6B.1.
+ * Reusable create submission state for Calendar Save.
+ * Authoritative against double-click. Never regenerates the app id.
  */
 
 export type AppointmentWriteSubmitPhase =

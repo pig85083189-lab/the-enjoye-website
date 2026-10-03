@@ -20,6 +20,10 @@ import {
 } from "@/features/calendar/CalendarViews";
 import { useCalendarRemoteAppointments } from "@/features/calendar/use-calendar-remote-read";
 import {
+  submitCalendarRemoteAppointmentCreate,
+  useCalendarRemoteWrite,
+} from "@/features/calendar/use-calendar-remote-write";
+import {
   addDays,
   CALENDAR_ROSE_FILL,
   CALENDAR_ROSE_HOVER,
@@ -31,6 +35,14 @@ import {
   subscribeAppointments,
 } from "@/lib/appointment-store";
 import { DEFAULT_SERVICE_DURATION_MINUTES } from "@/lib/appointments/calendar-config";
+import { allocateAppointmentWriteAppId } from "@/lib/appointments/appointment-write-command";
+import { resolveCalendarCreateSurface } from "@/lib/appointments/appointment-write-surface";
+import {
+  AppointmentCreateSubmission,
+  appointmentWriteSaveDisabled,
+} from "@/lib/appointments/appointment-write-submit";
+import { appointmentWriteRangeFromTaipei } from "@/lib/appointments/appointment-write-time";
+import { appointmentWriteUserMessage } from "@/lib/appointments/appointment-write-ui-error";
 import {
   addMinutes,
   combineLocalDateTime,
@@ -74,6 +86,7 @@ import { localCustomerRepository } from "@/lib/repositories/local-customer-repos
 import { getServicesForOrganization } from "@/data/mock-services";
 import { selectableServicesForBooking } from "@/lib/services/service-catalog-derived";
 import { calendarViewRangeUtc } from "@/lib/calendar/calendar-appointment-time";
+import { utcIsoToTaipeiLocal } from "@/lib/persistence/appointment-time";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { useClientNow } from "@/lib/use-client-now";
 import { cn } from "@/lib/utils";
@@ -150,8 +163,10 @@ function formatWeekTitle(weekStart: Date): string {
 
 export function CalendarPage({
   calendarRemoteReadPilot = false,
+  appointmentRemoteWritePilot = false,
 }: {
   calendarRemoteReadPilot?: boolean;
+  appointmentRemoteWritePilot?: boolean;
 }) {
   const { organization, currentLocation, locations, membership } =
     useOrganization();
@@ -186,6 +201,12 @@ export function CalendarPage({
     null,
   );
   const [blockedMsg, setBlockedMsg] = useState<string | null>(null);
+  const remoteWrite = useCalendarRemoteWrite(appointmentRemoteWritePilot);
+  const createSurface = resolveCalendarCreateSurface({
+    calendarRemoteReadPilot,
+    appointmentRemoteWritePilot,
+    authenticatedOwner: remoteWrite.canCreate,
+  });
 
   const locationId = currentLocation?.id ?? locations[0]?.id ?? "";
   const staffRoster = listBookableStaff(organization.id, locationId);
@@ -268,7 +289,7 @@ export function CalendarPage({
   }
 
   function openCreate(nextPrefill?: CreatePrefill) {
-    if (calendarRemoteReadPilot) return;
+    if (!createSurface.createEnabled) return;
     setSelectedId(null);
     setEditing(false);
     setPrefill(nextPrefill ?? null);
@@ -281,7 +302,7 @@ export function CalendarPage({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (calendarRemoteReadPilot) return;
+    if (!createSurface.createEnabled) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("create") !== "1") return;
     const nextPrefill: CreatePrefill = {
@@ -302,7 +323,7 @@ export function CalendarPage({
       setPrefill(nextPrefill);
       setCreating(true);
     });
-  }, [organization.id, calendarRemoteReadPilot]);
+  }, [organization.id, createSurface.createEnabled]);
 
   function toggleStaffFilter(staffId: string) {
     const next = staffFilter.includes(staffId)
@@ -438,14 +459,24 @@ export function CalendarPage({
               CALENDAR_ROSE_HOVER,
             )}
             onClick={() => openCreate()}
-            disabled={calendarRemoteReadPilot}
+            disabled={!createSurface.createEnabled}
             aria-label={
-              calendarRemoteReadPilot
-                ? "新增預約（行事曆遠端讀取試點為唯讀）"
-                : "新增預約"
+              createSurface.createEnabled
+                ? "新增預約"
+                : appointmentRemoteWritePilot && remoteWrite.status === "denied"
+                  ? "新增預約（僅店主可建立遠端預約）"
+                  : calendarRemoteReadPilot
+                    ? "新增預約（行事曆遠端讀取試點為唯讀）"
+                    : "新增預約"
             }
             title={
-              calendarRemoteReadPilot ? "行事曆遠端讀取試點為唯讀" : undefined
+              createSurface.createEnabled
+                ? undefined
+                : appointmentRemoteWritePilot && remoteWrite.status === "denied"
+                  ? "僅店主可建立遠端預約"
+                  : calendarRemoteReadPilot
+                    ? "行事曆遠端讀取試點為唯讀"
+                    : undefined
             }
           >
             <Plus className="h-3.5 w-3.5" />
@@ -480,6 +511,20 @@ export function CalendarPage({
       ) : null}
       {calendarRemoteReadPilot && remoteState.status === "error" ? (
         <CalendarRemoteReadErrorFallback message={remoteState.message} />
+      ) : null}
+      {appointmentRemoteWritePilot && remoteWrite.status === "loading" ? (
+        <p className="text-[13px] text-secondary-text" role="status">
+          準備遠端建立…
+        </p>
+      ) : null}
+      {appointmentRemoteWritePilot &&
+      (remoteWrite.status === "denied" || remoteWrite.status === "error") ? (
+        <p
+          className="rounded-2xl border border-[#E8DDD4] bg-[#F8F3EE] px-4 py-2.5 text-sm text-[#B07A4A]"
+          role="status"
+        >
+          {remoteWrite.message}
+        </p>
       ) : null}
       {calendarRemoteReadPilot && unmappedStaffCount > 0 ? (
         <p
@@ -551,9 +596,15 @@ export function CalendarPage({
         <Button
           fullWidth
           className="min-h-11 sticky bottom-4"
-          disabled={calendarRemoteReadPilot}
+          disabled={!createSurface.createEnabled}
           title={
-            calendarRemoteReadPilot ? "行事曆遠端讀取試點為唯讀" : undefined
+            createSurface.createEnabled
+              ? undefined
+              : appointmentRemoteWritePilot && remoteWrite.status === "denied"
+                ? "僅店主可建立遠端預約"
+                : calendarRemoteReadPilot
+                  ? "行事曆遠端讀取試點為唯讀"
+                  : undefined
           }
           onClick={() =>
             openCreate({
@@ -635,14 +686,24 @@ export function CalendarPage({
         ) : null}
       </div>
 
-      {!calendarRemoteReadPilot && (creating || editing) ? (
+      {((createSurface.remoteCreate && creating) ||
+        (createSurface.localCreate && (creating || editing))) ? (
         <AppointmentEditor
           organizationId={organization.id}
           locationId={locationId}
           locations={locations.map((l) => ({ id: l.id, name: l.name }))}
-          initial={editing ? selected : null}
+          initial={createSurface.localCreate && editing ? selected : null}
           prefill={creating ? prefill : null}
           actorId={membership?.userId}
+          remoteCreate={
+            createSurface.remoteCreate && remoteWrite.status === "ready"
+              ? {
+                  customers: remoteWrite.catalog.customers,
+                  services: remoteWrite.catalog.services,
+                  staff: remoteWrite.catalog.staff,
+                }
+              : undefined
+          }
           onClose={() => {
             setCreating(false);
             setEditing(false);
@@ -813,6 +874,7 @@ function AppointmentEditor({
   initial,
   prefill,
   actorId,
+  remoteCreate,
   onClose,
   onSaved,
 }: {
@@ -822,18 +884,42 @@ function AppointmentEditor({
   initial: ScheduleAppointment | null;
   prefill: CreatePrefill | null;
   actorId?: string;
+  remoteCreate?: {
+    customers: Array<{ id: string; name: string }>;
+    services: Array<{ id: string; name: string; durationMinutes: number }>;
+    staff: Array<{ id: string; name: string }>;
+  };
   onClose: () => void;
   onSaved: () => void;
 }) {
   const dialogRef = useDialogA11y(onClose);
-  const customers = localCustomerRepository.list({ organizationId });
-  const catalog = getServicesForOrganization(organizationId);
-  const services = selectableServicesForBooking(
-    catalog,
-    initial?.serviceId ?? prefill?.serviceId,
+  const [, setRemoteTick] = useState(0);
+  const remoteSubmissionRef = useRef<AppointmentCreateSubmission<unknown> | null>(
+    null,
   );
+  if (remoteCreate && !remoteSubmissionRef.current) {
+    remoteSubmissionRef.current = new AppointmentCreateSubmission(
+      allocateAppointmentWriteAppId(),
+    );
+  }
+  const remoteSubmission = remoteSubmissionRef.current;
+  const customers = remoteCreate
+    ? remoteCreate.customers.map((c) => ({
+        id: c.id,
+        name: c.name,
+        phone: "",
+      }))
+    : localCustomerRepository.list({ organizationId });
+  const services = remoteCreate
+    ? remoteCreate.services
+    : selectableServicesForBooking(
+        getServicesForOrganization(organizationId),
+        initial?.serviceId ?? prefill?.serviceId,
+      );
   const [loc, setLoc] = useState(initial?.locationId ?? locationId);
-  const staff = staffOptionsForLocation(organizationId, loc);
+  const staff = remoteCreate
+    ? remoteCreate.staff.map((s) => ({ userId: s.id, displayName: s.name }))
+    : staffOptionsForLocation(organizationId, loc);
   const [customerId, setCustomerId] = useState(
     initial?.customerId ?? prefill?.customerId ?? "",
   );
@@ -858,12 +944,13 @@ function AppointmentEditor({
     if (initial) return formatHm(new Date(initial.endAt));
     const startHm = prefill?.startHm ?? "14:00";
     const dateYmd = prefill?.dateYmd ?? formatYmd(new Date());
-    return formatHm(
-      addMinutes(
-        combineLocalDateTime(dateYmd, startHm),
-        service?.durationMinutes ?? DEFAULT_SERVICE_DURATION_MINUTES,
-      ),
-    );
+    const minutes = service?.durationMinutes ?? DEFAULT_SERVICE_DURATION_MINUTES;
+    if (remoteCreate) {
+      return utcIsoToTaipeiLocal(
+        appointmentWriteRangeFromTaipei(dateYmd, startHm, minutes).endsAt,
+      ).hm;
+    }
+    return formatHm(addMinutes(combineLocalDateTime(dateYmd, startHm), minutes));
   });
   const [customerNote, setCustomerNote] = useState(initial?.customerNote ?? "");
   const [internalNote, setInternalNote] = useState(initial?.internalNote ?? "");
@@ -890,6 +977,7 @@ function AppointmentEditor({
   );
 
   const availability = useMemo(() => {
+    if (remoteCreate) return null;
     if (!staffId || !loc || !date || !start || !end) return null;
     if (!(new Date(endAtIso) > new Date(startAtIso))) return null;
     return getStaffAvailability({
@@ -916,6 +1004,7 @@ function AppointmentEditor({
   ]);
 
   const suggested = useMemo(() => {
+    if (remoteCreate) return [];
     if (!loc || !date || !start || !end) return [];
     if (!(new Date(endAtIso) > new Date(startAtIso))) return [];
     return findAvailableStaff({
@@ -947,6 +1036,11 @@ function AppointmentEditor({
     const svc = services.find((s) => s.id === nextServiceId);
     const minutes =
       svc?.durationMinutes ?? DEFAULT_SERVICE_DURATION_MINUTES;
+    if (remoteCreate) {
+      const range = appointmentWriteRangeFromTaipei(nextDate, nextStart, minutes);
+      setEnd(utcIsoToTaipeiLocal(range.endsAt).hm);
+      return;
+    }
     setEnd(
       formatHm(
         addMinutes(combineLocalDateTime(nextDate, nextStart), minutes),
@@ -954,10 +1048,46 @@ function AppointmentEditor({
     );
   }
 
-  function save(force = false) {
+  async function save(force = false) {
     setError("");
     if (!customerId || !serviceId || !staffId || !loc || !date || !start || !end) {
       setError("請完整填寫顧客、服務、美容師、分店與時間");
+      return;
+    }
+    if (remoteCreate) {
+      if (!remoteSubmission) {
+        setError(appointmentWriteUserMessage(new Error("missing submission")));
+        return;
+      }
+      if (appointmentWriteSaveDisabled(remoteSubmission.phase)) {
+        return;
+      }
+      const durationMinutes =
+        services.find((s) => s.id === serviceId)?.durationMinutes ??
+        DEFAULT_SERVICE_DURATION_MINUTES;
+      const result = await remoteSubmission.submit(async (appointmentId) => {
+        return submitCalendarRemoteAppointmentCreate({
+          organizationId,
+          locationId: loc,
+          customerId,
+          serviceId,
+          staffId,
+          appointmentId,
+          dateYmd: date,
+          startHm: start,
+          durationMinutes,
+          customerNote: customerNote || undefined,
+          internalNote: internalNote || undefined,
+        });
+      });
+      setRemoteTick((n) => n + 1);
+      if (result === "success") {
+        onSaved();
+        return;
+      }
+      if (result === "error") {
+        setError(appointmentWriteUserMessage(remoteSubmission.error));
+      }
       return;
     }
     if (!(new Date(endAtIso) > new Date(startAtIso))) {
@@ -1012,7 +1142,7 @@ function AppointmentEditor({
         className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto"
       >
         <h2 className="text-lg font-semibold text-text">
-          {initial ? "編輯預約" : "新增預約"}
+          {remoteCreate ? "新增預約" : initial ? "編輯預約" : "新增預約"}
         </h2>
         <div className="mt-4 space-y-3">
           <label className="block text-sm text-secondary-text">
@@ -1020,6 +1150,7 @@ function AppointmentEditor({
             <select
               className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
               value={loc}
+              disabled={Boolean(remoteCreate)}
               onChange={(e) => setLoc(e.target.value)}
             >
               {locations.map((l) => (
@@ -1054,12 +1185,14 @@ function AppointmentEditor({
               ))}
             </select>
           </label>
-          <Link
-            href="/staff/customers/new"
-            className="inline-flex min-h-11 items-center text-sm text-primary"
-          >
-            建立新客戶
-          </Link>
+          {remoteCreate ? null : (
+            <Link
+              href="/staff/customers/new"
+              className="inline-flex min-h-11 items-center text-sm text-primary"
+            >
+              建立新客戶
+            </Link>
+          )}
           <label className="block text-sm text-secondary-text">
             服務
             <select
@@ -1141,6 +1274,7 @@ function AppointmentEditor({
                 step={1800}
                 className="mt-1 min-h-11 w-full rounded-2xl border border-border px-2"
                 value={end}
+                disabled={Boolean(remoteCreate)}
                 onChange={(e) => setEnd(e.target.value)}
               />
             </label>
@@ -1186,18 +1320,22 @@ function AppointmentEditor({
           <Button variant="outline" className="min-h-11" onClick={onClose}>
             取消
           </Button>
-          {availability && !availability.available ? (
+          {availability && !availability.available && !remoteCreate ? (
             <Button
               className="min-h-11"
               onClick={() => {
                 setAllowOverride(true);
-                save(true);
+                void save(true);
               }}
             >
               仍要建立預約
             </Button>
           ) : (
-            <Button className="min-h-11" onClick={() => save(false)}>
+            <Button
+              className="min-h-11"
+              disabled={Boolean(remoteSubmission && remoteSubmission.saveDisabled)}
+              onClick={() => void save(false)}
+            >
               儲存
             </Button>
           )}

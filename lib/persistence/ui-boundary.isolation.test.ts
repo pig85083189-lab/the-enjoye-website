@@ -456,11 +456,11 @@ describe("Phase 1C-6B.1 appointment remote write UI boundary", () => {
       path.join(ROOT, "lib/appointments/appointment-remote-write-flag.ts"),
       "utf8",
     );
-    expect(page).toMatch(/isCalendarRemoteReadPilotEnabled/);
+    expect(page).toMatch(/isCalendarRemoteReadPilotEnabled|isAppointmentRemoteWritePilotEnabled/);
     expect(page).not.toMatch(/appointment-remote-write-pilot|AuthenticatedAppointmentTableStore|AppointmentRemoteAdapter/);
     expect(page).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
     expect(calendar).not.toMatch(
-      /createAuthenticatedAppointmentWritePersistence|runAuthenticatedAppointmentWriteCreate|BEAUTY_OS_APPOINTMENT_REMOTE_WRITE_PILOT/,
+      /createAuthenticatedAppointmentWritePersistence|AuthenticatedAppointmentTableStore|AppointmentRemoteAdapter/,
     );
     expect(flag).not.toMatch(
       /AppointmentRemoteAdapter|AuthenticatedAppointmentTableStore|loadAuthenticatedIdentityCatalog|IdentitySupabaseClient/,

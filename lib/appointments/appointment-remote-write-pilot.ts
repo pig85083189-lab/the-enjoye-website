@@ -5,7 +5,7 @@
  * appointment-remote-write-flag.ts so the adapter graph stays out of RSC.
  *
  * Does not enable BEAUTY_OS_PERSISTENCE or BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
- * Does not wire Calendar. Does not write unless explicitly called.
+ * Calendar create is the only live caller when the Preview write flag is on.
  * No service role. No localStorage fallback.
  */
 
