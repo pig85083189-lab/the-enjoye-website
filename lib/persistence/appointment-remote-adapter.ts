@@ -7,7 +7,15 @@
  */
 
 import type { AppointmentListQuery, CreateAppointmentInput } from "@/lib/appointments/store";
-import { durationBetween, type ScheduleAppointment } from "@/lib/appointments/domain";
+import { durationBetween, type CanonicalAppointmentStatus, type ScheduleAppointment } from "@/lib/appointments/domain";
+import {
+  APPOINTMENT_ALLOW_CONFLICT_REFUSED_MESSAGE,
+  APPOINTMENT_EXPECTED_UPDATED_AT_REQUIRED_MESSAGE,
+  AppointmentCustomerImmutableError,
+  AppointmentWriteNotFoundError,
+  AppointmentWriteZeroRowError,
+} from "@/lib/appointments/appointment-write-mutate-errors";
+import { AppointmentConflictError, isAppointmentExclusionConflictError } from "@/lib/appointments/appointment-write-create";
 import { isAuthUuid } from "@/lib/staff-auth/staff-id";
 import { newId } from "@/lib/repositories/storage";
 import {
@@ -21,9 +29,35 @@ import {
   assertMappedAppointmentDependencies,
   mergeInternalNote,
   remoteAppointmentPayload,
+  sanitizeAppointmentMutatePatch,
   toRemoteAppointmentStatus,
 } from "./appointment-mapping";
 import type { AppointmentTableStore, DbAppointment } from "./operational-rows";
+
+export type AppointmentRemoteUpdateInput = {
+  appointmentId: string;
+  expectedUpdatedAt: string;
+  updatedBy: string;
+  locationId: string;
+  customerId: string;
+  serviceId: string;
+  staffId: string;
+  startAt: string;
+  endAt: string;
+  status: CanonicalAppointmentStatus;
+  customerName: string;
+  serviceName: string;
+  staffName: string;
+  customerNote?: string;
+  internalNote?: string;
+  notes?: string[];
+  statusReason?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  /** Ignored as UPDATE identity. Rejected when it does not match the verified row. */
+  dbId?: string;
+  allowConflict?: boolean;
+};
 
 export class AppointmentRemoteAdapter {
   constructor(
@@ -196,6 +230,120 @@ export class AppointmentRemoteAdapter {
     await this.store.insertAppointment(row);
     this.mapper.rememberAppointment(orgDbId, row.app_id, row.id);
     return this.toDomain(organizationId, row);
+  }
+
+  /**
+   * Resolve by authenticated organization + app_id, then UPDATE the verified
+   * DB UUID with expectedUpdatedAt. Never trusts a client-supplied DB UUID.
+   */
+  async update(
+    organizationId: string,
+    input: AppointmentRemoteUpdateInput,
+  ): Promise<ScheduleAppointment> {
+    if (input.allowConflict) {
+      throw new Error(APPOINTMENT_ALLOW_CONFLICT_REFUSED_MESSAGE);
+    }
+    const expectedUpdatedAt = input.expectedUpdatedAt?.trim() ?? "";
+    if (!expectedUpdatedAt) {
+      throw new Error(APPOINTMENT_EXPECTED_UPDATED_AT_REQUIRED_MESSAGE);
+    }
+    assertAppointmentTimeRange(input.startAt, input.endAt);
+
+    const orgDbId = this.mapper.resolveOrganizationDbId(organizationId);
+    const current = await this.store.getAppointmentByAppId(orgDbId, input.appointmentId);
+    if (!current || current.organization_id !== orgDbId) {
+      throw new AppointmentWriteNotFoundError();
+    }
+    if (input.dbId && input.dbId !== current.id) {
+      throw new AppointmentWriteNotFoundError(
+        "Client DB UUID does not match the appointment resolved by organization + app_id",
+      );
+    }
+
+    this.assertLocationAuthorized(organizationId, current.location_id);
+    const nextLocationAppId = input.locationId;
+    this.mapper.resolveLocationDbId(organizationId, nextLocationAppId);
+
+    const currentCustomerAppId = this.mapper.toCustomerAppId(current.customer_id);
+    if (input.customerId !== currentCustomerAppId) {
+      throw new AppointmentCustomerImmutableError();
+    }
+
+    const mapped = assertMappedAppointmentDependencies(this.mapper, organizationId, {
+      locationId: nextLocationAppId,
+      customerId: currentCustomerAppId,
+      serviceId: input.serviceId,
+    });
+    if (mapped.customerDbId !== current.customer_id) {
+      throw new AppointmentCustomerImmutableError();
+    }
+
+    const staffId = this.mapper.requireOperationalStaffId(organizationId, input.staffId);
+    const updatedBy = this.mapper.requireOperationalStaffId(organizationId, input.updatedBy);
+    const cancelledBy = input.cancelledBy
+      ? this.mapper.requireOperationalStaffId(organizationId, input.cancelledBy)
+      : null;
+
+    const nextStatus = toRemoteAppointmentStatus(input.status);
+    const patch = sanitizeAppointmentMutatePatch({
+      location_id: mapped.locationDbId,
+      service_id: mapped.serviceDbId,
+      staff_id: staffId,
+      starts_at: input.startAt,
+      ends_at: input.endAt,
+      duration_minutes: durationBetween(input.startAt, input.endAt),
+      status: nextStatus,
+      customer_note: input.customerNote?.trim() || null,
+      internal_note: mergeInternalNote({
+        internalNote: input.internalNote,
+        notes: input.notes ?? [],
+      }),
+      customer_name_snapshot: input.customerName,
+      service_name_snapshot: input.serviceName,
+      staff_name_snapshot: input.staffName,
+      status_reason: input.statusReason ?? null,
+      cancelled_at:
+        nextStatus === "CANCELLED" || nextStatus === "NO_SHOW"
+          ? input.cancelledAt ?? current.cancelled_at ?? this.now().toISOString()
+          : current.cancelled_at,
+      cancelled_by:
+        nextStatus === "CANCELLED" || nextStatus === "NO_SHOW"
+          ? cancelledBy ?? current.cancelled_by
+          : current.cancelled_by,
+      updated_by: updatedBy,
+    });
+
+    let updatedRows: DbAppointment[];
+    try {
+      updatedRows = await this.store.updateAppointment({
+        verifiedDbUuid: current.id,
+        organizationDbId: orgDbId,
+        expectedUpdatedAt,
+        patch,
+      });
+    } catch (error) {
+      if (isAppointmentExclusionConflictError(error)) {
+        throw new AppointmentConflictError();
+      }
+      throw error;
+    }
+    if (updatedRows.length === 1) {
+      const row = updatedRows[0]!;
+      this.mapper.rememberAppointment(orgDbId, row.app_id, row.id);
+      return this.toDomain(organizationId, row);
+    }
+    if (updatedRows.length === 0) {
+      throw new AppointmentWriteZeroRowError();
+    }
+    throw new Error("Appointment update returned an unexpected number of rows");
+  }
+
+  private assertLocationAuthorized(organizationId: string, locationDbId: string | null): void {
+    if (!locationDbId) {
+      throw new AppointmentWriteNotFoundError("Appointment location is no longer authorized");
+    }
+    const locationAppId = this.mapper.toLocationAppId(locationDbId);
+    this.mapper.resolveLocationDbId(organizationId, locationAppId);
   }
 
   private toDomain(organizationAppId: string, row: DbAppointment): ScheduleAppointment {

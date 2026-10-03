@@ -153,4 +153,8 @@ export class AuthenticatedAppointmentReadStore implements AppointmentTableStore 
     const rows = await readAppointmentRows(this.client, (builder) => builder.eq("id", dbId));
     return rows[0];
   }
+
+  updateAppointment(): never {
+    throw new AppointmentRemoteReadOnlyError();
+  }
 }

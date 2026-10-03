@@ -120,6 +120,59 @@ export function remoteAppointmentPayload(row: DbAppointment): Record<string, unk
   return payload;
 }
 
+/** Never SET these on a remote Appointment UPDATE. */
+export const APPOINTMENT_MUTATE_FORBIDDEN_COLUMNS = [
+  "id",
+  "app_id",
+  "organization_id",
+  "customer_id",
+  "created_at",
+  "created_by",
+  "updated_at",
+] as const;
+
+export const APPOINTMENT_MUTATE_PATCH_COLUMNS = [
+  "location_id",
+  "service_id",
+  "staff_id",
+  "starts_at",
+  "ends_at",
+  "duration_minutes",
+  "status",
+  "customer_note",
+  "internal_note",
+  "customer_name_snapshot",
+  "service_name_snapshot",
+  "staff_name_snapshot",
+  "status_reason",
+  "cancelled_at",
+  "cancelled_by",
+  "updated_by",
+] as const;
+
+export function sanitizeAppointmentMutatePatch(
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  if ("remainingSessions" in patch || "notes" in patch) {
+    throw new Error("appointment mutate payload leaked domain-only fields");
+  }
+  if ("customer_id" in patch) {
+    throw new Error("Appointment customer_id is immutable");
+  }
+  const sanitized: Record<string, unknown> = {};
+  for (const column of APPOINTMENT_MUTATE_PATCH_COLUMNS) {
+    if (column in patch) {
+      sanitized[column] = patch[column];
+    }
+  }
+  for (const column of APPOINTMENT_MUTATE_FORBIDDEN_COLUMNS) {
+    if (column in sanitized) {
+      throw new Error(`Appointment mutate cannot set ${column}`);
+    }
+  }
+  return sanitized;
+}
+
 export function toRemoteAppointmentStatus(
   status: CanonicalAppointmentStatus,
 ): CanonicalAppointmentStatus {

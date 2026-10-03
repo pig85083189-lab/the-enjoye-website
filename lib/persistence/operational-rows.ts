@@ -189,6 +189,13 @@ export interface CustomerTableStore {
   findCustomersByPhone(organizationDbId: string, phone: string): MaybePromise<DbCustomer[]>;
 }
 
+export type AppointmentOptimisticUpdateInput = {
+  verifiedDbUuid: string;
+  organizationDbId: string;
+  expectedUpdatedAt: string;
+  patch: Record<string, unknown>;
+};
+
 export interface AppointmentTableStore {
   insertAppointment(row: DbAppointment): MaybePromise<void>;
   listAppointments(organizationDbId: string): MaybePromise<DbAppointment[]>;
@@ -197,6 +204,7 @@ export interface AppointmentTableStore {
     appId: string,
   ): MaybePromise<DbAppointment | undefined>;
   getAppointmentByDbId(dbId: string): MaybePromise<DbAppointment | undefined>;
+  updateAppointment(input: AppointmentOptimisticUpdateInput): MaybePromise<DbAppointment[]>;
 }
 
 export type RemoteServiceType =

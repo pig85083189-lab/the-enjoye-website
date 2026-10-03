@@ -71,6 +71,7 @@ describe("Phase 1B canonical appointment remote adapter", () => {
       listAppointments: (org) => db.listAppointments(org),
       getAppointmentByAppId: (org, appId) => db.getAppointmentByAppId(org, appId),
       getAppointmentByDbId: (id) => db.getAppointmentByDbId(id),
+      updateAppointment: (input) => db.updateAppointment(input),
     };
     const adapter = new AppointmentRemoteAdapter(remote.mapper, spyStore);
     await adapter.create(ORG_A, input({ staffId: STAFF_A, createdBy: STAFF_A }));
@@ -93,6 +94,7 @@ describe("Phase 1B canonical appointment remote adapter", () => {
       listAppointments: (org) => db.listAppointments(org),
       getAppointmentByAppId: (org, appId) => db.getAppointmentByAppId(org, appId),
       getAppointmentByDbId: (id) => db.getAppointmentByDbId(id),
+      updateAppointment: (input) => db.updateAppointment(input),
     };
     const adapter = new AppointmentRemoteAdapter(remote.mapper, spyStore);
     await expect(
@@ -114,6 +116,7 @@ describe("Phase 1B canonical appointment remote adapter", () => {
       listAppointments: (org) => db.listAppointments(org),
       getAppointmentByAppId: (org, appId) => db.getAppointmentByAppId(org, appId),
       getAppointmentByDbId: (id) => db.getAppointmentByDbId(id),
+      updateAppointment: (input) => db.updateAppointment(input),
     };
     const adapter = new AppointmentRemoteAdapter(remote.mapper, spyStore);
     await expect(
@@ -141,6 +144,7 @@ describe("Phase 1B canonical appointment remote adapter", () => {
       listAppointments: (org) => db.listAppointments(org),
       getAppointmentByAppId: (org, appId) => db.getAppointmentByAppId(org, appId),
       getAppointmentByDbId: (id) => db.getAppointmentByDbId(id),
+      updateAppointment: (input) => db.updateAppointment(input),
     };
     const adapter = new AppointmentRemoteAdapter(remote.mapper, spyStore);
     await expect(
@@ -162,6 +166,7 @@ describe("Phase 1B canonical appointment remote adapter", () => {
       listAppointments: (org) => db.listAppointments(org),
       getAppointmentByAppId: (org, appId) => db.getAppointmentByAppId(org, appId),
       getAppointmentByDbId: (id) => db.getAppointmentByDbId(id),
+      updateAppointment: (input) => db.updateAppointment(input),
     };
     const adapter = new AppointmentRemoteAdapter(remote.mapper, spyStore);
     await expect(

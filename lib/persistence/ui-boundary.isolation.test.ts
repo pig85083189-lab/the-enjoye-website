@@ -480,6 +480,17 @@ describe("Phase 1C-6B.1 appointment remote write UI boundary", () => {
     expect(flag).not.toMatch(
       /AppointmentRemoteAdapter|AuthenticatedAppointmentTableStore|loadAuthenticatedIdentityCatalog|IdentitySupabaseClient/,
     );
+    const mutateFlag = readFileSync(
+      path.join(ROOT, "lib/appointments/appointment-remote-mutate-flag.ts"),
+      "utf8",
+    );
+    expect(mutateFlag).not.toMatch(
+      /AppointmentRemoteAdapter|AuthenticatedAppointmentTableStore|loadAuthenticatedIdentityCatalog|IdentitySupabaseClient/,
+    );
+    expect(page).not.toMatch(/appointment-remote-mutate-pilot|runAuthenticatedAppointmentWriteMutate/);
+    expect(calendar).not.toMatch(
+      /appointment-remote-mutate-pilot|runAuthenticatedAppointmentWriteMutate|BEAUTY_OS_APPOINTMENT_REMOTE_MUTATE_PILOT/,
+    );
   });
 
   it("does not leave Treatment or Checkout on the write-pilot path", () => {
@@ -491,7 +502,7 @@ describe("Phase 1C-6B.1 appointment remote write UI boundary", () => {
       if (!existsSync(path.join(ROOT, file))) continue;
       const source = readFileSync(path.join(ROOT, file), "utf8");
       expect(source).not.toMatch(
-        /createAuthenticatedAppointmentWritePersistence|runAuthenticatedAppointmentWriteCreate|BEAUTY_OS_APPOINTMENT_REMOTE_WRITE_PILOT/,
+        /createAuthenticatedAppointmentWritePersistence|runAuthenticatedAppointmentWriteCreate|BEAUTY_OS_APPOINTMENT_REMOTE_WRITE_PILOT|runAuthenticatedAppointmentWriteMutate|BEAUTY_OS_APPOINTMENT_REMOTE_MUTATE_PILOT/,
       );
     }
   });

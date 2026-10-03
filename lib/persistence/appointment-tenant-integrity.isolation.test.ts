@@ -58,6 +58,7 @@ function spyStore(
     listAppointments: (org) => db.listAppointments(org),
     getAppointmentByAppId: (org, appId) => db.getAppointmentByAppId(org, appId),
     getAppointmentByDbId: (id) => db.getAppointmentByDbId(id),
+    updateAppointment: (input) => db.updateAppointment(input),
   };
 }
 

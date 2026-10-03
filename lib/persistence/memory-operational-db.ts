@@ -6,7 +6,16 @@
 
 import type { IdentityCatalog, MappedOrgScoped, MappedOrganization, MappedStaff } from "./identity-catalog";
 import { UniqueEffectKeyError } from "./identity-errors";
+import {
+  APPOINTMENT_STAFF_OVERLAP_CONSTRAINT,
+  staffActiveRangesConflict,
+} from "@/lib/appointments/appointment-staff-overlap";
+import {
+  APPOINTMENT_MUTATE_FORBIDDEN_COLUMNS,
+  sanitizeAppointmentMutatePatch,
+} from "./appointment-mapping";
 import type {
+  AppointmentOptimisticUpdateInput,
   DbAppointment,
   DbCustomer,
   DbCustomerPackage,
@@ -341,6 +350,66 @@ export class MemoryOperationalDb
   }
   getAppointmentByDbId(dbId: string) {
     return this.appointments.find((r) => r.id === dbId);
+  }
+
+  updateAppointment(input: AppointmentOptimisticUpdateInput): DbAppointment[] {
+    const patch = sanitizeAppointmentMutatePatch(input.patch);
+    for (const column of APPOINTMENT_MUTATE_FORBIDDEN_COLUMNS) {
+      if (column in patch) {
+        throw new Error(`Appointment mutate cannot set ${column}`);
+      }
+    }
+    const idx = this.appointments.findIndex(
+      (row) =>
+        row.id === input.verifiedDbUuid &&
+        row.organization_id === input.organizationDbId &&
+        row.updated_at === input.expectedUpdatedAt,
+    );
+    if (idx < 0) return [];
+    const current = this.appointments[idx]!;
+    const previousUpdatedAt = new Date(current.updated_at).getTime();
+    const nextUpdatedAt = new Date(
+      Number.isFinite(previousUpdatedAt)
+        ? Math.max(Date.now(), previousUpdatedAt + 1)
+        : Date.now(),
+    ).toISOString();
+    const next: DbAppointment = {
+      ...current,
+      ...(patch as Partial<DbAppointment>),
+      id: current.id,
+      app_id: current.app_id,
+      organization_id: current.organization_id,
+      customer_id: current.customer_id,
+      created_at: current.created_at,
+      created_by: current.created_by,
+      updated_at: nextUpdatedAt,
+    };
+    const conflict = this.appointments.some((row, rowIdx) => {
+      if (rowIdx === idx) return false;
+      return staffActiveRangesConflict(
+        {
+          organizationId: next.organization_id,
+          staffId: next.staff_id ?? "",
+          startAt: next.starts_at,
+          endAt: next.ends_at,
+          status: next.status,
+        },
+        {
+          organizationId: row.organization_id,
+          staffId: row.staff_id ?? "",
+          startAt: row.starts_at,
+          endAt: row.ends_at,
+          status: row.status,
+        },
+      );
+    });
+    if (conflict) {
+      throw new Error(
+        `23P01 conflicting key value violates exclusion constraint "${APPOINTMENT_STAFF_OVERLAP_CONSTRAINT}"`,
+      );
+    }
+    this.appointments[idx] = next;
+    return [next];
   }
 
   insertService(row: DbService): void {

@@ -19,10 +19,19 @@ class FakeQuery implements AppointmentQueryBuilder {
     private readonly write: ((row: Row) => void) | null = null,
     private readonly filters: Array<{ column: string; value: string }> = [],
     private readonly pendingInsert: Row | null = null,
+    private readonly pendingUpdate: Row | null = null,
+    private readonly updateError: { message: string } | null = null,
   ) {}
 
   eq(column: string, value: string): AppointmentQueryBuilder {
-    return new FakeQuery(this.rows, this.write, [...this.filters, { column, value }], this.pendingInsert);
+    return new FakeQuery(
+      this.rows,
+      this.write,
+      [...this.filters, { column, value }],
+      this.pendingInsert,
+      this.pendingUpdate,
+      this.updateError,
+    );
   }
 
   select(): AppointmentQueryBuilder {
@@ -39,6 +48,27 @@ class FakeQuery implements AppointmentQueryBuilder {
         onfulfilled,
         onrejected,
       );
+    }
+    if (this.pendingUpdate) {
+      if (this.updateError) {
+        return Promise.resolve({ data: null, error: this.updateError }).then(
+          onfulfilled,
+          onrejected,
+        );
+      }
+      const matches = this.rows.filter((row) =>
+        this.filters.every((filter) => row[filter.column] === filter.value),
+      );
+      const updated = matches.map((row) => {
+        const next = {
+          ...row,
+          ...this.pendingUpdate,
+          updated_at: "2026-10-03T00:00:00.000Z",
+        };
+        Object.assign(row, next);
+        return next;
+      });
+      return Promise.resolve({ data: updated, error: null }).then(onfulfilled, onrejected);
     }
     const data = this.rows.filter((row) =>
       this.filters.every((filter) => row[filter.column] === filter.value),
@@ -76,11 +106,16 @@ function row(overrides: Partial<DbAppointment> = {}): DbAppointment {
   };
 }
 
-function clientWith(rows: DbAppointment[]): {
+function clientWith(
+  rows: DbAppointment[],
+  options: { updateError?: { message: string } } = {},
+): {
   client: AuthenticatedAppointmentSupabaseClient;
   inserted: Row[];
+  updated: Row[];
 } {
   const inserted: Row[] = [];
+  const updated: Row[] = [];
   const store: Row[] = rows.map((item) => ({ ...item }));
   const client: AuthenticatedAppointmentSupabaseClient = {
     from(table: string) {
@@ -88,6 +123,7 @@ function clientWith(rows: DbAppointment[]): {
         return {
           select: () => new FakeQuery([]),
           insert: () => new FakeQuery([]),
+          update: () => new FakeQuery([]),
         };
       }
       return {
@@ -102,10 +138,21 @@ function clientWith(rows: DbAppointment[]): {
             [],
             payload,
           ),
+        update: (payload: Record<string, unknown>) =>
+          new FakeQuery(
+            store,
+            (next) => {
+              updated.push(next);
+            },
+            [],
+            null,
+            payload,
+            options.updateError ?? null,
+          ),
       };
     },
   };
-  return { client, inserted };
+  return { client, inserted, updated };
 }
 
 describe("AuthenticatedAppointmentTableStore", () => {
@@ -135,5 +182,83 @@ describe("AuthenticatedAppointmentTableStore", () => {
       "utf8",
     );
     expect(source).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    expect(source).not.toMatch(/\.upsert\(/);
+  });
+
+  it("updates only when id, organization_id, and expectedUpdatedAt match", async () => {
+    const existing = row();
+    const { client } = clientWith([existing]);
+    const store = new AuthenticatedAppointmentTableStore(client);
+    const [updated] = await store.updateAppointment({
+      verifiedDbUuid: existing.id,
+      organizationDbId: existing.organization_id,
+      expectedUpdatedAt: existing.updated_at,
+      patch: { status: "CANCELLED", updated_by: "staff-001" },
+    });
+    expect(updated?.status).toBe("CANCELLED");
+    expect(updated?.id).toBe(existing.id);
+    expect(updated?.app_id).toBe(existing.app_id);
+    expect(updated?.customer_id).toBe(existing.customer_id);
+    expect(updated?.updated_at).not.toBe(existing.updated_at);
+
+    const stale = await store.updateAppointment({
+      verifiedDbUuid: existing.id,
+      organizationDbId: existing.organization_id,
+      expectedUpdatedAt: existing.updated_at,
+      patch: { status: "NO_SHOW", updated_by: "staff-001" },
+    });
+    expect(stale).toEqual([]);
+  });
+
+  it("refuses a client-supplied customer_id patch and maps 23P01", async () => {
+    const existing = row();
+    const { client } = clientWith([existing]);
+    const store = new AuthenticatedAppointmentTableStore(client);
+    await expect(
+      store.updateAppointment({
+        verifiedDbUuid: existing.id,
+        organizationDbId: existing.organization_id,
+        expectedUpdatedAt: existing.updated_at,
+        patch: { customer_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
+      }),
+    ).rejects.toThrow(/customer_id is immutable/);
+
+    const conflictClient = clientWith([existing], {
+      updateError: {
+        message:
+          '23P01 conflicting key value violates exclusion constraint "appointments_staff_active_no_overlap"',
+      },
+    }).client;
+    const conflictStore = new AuthenticatedAppointmentTableStore(conflictClient);
+    await expect(
+      conflictStore.updateAppointment({
+        verifiedDbUuid: existing.id,
+        organizationDbId: existing.organization_id,
+        expectedUpdatedAt: existing.updated_at,
+        patch: { starts_at: "2026-10-09T04:00:00.000Z" },
+      }),
+    ).rejects.toThrow(/23P01|appointments_staff_active_no_overlap/);
+  });
+
+  it("requires expectedUpdatedAt and does not upsert", async () => {
+    const existing = row();
+    const { client } = clientWith([existing]);
+    const store = new AuthenticatedAppointmentTableStore(client);
+    await expect(
+      store.updateAppointment({
+        verifiedDbUuid: existing.id,
+        organizationDbId: existing.organization_id,
+        expectedUpdatedAt: "",
+        patch: { status: "CANCELLED" },
+      }),
+    ).rejects.toThrow(/expectedUpdatedAt/);
+    const source = readFileSync(
+      path.join(process.cwd(), "lib/persistence/authenticated-appointment-store.ts"),
+      "utf8",
+    );
+    expect(source).toMatch(/eq\("id", input.verifiedDbUuid\)/);
+    expect(source).toMatch(/eq\("organization_id", input.organizationDbId\)/);
+    expect(source).toMatch(/eq\("updated_at", input.expectedUpdatedAt\)/);
+    expect(source).not.toMatch(/\.upsert\(|onConflict/);
   });
 });
