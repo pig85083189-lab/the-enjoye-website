@@ -104,6 +104,9 @@ describe("Phase 1C-6C calendar create surface", () => {
     expect(calendar).toMatch(/if \(remoteCreate\)/);
     expect(calendar).toMatch(/submitCalendarRemoteAppointmentCreate/);
     expect(calendar).toMatch(/createAppointment\(/);
+    expect(calendar).toMatch(/appointment-write-customer-search/);
+    expect(calendar).toMatch(/filterAppointmentWriteCustomers/);
+    expect(calendar).not.toMatch(/phone: ""/);
     expect(hook).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
     expect(hook).toMatch(/createBrowserClientOrNull/);
     const remoteSave = calendar.slice(

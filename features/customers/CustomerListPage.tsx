@@ -48,6 +48,7 @@ import { getCompletedTreatmentsForCustomer } from "@/lib/treatment-draft";
 import { cn } from "@/lib/utils";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
 import type { Customer } from "@/types";
+import { resolveCustomerListCreateSurface } from "@/lib/customers/customer-create-surface";
 import {
   FILTER_OPTIONS,
   SORT_OPTIONS,
@@ -183,6 +184,7 @@ export function CustomerListPage({
     remoteReadPilot && (!isClient || remote.status === "loading");
   const remoteFailed = remoteReadPilot && remote.status === "error";
   const showCounts = isClient && !remotePending && !remoteFailed;
+  const createSurface = resolveCustomerListCreateSurface(remoteReadPilot);
 
   return (
     <div
@@ -203,17 +205,28 @@ export function CustomerListPage({
             管理客戶資料、諮詢紀錄與療程歷史
           </p>
         </div>
-        {remoteReadPilot ? (
-          <Button
-            disabled
-            className="h-9 min-h-9 shrink-0 rounded-full px-4 text-[13px]"
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
-            新增客戶
-          </Button>
+        {createSurface.mode === "remote-read-only" ? (
+          <div className="shrink-0 text-right">
+            <Button
+              disabled
+              data-customer-create="remote-read-only"
+              title={createSurface.reason}
+              aria-label={`新增客戶，${createSurface.reason}`}
+              className="h-9 min-h-9 rounded-full px-4 text-[13px]"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              新增客戶
+            </Button>
+            <p className="mt-1 max-w-[9.5rem] text-[11px] leading-4 text-secondary-text">
+              {createSurface.reason}
+            </p>
+          </div>
         ) : (
-          <Link href="/staff/customers/new" className="shrink-0">
-            <Button className="h-9 min-h-9 rounded-full px-4 text-[13px]">
+          <Link href={createSurface.href} className="shrink-0">
+            <Button
+              data-customer-create="local-create"
+              className="h-9 min-h-9 rounded-full px-4 text-[13px]"
+            >
               <Plus className="h-3.5 w-3.5" aria-hidden />
               新增客戶
             </Button>

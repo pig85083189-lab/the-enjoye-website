@@ -1,8 +1,11 @@
 /**
  * Authenticated create-form options for the Appointment write pilot.
- * Names and duration come from remote rows, not Calendar UI text.
+ * Customer options reuse the Customer remote-read adapter so Calendar
+ * search matches /staff/customers (name + phone, org-scoped).
  */
 
+import { AuthenticatedCustomerReadStore } from "@/lib/persistence/authenticated-customer-read-store";
+import { CustomerRemoteAdapter } from "@/lib/persistence/customer-remote-adapter";
 import { IdentityCatalogError } from "@/lib/persistence/identity-errors";
 import {
   loadAuthenticatedIdentityCatalog,
@@ -12,6 +15,10 @@ import {
   type LoadedAuthenticatedIdentity,
 } from "@/lib/persistence/authenticated-identity-catalog";
 import { isAppointmentWritePilotOwner } from "./appointment-write-guard";
+import type { AppointmentWriteCustomerOption } from "./appointment-write-customer-search";
+
+export type { AppointmentWriteCustomerOption } from "./appointment-write-customer-search";
+export { filterAppointmentWriteCustomers } from "./appointment-write-customer-search";
 
 export type AppointmentWriteFormOption = {
   id: string;
@@ -26,7 +33,7 @@ export type AppointmentWriteFormCatalog = {
   identity: LoadedAuthenticatedIdentity;
   role: string;
   canCreate: boolean;
-  customers: AppointmentWriteFormOption[];
+  customers: AppointmentWriteCustomerOption[];
   services: AppointmentWriteServiceOption[];
   staff: AppointmentWriteFormOption[];
 };
@@ -55,18 +62,15 @@ export async function loadAppointmentWriteFormCatalog(
   );
   const role = staffRow?.role ?? "";
   const customers = (
-    await readNamedRows(
-      client
-        .from("customers")
-        .select("app_id, organization_id, full_name")
-        .eq("organization_id", identity.organizationDbId),
-    )
-  ).flatMap((row) => {
-    const id = typeof row.app_id === "string" ? row.app_id : "";
-    const name = asName(row.full_name);
-    if (!id || !name) return [];
-    return [{ id, name }];
-  });
+    await new CustomerRemoteAdapter(
+      identity.mapper,
+      new AuthenticatedCustomerReadStore(client),
+    ).list({ organizationId: identity.organizationAppId })
+  ).map((customer) => ({
+    id: customer.id,
+    name: customer.name,
+    phone: customer.phone,
+  }));
   const services = (
     await readNamedRows(
       client

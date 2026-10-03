@@ -36,6 +36,7 @@ import {
 } from "@/lib/appointment-store";
 import { DEFAULT_SERVICE_DURATION_MINUTES } from "@/lib/appointments/calendar-config";
 import { allocateAppointmentWriteAppId } from "@/lib/appointments/appointment-write-command";
+import { filterAppointmentWriteCustomers } from "@/lib/appointments/appointment-write-customer-search";
 import { resolveCalendarCreateSurface } from "@/lib/appointments/appointment-write-surface";
 import {
   AppointmentCreateSubmission,
@@ -885,7 +886,7 @@ function AppointmentEditor({
   prefill: CreatePrefill | null;
   actorId?: string;
   remoteCreate?: {
-    customers: Array<{ id: string; name: string }>;
+    customers: Array<{ id: string; name: string; phone: string }>;
     services: Array<{ id: string; name: string; durationMinutes: number }>;
     staff: Array<{ id: string; name: string }>;
   };
@@ -908,7 +909,7 @@ function AppointmentEditor({
     ? remoteCreate.customers.map((c) => ({
         id: c.id,
         name: c.name,
-        phone: "",
+        phone: c.phone,
       }))
     : localCustomerRepository.list({ organizationId });
   const services = remoteCreate
@@ -959,14 +960,7 @@ function AppointmentEditor({
   const [error, setError] = useState("");
   const [allowOverride, setAllowOverride] = useState(false);
 
-  const filteredCustomers = customers.filter((c) => {
-    const q = query.trim();
-    if (!q) return true;
-    return (
-      c.name.includes(q) ||
-      c.phone.replace(/-/g, "").includes(q.replace(/-/g, ""))
-    );
-  });
+  const filteredCustomers = filterAppointmentWriteCustomers(customers, query);
 
   const startAtIso = useMemo(
     () => combineLocalDateTime(date, start).toISOString(),
