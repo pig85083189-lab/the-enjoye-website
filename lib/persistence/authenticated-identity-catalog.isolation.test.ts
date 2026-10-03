@@ -213,4 +213,45 @@ describe("Phase 1B authenticated IdentityCatalog", () => {
     expect(() => loaded.mapper.requireOperationalStaffId(ORG_APP, AUTH_UUID)).toThrow();
     expect(isAuthUuid(AUTH_UUID)).toBe(true);
   });
+
+  it("maps org colleagues for assignment without changing authenticated operational staff", async () => {
+    const loaded = await loadAuthenticatedIdentityCatalog(
+      fakeClient({
+        userId: AUTH_UUID,
+        tables: validTables({
+          staff_auth_memberships: [
+            {
+              id: "mem-enjoye-owner",
+              user_id: STAFF_APP,
+              auth_user_id: AUTH_UUID,
+              organization_id: ORG_APP,
+              role: "OWNER",
+              is_active: true,
+            },
+            {
+              id: "mem-enjoye-colleague",
+              user_id: "staff-002",
+              auth_user_id: null,
+              organization_id: ORG_APP,
+              role: "STAFF",
+              is_active: true,
+            },
+            {
+              id: "mem-foreign",
+              user_id: "staff-foreign",
+              auth_user_id: null,
+              organization_id: "org-other",
+              role: "STAFF",
+              is_active: true,
+            },
+          ],
+        }),
+      }),
+    );
+    expect(loaded.operationalStaffId).toBe(STAFF_APP);
+    expect(loaded.mapper.requireOperationalStaffId(ORG_APP, STAFF_APP)).toBe(STAFF_APP);
+    expect(loaded.mapper.requireOperationalStaffId(ORG_APP, "staff-002")).toBe("staff-002");
+    expect(() => loaded.mapper.requireOperationalStaffId(ORG_APP, "staff-foreign")).toThrow();
+    expect(loaded.mapper.resolveOperationalStaffFromAuth(ORG_APP, AUTH_UUID)).toBe(STAFF_APP);
+  });
 });

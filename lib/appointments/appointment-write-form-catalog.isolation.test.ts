@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { filterAppointmentWriteCustomers } from "./appointment-write-customer-search";
-import { loadAppointmentWriteFormCatalog } from "./appointment-write-form-catalog";
+import {
+  filterAppointmentWriteStaff,
+  loadAppointmentWriteFormCatalog,
+} from "./appointment-write-form-catalog";
 import type {
   IdentityQueryBuilder,
   IdentityQueryResult,
@@ -225,5 +228,115 @@ describe("Phase 1C-6C appointment write customer catalog", () => {
     );
     expect(remoteMap).toMatch(/phone: c\.phone/);
     expect(remoteMap).not.toMatch(/localCustomerRepository/);
+  });
+});
+
+describe("Phase 1C-6D.2A appointment write staff catalog", () => {
+  it("lists every eligible org staff instead of only the authenticated Owner", async () => {
+    const catalog = await loadAppointmentWriteFormCatalog(
+      ownerClient({
+        staff_auth_memberships: [
+          {
+            id: "mem-enjoye-owner",
+            user_id: STAFF_APP,
+            auth_user_id: AUTH_UUID,
+            organization_id: ORG_APP,
+            role: "OWNER",
+            is_active: true,
+            display_name: "怡蓁",
+          },
+          {
+            id: "mem-enjoye-colleague",
+            user_id: "staff-002",
+            auth_user_id: null,
+            organization_id: ORG_APP,
+            role: "STAFF",
+            is_active: true,
+            display_name: "小美",
+          },
+          {
+            id: "mem-inactive",
+            user_id: "staff-003",
+            auth_user_id: null,
+            organization_id: ORG_APP,
+            role: "STAFF",
+            is_active: false,
+            display_name: "Amy",
+          },
+          {
+            id: "mem-foreign",
+            user_id: "staff-foreign",
+            auth_user_id: null,
+            organization_id: "org-other",
+            role: "STAFF",
+            is_active: true,
+            display_name: "語柔",
+          },
+        ],
+        staff_auth_membership_locations: [
+          { membership_id: "mem-enjoye-owner", location_id: LOC_APP },
+          { membership_id: "mem-enjoye-colleague", location_id: LOC_APP },
+          { membership_id: "mem-foreign", location_id: "loc-other" },
+        ],
+      }),
+    );
+    expect(catalog.staff.map((row) => row.id).sort()).toEqual(["staff-001", "staff-002"]);
+    expect(catalog.staff.map((row) => row.name).sort()).toEqual(["小美", "怡蓁"]);
+    expect(catalog.staff.some((row) => row.name === "怡蓁" && catalog.staff.length === 1)).toBe(
+      false,
+    );
+    expect(filterAppointmentWriteStaff(catalog.staff, LOC_APP).map((row) => row.id).sort()).toEqual([
+      "staff-001",
+      "staff-002",
+    ]);
+    expect(filterAppointmentWriteStaff(catalog.staff, "loc-other")).toEqual([]);
+    expect(catalog.identity.operationalStaffId).toBe(STAFF_APP);
+    expect(catalog.identity.mapper.requireOperationalStaffId(ORG_APP, "staff-002")).toBe(
+      "staff-002",
+    );
+  });
+
+  it("treats empty location assignment as all locations and keeps capability matrix unused", async () => {
+    const catalog = await loadAppointmentWriteFormCatalog(ownerClient());
+    expect(catalog.staff).toEqual([
+      {
+        id: STAFF_APP,
+        name: "怡蓁",
+        role: "OWNER",
+        locationIds: [],
+      },
+    ]);
+    expect(filterAppointmentWriteStaff(catalog.staff, LOC_APP)).toHaveLength(1);
+    const capability = readFileSync(
+      path.join(process.cwd(), "lib/staff-schedule/capability.ts"),
+      "utf8",
+    );
+    expect(capability).toMatch(/currently all bookable staff can run all services/);
+  });
+
+  it("does not hardcode 怡蓁 as the only remote create assignee", () => {
+    const catalog = readFileSync(
+      path.join(process.cwd(), "lib/appointments/appointment-write-form-catalog.ts"),
+      "utf8",
+    );
+    const command = readFileSync(
+      path.join(process.cwd(), "lib/appointments/appointment-write-command.ts"),
+      "utf8",
+    );
+    const page = readFileSync(
+      path.join(process.cwd(), "features/calendar/CalendarPage.tsx"),
+      "utf8",
+    );
+    const writePilot = readFileSync(
+      path.join(process.cwd(), "lib/appointments/appointment-remote-write-pilot.ts"),
+      "utf8",
+    );
+    expect(catalog).not.toMatch(/staff-001|怡蓁/);
+    expect(command).toMatch(/requires authenticated createdBy/);
+    expect(command).not.toMatch(/createdBy \?\? input\.staffId/);
+    expect(writePilot).toMatch(/createdBy: identity.operationalStaffId/);
+    expect(page).toMatch(/filterAppointmentWriteStaff/);
+    expect(page).toMatch(/appointmentWriteStaffToMembership/);
+    expect(page).not.toMatch(/staffId: membership\?\.userId/);
   });
 });

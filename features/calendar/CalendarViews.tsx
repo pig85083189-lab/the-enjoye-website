@@ -9,6 +9,7 @@ import {
   STATUS_LABEL,
   combineLocalDateTime,
   formatYmd,
+  occupiesCalendarSlot,
   startOfDay,
   type ScheduleAppointment,
 } from "@/lib/appointments/domain";
@@ -491,7 +492,7 @@ function StaffColumn({
           })
         : null}
 
-      {appointments.map((item) => {
+      {appointments.filter((item) => occupiesCalendarSlot(item.status)).map((item) => {
         const layout = layoutCalendarAppointmentBlock(
           item.startAt,
           item.endAt,
@@ -611,6 +612,7 @@ export function StaffDayGrid({
               });
               const apptCount = appointments.filter(
                 (a) =>
+                  occupiesCalendarSlot(a.status) &&
                   a.staffId === s.userId &&
                   calendarAppointmentYmd(a.startAt, useTaipeiTime) === dayYmd,
               ).length;
@@ -680,6 +682,7 @@ export function StaffDayGrid({
               }).filter((t) => t.status === "APPROVED");
               const columnAppts = appointments.filter(
                 (a) =>
+                  occupiesCalendarSlot(a.status) &&
                   a.staffId === s.userId &&
                   calendarAppointmentYmd(a.startAt, useTaipeiTime) === dayYmd,
               );
@@ -769,7 +772,9 @@ export function WeekGrid({
               const ymd = formatYmd(day);
               const isToday = todayYmd === ymd;
               const dayAppts = appointments.filter(
-                (a) => calendarAppointmentYmd(a.startAt, useTaipeiTime) === ymd,
+                (a) =>
+                  occupiesCalendarSlot(a.status) &&
+                  calendarAppointmentYmd(a.startAt, useTaipeiTime) === ymd,
               );
               return (
                 <div
@@ -868,6 +873,7 @@ export function MobileStaffDayView({
   });
   const columnAppts = appointments.filter(
     (a) =>
+      occupiesCalendarSlot(a.status) &&
       a.staffId === staff.userId &&
       calendarAppointmentYmd(a.startAt, useTaipeiTime) === formatYmd(day),
   );

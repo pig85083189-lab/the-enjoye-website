@@ -39,6 +39,10 @@ import { DEFAULT_SERVICE_DURATION_MINUTES } from "@/lib/appointments/calendar-co
 import { allocateAppointmentWriteAppId } from "@/lib/appointments/appointment-write-command";
 import { filterAppointmentWriteCustomers } from "@/lib/appointments/appointment-write-customer-search";
 import {
+  appointmentWriteStaffToMembership,
+  filterAppointmentWriteStaff,
+} from "@/lib/appointments/appointment-write-form-catalog";
+import {
   isCalendarRemoteCancelEligible,
   resolveCalendarCancelSurface,
 } from "@/lib/appointments/appointment-write-cancel-surface";
@@ -223,7 +227,12 @@ export function CalendarPage({
   });
 
   const locationId = currentLocation?.id ?? locations[0]?.id ?? "";
-  const staffRoster = listBookableStaff(organization.id, locationId);
+  const staffRoster =
+    remoteWrite.status === "ready"
+      ? filterAppointmentWriteStaff(remoteWrite.catalog.staff, locationId).map((staff) =>
+          appointmentWriteStaffToMembership(staff, organization.id),
+        )
+      : listBookableStaff(organization.id, locationId);
   const visibleStaff =
     staffFilter.length === 0
       ? staffRoster
@@ -728,7 +737,10 @@ export function CalendarPage({
               ? {
                   customers: remoteWrite.catalog.customers,
                   services: remoteWrite.catalog.services,
-                  staff: remoteWrite.catalog.staff,
+                  staff: filterAppointmentWriteStaff(
+                    remoteWrite.catalog.staff,
+                    locationId,
+                  ),
                 }
               : undefined
           }
@@ -932,7 +944,7 @@ function AppointmentEditor({
   remoteCreate?: {
     customers: Array<{ id: string; name: string; phone: string }>;
     services: Array<{ id: string; name: string; durationMinutes: number }>;
-    staff: Array<{ id: string; name: string }>;
+    staff: Array<{ id: string; name: string; locationIds?: string[]; role?: string }>;
   };
   onClose: () => void;
   onSaved: () => void;
@@ -964,7 +976,15 @@ function AppointmentEditor({
       );
   const [loc, setLoc] = useState(initial?.locationId ?? locationId);
   const staff = remoteCreate
-    ? remoteCreate.staff.map((s) => ({ userId: s.id, displayName: s.name }))
+    ? filterAppointmentWriteStaff(
+        remoteCreate.staff.map((s) => ({
+          id: s.id,
+          name: s.name,
+          locationIds: s.locationIds ?? [],
+          role: s.role ?? "",
+        })),
+        loc,
+      ).map((s) => ({ userId: s.id, displayName: s.name }))
     : staffOptionsForLocation(organizationId, loc);
   const [customerId, setCustomerId] = useState(
     initial?.customerId ?? prefill?.customerId ?? "",

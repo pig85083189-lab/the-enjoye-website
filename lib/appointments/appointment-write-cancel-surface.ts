@@ -3,7 +3,10 @@
  * Mutate ON never falls back to local transitionAppointmentStatus.
  */
 
-import { canTransition, type CanonicalAppointmentStatus } from "@/lib/appointments/domain";
+import {
+  isAppointmentCancellable,
+  type CanonicalAppointmentStatus,
+} from "@/lib/appointments/domain";
 import { isGeneratedAppointmentAppId } from "@/lib/persistence/demo-firewall";
 
 export type CalendarCancelSurface = {
@@ -38,7 +41,7 @@ export function isCalendarRemoteCancelEligible(input: {
   if (!input.remoteCancelAvailable) return false;
   if (!isGeneratedAppointmentAppId(input.appointmentId)) return false;
   if (!input.updatedAt?.trim()) return false;
-  return canTransition(input.status, "CANCELLED");
+  return isAppointmentCancellable(input.status);
 }
 
 export function resolveCalendarQuickViewActions(input: {
@@ -60,7 +63,7 @@ export function resolveCalendarQuickViewActions(input: {
       !input.readOnly &&
       (input.status === "BOOKED" || input.status === "CONFIRMED"),
     canCancel: input.allowRemoteCancel
-      ? canTransition(input.status, "CANCELLED")
+      ? isAppointmentCancellable(input.status)
       : localCancel,
     canTransition: !input.readOnly,
   };

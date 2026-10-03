@@ -156,7 +156,11 @@ export async function createAuthenticatedAppointmentWritePersistence(
     appointments,
     prepare(input) {
       return prepareAppointmentCreateCommand(
-        { ...input, organizationId: identity.organizationAppId },
+        {
+          ...input,
+          organizationId: identity.organizationAppId,
+          createdBy: identity.operationalStaffId,
+        },
         { mapper: identity.mapper, snapshots },
       );
     },

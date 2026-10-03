@@ -178,18 +178,41 @@ export async function loadAuthenticatedIdentityCatalog(
     .map(toScoped)
     .filter((row): row is MappedOrgScoped => Boolean(row));
 
-  const staff: MappedStaff[] = [
-    {
-      membershipDbId: membership.id,
+  const orgMemberships = (
+    await readRows<MembershipRow>(
+      client
+        .from("staff_auth_memberships")
+        .select("id, user_id, auth_user_id, organization_id, role, is_active")
+        .eq("organization_id", membership.organization_id),
+    )
+  ).filter((row) => row.is_active && row.organization_id === membership.organization_id);
+
+  const staff: MappedStaff[] = [];
+  for (const row of orgMemberships) {
+    if (!row.user_id || isAuthUuid(row.user_id) || row.user_id === row.auth_user_id) {
+      continue;
+    }
+    staff.push({
+      membershipDbId: row.id,
       // Auth user id is the Auth identity. Never an operational staff-* id.
       // Do not query profiles.id as operational identity.
+      profileDbId: row.auth_user_id,
+      authUserId: row.auth_user_id,
+      staffAppId: row.user_id,
+      organizationDbId: organization.id,
+      role: row.role,
+    });
+  }
+  if (!staff.some((row) => row.staffAppId === membership.user_id)) {
+    staff.push({
+      membershipDbId: membership.id,
       profileDbId: membership.auth_user_id,
       authUserId: membership.auth_user_id,
       staffAppId: membership.user_id,
       organizationDbId: organization.id,
       role: membership.role,
-    },
-  ];
+    });
+  }
 
   const catalog = new SnapshotIdentityCatalog(
     [{ dbId: organization.id, appId: membership.organization_id }],

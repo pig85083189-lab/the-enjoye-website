@@ -44,6 +44,7 @@ function command(remote: ReturnType<typeof createMemoryRemotePersistence>["remot
       customerId: CUST_SHARED,
       serviceId: SVC_SHARED,
       staffId: STAFF_A,
+      createdBy: STAFF_A,
       appointmentId: id,
       dateYmd: "2026-10-09",
       startHm: "10:00",

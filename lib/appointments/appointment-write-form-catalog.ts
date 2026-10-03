@@ -14,8 +14,21 @@ import {
   type IdentitySupabaseClient,
   type LoadedAuthenticatedIdentity,
 } from "@/lib/persistence/authenticated-identity-catalog";
+import type { StaffMembership, StaffRole } from "@/types/saas";
 import { isAppointmentWritePilotOwner } from "./appointment-write-guard";
 import type { AppointmentWriteCustomerOption } from "./appointment-write-customer-search";
+
+const STAFF_ROLES = new Set<StaffRole>([
+  "OWNER",
+  "MANAGER",
+  "STAFF",
+  "RECEPTIONIST",
+  "ACCOUNTANT",
+]);
+
+function asStaffRole(role: string): StaffRole {
+  return STAFF_ROLES.has(role as StaffRole) ? (role as StaffRole) : "STAFF";
+}
 
 export type { AppointmentWriteCustomerOption } from "./appointment-write-customer-search";
 export { filterAppointmentWriteCustomers } from "./appointment-write-customer-search";
@@ -29,14 +42,45 @@ export type AppointmentWriteServiceOption = AppointmentWriteFormOption & {
   durationMinutes: number;
 };
 
+export type AppointmentWriteStaffOption = AppointmentWriteFormOption & {
+  locationIds: string[];
+  role: string;
+};
+
 export type AppointmentWriteFormCatalog = {
   identity: LoadedAuthenticatedIdentity;
   role: string;
   canCreate: boolean;
   customers: AppointmentWriteCustomerOption[];
   services: AppointmentWriteServiceOption[];
-  staff: AppointmentWriteFormOption[];
+  staff: AppointmentWriteStaffOption[];
 };
+
+export function filterAppointmentWriteStaff(
+  staff: AppointmentWriteStaffOption[],
+  locationId: string,
+): AppointmentWriteStaffOption[] {
+  if (!locationId) return [];
+  return staff.filter(
+    (row) => row.locationIds.length === 0 || row.locationIds.includes(locationId),
+  );
+}
+
+export function appointmentWriteStaffToMembership(
+  staff: AppointmentWriteStaffOption,
+  organizationId: string,
+): StaffMembership {
+  return {
+    id: `remote-staff-${staff.id}`,
+    organizationId,
+    userId: staff.id,
+    locationIds: staff.locationIds,
+    role: asStaffRole(staff.role),
+    displayName: staff.name,
+    isActive: true,
+    createdAt: "",
+  };
+}
 
 async function readNamedRows(
   builder: IdentityQueryBuilder,
@@ -88,19 +132,40 @@ export async function loadAppointmentWriteFormCatalog(
     }
     return [{ id, name, durationMinutes }];
   });
-  const staff = (
+  const membershipRows = (
     await readNamedRows(
       client
         .from("staff_auth_memberships")
-        .select("user_id, display_name, organization_id, is_active")
+        .select("id, user_id, display_name, organization_id, is_active, role")
         .eq("organization_id", identity.organizationAppId),
     )
-  ).flatMap((row) => {
-    if (row.is_active === false) return [];
+  ).filter((row) => row.is_active !== false && row.organization_id === identity.organizationAppId);
+  const locationRows = await readNamedRows(
+    client.from("staff_auth_membership_locations").select("membership_id, location_id"),
+  );
+  const locationsByMembership = new Map<string, string[]>();
+  for (const row of locationRows) {
+    const membershipId = typeof row.membership_id === "string" ? row.membership_id : "";
+    const locationId = typeof row.location_id === "string" ? row.location_id : "";
+    if (!membershipId || !locationId) continue;
+    const current = locationsByMembership.get(membershipId) ?? [];
+    current.push(locationId);
+    locationsByMembership.set(membershipId, current);
+  }
+  const staff = membershipRows.flatMap((row) => {
+    const membershipId = typeof row.id === "string" ? row.id : "";
     const id = typeof row.user_id === "string" ? row.user_id : "";
     const name = asName(row.display_name);
-    if (!id || !name) return [];
-    return [{ id, name }];
+    const role = asName(row.role);
+    if (!membershipId || !id || !name) return [];
+    return [
+      {
+        id,
+        name,
+        role,
+        locationIds: locationsByMembership.get(membershipId) ?? [],
+      },
+    ];
   });
   return {
     identity,

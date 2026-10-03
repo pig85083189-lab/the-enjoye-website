@@ -55,6 +55,7 @@ describe("Phase 1C-6B.1 appointment write command", () => {
         customerId: CUST_SHARED,
         serviceId: SVC_SHARED,
         staffId: STAFF_A,
+        createdBy: STAFF_A,
         dateYmd: "2026-10-09",
         startHm: "10:00",
         durationMinutes: 100,
@@ -91,6 +92,7 @@ describe("Phase 1C-6B.1 appointment write command", () => {
         customerId: CUST_SHARED,
         serviceId: SVC_SHARED,
         staffId: STAFF_A,
+        createdBy: STAFF_A,
         appointmentId: "apt-reuse1-abcdef",
         dateYmd: "2026-10-09",
         startHm: "10:00",
@@ -108,6 +110,7 @@ describe("Phase 1C-6B.1 appointment write command", () => {
           customerId: CUST_SHARED,
           serviceId: SVC_SHARED,
           staffId: STAFF_A,
+          createdBy: STAFF_A,
           dateYmd: "2026-10-09",
           startHm: "10:00",
           durationMinutes: 100,
@@ -115,5 +118,53 @@ describe("Phase 1C-6B.1 appointment write command", () => {
         { mapper: remote.mapper, snapshots: snapshots() },
       ),
     ).toThrow(UnmappedIdentityError);
+  });
+
+  it("keeps selected assignee distinct from authenticated createdBy", () => {
+    const { db, remote } = createMemoryRemotePersistence();
+    const seeded = seedTwoOrgs(db);
+    db.seedStaff(seeded.orgA.dbId, "staff-002", "STAFF");
+    const command = prepareAppointmentCreateCommand(
+      {
+        organizationId: ORG_A,
+        locationId: LOC_A1,
+        customerId: CUST_SHARED,
+        serviceId: SVC_SHARED,
+        staffId: "staff-002",
+        createdBy: STAFF_A,
+        dateYmd: "2026-10-09",
+        startHm: "10:00",
+        durationMinutes: 100,
+      },
+      {
+        mapper: remote.mapper,
+        snapshots: createAppointmentWriteSnapshotCatalog({
+          customers: [{ organizationId: ORG_A, appId: CUST_SHARED, name: "Canonical Customer" }],
+          services: [{ organizationId: ORG_A, appId: SVC_SHARED, name: "Canonical Service" }],
+          staff: [
+            { organizationId: ORG_A, appId: STAFF_A, name: "Owner Staff" },
+            { organizationId: ORG_A, appId: "staff-002", name: "Colleague Staff" },
+          ],
+        }),
+      },
+    );
+    expect(command.staffId).toBe("staff-002");
+    expect(command.createdBy).toBe(STAFF_A);
+    expect(command.staffName).toBe("Colleague Staff");
+    expect(() =>
+      prepareAppointmentCreateCommand(
+        {
+          organizationId: ORG_A,
+          locationId: LOC_A1,
+          customerId: CUST_SHARED,
+          serviceId: SVC_SHARED,
+          staffId: "staff-002",
+          dateYmd: "2026-10-09",
+          startHm: "10:00",
+          durationMinutes: 100,
+        },
+        { mapper: remote.mapper, snapshots: snapshots() },
+      ),
+    ).toThrow(/createdBy/);
   });
 });

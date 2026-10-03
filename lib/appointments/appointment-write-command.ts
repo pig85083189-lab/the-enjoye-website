@@ -87,9 +87,12 @@ export function prepareAppointmentCreateCommand(
     input.organizationId,
     input.staffId,
   );
+  if (!input.createdBy?.trim()) {
+    throw new Error("Appointment create requires authenticated createdBy");
+  }
   const createdBy = deps.mapper.requireOperationalStaffId(
     input.organizationId,
-    input.createdBy ?? input.staffId,
+    input.createdBy,
   );
   const range = appointmentWriteRangeFromTaipei(
     input.dateYmd,

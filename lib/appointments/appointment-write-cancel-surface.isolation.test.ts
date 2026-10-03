@@ -106,6 +106,21 @@ describe("Phase 1C-6D.2 calendar remote cancel surface", () => {
         updatedAt: "",
       }),
     ).toBe(false);
+    expect(
+      isCalendarRemoteCancelEligible({
+        remoteCancelAvailable: true,
+        appointmentId: "apt-muqrindw-yt0l5z",
+        status: "CANCELLED",
+        updatedAt: "2026-10-02T00:00:00.000Z",
+      }),
+    ).toBe(false);
+    expect(
+      resolveCalendarQuickViewActions({
+        readOnly: true,
+        allowRemoteCancel: true,
+        status: "CANCELLED",
+      }),
+    ).toEqual({ canEdit: false, canCancel: false, canTransition: false });
   });
 
   it("exposes Cancel only and keeps Edit / status actions disabled while remote-read", () => {
