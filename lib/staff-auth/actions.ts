@@ -14,6 +14,12 @@ import { tryGetSupabaseServiceRoleKey } from "@/lib/supabase/env";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { canMembershipManageStaff } from "@/lib/staff-auth/actors";
 import type { StaffMembership } from "@/types/saas";
+import { createLiveStaffRemoteProvisionDeps } from "@/lib/staff/staff-remote-create-adapter";
+import type { StaffRemoteCreateDraft } from "@/lib/staff/staff-remote-create-command";
+import { StaffRemoteCreateError } from "@/lib/staff/staff-remote-create-errors";
+import { isStaffRemoteCreatePilotEnabled } from "@/lib/staff/staff-remote-create-flag";
+import { runAuthenticatedStaffRemoteCreate } from "@/lib/staff/staff-remote-create-pilot";
+import type { StaffRemoteCreatePublicMembership } from "@/lib/staff/staff-remote-provision";
 
 export async function getStaffInviteCapabilityAction() {
   return getStaffInviteCapability({
@@ -164,4 +170,46 @@ export async function inviteStaffLoginAction(input: {
   }
 
   return { ok: true, authUserId };
+}
+
+export type ProvisionStaffEmployeeResult =
+  | { ok: true; membership: StaffRemoteCreatePublicMembership }
+  | {
+      ok: false;
+      reason: StaffRemoteCreateError["reason"];
+      message: string;
+      reconciliation?: boolean;
+    };
+
+export async function provisionStaffEmployeeAction(
+  draft: StaffRemoteCreateDraft,
+): Promise<ProvisionStaffEmployeeResult> {
+  if (!isStaffRemoteCreatePilotEnabled()) {
+    return {
+      ok: false,
+      reason: "pilot_disabled",
+      message: "遠端員工建立尚未啟用",
+    };
+  }
+  try {
+    const membership = await runAuthenticatedStaffRemoteCreate(
+      draft,
+      createLiveStaffRemoteProvisionDeps(),
+    );
+    return { ok: true, membership };
+  } catch (error) {
+    if (error instanceof StaffRemoteCreateError) {
+      return {
+        ok: false,
+        reason: error.reason,
+        message: error.message,
+        reconciliation: error.reason === "partial_provisioning",
+      };
+    }
+    return {
+      ok: false,
+      reason: "auth_failed",
+      message: "員工建立失敗",
+    };
+  }
 }

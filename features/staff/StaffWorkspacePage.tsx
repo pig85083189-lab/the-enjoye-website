@@ -53,6 +53,11 @@ import {
 } from "@/lib/staff/staff-workspace-derived";
 import { useIsClient } from "@/lib/repositories/use-crm-store";
 import {
+  applyRemoteMembershipsToClient,
+  organizationHasRemoteMemberships,
+} from "@/lib/staff-auth/membership-query";
+import {
+  emitOrgChange,
   getOrganizationSnapshot,
   listMemberships,
   subscribeOrganization,
@@ -84,7 +89,11 @@ function todayIndexInWeek(now: Date): number {
   return diff >= 0 && diff <= 6 ? diff : 0;
 }
 
-export function StaffWorkspacePage() {
+export function StaffWorkspacePage({
+  staffRemoteCreatePilot = false,
+}: {
+  staffRemoteCreatePilot?: boolean;
+}) {
   const { organization, currentLocation, locations, membership } = useOrganization();
   const isClient = useIsClient();
   const clientNow = useClientNow();
@@ -114,6 +123,7 @@ export function StaffWorkspacePage() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [mobileDayIndex, setMobileDayIndex] = useState(() => todayIndexInWeek(new Date()));
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [qvTab, setQvTab] = useState<"today" | "hours" | "breaks" | "timeoff">("today");
   const [quickOpen, setQuickOpen] = useState(false);
   const [breakDate, setBreakDate] = useState(() => formatYmd(new Date()));
@@ -126,6 +136,8 @@ export function StaffWorkspacePage() {
   const [offReason, setOffReason] = useState("");
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const canAddStaff = canManageStaff(membership?.role);
+  const remoteRosterLocked =
+    isClient && organizationHasRemoteMemberships(organization.id);
 
   const memberships = useMemo(() => {
     void membershipRevision;
@@ -267,12 +279,18 @@ export function StaffWorkspacePage() {
   function handleStaffCreated(result: {
     membership: { userId: string };
     scheduleError: string | null;
+    remote?: boolean;
+    notice?: string;
   }) {
     setOnboardingOpen(false);
     setFilter("all");
     setQuery("");
     setView("staff");
     selectStaff(result.membership.userId);
+    if (result.remote) {
+      setNotice(result.notice || "員工帳號已建立");
+      setError("");
+    }
     if (result.scheduleError) {
       setError(`員工已建立，但初始班表儲存失敗：${result.scheduleError}`);
     }
@@ -333,6 +351,11 @@ export function StaffWorkspacePage() {
           {contextLabel ? (
             <p className="text-[12px] text-secondary-text/80">{contextLabel}</p>
           ) : null}
+          {notice ? (
+            <p className="text-[13px] text-primary" data-staff-create-success role="status">
+              {notice}
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-start gap-2">
           {canAddStaff ? (
@@ -342,6 +365,7 @@ export function StaffWorkspacePage() {
               onClick={() => {
                 setOnboardingOpen(true);
                 setError("");
+                setNotice("");
               }}
             >
               <Plus className="h-3.5 w-3.5" aria-hidden />
@@ -706,13 +730,21 @@ export function StaffWorkspacePage() {
           locations={locations}
           actorRole={membership?.role}
           defaultLocationId={locationId}
+          remoteCreateEnabled={staffRemoteCreatePilot}
+          remoteRosterLocked={remoteRosterLocked && !staffRemoteCreatePilot}
           onClose={() => {
             setOnboardingOpen(false);
             queueMicrotask(() => {
               document.querySelector<HTMLElement>("[data-staff-add]")?.focus();
             });
           }}
-          onCreated={handleStaffCreated}
+          onCreated={(result) => {
+            if (result.remote && result.membershipFull) {
+              applyRemoteMembershipsToClient([result.membershipFull]);
+              emitOrgChange();
+            }
+            handleStaffCreated(result);
+          }}
         />
       ) : null}
     </div>

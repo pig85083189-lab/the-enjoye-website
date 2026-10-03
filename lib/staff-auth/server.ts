@@ -7,6 +7,7 @@ import type { StaffAuthUser } from "@/lib/staff-auth/session";
 import type { StaffMembership } from "@/types/saas";
 import {
   bindStaffAuthMembershipAuthUser,
+  deleteStaffAuthMembership,
   fetchStaffAuthMembershipsByAuthUserId,
   fetchStaffAuthMembershipsByOrganizationId,
   upsertStaffAuthMembership,
@@ -98,6 +99,14 @@ export async function persistServerStaffMembership(
     throw new Error("登入對應尚未設定，請聯絡系統管理員。");
   }
   return upsertStaffAuthMembership(admin, membership);
+}
+
+export async function deleteServerStaffMembership(membershipId: string): Promise<void> {
+  const admin = createServiceRoleClient();
+  if (!admin) {
+    throw new Error("登入對應尚未設定，請聯絡系統管理員。");
+  }
+  await deleteStaffAuthMembership(admin, membershipId);
 }
 
 export async function bindServerStaffMembershipAuthUser(

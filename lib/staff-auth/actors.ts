@@ -1,7 +1,7 @@
 import { listMemberships } from "@/lib/staff-auth/membership-query";
 import type { StaffRole } from "@/types/saas";
 
-const STAFF_MANAGE_ROLES = new Set<StaffRole>(["OWNER", "MANAGER"]);
+const STAFF_MANAGE_ROLES = new Set<StaffRole>(["OWNER"]);
 
 export function canMembershipManageStaff(
   membership: { role: StaffRole; isActive: boolean } | null | undefined,

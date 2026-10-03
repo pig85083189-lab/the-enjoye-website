@@ -34,6 +34,12 @@ export function resetHydratedRemoteMembershipsForTests(): void {
   hydratedRemote = {};
 }
 
+export function organizationHasRemoteMemberships(organizationId: string): boolean {
+  return Object.values(hydratedRemote).some(
+    (row) => row.organizationId === organizationId,
+  );
+}
+
 /** Login hydrate: remote rows become readable on this device without a second store. */
 export function applyRemoteMembershipsToClient(rows: StaffMembership[]): void {
   hydrateRemoteMemberships(rows);

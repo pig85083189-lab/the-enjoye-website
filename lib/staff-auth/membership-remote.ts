@@ -10,6 +10,7 @@ import {
   type StaffAuthMembershipRow,
 } from "@/lib/staff-auth/membership-schema";
 import { assertOperationalStaffId } from "@/lib/staff-auth/staff-id";
+import { MEMBERSHIP_ENJOYE_OWNER_ID } from "@/lib/tenant/constants";
 
 export async function fetchStaffAuthMembershipsByAuthUserId(
   client: SupabaseClient,
@@ -62,6 +63,26 @@ export async function upsertStaffAuthMembership(
     if (insertError) throw new Error(insertError.message);
   }
   return staffMembershipFromRow(data as StaffAuthMembershipRow, membership.locationIds);
+}
+
+export async function deleteStaffAuthMembership(
+  client: SupabaseClient,
+  membershipId: string,
+): Promise<void> {
+  if (membershipId === MEMBERSHIP_ENJOYE_OWNER_ID) {
+    throw new Error("不得刪除現有店主");
+  }
+  const { error: locationError } = await client
+    .from(STAFF_AUTH_MEMBERSHIP_LOCATIONS_TABLE)
+    .delete()
+    .eq("membership_id", membershipId);
+  if (locationError) throw new Error(locationError.message);
+  const { error } = await client
+    .from(STAFF_AUTH_MEMBERSHIPS_TABLE)
+    .delete()
+    .eq("id", membershipId)
+    .neq("id", MEMBERSHIP_ENJOYE_OWNER_ID);
+  if (error) throw new Error(error.message);
 }
 
 export async function bindStaffAuthMembershipAuthUser(

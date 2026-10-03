@@ -222,7 +222,7 @@ describe("L–N staff management actor guards", () => {
     expect(created.authUserId).toBeNull();
   });
 
-  it("M MANAGER can invite/manage", () => {
+  it("M MANAGER cannot invite/manage", () => {
     const manager = createMembership({
       organizationId: ORG_ENJOYE_ID,
       displayName: "店長",
@@ -230,15 +230,16 @@ describe("L–N staff management actor guards", () => {
       locationIds: [LOC_ENJOYE_PRIMARY_ID],
       actorStaffId: "staff-001",
     });
-    expect(canActorManageStaff(ORG_ENJOYE_ID, manager.userId)).toBe(true);
-    const created = createMembership({
-      organizationId: ORG_ENJOYE_ID,
-      displayName: "店長新增",
-      role: "STAFF",
-      locationIds: [LOC_ENJOYE_PRIMARY_ID],
-      actorStaffId: manager.userId,
-    });
-    expect(created.userId).not.toBe(manager.id);
+    expect(canActorManageStaff(ORG_ENJOYE_ID, manager.userId)).toBe(false);
+    expect(() =>
+      createMembership({
+        organizationId: ORG_ENJOYE_ID,
+        displayName: "店長新增",
+        role: "STAFF",
+        locationIds: [LOC_ENJOYE_PRIMARY_ID],
+        actorStaffId: manager.userId,
+      }),
+    ).toThrow(/沒有權限/);
   });
 
   it("N STAFF cannot manage staff", () => {

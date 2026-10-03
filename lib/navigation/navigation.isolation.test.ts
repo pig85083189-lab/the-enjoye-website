@@ -103,6 +103,12 @@ describe("role-aware visibility", () => {
     expect(ids).toContain("reports");
   });
 
+  it("hides Staff from MANAGER and every non-OWNER role", () => {
+    for (const role of ["MANAGER", "STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
+      expect(getVisibleNavigationItems(role).map((item) => item.id)).not.toContain("staff");
+    }
+  });
+
   it("RECEPTIONIST can see checkout but not treatments list by role gate", () => {
     expect(isNavItemVisibleForRole(
       NAVIGATION_ITEMS.find((i) => i.id === "checkout")!,
