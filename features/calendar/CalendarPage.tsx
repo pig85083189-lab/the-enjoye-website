@@ -893,16 +893,17 @@ function AppointmentEditor({
   onSaved: () => void;
 }) {
   const dialogRef = useDialogA11y(onClose);
-  const [, setRemoteTick] = useState(0);
-  const remoteSubmissionRef = useRef<AppointmentCreateSubmission<unknown> | null>(
-    null,
+  const [remoteTick, setRemoteTick] = useState(0);
+  const [remoteSubmission] = useState<AppointmentCreateSubmission<unknown> | null>(
+    () =>
+      remoteCreate
+        ? new AppointmentCreateSubmission(allocateAppointmentWriteAppId())
+        : null,
   );
-  if (remoteCreate && !remoteSubmissionRef.current) {
-    remoteSubmissionRef.current = new AppointmentCreateSubmission(
-      allocateAppointmentWriteAppId(),
-    );
-  }
-  const remoteSubmission = remoteSubmissionRef.current;
+  const remoteSaveDisabled = Boolean(
+    remoteSubmission && appointmentWriteSaveDisabled(remoteSubmission.phase),
+  );
+  void remoteTick;
   const customers = remoteCreate
     ? remoteCreate.customers.map((c) => ({
         id: c.id,
@@ -1001,6 +1002,7 @@ function AppointmentEditor({
     date,
     start,
     end,
+    remoteCreate,
   ]);
 
   const suggested = useMemo(() => {
@@ -1026,6 +1028,7 @@ function AppointmentEditor({
     date,
     start,
     end,
+    remoteCreate,
   ]);
 
   function applyDuration(
@@ -1333,7 +1336,7 @@ function AppointmentEditor({
           ) : (
             <Button
               className="min-h-11"
-              disabled={Boolean(remoteSubmission && remoteSubmission.saveDisabled)}
+              disabled={remoteSaveDisabled}
               onClick={() => void save(false)}
             >
               儲存

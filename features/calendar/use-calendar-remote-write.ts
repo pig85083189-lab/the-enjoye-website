@@ -31,17 +31,14 @@ function writeClient(): AppointmentWriteClient | null {
 }
 
 export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteState {
-  const [state, setState] = useState<CalendarRemoteWriteState>(
-    enabled ? { status: "loading", canCreate: false } : { status: "off", canCreate: false },
-  );
+  const [result, setResult] = useState<Exclude<
+    CalendarRemoteWriteState,
+    { status: "off" } | { status: "loading" }
+  > | null>(null);
 
   useEffect(() => {
-    if (!enabled) {
-      setState({ status: "off", canCreate: false });
-      return undefined;
-    }
+    if (!enabled) return undefined;
     let cancelled = false;
-    setState({ status: "loading", canCreate: false });
     void (async () => {
       try {
         const client = writeClient();
@@ -51,17 +48,17 @@ export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteSta
         const catalog = await loadAppointmentWriteFormCatalog(client);
         if (cancelled) return;
         if (!catalog.canCreate) {
-          setState({
+          setResult({
             status: "denied",
             canCreate: false,
             message: appointmentWriteUserMessage(new AppointmentWritePilotDeniedError()),
           });
           return;
         }
-        setState({ status: "ready", canCreate: true, catalog });
+        setResult({ status: "ready", canCreate: true, catalog });
       } catch (error: unknown) {
         if (cancelled) return;
-        setState({
+        setResult({
           status: "error",
           canCreate: false,
           message: appointmentWriteUserMessage(error),
@@ -73,7 +70,9 @@ export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteSta
     };
   }, [enabled]);
 
-  return state;
+  if (!enabled) return { status: "off", canCreate: false };
+  if (!result) return { status: "loading", canCreate: false };
+  return result;
 }
 
 export async function submitCalendarRemoteAppointmentCreate(input: {
