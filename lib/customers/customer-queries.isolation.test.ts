@@ -76,6 +76,25 @@ describe("Phase 1C-1 customer async application layer", () => {
     expect(await findCustomersByPhone(ORG_A, "0912888777", remote)).toHaveLength(1);
   });
 
+  it("reuses a caller-allocated generated customer app id", async () => {
+    const { db, remote } = createMemoryRemotePersistence();
+    seedTwoOrgs(db);
+    const created = await createCustomer(
+      {
+        id: "cust-allocated-id01",
+        organizationId: ORG_A,
+        name: "指定編號",
+        phone: "0912000222",
+        primaryStaffId: STAFF_A,
+      },
+      remote,
+    );
+    expect(created.id).toBe("cust-allocated-id01");
+    expect(db.getCustomerByAppId(remote.mapper.resolveOrganizationDbId(ORG_A), created.id)?.app_id).toBe(
+      "cust-allocated-id01",
+    );
+  });
+
   it("rejects demo / seed customer promotion through the create flow", async () => {
     const { db, remote } = createMemoryRemotePersistence();
     seedTwoOrgs(db);

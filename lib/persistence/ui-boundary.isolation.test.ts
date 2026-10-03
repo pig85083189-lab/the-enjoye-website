@@ -63,6 +63,7 @@ describe("Phase 1C-3 customer remote read UI boundary", () => {
       "features/customers/CustomerListPage.tsx",
       "features/customers/CustomerProfilePage.tsx",
       "features/customers/use-customer-remote-read.ts",
+      "features/customers/ConsultationWizard.tsx",
     ];
     for (const file of files) {
       const source = readFileSync(path.join(ROOT, file), "utf8");
@@ -111,6 +112,20 @@ describe("Phase 1C-4 service remote foundation UI boundary", () => {
     const detail = readFileSync(path.join(ROOT, "app/staff/(app)/customers/[id]/page.tsx"), "utf8");
     expect(list).toMatch(/isCustomerRemoteReadPilotEnabled/);
     expect(detail).toMatch(/isCustomerRemoteReadPilotEnabled/);
+  });
+
+  it("keeps Customer RSC off the customer write factory", () => {
+    for (const file of [
+      "app/staff/(app)/customers/page.tsx",
+      "app/staff/(app)/customers/new/page.tsx",
+      "app/staff/(app)/customers/[id]/page.tsx",
+    ]) {
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      expect(source).not.toMatch(
+        /customer-remote-write-pilot|AuthenticatedCustomerWriteStore|runAuthenticatedCustomerWriteCreate/,
+      );
+      expect(source).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    }
   });
 
   it("keeps Today / Calendar / Checkout / Treatment off the Service remote write path", () => {

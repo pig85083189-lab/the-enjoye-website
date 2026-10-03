@@ -16,23 +16,15 @@ import { AuthenticatedCustomerReadStore } from "@/lib/persistence/authenticated-
 import { CustomerRemoteAdapter } from "@/lib/persistence/customer-remote-adapter";
 import type { Customer } from "@/types";
 
-export const CUSTOMER_REMOTE_READ_PILOT_ENV = "BEAUTY_OS_CUSTOMER_REMOTE_READ_PILOT";
+export {
+  CUSTOMER_REMOTE_READ_PILOT_ENV,
+  isCustomerRemoteReadPilotEnabled,
+} from "./customer-remote-read-flag";
 
 export {
   CustomerRemoteReadOnlyError,
   CUSTOMER_REMOTE_READ_ONLY_MESSAGE,
 } from "@/lib/persistence/authenticated-customer-read-store";
-
-export function isCustomerRemoteReadPilotEnabled(
-  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
-): boolean {
-  const vercelEnv = (env.VERCEL_ENV ?? "").trim().toLowerCase();
-  const targetEnv = (env.VERCEL_TARGET_ENV ?? "").trim().toLowerCase();
-  if (vercelEnv === "production" || targetEnv === "production") {
-    return false;
-  }
-  return env[CUSTOMER_REMOTE_READ_PILOT_ENV] === "1";
-}
 
 export async function createAuthenticatedCustomerReadPersistence(
   client: IdentitySupabaseClient,

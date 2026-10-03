@@ -5,36 +5,60 @@ import {
   CUSTOMER_REMOTE_CREATE_UNAVAILABLE_REASON,
   resolveCustomerListCreateSurface,
 } from "./customer-create-surface";
-import { CUSTOMER_REMOTE_READ_ONLY_MESSAGE } from "@/lib/persistence/authenticated-customer-read-store";
 
-describe("Phase 1C-6C customer list create surface", () => {
-  it("keeps remote-read list create disabled and off the local wizard", () => {
-    expect(resolveCustomerListCreateSurface(true)).toEqual({
+describe("Phase customer remote-create surface", () => {
+  it("re-enables +新增客戶 only when the write pilot is on", () => {
+    expect(
+      resolveCustomerListCreateSurface({
+        remoteReadPilot: true,
+        remoteWritePilot: true,
+      }),
+    ).toEqual({
+      mode: "remote-create",
+      href: "/staff/customers/new",
+      disabled: false,
+    });
+    expect(
+      resolveCustomerListCreateSurface({
+        remoteReadPilot: true,
+        remoteWritePilot: false,
+      }),
+    ).toEqual({
       mode: "remote-read-only",
       href: null,
       disabled: true,
       reason: CUSTOMER_REMOTE_CREATE_UNAVAILABLE_REASON,
     });
-    expect(resolveCustomerListCreateSurface(false)).toEqual({
+    expect(
+      resolveCustomerListCreateSurface({
+        remoteReadPilot: false,
+        remoteWritePilot: false,
+      }),
+    ).toEqual({
       mode: "local-create",
       href: "/staff/customers/new",
       disabled: false,
     });
   });
 
-  it("does not invent a customer remote-write path", () => {
-    const store = readFileSync(
-      path.join(process.cwd(), "lib/persistence/authenticated-customer-read-store.ts"),
-      "utf8",
-    );
+  it("keeps the list button and new-page RSC on flag files only", () => {
     const list = readFileSync(
       path.join(process.cwd(), "features/customers/CustomerListPage.tsx"),
       "utf8",
     );
-    expect(store).toMatch(/insertCustomer\(\): never/);
-    expect(store).toMatch(CUSTOMER_REMOTE_READ_ONLY_MESSAGE);
+    const page = readFileSync(
+      path.join(process.cwd(), "app/staff/(app)/customers/page.tsx"),
+      "utf8",
+    );
+    const created = readFileSync(
+      path.join(process.cwd(), "app/staff/(app)/customers/new/page.tsx"),
+      "utf8",
+    );
     expect(list).toMatch(/resolveCustomerListCreateSurface/);
-    expect(list).toMatch(/data-customer-create/);
-    expect(list).not.toMatch(/CUSTOMER_REMOTE_WRITE|createAuthenticatedCustomerWrite/);
+    expect(list).toMatch(/remoteWritePilot/);
+    expect(page).toMatch(/customer-remote-write-flag/);
+    expect(page).not.toMatch(/customer-remote-write-pilot|AuthenticatedCustomerWriteStore/);
+    expect(created).toMatch(/customer-remote-write-flag/);
+    expect(created).not.toMatch(/customer-remote-write-pilot|createBrowserClient|localCustomerRepository/);
   });
 });

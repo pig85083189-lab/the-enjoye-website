@@ -27,6 +27,7 @@ export interface RealCustomerCreateInput {
   name: string;
   phone: string;
   primaryStaffId: string;
+  id?: string;
   email?: string;
   lineId?: string;
   birthday?: string;
@@ -72,7 +73,7 @@ export function buildRealCustomerCreate(input: RealCustomerCreateInput): Custome
   if (!input.organizationId) throw new Error("organizationId is required");
   if (!input.primaryStaffId) throw new Error("primaryStaffId is required");
   birthdayToRemoteDate(input.birthday);
-  const id = newId("cust");
+  const id = input.id ?? newId("cust");
   if (!isGeneratedCustomerAppId(id)) {
     throw new Error("Customer app id must be generated via newId(\"cust\")");
   }

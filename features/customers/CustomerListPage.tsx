@@ -81,8 +81,10 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
 
 export function CustomerListPage({
   remoteReadPilot = false,
+  remoteWritePilot = false,
 }: {
   remoteReadPilot?: boolean;
+  remoteWritePilot?: boolean;
 }) {
   const { organization } = useOrganization();
   const isClient = useIsClient();
@@ -184,7 +186,10 @@ export function CustomerListPage({
     remoteReadPilot && (!isClient || remote.status === "loading");
   const remoteFailed = remoteReadPilot && remote.status === "error";
   const showCounts = isClient && !remotePending && !remoteFailed;
-  const createSurface = resolveCustomerListCreateSurface(remoteReadPilot);
+  const createSurface = resolveCustomerListCreateSurface({
+    remoteReadPilot,
+    remoteWritePilot,
+  });
 
   return (
     <div
@@ -224,7 +229,7 @@ export function CustomerListPage({
         ) : (
           <Link href={createSurface.href} className="shrink-0">
             <Button
-              data-customer-create="local-create"
+              data-customer-create={createSurface.mode}
               className="h-9 min-h-9 rounded-full px-4 text-[13px]"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden />
