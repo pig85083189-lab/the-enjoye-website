@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { Component, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { useCustomerRemoteAppointments } from "@/features/customers/use-appointment-remote-read";
@@ -17,6 +17,47 @@ import {
 } from "@/lib/appointments/domain";
 import { formatTaipeiAppointmentDisplay } from "@/lib/persistence/appointment-time";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
+
+function AppointmentRemoteReadErrorFallback({ message }: { message: string }) {
+  return (
+    <div className="space-y-2 rounded-2xl border border-border bg-surface px-4 py-5">
+      <p className="font-medium text-text">無法讀取預約紀錄</p>
+      <p className="text-[15px] text-secondary-text">{message}</p>
+    </div>
+  );
+}
+
+class AppointmentRemoteReadErrorBoundary extends Component<
+  { children: ReactNode },
+  { message: string | null }
+> {
+  state: { message: string | null } = { message: null };
+
+  static getDerivedStateFromError(error: unknown): { message: string } {
+    return {
+      message: error instanceof Error ? error.message : "Remote appointment read failed",
+    };
+  }
+
+  render() {
+    if (this.state.message) {
+      return <AppointmentRemoteReadErrorFallback message={this.state.message} />;
+    }
+    return this.props.children;
+  }
+}
+
+function formatRemoteAppointmentDisplay(item: ScheduleAppointment): { date: string; time: string } {
+  try {
+    return formatTaipeiAppointmentDisplay(item.startAt, item.endAt);
+  } catch (error: unknown) {
+    throw new Error(
+      error instanceof Error
+        ? `Appointment display failed: ${error.message}`
+        : "Appointment display failed",
+    );
+  }
+}
 
 function formatLocalDateTime(iso: string): { date: string; time: string } {
   const d = new Date(iso);
@@ -210,23 +251,20 @@ export function AppointmentsTab({
       );
     }
     if (remote.status === "error") {
-      return (
-        <div className="space-y-2 rounded-2xl border border-border bg-surface px-4 py-5">
-          <p className="font-medium text-text">無法讀取預約紀錄</p>
-          <p className="text-[15px] text-secondary-text">{remote.message}</p>
-        </div>
-      );
+      return <AppointmentRemoteReadErrorFallback message={remote.message} />;
     }
     const items = remote.status === "data" ? remote.value : [];
     return (
-      <AppointmentSections
-        items={items}
-        formatDisplay={(item) => formatTaipeiAppointmentDisplay(item.startAt, item.endAt)}
-        showCanonicalStatus
-        showCalendarLink={false}
-        emptyUpcoming="尚無預約紀錄"
-        emptyHistory="尚無預約紀錄"
-      />
+      <AppointmentRemoteReadErrorBoundary>
+        <AppointmentSections
+          items={items}
+          formatDisplay={formatRemoteAppointmentDisplay}
+          showCanonicalStatus
+          showCalendarLink={false}
+          emptyUpcoming="尚無預約紀錄"
+          emptyHistory="尚無預約紀錄"
+        />
+      </AppointmentRemoteReadErrorBoundary>
     );
   }
 

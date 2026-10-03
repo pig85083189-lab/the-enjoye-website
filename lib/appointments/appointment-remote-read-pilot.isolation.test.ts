@@ -381,6 +381,20 @@ describe("Phase 1C-5C appointment remote read pilot", () => {
     expect(store).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
   });
 
+  it("does not let the RSC customer page import the appointment adapter graph", () => {
+    const page = readFileSync(
+      path.join(process.cwd(), "app/staff/(app)/customers/[id]/page.tsx"),
+      "utf8",
+    );
+    const flag = readFileSync(
+      path.join(process.cwd(), "lib/appointments/appointment-remote-read-flag.ts"),
+      "utf8",
+    );
+    expect(page).toMatch(/from ["']@\/lib\/appointments\/appointment-remote-read-flag["']/);
+    expect(page).not.toMatch(/appointment-remote-read-pilot/);
+    expect(flag).not.toMatch(/AppointmentRemoteAdapter|loadAuthenticatedIdentityCatalog|IdentitySupabaseClient/);
+  });
+
   it("pilot flag is Preview-only and independent of global persistence", () => {
     expect(APPOINTMENT_REMOTE_READ_PILOT_ENV).toBe("BEAUTY_OS_APPOINTMENT_REMOTE_READ_PILOT");
     expect(isAppointmentRemoteReadPilotEnabled({})).toBe(false);
