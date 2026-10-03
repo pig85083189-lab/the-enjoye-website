@@ -56,9 +56,11 @@ export {
 } from "./appointment-write-guard";
 
 export {
+  AppointmentConflictError,
   AppointmentWriteIntegrityError,
   AppointmentWriteRetryableError,
   createAppointmentSafely,
+  isAppointmentExclusionConflictError,
 } from "./appointment-write-create";
 
 export type AppointmentWriteClient = IdentitySupabaseClient &
