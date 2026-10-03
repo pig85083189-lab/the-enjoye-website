@@ -100,7 +100,6 @@ export function formatCalendarAppointmentDisplay(
 ): { date: string; time: string } {
   if (useTaipeiTime) return formatTaipeiAppointmentDisplay(startAt, endAt);
   const start = new Date(startAt);
-  const end = new Date(endAt);
   const date = `${start.getFullYear()}/${String(start.getMonth() + 1).padStart(2, "0")}/${String(start.getDate()).padStart(2, "0")}`;
   return {
     date,
