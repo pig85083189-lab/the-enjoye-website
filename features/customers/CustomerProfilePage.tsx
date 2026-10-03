@@ -37,16 +37,23 @@ function isWalletSection(value: string | null): value is Customer360WalletSectio
   return value === "packages" || value === "stored-value";
 }
 
+export type CustomerProfileIsolationLayer = "shell" | "workspace" | "tabs" | "full";
+
 interface CustomerProfilePageProps {
   customerId: string;
   remoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
+  /** Temporary Preview isolation only. Formal route never passes this. */
+  isolationLayer?: CustomerProfileIsolationLayer;
+  isolationTab?: Customer360TabId;
 }
 
 export function CustomerProfilePage({
   customerId,
   remoteReadPilot = false,
   appointmentRemoteReadPilot = false,
+  isolationLayer,
+  isolationTab,
 }: CustomerProfilePageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -75,7 +82,7 @@ export function CustomerProfilePage({
   const initialTab = searchParams.get("tab");
   const initialSection = searchParams.get("section");
   const [tab, setTab] = useState<Customer360TabId>(
-    isCustomer360TabId(initialTab) ? initialTab : "overview",
+    isolationTab ?? (isCustomer360TabId(initialTab) ? initialTab : "overview"),
   );
   const [walletSection, setWalletSection] = useState<Customer360WalletSection | undefined>(
     isWalletSection(initialSection) ? initialSection : undefined,
@@ -150,8 +157,19 @@ export function CustomerProfilePage({
     );
   }
 
+  if (isolationLayer === "shell") {
+    return (
+      <div data-isolation-stage="B" className="space-y-2 rounded-2xl border border-border bg-surface px-4 py-5">
+        <p className="font-medium text-text">CustomerProfilePage shell</p>
+        <p className="text-sm text-secondary-text">{customer.name}</p>
+        <p className="text-sm text-secondary-text">{customer.id}</p>
+      </div>
+    );
+  }
+
   return (
     <Customer360Workspace
+      isolationLayer={isolationLayer}
       remoteReadPilot={remoteReadPilot}
       appointmentRemoteReadPilot={appointmentRemoteReadPilot}
       customer={customer}
@@ -178,6 +196,7 @@ export function CustomerProfilePage({
 }
 
 function Customer360Workspace({
+  isolationLayer,
   remoteReadPilot = false,
   appointmentRemoteReadPilot = false,
   customer,
@@ -191,6 +210,7 @@ function Customer360Workspace({
   onMobileMoreOpen,
   onSelectTab,
 }: {
+  isolationLayer?: CustomerProfileIsolationLayer;
   remoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
   customer: Customer;
@@ -210,6 +230,8 @@ function Customer360Workspace({
   const initials = customer.name.slice(0, 1);
   const visitLabel =
     snapshot.visitCount > 0 ? `第 ${snapshot.visitCount} 次來店` : "尚未到店";
+  const showTabs = isolationLayer !== "workspace";
+  const showPanel = isolationLayer == null || isolationLayer === "full";
 
   return (
     <div
@@ -372,11 +394,14 @@ function Customer360Workspace({
 
       <div className="grid min-w-0 gap-4 min-[1200px]:grid-cols-[minmax(0,1fr)_320px] min-[1200px]:gap-5">
         <div className="min-w-0 space-y-4">
-          <Customer360Tabs
-            tab={tab}
-            walletSection={walletSection}
-            onSelect={onSelectTab}
-          />
+          {showTabs ? (
+            <Customer360Tabs
+              tab={tab}
+              walletSection={walletSection}
+              onSelect={onSelectTab}
+            />
+          ) : null}
+          {showPanel ? (
           <div
             role="tabpanel"
             id={`customer-tabpanel-${tab}`}
@@ -410,6 +435,7 @@ function Customer360Workspace({
             {tab === "transactions" ? <TransactionsTab customerId={customer.id} /> : null}
             {tab === "notes" ? <NotesTab customerId={customer.id} /> : null}
           </div>
+          ) : null}
         </div>
 
         <aside className="hidden min-[1200px]:block">
@@ -426,7 +452,9 @@ function Customer360Workspace({
         </aside>
       </div>
 
-      <MobileStickyTreatment href={snapshot.treatmentHref} readOnly={remoteReadPilot} />
+      {showPanel ? (
+        <MobileStickyTreatment href={snapshot.treatmentHref} readOnly={remoteReadPilot} />
+      ) : null}
     </div>
   );
 }

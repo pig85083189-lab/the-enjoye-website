@@ -5,6 +5,7 @@
  */
 
 export const APPOINTMENT_READ_DIAGNOSTIC_ROUTE = "/staff/appointment-read-diagnostic";
+export const CUSTOMER_PROFILE_ISOLATION_ROUTE = "/staff/customer-profile-isolation";
 
 export function isAppointmentReadDiagnosticEnabled(
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
