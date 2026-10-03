@@ -186,6 +186,7 @@ describe("Phase 1C-5C appointment remote read UI boundary", () => {
     expect(page).toMatch(/isAppointmentRemoteReadPilotEnabled/);
     expect(page).toMatch(/appointment-remote-read-flag/);
     expect(page).not.toMatch(/appointment-remote-read-pilot/);
+    expect(page).not.toMatch(/appointment-read-diagnostic/);
     expect(profile).toMatch(/appointmentRemoteReadPilot/);
     expect(tab).toMatch(/useCustomerRemoteAppointments/);
     expect(tab).toMatch(/formatTaipeiAppointmentDisplay/);
