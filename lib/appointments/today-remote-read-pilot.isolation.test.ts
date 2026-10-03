@@ -424,6 +424,25 @@ describe("Phase 1C-5E Today remote read pilot", () => {
     expect(
       existsSync(path.join(process.cwd(), "app/staff/(app)/today-read-diagnostic/page.tsx")),
     ).toBe(false);
+    expect(existsSync(path.join(process.cwd(), "app/staff/today-qa/page.tsx"))).toBe(false);
+    expect(existsSync(path.join(process.cwd(), "app/staff/(app)/today-qa/page.tsx"))).toBe(false);
+    expect(existsSync(path.join(process.cwd(), "features/today/TodayQaPage.tsx"))).toBe(false);
+    expect(existsSync(path.join(process.cwd(), "features/today/TodayReadDiagnosticPage.tsx"))).toBe(
+      false,
+    );
+    for (const file of [
+      "app/staff/(app)/today/page.tsx",
+      "features/today/TodayDashboard.tsx",
+      "features/today/use-today-remote-read.ts",
+      "features/today/today-remote-read-boundary.tsx",
+      "lib/appointments/today-remote-read-flag.ts",
+      "lib/appointments/today-remote-read-pilot.ts",
+      "lib/today/today-appointment-view.ts",
+    ]) {
+      const impl = readFileSync(path.join(process.cwd(), file), "utf8");
+      expect(impl).not.toMatch(/qaDate|dateOverride|forceTodayDate|QA_TODAY_DATE|todayDateOverride/);
+      expect(impl).not.toMatch(/console\.(log|debug|info)/);
+    }
   });
 
   it("keeps Calendar and Customer 360 on independent flags", () => {

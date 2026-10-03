@@ -434,8 +434,12 @@ describe("Phase 1C-5E Today remote read UI boundary", () => {
       if (
         source.includes("/staff/today-read-diagnostic") ||
         source.includes("/staff/today-bootstrap") ||
+        source.includes("/staff/today-qa") ||
         source.includes("TodayReadDiagnosticPage") ||
-        source.includes("isTodayReadDiagnosticEnabled")
+        source.includes("TodayQaPage") ||
+        source.includes("isTodayReadDiagnosticEnabled") ||
+        source.includes("forceTodayDate") ||
+        source.includes("QA_TODAY_DATE")
       ) {
         offenders.push(file);
       }
