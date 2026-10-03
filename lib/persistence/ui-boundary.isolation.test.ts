@@ -327,4 +327,33 @@ describe("Phase 1C-5D calendar remote read UI boundary", () => {
     expect(tab).toMatch(/useCustomerRemoteAppointments/);
     expect(tab).not.toMatch(/useCalendarRemoteAppointments/);
   });
+
+  it("does not leave temporary Calendar diagnostic or QA-only routes", () => {
+    expect(existsSync(path.join(ROOT, "app/staff/(app)/calendar-read-diagnostic/page.tsx"))).toBe(
+      false,
+    );
+    expect(existsSync(path.join(ROOT, "app/staff/calendar-bootstrap/page.tsx"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "features/calendar/CalendarReadDiagnosticPage.tsx"))).toBe(
+      false,
+    );
+    expect(existsSync(path.join(ROOT, "lib/appointments/calendar-read-diagnostic.ts"))).toBe(false);
+    expect(existsSync(path.join(ROOT, "lib/appointments/calendar-read-diagnostic-flag.ts"))).toBe(
+      false,
+    );
+    const files = ["app", "lib", "features", "components"].flatMap(walkSource);
+    const offenders: string[] = [];
+    for (const file of files) {
+      if (file.endsWith(".isolation.test.ts")) continue;
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      if (
+        source.includes("/staff/calendar-read-diagnostic") ||
+        source.includes("/staff/calendar-bootstrap") ||
+        source.includes("CalendarReadDiagnosticPage") ||
+        source.includes("isCalendarReadDiagnosticEnabled")
+      ) {
+        offenders.push(file);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });

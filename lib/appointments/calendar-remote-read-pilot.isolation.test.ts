@@ -536,6 +536,12 @@ describe("Phase 1C-5D calendar remote read pilot", () => {
     expect(existsSync(path.join(process.cwd(), "app/staff/appointment-bootstrap/page.tsx"))).toBe(
       false,
     );
+    expect(
+      existsSync(path.join(process.cwd(), "app/staff/(app)/calendar-read-diagnostic/page.tsx")),
+    ).toBe(false);
+    expect(existsSync(path.join(process.cwd(), "app/staff/calendar-bootstrap/page.tsx"))).toBe(
+      false,
+    );
     const store = readFileSync(
       path.join(process.cwd(), "lib/persistence/authenticated-appointment-read-store.ts"),
       "utf8",
