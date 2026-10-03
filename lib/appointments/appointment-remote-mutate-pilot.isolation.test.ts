@@ -405,9 +405,10 @@ describe("Phase 1C-6D.1 appointment remote mutate foundation", () => {
     expect(today).toMatch(/readOnly=\{todayRemoteReadPilot\}/);
     expect(profile).toMatch(/readOnly=\{remoteReadPilot\}/);
     expect(quickView).toMatch(/行事曆遠端讀取試點為唯讀/);
+    expect(calendar).toMatch(/submitCalendarRemoteAppointmentCancel/);
     expect(calendar).not.toMatch(/runAuthenticatedAppointmentWriteMutate|BEAUTY_OS_APPOINTMENT_REMOTE_MUTATE_PILOT/);
-    expect(today).not.toMatch(/runAuthenticatedAppointmentWriteMutate|BEAUTY_OS_APPOINTMENT_REMOTE_MUTATE_PILOT/);
-    expect(profile).not.toMatch(/runAuthenticatedAppointmentWriteMutate|BEAUTY_OS_APPOINTMENT_REMOTE_MUTATE_PILOT/);
+    expect(today).not.toMatch(/runAuthenticatedAppointmentWriteMutate|BEAUTY_OS_APPOINTMENT_REMOTE_MUTATE_PILOT|submitCalendarRemoteAppointmentCancel/);
+    expect(profile).not.toMatch(/runAuthenticatedAppointmentWriteMutate|BEAUTY_OS_APPOINTMENT_REMOTE_MUTATE_PILOT|submitCalendarRemoteAppointmentCancel/);
     expect(page).not.toMatch(/appointment-remote-mutate-pilot|runAuthenticatedAppointmentWriteMutate/);
     expect(flag).not.toMatch(
       /AppointmentRemoteAdapter|AuthenticatedAppointmentTableStore|loadAuthenticatedIdentityCatalog/,

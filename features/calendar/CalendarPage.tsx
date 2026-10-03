@@ -19,6 +19,7 @@ import {
   WeekGrid,
 } from "@/features/calendar/CalendarViews";
 import { useCalendarRemoteAppointments } from "@/features/calendar/use-calendar-remote-read";
+import { submitCalendarRemoteAppointmentCancel } from "@/features/calendar/use-calendar-remote-cancel";
 import {
   submitCalendarRemoteAppointmentCreate,
   useCalendarRemoteWrite,
@@ -37,6 +38,10 @@ import {
 import { DEFAULT_SERVICE_DURATION_MINUTES } from "@/lib/appointments/calendar-config";
 import { allocateAppointmentWriteAppId } from "@/lib/appointments/appointment-write-command";
 import { filterAppointmentWriteCustomers } from "@/lib/appointments/appointment-write-customer-search";
+import {
+  isCalendarRemoteCancelEligible,
+  resolveCalendarCancelSurface,
+} from "@/lib/appointments/appointment-write-cancel-surface";
 import { resolveCalendarCreateSurface } from "@/lib/appointments/appointment-write-surface";
 import {
   AppointmentCreateSubmission,
@@ -165,9 +170,11 @@ function formatWeekTitle(weekStart: Date): string {
 export function CalendarPage({
   calendarRemoteReadPilot = false,
   appointmentRemoteWritePilot = false,
+  appointmentRemoteMutatePilot = false,
 }: {
   calendarRemoteReadPilot?: boolean;
   appointmentRemoteWritePilot?: boolean;
+  appointmentRemoteMutatePilot?: boolean;
 }) {
   const { organization, currentLocation, locations, membership } =
     useOrganization();
@@ -206,6 +213,12 @@ export function CalendarPage({
   const createSurface = resolveCalendarCreateSurface({
     calendarRemoteReadPilot,
     appointmentRemoteWritePilot,
+    authenticatedOwner: remoteWrite.canCreate,
+  });
+  const cancelSurface = resolveCalendarCancelSurface({
+    calendarRemoteReadPilot,
+    appointmentRemoteWritePilot,
+    appointmentRemoteMutatePilot,
     authenticatedOwner: remoteWrite.canCreate,
   });
 
@@ -377,6 +390,18 @@ export function CalendarPage({
     editing,
     creating,
   });
+  const allowRemoteCancel = Boolean(
+    selected &&
+      isCalendarRemoteCancelEligible({
+        remoteCancelAvailable: cancelSurface.remoteCancelAvailable,
+        appointmentId: selected.id,
+        status: selected.status,
+        updatedAt: selected.updatedAt,
+      }),
+  );
+  const cancelItem = cancelTarget
+    ? (appointments.find((item) => item.id === cancelTarget.id) ?? cancelTarget)
+    : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 min-[720px]:gap-5">
@@ -663,6 +688,7 @@ export function CalendarPage({
               currentLocation?.name
             }
             readOnly={calendarRemoteReadPilot}
+            allowRemoteCancel={allowRemoteCancel}
             useTaipeiTime={calendarRemoteReadPilot}
             onClose={() => setSelectedId(null)}
             onEdit={() => {
@@ -670,8 +696,9 @@ export function CalendarPage({
               setEditing(true);
             }}
             onRequestCancel={() => {
-              if (calendarRemoteReadPilot) return;
-              setCancelTarget(selected);
+              if (allowRemoteCancel || !calendarRemoteReadPilot) {
+                setCancelTarget(selected);
+              }
             }}
             onTransition={(status) => {
               if (calendarRemoteReadPilot) return;
@@ -728,6 +755,7 @@ export function CalendarPage({
               currentLocation?.name
             }
             readOnly={calendarRemoteReadPilot}
+            allowRemoteCancel={allowRemoteCancel}
             useTaipeiTime={calendarRemoteReadPilot}
             onClose={() => setSelectedId(null)}
             onEdit={() => {
@@ -735,8 +763,9 @@ export function CalendarPage({
               setEditing(true);
             }}
             onRequestCancel={() => {
-              if (calendarRemoteReadPilot) return;
-              setCancelTarget(selected);
+              if (allowRemoteCancel || !calendarRemoteReadPilot) {
+                setCancelTarget(selected);
+              }
             }}
             onTransition={(status) => {
               if (calendarRemoteReadPilot) return;
@@ -752,14 +781,29 @@ export function CalendarPage({
         </div>
       ) : null}
 
-      {!calendarRemoteReadPilot && cancelTarget ? (
+      {cancelItem && (allowRemoteCancel || cancelSurface.localCancel) ? (
         <CancelAppointmentDialog
-          item={cancelTarget}
+          item={cancelItem}
           onClose={() => setCancelTarget(null)}
-          onConfirm={() => {
+          onConfirm={async () => {
+            if (allowRemoteCancel) {
+              await submitCalendarRemoteAppointmentCancel({
+                organizationId: organization.id,
+                appointmentId: cancelItem.id,
+                expectedUpdatedAt: cancelItem.updatedAt,
+                customerId: cancelItem.customerId,
+                locationId: cancelItem.locationId,
+                startAt: cancelItem.startAt,
+              });
+              setCancelTarget(null);
+              return;
+            }
+            if (!cancelSurface.localCancel) {
+              throw new Error("Remote appointment cancel is unavailable");
+            }
             transitionAppointmentStatus(
               organization.id,
-              cancelTarget.id,
+              cancelItem.id,
               "CANCELLED",
               membership?.userId,
             );

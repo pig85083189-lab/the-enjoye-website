@@ -93,9 +93,9 @@ describe("Phase 1C-6C calendar create surface", () => {
       path.join(process.cwd(), "features/calendar/use-calendar-remote-write.ts"),
       "utf8",
     );
-    expect(page).toMatch(/appointment-remote-write-flag/);
+    expect(page).toMatch(/appointment-remote-write-flag|appointment-remote-mutate-flag/);
     expect(page).not.toMatch(
-      /appointment-remote-write-pilot|AuthenticatedAppointmentTableStore|AppointmentRemoteAdapter|createBrowserClient/,
+      /appointment-remote-write-pilot|appointment-remote-mutate-pilot|AuthenticatedAppointmentTableStore|AppointmentRemoteAdapter|createBrowserClient/,
     );
     expect(calendar).toMatch(/use-calendar-remote-write|submitCalendarRemoteAppointmentCreate/);
     expect(calendar).not.toMatch(
