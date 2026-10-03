@@ -14,24 +14,34 @@ import {
 } from "@/components/appointments/NextCustomerPanel";
 import { StatCard } from "@/components/appointments/StatCard";
 import { Avatar } from "@/components/ui/Avatar";
+import {
+  TodayRemoteReadErrorBoundary,
+  TodayRemoteReadErrorFallback,
+} from "@/features/today/today-remote-read-boundary";
+import { useTodayRemoteAppointments } from "@/features/today/use-today-remote-read";
 import { getCustomerById } from "@/data";
 import { getNextAppointment, sortAppointmentsByTime } from "@/lib/appointments";
 import {
   getAppointmentStatusRaw,
-  scheduleAppointmentToLegacyView,
   subscribeAppointments,
 } from "@/lib/appointment-store";
 import { listTodayAppointments } from "@/lib/appointments/store";
 import { todayBucket } from "@/lib/appointments/domain";
 import { getSessionRaw, parseSession, subscribeAuth } from "@/lib/auth";
+import { taipeiBusinessYmdFromInstant } from "@/lib/calendar/calendar-appointment-time";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
+import { scheduleAppointmentToTodayView } from "@/lib/today/today-appointment-view";
 import { useClientNow } from "@/lib/use-client-now";
 import { cn, formatTodayLabel, getGreeting } from "@/lib/utils";
 
 type TimelineFilter = "all" | "waiting" | "active" | "done";
 
-export function TodayDashboard() {
+export function TodayDashboard({
+  todayRemoteReadPilot = false,
+}: {
+  todayRemoteReadPilot?: boolean;
+}) {
   const sessionRaw = useSyncExternalStore(subscribeAuth, getSessionRaw, () => null);
   const session = parseSession(sessionRaw);
   useSyncExternalStore(subscribeAppointments, getAppointmentStatusRaw, () => "");
@@ -39,12 +49,24 @@ export function TodayDashboard() {
   const now = useClientNow();
   const day = now ?? new Date();
   const [filter, setFilter] = useState<TimelineFilter>("all");
-
-  const schedule = listTodayAppointments(
-    organization.id,
-    currentLocation?.id,
-    day,
-  );
+  const locationId = currentLocation?.id ?? "";
+  const remoteState = useTodayRemoteAppointments({
+    organizationId: organization.id,
+    locationAppId: locationId,
+    nowIso: now ? now.toISOString() : null,
+    enabled: todayRemoteReadPilot,
+  });
+  const localSchedule = todayRemoteReadPilot
+    ? []
+    : listTodayAppointments(
+        organization.id,
+        currentLocation?.id,
+        day,
+      );
+  const schedule =
+    todayRemoteReadPilot && remoteState.status === "data"
+      ? remoteState.value
+      : localSchedule;
   const activeSchedule = schedule.filter(
     (item) => todayBucket(item.status) !== "muted",
   );
@@ -55,7 +77,9 @@ export function TodayDashboard() {
     activeSchedule.map((item) => [item.id, item.status] as const),
   );
 
-  const liveAppointments = activeSchedule.map(scheduleAppointmentToLegacyView);
+  const liveAppointments = activeSchedule.map((item) =>
+    scheduleAppointmentToTodayView(item, todayRemoteReadPilot),
+  );
   const stats = {
     total: activeSchedule.length,
     pending: activeSchedule.filter(
@@ -88,13 +112,21 @@ export function TodayDashboard() {
     ? canonicalById.get(nextAppointment.id)
     : undefined;
   const nextCustomer = nextAppointment
-    ? getCustomerById(nextAppointment.customerId, organization.id)
+    ? safeLocalCustomer(nextAppointment.customerId, organization.id)
     : undefined;
+  const taipeiTodayYmd = now ? taipeiBusinessYmdFromInstant(now) : null;
+  const todayLabel = todayRemoteReadPilot
+    ? taipeiTodayYmd
+      ? formatTaipeiBusinessDayLabel(taipeiTodayYmd)
+      : null
+    : now
+      ? formatTodayLabel(now)
+      : null;
 
+  const remoteLoading = todayRemoteReadPilot && remoteState.status === "loading";
   const name = membership?.displayName ?? session?.name ?? "美容師";
   const initials = session?.avatarInitials ?? name.slice(0, 1);
   const greeting = now ? getGreeting(now) : null;
-  const todayLabel = now ? formatTodayLabel(now) : null;
 
   const filterPills: { id: TimelineFilter; label: string; count: number }[] = [
     { id: "all", label: "全部", count: stats.total },
@@ -160,13 +192,25 @@ export function TodayDashboard() {
         />
       </section>
 
-      {nextAppointment ? (
+      {remoteLoading ? (
+        <p className="mb-4 text-[13px] text-secondary-text" role="status">
+          讀取今日預約中…
+        </p>
+      ) : null}
+      {todayRemoteReadPilot && remoteState.status === "error" ? (
+        <div className="mb-4">
+          <TodayRemoteReadErrorFallback message={remoteState.message} />
+        </div>
+      ) : null}
+
+      {remoteLoading ? null : nextAppointment ? (
         <section className="mb-5 min-[1200px]:hidden">
           <NextCustomerPanel
             appointment={nextAppointment}
             customer={nextCustomer}
             canonicalStatus={nextCanonical}
             compact
+            readOnly={todayRemoteReadPilot}
           />
         </section>
       ) : (
@@ -218,12 +262,13 @@ export function TodayDashboard() {
             })}
           </div>
 
+          <TodayRemoteReadErrorBoundary>
           <div className="relative space-y-3">
             <div
               className="absolute bottom-4 left-[0.7rem] top-4 hidden w-px bg-border sm:block"
               aria-hidden
             />
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && !remoteLoading ? (
               <p className="rounded-2xl border border-dashed border-border px-4 py-8 text-center text-sm text-secondary-text">
                 {appointments.length === 0
                   ? "今天還沒有預約"
@@ -256,6 +301,7 @@ export function TodayDashboard() {
                   <AppointmentCard
                     appointment={appointment}
                     canonicalStatus={canonicalStatus}
+                    readOnly={todayRemoteReadPilot}
                   />
                 </div>
               );
@@ -275,15 +321,17 @@ export function TodayDashboard() {
               ))}
             </div>
           ) : null}
+          </TodayRemoteReadErrorBoundary>
         </section>
 
         <aside className="hidden min-w-0 min-[1200px]:block">
-          {nextAppointment ? (
+          {remoteLoading ? null : nextAppointment ? (
             <NextCustomerPanel
               appointment={nextAppointment}
               customer={nextCustomer}
               sticky
               canonicalStatus={nextCanonical}
+              readOnly={todayRemoteReadPilot}
             />
           ) : (
             <NextCustomerEmpty sticky />
@@ -292,4 +340,17 @@ export function TodayDashboard() {
       </div>
     </div>
   );
+}
+
+function safeLocalCustomer(customerId: string, organizationId: string) {
+  try {
+    return getCustomerById(customerId, organizationId);
+  } catch {
+    return undefined;
+  }
+}
+
+function formatTaipeiBusinessDayLabel(ymd: string): string {
+  const [year, month, day] = ymd.split("-").map(Number);
+  return formatTodayLabel(new Date(year, (month ?? 1) - 1, day ?? 1, 12, 0, 0));
 }

@@ -31,6 +31,7 @@ interface NextCustomerPanelProps {
   sticky?: boolean;
   compact?: boolean;
   canonicalStatus?: CanonicalAppointmentStatus;
+  readOnly?: boolean;
 }
 
 const membershipTone = {
@@ -76,6 +77,7 @@ export function NextCustomerPanel({
   sticky = false,
   compact = false,
   canonicalStatus,
+  readOnly = false,
 }: NextCustomerPanelProps) {
   useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
   useSyncExternalStore(
@@ -215,7 +217,11 @@ export function NextCustomerPanel({
       )}
 
       <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">
-        {primary.kind !== "none" ? (
+        {readOnly ? (
+          <p className="rounded-2xl bg-[#FAF7F5] px-3.5 py-2.5 text-center text-[12px] text-secondary-text">
+            今日遠端讀取試點為唯讀
+          </p>
+        ) : primary.kind !== "none" ? (
           <Link
             href={primary.href}
             className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-primary px-5 text-[15px] font-medium text-white transition-colors hover:bg-[#b9686c]"

@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 import { CustomerProfilePage } from "@/features/customers/CustomerProfilePage";
+import { isAppointmentRemoteReadPilotEnabled } from "@/lib/appointments/appointment-remote-read-flag";
+import { isCustomerRemoteReadPilotEnabled } from "@/lib/customers/customer-remote-read-pilot";
 
 export default async function CustomerPage({
   params,
@@ -16,7 +18,11 @@ export default async function CustomerPage({
         </div>
       }
     >
-      <CustomerProfilePage customerId={id} />
+      <CustomerProfilePage
+        customerId={id}
+        remoteReadPilot={isCustomerRemoteReadPilotEnabled()}
+        appointmentRemoteReadPilot={isAppointmentRemoteReadPilotEnabled()}
+      />
     </Suspense>
   );
 }
