@@ -38,6 +38,7 @@ export function useTodayRemoteAppointments(input: {
 
   useEffect(() => {
     if (!input.enabled || !input.nowIso || !input.locationAppId) return undefined;
+    const nowIso = input.nowIso;
     let cancelled = false;
 
     void (async () => {
@@ -49,7 +50,7 @@ export function useTodayRemoteAppointments(input: {
         const rows = await listRemoteTodayAppointmentsByLocation(
           input.organizationId,
           input.locationAppId,
-          input.nowIso,
+          nowIso,
           client,
         );
         if (cancelled) return;
