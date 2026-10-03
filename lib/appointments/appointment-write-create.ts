@@ -8,6 +8,7 @@ import { isGeneratedAppointmentAppId } from "@/lib/persistence/demo-firewall";
 import { APPOINTMENT_INSERT_ONLY_MESSAGE } from "@/lib/persistence/authenticated-appointment-store";
 import type { AppointmentRemoteAdapter } from "@/lib/persistence/appointment-remote-adapter";
 import { APPOINTMENT_STAFF_OVERLAP_MESSAGE } from "./appointment-queries";
+import { APPOINTMENT_STAFF_OVERLAP_CONSTRAINT } from "./appointment-staff-overlap";
 import type { PreparedAppointmentCreate } from "./appointment-write-command";
 
 export const APPOINTMENT_WRITE_INTEGRITY_MESSAGE =
@@ -28,6 +29,24 @@ export class AppointmentWriteRetryableError extends Error {
     super(message);
     this.name = "AppointmentWriteRetryableError";
   }
+}
+
+export class AppointmentConflictError extends Error {
+  readonly sqlstate = "23P01";
+  constructor(message = APPOINTMENT_STAFF_OVERLAP_MESSAGE) {
+    super(message);
+    this.name = "AppointmentConflictError";
+  }
+}
+
+export function isAppointmentExclusionConflictError(error: unknown): boolean {
+  if (error instanceof AppointmentConflictError) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /\b23P01\b/.test(message) ||
+    /exclusion constraint/i.test(message) ||
+    message.includes(APPOINTMENT_STAFF_OVERLAP_CONSTRAINT)
+  );
 }
 
 export type AppointmentWriteHost = {
@@ -123,7 +142,7 @@ export async function createAppointmentSafely(
     existing,
   );
   if (overlap) {
-    throw new Error(APPOINTMENT_STAFF_OVERLAP_MESSAGE);
+    throw new AppointmentConflictError();
   }
 
   try {
@@ -154,6 +173,10 @@ export async function createAppointmentSafely(
     return { appointment: created, outcome: "created" };
   } catch (error) {
     if (error instanceof AppointmentWriteIntegrityError) throw error;
+    if (error instanceof AppointmentConflictError) throw error;
+    if (isAppointmentExclusionConflictError(error)) {
+      throw new AppointmentConflictError();
+    }
     if (isDuplicateAppIdError(error)) {
       const recovered = await recoverOrConflict(command, persistence, "integrity");
       return { appointment: recovered, outcome: "recovered" };

@@ -20,7 +20,7 @@ export const FOUNDATION_MIGRATION_FILE =
 export const APPOINTMENT_INTEGRITY_MIGRATION_FILE =
   "supabase/migrations/20261002120000_appointment_tenant_integrity.sql";
 
-/** Phase 1C-6B.1 staff overlap exclusion. Drafted locally; not applied remotely. */
+/** Phase 1C-6B.2 staff overlap exclusion. Applied remotely after 1C-6B.1 draft. */
 export const APPOINTMENT_STAFF_OVERLAP_MIGRATION_FILE =
   "supabase/migrations/20261003120000_appointment_staff_overlap_exclusion.sql";
 

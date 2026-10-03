@@ -14,9 +14,11 @@ import { ORG_ENJOYE_ID } from "@/lib/tenant/constants";
 import { APPOINTMENT_STAFF_OVERLAP_MESSAGE, createAppointmentRecord } from "./appointment-queries";
 import { prepareAppointmentCreateCommand } from "./appointment-write-command";
 import {
+  AppointmentConflictError,
   AppointmentWriteIntegrityError,
   AppointmentWriteRetryableError,
   createAppointmentSafely,
+  isAppointmentExclusionConflictError,
   type AppointmentWriteHost,
 } from "./appointment-write-create";
 import { createAppointmentWriteSnapshotCatalog } from "./appointment-write-snapshots";
@@ -147,7 +149,7 @@ describe("Phase 1C-6B.1 appointment write create / submit", () => {
     await createAppointmentSafely(command(remote, "apt-first1-abcdef"), remote);
     await expect(
       createAppointmentSafely(command(remote, "apt-second-abcdef"), remote),
-    ).rejects.toThrow(APPOINTMENT_STAFF_OVERLAP_MESSAGE);
+    ).rejects.toBeInstanceOf(AppointmentConflictError);
     expect(db.appointments).toHaveLength(1);
   });
 
@@ -207,6 +209,68 @@ describe("Phase 1C-6B.1 appointment write create / submit", () => {
       ),
     ).toBe(false);
     expect(createAppointment).not.toBe(createAppointmentSafely);
+  });
+
+  it("maps a PostgREST exclusion violation to AppointmentConflictError without retry", async () => {
+    const { db, remote } = createMemoryRemotePersistence();
+    seedTwoOrgs(db);
+    const prepared = command(remote, "apt-excl01-abcdef");
+    const wrapped = hostFrom(remote, async () => {
+      throw new Error(
+        'insert appointment: conflicting key value violates exclusion constraint "appointments_staff_active_no_overlap"',
+      );
+    });
+    await expect(createAppointmentSafely(prepared, wrapped)).rejects.toMatchObject({
+      name: "AppointmentConflictError",
+      sqlstate: "23P01",
+      message: APPOINTMENT_STAFF_OVERLAP_MESSAGE,
+    });
+    expect(db.appointments).toHaveLength(0);
+  });
+
+  it("maps SQLSTATE 23P01 to AppointmentConflictError and keeps the same app id", async () => {
+    const { db, remote } = createMemoryRemotePersistence();
+    seedTwoOrgs(db);
+    const prepared = command(remote, "apt-23p01-abcdef");
+    const submission = new AppointmentCreateSubmission(prepared.appointmentId);
+    const failing = hostFrom(remote, async () => {
+      throw new Error("23P01 exclusion_violation");
+    });
+    expect(
+      await submission.submit(async (appointmentId) => {
+        expect(appointmentId).toBe("apt-23p01-abcdef");
+        return createAppointmentSafely(prepared, failing);
+      }),
+    ).toBe("error");
+    expect(submission.error).toBeInstanceOf(AppointmentConflictError);
+    expect(isAppointmentExclusionConflictError(submission.error)).toBe(true);
+    expect(submission.appointmentId).toBe("apt-23p01-abcdef");
+    expect(db.appointments).toHaveLength(0);
+    expect(
+      await submission.submit(async (appointmentId) => {
+        expect(appointmentId).toBe("apt-23p01-abcdef");
+        return createAppointmentSafely(prepared, remote);
+      }),
+    ).toBe("success");
+    expect(db.appointments).toHaveLength(1);
+    expect(db.appointments[0]?.app_id).toBe("apt-23p01-abcdef");
+  });
+
+  it("does not treat unique-constraint 23505 as an exclusion conflict", async () => {
+    const { db, remote } = createMemoryRemotePersistence();
+    seedTwoOrgs(db);
+    const prepared = command(remote, "apt-uniq01-abcdef");
+    await createAppointmentSafely(prepared, remote);
+    const uniqueOnly = hostFrom(remote, async () => {
+      throw new Error(
+        'insert appointment: duplicate key value violates unique constraint "idx_appointments_org_app_id" (23505)',
+      );
+    });
+    expect(isAppointmentExclusionConflictError(new Error("23505 unique constraint"))).toBe(false);
+    const recovered = await createAppointmentSafely(prepared, uniqueOnly);
+    expect(recovered.outcome).toBe("recovered");
+    expect(recovered.appointment.id).toBe("apt-uniq01-abcdef");
+    expect(db.appointments).toHaveLength(1);
   });
 
   it("createAppointmentRecord generates the app id before create", async () => {

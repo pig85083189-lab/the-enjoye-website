@@ -48,7 +48,21 @@ describe("Phase 1C-6B.1 staff overlap exclusion spec", () => {
     );
   });
 
-  it("drafts btree_gist exclusion SQL without applying a remote write", () => {
+  it("rejects CONFIRMED / ARRIVED / IN_SERVICE overlap and ignores location", () => {
+    for (const status of ["CONFIRMED", "ARRIVED", "IN_SERVICE", "COMPLETED"]) {
+      expect(
+        staffActiveRangesConflict(row({ status }), row({ startAt: OVERLAP, endAt: ADJACENT_END })),
+      ).toBe(true);
+    }
+    expect(
+      staffActiveRangesConflict(row(), row({ staffId: "staff-002", startAt: OVERLAP, endAt: ADJACENT_END })),
+    ).toBe(false);
+    expect(
+      staffActiveRangesConflict(row(), row({ organizationId: "org-b", startAt: OVERLAP, endAt: ADJACENT_END })),
+    ).toBe(false);
+  });
+
+  it("keeps the applied exclusion SQL on organization + staff + [) without location_id", () => {
     const sql = readFileSync(
       path.join(process.cwd(), APPOINTMENT_STAFF_OVERLAP_MIGRATION_FILE),
       "utf8",

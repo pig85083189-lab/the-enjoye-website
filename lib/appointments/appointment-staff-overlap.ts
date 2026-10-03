@@ -1,6 +1,6 @@
 /**
  * Spec for DB-authoritative staff overlap.
- * Mirrors the proposed exclusion constraint — not applied remotely in 1C-6B.1.
+ * Mirrors appointments_staff_active_no_overlap, applied remotely in 1C-6B.2.
  *
  * Same organization + same operational staff + overlapping tstzrange [)
  * on an active status is rejected. Adjacent end == start is allowed.
