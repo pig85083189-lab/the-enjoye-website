@@ -27,6 +27,7 @@ import {
   getCommerceRevision,
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
+import { formatCalendarAppointmentDisplay } from "@/lib/calendar/calendar-appointment-time";
 import { getCustomerById } from "@/data/mock-customers";
 import {
   collectAttentionNotes,
@@ -53,6 +54,8 @@ const membershipTone = {
 interface AppointmentQuickViewProps {
   item: ScheduleAppointment;
   locationName?: string;
+  readOnly?: boolean;
+  useTaipeiTime?: boolean;
   onClose: () => void;
   onEdit: () => void;
   onRequestCancel: () => void;
@@ -62,6 +65,8 @@ interface AppointmentQuickViewProps {
 export function AppointmentQuickView({
   item,
   locationName,
+  readOnly = false,
+  useTaipeiTime = false,
   onClose,
   onEdit,
   onRequestCancel,
@@ -83,21 +88,27 @@ export function AppointmentQuickView({
     legacy,
   );
   const lastService = lastServiceSummary(item.organizationId, customer);
-  const canEdit = item.status === "BOOKED" || item.status === "CONFIRMED";
+  const canEdit =
+    !readOnly && (item.status === "BOOKED" || item.status === "CONFIRMED");
   const canCancel =
-    item.status === "BOOKED" ||
-    item.status === "CONFIRMED" ||
-    item.status === "ARRIVED";
+    !readOnly &&
+    (item.status === "BOOKED" ||
+      item.status === "CONFIRMED" ||
+      item.status === "ARRIVED");
   const membership = item.membership ?? customer?.membership ?? "regular";
-  const start = new Date(item.startAt);
-  const end = new Date(item.endAt);
+  const display = formatCalendarAppointmentDisplay(
+    item.startAt,
+    item.endAt,
+    useTaipeiTime,
+  );
+  const startHm = display.time.split("–")[0] ?? display.time;
   const [tab, setTab] = useState<"info" | "customer">("info");
 
   const infoRows = [
     {
       icon: Clock3,
       label: "時間",
-      value: `${formatYmd(start).replace(/-/g, "/")} ${formatHm(start)}–${formatHm(end)}`,
+      value: `${display.date} ${display.time}`,
     },
     {
       icon: Sparkles,
@@ -138,7 +149,7 @@ export function AppointmentQuickView({
       >
         <div className="flex shrink-0 items-center justify-between gap-3 px-5 pt-3.5 pb-1.5">
           <p className="text-[15px] font-semibold text-text">
-            {formatHm(start)}的預約
+            {startHm}的預約
           </p>
           <button
             type="button"
@@ -290,7 +301,12 @@ export function AppointmentQuickView({
         </div>
 
         <div className="shrink-0 space-y-1.5 px-5 pt-1.5 pb-5">
-          {primary.kind !== "none" ? (
+          {readOnly ? (
+            <p className="rounded-2xl bg-[#FAF7F5] px-3.5 py-2.5 text-center text-[12px] text-secondary-text">
+              行事曆遠端讀取試點為唯讀
+            </p>
+          ) : null}
+          {!readOnly && primary.kind !== "none" ? (
             <Link
               href={primary.href}
               className={cn(

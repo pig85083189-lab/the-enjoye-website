@@ -87,7 +87,7 @@ export class CanonicalIdMapper {
     });
   }
 
-    /**
+  /**
    * Auth profile lookup only (profiles.id).
    * Never write this value into Appointment.staffId or created_by_staff_id.
    */
@@ -127,6 +127,23 @@ export class CanonicalIdMapper {
   /** Reverse map from a stored operational staff-* column. */
   toOperationalStaffId(organizationAppId: string, storedStaffId: string): string {
     return this.requireOperationalStaffId(organizationAppId, storedStaffId);
+  }
+
+  /**
+   * Auth UUID → operational staff-* via membership.auth_user_id.
+   * Never returns the Auth UUID. Fails closed if unmapped or colliding.
+   */
+  resolveOperationalStaffFromAuth(
+    organizationAppId: string,
+    authUserId: string,
+  ): string {
+    if (!isAuthUuid(authUserId)) {
+      throw new UnmappedIdentityError("auth_user", organizationAppId, authUserId);
+    }
+    const orgDbId = this.resolveOrganizationDbId(organizationAppId);
+    const row = this.catalog.findStaffByAuthUserId(orgDbId, authUserId);
+    if (!row) throw new UnmappedIdentityError("staff_auth", organizationAppId, authUserId);
+    return this.requireOperationalStaffId(organizationAppId, row.staffAppId);
   }
 
   /** Reverse map from auth profile uuid → staff-*. Not for operational columns. */
@@ -232,6 +249,21 @@ export class CanonicalIdMapper {
       }
       return row.dbId;
     });
+  }
+
+  rememberCustomer(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`cust:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`custDb:${dbId}`, appId);
+  }
+
+  rememberService(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`svc:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`svcDb:${dbId}`, appId);
+  }
+
+  rememberAppointment(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`apt:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`aptDb:${dbId}`, appId);
   }
 
   rememberPackageDefinition(organizationDbId: string, appId: string, dbId: string): void {
