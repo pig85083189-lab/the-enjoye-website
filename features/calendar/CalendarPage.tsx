@@ -218,13 +218,13 @@ export function CalendarPage({
   const createSurface = resolveCalendarCreateSurface({
     calendarRemoteReadPilot,
     appointmentRemoteWritePilot,
-    authenticatedOwner: remoteWrite.canCreate,
+    canCreateAppointment: remoteWrite.canCreate,
   });
   const cancelSurface = resolveCalendarCancelSurface({
     calendarRemoteReadPilot,
     appointmentRemoteWritePilot,
     appointmentRemoteMutatePilot,
-    authenticatedOwner: remoteWrite.canCreate,
+    authenticatedOwner: remoteWrite.canCancel,
   });
 
   const locationId = currentLocation?.id ?? locations[0]?.id ?? "";
@@ -502,7 +502,7 @@ export function CalendarPage({
               createSurface.createEnabled
                 ? "新增預約"
                 : appointmentRemoteWritePilot && remoteWrite.status === "denied"
-                  ? "新增預約（僅店主可建立遠端預約）"
+                  ? "新增預約（沒有權限建立遠端預約）"
                   : calendarRemoteReadPilot
                     ? "新增預約（行事曆遠端讀取試點為唯讀）"
                     : "新增預約"
@@ -511,7 +511,7 @@ export function CalendarPage({
               createSurface.createEnabled
                 ? undefined
                 : appointmentRemoteWritePilot && remoteWrite.status === "denied"
-                  ? "僅店主可建立遠端預約"
+                  ? "沒有權限建立遠端預約"
                   : calendarRemoteReadPilot
                     ? "行事曆遠端讀取試點為唯讀"
                     : undefined
@@ -639,7 +639,7 @@ export function CalendarPage({
             createSurface.createEnabled
               ? undefined
               : appointmentRemoteWritePilot && remoteWrite.status === "denied"
-                ? "僅店主可建立遠端預約"
+                ? "沒有權限建立遠端預約"
                 : calendarRemoteReadPilot
                   ? "行事曆遠端讀取試點為唯讀"
                   : undefined

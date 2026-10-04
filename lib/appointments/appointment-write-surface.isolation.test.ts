@@ -14,14 +14,14 @@ describe("Phase 1C-6C calendar create surface", () => {
       resolveCalendarCreateSurface({
         calendarRemoteReadPilot: true,
         appointmentRemoteWritePilot: true,
-        authenticatedOwner: true,
+        canCreateAppointment: true,
       }),
     ).toEqual({ createEnabled: true, remoteCreate: true, localCreate: false });
     expect(
       resolveCalendarCreateSurface({
         calendarRemoteReadPilot: true,
         appointmentRemoteWritePilot: true,
-        authenticatedOwner: false,
+        canCreateAppointment: false,
       }),
     ).toEqual({ createEnabled: false, remoteCreate: false, localCreate: false });
   });
@@ -31,7 +31,7 @@ describe("Phase 1C-6C calendar create surface", () => {
       resolveCalendarCreateSurface({
         calendarRemoteReadPilot: true,
         appointmentRemoteWritePilot: false,
-        authenticatedOwner: true,
+        canCreateAppointment: true,
       }),
     ).toEqual({ createEnabled: false, remoteCreate: false, localCreate: false });
   });
@@ -41,7 +41,7 @@ describe("Phase 1C-6C calendar create surface", () => {
       resolveCalendarCreateSurface({
         calendarRemoteReadPilot: false,
         appointmentRemoteWritePilot: false,
-        authenticatedOwner: true,
+        canCreateAppointment: true,
       }),
     ).toEqual({ createEnabled: true, remoteCreate: false, localCreate: true });
   });

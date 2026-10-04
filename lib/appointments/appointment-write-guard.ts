@@ -1,16 +1,22 @@
 /**
- * Application-layer Owner-only guard for a future Appointment write pilot.
+ * Application-layer Appointment write-pilot guards.
+ * Create is an operational salon capability. Cancel remains Owner-only.
  * Does not change RLS. RLS remains org membership + location access.
  */
 
+import { canCancelAppointment, canCreateAppointment } from "@/lib/staff-auth/operational-capabilities";
+
 export const APPOINTMENT_WRITE_PILOT_OWNER_ONLY_MESSAGE =
   "Appointment remote write pilot is Owner-only";
+
+export const APPOINTMENT_WRITE_PILOT_DENIED_MESSAGE =
+  "Appointment remote create is not allowed for this role";
 
 export const APPOINTMENT_WRITE_CREATE_ONLY_MESSAGE =
   "Appointment remote write pilot is create-only";
 
 export class AppointmentWritePilotDeniedError extends Error {
-  constructor(message = APPOINTMENT_WRITE_PILOT_OWNER_ONLY_MESSAGE) {
+  constructor(message = APPOINTMENT_WRITE_PILOT_DENIED_MESSAGE) {
     super(message);
     this.name = "AppointmentWritePilotDeniedError";
   }
@@ -32,13 +38,27 @@ export type AppointmentWritePilotRole =
   | string;
 
 export function isAppointmentWritePilotOwner(role: string | undefined | null): boolean {
-  return role === "OWNER";
+  return canCancelAppointment({ role, isActive: true });
+}
+
+export function isAppointmentWriteOperationalRole(
+  role: string | undefined | null,
+): boolean {
+  return canCreateAppointment({ role, isActive: true });
 }
 
 export function assertAppointmentWritePilotOwner(
   role: string | undefined | null,
 ): asserts role is "OWNER" {
   if (!isAppointmentWritePilotOwner(role)) {
+    throw new AppointmentWritePilotDeniedError(APPOINTMENT_WRITE_PILOT_OWNER_ONLY_MESSAGE);
+  }
+}
+
+export function assertAppointmentWriteOperationalRole(
+  role: string | undefined | null,
+): void {
+  if (!isAppointmentWriteOperationalRole(role)) {
     throw new AppointmentWritePilotDeniedError();
   }
 }

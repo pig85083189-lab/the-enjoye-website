@@ -22,7 +22,7 @@ import {
 } from "@/lib/persistence/authenticated-identity-catalog";
 import { IdentityCatalogError } from "@/lib/persistence/identity-errors";
 import {
-  assertAppointmentWritePilotOwner,
+  assertAppointmentWriteOperationalRole,
   refuseAppointmentWriteMutation,
 } from "./appointment-write-guard";
 import {
@@ -51,6 +51,7 @@ export {
   APPOINTMENT_WRITE_CREATE_ONLY_MESSAGE,
   AppointmentWritePilotDeniedError,
   AppointmentWriteCreateOnlyError,
+  assertAppointmentWriteOperationalRole,
   assertAppointmentWritePilotOwner,
   refuseAppointmentWriteMutation,
 } from "./appointment-write-guard";
@@ -188,7 +189,7 @@ export async function runAuthenticatedAppointmentWriteCreate(
     persistence.identity.organizationDbId,
     persistence.identity.operationalStaffId,
   );
-  assertAppointmentWritePilotOwner(staff?.role);
+  assertAppointmentWriteOperationalRole(staff?.role);
   const command = persistence.prepare(input);
   const created = await persistence.create(command);
   emitAppointmentRemoteWriteRefresh({

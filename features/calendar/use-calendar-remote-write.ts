@@ -16,13 +16,14 @@ import { appointmentWriteUserMessage } from "@/lib/appointments/appointment-writ
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 
 export type CalendarRemoteWriteState =
-  | { status: "off"; canCreate: false }
-  | { status: "loading"; canCreate: false }
-  | { status: "denied"; canCreate: false; message: string }
-  | { status: "error"; canCreate: false; message: string }
+  | { status: "off"; canCreate: false; canCancel: false }
+  | { status: "loading"; canCreate: false; canCancel: false }
+  | { status: "denied"; canCreate: false; canCancel: false; message: string }
+  | { status: "error"; canCreate: false; canCancel: false; message: string }
   | {
       status: "ready";
       canCreate: true;
+      canCancel: boolean;
       catalog: AppointmentWriteFormCatalog;
     };
 
@@ -51,16 +52,23 @@ export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteSta
           setResult({
             status: "denied",
             canCreate: false,
+            canCancel: false,
             message: appointmentWriteUserMessage(new AppointmentWritePilotDeniedError()),
           });
           return;
         }
-        setResult({ status: "ready", canCreate: true, catalog });
+        setResult({
+          status: "ready",
+          canCreate: true,
+          canCancel: catalog.canCancel,
+          catalog,
+        });
       } catch (error: unknown) {
         if (cancelled) return;
         setResult({
           status: "error",
           canCreate: false,
+          canCancel: false,
           message: appointmentWriteUserMessage(error),
         });
       }
@@ -70,8 +78,8 @@ export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteSta
     };
   }, [enabled]);
 
-  if (!enabled) return { status: "off", canCreate: false };
-  if (!result) return { status: "loading", canCreate: false };
+  if (!enabled) return { status: "off", canCreate: false, canCancel: false };
+  if (!result) return { status: "loading", canCreate: false, canCancel: false };
   return result;
 }
 

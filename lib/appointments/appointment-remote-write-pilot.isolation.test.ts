@@ -100,19 +100,37 @@ class FakeQuery implements IdentityQueryBuilder, AppointmentQueryBuilder {
   }
 }
 
-function validTables(role = "OWNER"): Record<string, Row[]> {
+function validTables(
+  role = "OWNER",
+  actorStaffId: string = FUTURE_QA_APPOINTMENT.staffAppId,
+): Record<string, Row[]> {
+  const memberships: Row[] = [
+    {
+      id: actorStaffId === FUTURE_QA_APPOINTMENT.staffAppId ? "mem-enjoye-owner" : "mem-actor",
+      user_id: actorStaffId,
+      auth_user_id: AUTH_UUID,
+      organization_id: FUTURE_QA_APPOINTMENT.organizationAppId,
+      role,
+      is_active: true,
+      display_name:
+        actorStaffId === FUTURE_QA_APPOINTMENT.staffAppId
+          ? FUTURE_QA_APPOINTMENT.staffName
+          : "櫃台小瑜",
+    },
+  ];
+  if (actorStaffId !== FUTURE_QA_APPOINTMENT.staffAppId) {
+    memberships.push({
+      id: "mem-assigned",
+      user_id: FUTURE_QA_APPOINTMENT.staffAppId,
+      auth_user_id: null,
+      organization_id: FUTURE_QA_APPOINTMENT.organizationAppId,
+      role: "STAFF",
+      is_active: true,
+      display_name: FUTURE_QA_APPOINTMENT.staffName,
+    });
+  }
   return {
-    staff_auth_memberships: [
-      {
-        id: "mem-enjoye-owner",
-        user_id: FUTURE_QA_APPOINTMENT.staffAppId,
-        auth_user_id: AUTH_UUID,
-        organization_id: FUTURE_QA_APPOINTMENT.organizationAppId,
-        role,
-        is_active: true,
-        display_name: FUTURE_QA_APPOINTMENT.staffName,
-      },
-    ],
+    staff_auth_memberships: memberships,
     organizations: [
       {
         id: FUTURE_QA_APPOINTMENT.organizationDbId,
@@ -146,8 +164,11 @@ function validTables(role = "OWNER"): Record<string, Row[]> {
   };
 }
 
-function writeClient(role = "OWNER"): AppointmentWriteClient {
-  const tables = validTables(role);
+function writeClient(
+  role = "OWNER",
+  actorStaffId: string = FUTURE_QA_APPOINTMENT.staffAppId,
+): AppointmentWriteClient {
+  const tables = validTables(role, actorStaffId);
   return {
     auth: {
       async getUser() {
@@ -210,7 +231,7 @@ describe("Phase 1C-6B.1 appointment remote write foundation", () => {
     ).toBe("local");
   });
 
-  it("Owner guard allows OWNER and denies every other current staff role", () => {
+  it("Owner guard still allows only OWNER for Cancel / mutate", () => {
     expect(() => assertAppointmentWritePilotOwner("OWNER")).not.toThrow();
     for (const role of ["MANAGER", "STAFF", "RECEPTIONIST", "ACCOUNTANT"]) {
       expect(() => assertAppointmentWritePilotOwner(role)).toThrow(AppointmentWritePilotDeniedError);
@@ -260,7 +281,66 @@ describe("Phase 1C-6B.1 appointment remote write foundation", () => {
     );
   });
 
-  it("run path stays off unless the write flag is on and the actor is Owner", async () => {
+  it("lets operational salon roles create and keeps ACCOUNTANT denied", async () => {
+    for (const role of ["OWNER", "MANAGER", "STAFF", "RECEPTIONIST"] as const) {
+      const created = await runAuthenticatedAppointmentWriteCreate(
+        writeClient(role),
+        {
+          organizationId: FUTURE_QA_APPOINTMENT.organizationAppId,
+          locationId: FUTURE_QA_APPOINTMENT.locationAppId,
+          customerId: FUTURE_QA_APPOINTMENT.customerAppId,
+          serviceId: FUTURE_QA_APPOINTMENT.serviceAppId,
+          staffId: FUTURE_QA_APPOINTMENT.staffAppId,
+          dateYmd: "2026-10-16",
+          startHm: "15:00",
+          durationMinutes: 60,
+        },
+        WRITE_ON,
+      );
+      expect(created.appointment.staffId).toBe(FUTURE_QA_APPOINTMENT.staffAppId);
+      expect(created.appointment.createdBy).toBe(FUTURE_QA_APPOINTMENT.staffAppId);
+    }
+    await expect(
+      runAuthenticatedAppointmentWriteCreate(
+        writeClient("ACCOUNTANT"),
+        {
+          organizationId: FUTURE_QA_APPOINTMENT.organizationAppId,
+          locationId: FUTURE_QA_APPOINTMENT.locationAppId,
+          customerId: FUTURE_QA_APPOINTMENT.customerAppId,
+          serviceId: FUTURE_QA_APPOINTMENT.serviceAppId,
+          staffId: FUTURE_QA_APPOINTMENT.staffAppId,
+          dateYmd: "2026-10-16",
+          startHm: "16:00",
+          durationMinutes: 60,
+        },
+        WRITE_ON,
+      ),
+    ).rejects.toBeInstanceOf(AppointmentWritePilotDeniedError);
+  });
+
+  it("keeps created_by on the logged-in actor when assigned staff differs", async () => {
+    const created = await runAuthenticatedAppointmentWriteCreate(
+      writeClient("RECEPTIONIST", "staff-020"),
+      {
+        organizationId: FUTURE_QA_APPOINTMENT.organizationAppId,
+        locationId: FUTURE_QA_APPOINTMENT.locationAppId,
+        customerId: FUTURE_QA_APPOINTMENT.customerAppId,
+        serviceId: FUTURE_QA_APPOINTMENT.serviceAppId,
+        staffId: FUTURE_QA_APPOINTMENT.staffAppId,
+        dateYmd: "2026-10-16",
+        startHm: "17:00",
+        durationMinutes: 60,
+      },
+      WRITE_ON,
+    );
+    expect(created.appointment.staffId).toBe(FUTURE_QA_APPOINTMENT.staffAppId);
+    expect(created.appointment.createdBy).toBe("staff-020");
+    expect(created.appointment.staffId).not.toBe(created.appointment.createdBy);
+    expect(created.appointment.staffId).not.toBe(AUTH_UUID);
+    expect(created.appointment.createdBy).not.toBe(AUTH_UUID);
+  });
+
+  it("run path stays off unless the write flag is on", async () => {
     await expect(
       runAuthenticatedAppointmentWriteCreate(writeClient(), {
         organizationId: FUTURE_QA_APPOINTMENT.organizationAppId,
@@ -273,22 +353,6 @@ describe("Phase 1C-6B.1 appointment remote write foundation", () => {
         durationMinutes: 60,
       }),
     ).rejects.toThrow(/pilot is off/);
-    await expect(
-      runAuthenticatedAppointmentWriteCreate(
-        writeClient("MANAGER"),
-        {
-          organizationId: FUTURE_QA_APPOINTMENT.organizationAppId,
-          locationId: FUTURE_QA_APPOINTMENT.locationAppId,
-          customerId: FUTURE_QA_APPOINTMENT.customerAppId,
-          serviceId: FUTURE_QA_APPOINTMENT.serviceAppId,
-          staffId: FUTURE_QA_APPOINTMENT.staffAppId,
-          dateYmd: "2026-10-16",
-          startHm: "14:00",
-          durationMinutes: 60,
-        },
-        WRITE_ON,
-      ),
-    ).rejects.toBeInstanceOf(AppointmentWritePilotDeniedError);
   });
 
   it("emits a refresh revision for Calendar / 360 / Today request keys", () => {

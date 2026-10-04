@@ -12,10 +12,10 @@ export type CalendarCreateSurface = {
 export function resolveCalendarCreateSurface(input: {
   calendarRemoteReadPilot: boolean;
   appointmentRemoteWritePilot: boolean;
-  authenticatedOwner: boolean;
+  canCreateAppointment: boolean;
 }): CalendarCreateSurface {
   if (input.appointmentRemoteWritePilot) {
-    const remoteCreate = input.authenticatedOwner;
+    const remoteCreate = input.canCreateAppointment;
     return {
       createEnabled: remoteCreate,
       remoteCreate,

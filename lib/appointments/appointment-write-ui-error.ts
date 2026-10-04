@@ -21,7 +21,7 @@ export const APPOINTMENT_WRITE_UI = {
   mapping: "預約資料無法對應，未建立",
   snapshot: "無法取得顧客、服務或美容師名稱，未建立",
   unauthenticated: "尚未登入，無法建立遠端預約",
-  denied: "僅店主可建立遠端預約",
+  denied: "沒有權限建立遠端預約",
   network: "連線失敗，預約尚未確認",
   retryable: "建立結果未確認，請用同一筆再試一次",
   integrity: "預約資料不一致，請勿重送",

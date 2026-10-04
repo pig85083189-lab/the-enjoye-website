@@ -15,7 +15,7 @@ import {
   type LoadedAuthenticatedIdentity,
 } from "@/lib/persistence/authenticated-identity-catalog";
 import type { StaffMembership, StaffRole } from "@/types/saas";
-import { isAppointmentWritePilotOwner } from "./appointment-write-guard";
+import { canCancelAppointment, canCreateAppointment } from "@/lib/staff-auth/operational-capabilities";
 import type { AppointmentWriteCustomerOption } from "./appointment-write-customer-search";
 
 const STAFF_ROLES = new Set<StaffRole>([
@@ -51,6 +51,7 @@ export type AppointmentWriteFormCatalog = {
   identity: LoadedAuthenticatedIdentity;
   role: string;
   canCreate: boolean;
+  canCancel: boolean;
   customers: AppointmentWriteCustomerOption[];
   services: AppointmentWriteServiceOption[];
   staff: AppointmentWriteStaffOption[];
@@ -170,7 +171,8 @@ export async function loadAppointmentWriteFormCatalog(
   return {
     identity,
     role,
-    canCreate: isAppointmentWritePilotOwner(role),
+    canCreate: canCreateAppointment({ role, isActive: true }),
+    canCancel: canCancelAppointment({ role, isActive: true }),
     customers,
     services,
     staff,

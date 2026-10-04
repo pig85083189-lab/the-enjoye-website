@@ -162,6 +162,7 @@ describe("Phase 1C-6C appointment write customer catalog", () => {
   it("loads the same remote customer name and phone as /staff/customers", async () => {
     const catalog = await loadAppointmentWriteFormCatalog(ownerClient());
     expect(catalog.canCreate).toBe(true);
+    expect(catalog.canCancel).toBe(true);
     expect(catalog.customers).toEqual([
       {
         id: QA_APP_ID,
@@ -338,5 +339,44 @@ describe("Phase 1C-6D.2A appointment write staff catalog", () => {
     expect(page).toMatch(/filterAppointmentWriteStaff/);
     expect(page).toMatch(/appointmentWriteStaffToMembership/);
     expect(page).not.toMatch(/staffId: membership\?\.userId/);
+  });
+
+  it("allows operational roles to create and keeps ACCOUNTANT / Cancel Owner-only", async () => {
+    for (const role of ["MANAGER", "STAFF", "RECEPTIONIST"] as const) {
+      const catalog = await loadAppointmentWriteFormCatalog(
+        ownerClient({
+          staff_auth_memberships: [
+            {
+              id: "mem-enjoye-owner",
+              user_id: STAFF_APP,
+              auth_user_id: AUTH_UUID,
+              organization_id: ORG_APP,
+              role,
+              is_active: true,
+              display_name: "測試帳號",
+            },
+          ],
+        }),
+      );
+      expect(catalog.canCreate).toBe(true);
+      expect(catalog.canCancel).toBe(false);
+    }
+    const accountant = await loadAppointmentWriteFormCatalog(
+      ownerClient({
+        staff_auth_memberships: [
+          {
+            id: "mem-enjoye-owner",
+            user_id: STAFF_APP,
+            auth_user_id: AUTH_UUID,
+            organization_id: ORG_APP,
+            role: "ACCOUNTANT",
+            is_active: true,
+            display_name: "測試帳號",
+          },
+        ],
+      }),
+    );
+    expect(accountant.canCreate).toBe(false);
+    expect(accountant.canCancel).toBe(false);
   });
 });

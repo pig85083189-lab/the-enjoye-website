@@ -55,6 +55,7 @@ import {
 } from "@/lib/commerce/checkout-workspace-derived";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
+import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
 import { cn } from "@/lib/utils";
@@ -117,7 +118,8 @@ export function CheckoutPageClient() {
   );
 
   const locationId = currentLocation?.id ?? locations[0]?.id ?? "";
-  const staffId = membership?.userId ?? "staff-001";
+  const staffId = membership?.userId ?? "";
+  const checkoutAllowed = canCheckout(membership);
   const appointmentIdParam = searchParams.get("appointment");
   const draftIdParam = searchParams.get("draft");
   const treatmentIdParam = searchParams.get("treatment");
@@ -208,6 +210,10 @@ export function CheckoutPageClient() {
 
   function ensureAppointmentDraft(appointmentId: string) {
     if (!appointmentId) return;
+    if (!checkoutAllowed) {
+      setError("沒有權限結帳");
+      return;
+    }
     try {
       const existing = getOpenDraftForAppointment(organization.id, appointmentId);
       if (existing) return;
@@ -266,6 +272,10 @@ export function CheckoutPageClient() {
 
   function startGeneralSale(customerId: string) {
     setError("");
+    if (!checkoutAllowed) {
+      setError("沒有權限結帳");
+      return;
+    }
     if (!locationId) {
       setError("請先選擇可存取的分店");
       return;
@@ -311,9 +321,15 @@ export function CheckoutPageClient() {
           <p className="text-sm text-secondary-text">
             處理今日待結帳的預約、一般銷售與收款
           </p>
+          {!checkoutAllowed ? (
+            <p className="text-[13px] text-[#B07A4A]" role="alert">
+              沒有權限結帳
+            </p>
+          ) : null}
         </div>
         <Button
           className="h-9 min-h-9 shrink-0 rounded-full px-4 text-[13px]"
+          disabled={!checkoutAllowed}
           onClick={() => {
             closePanel();
             setGeneralSaleOpen(true);
