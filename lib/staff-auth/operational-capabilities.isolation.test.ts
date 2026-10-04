@@ -89,10 +89,17 @@ describe("Phase 1C-6D.2D operational capabilities", () => {
     expect(canOpenOrder(actor("ACCOUNTANT"))).toBe(false);
     expect(canCreateAppointment(actor("STAFF", false))).toBe(false);
     expect(canCheckout(undefined)).toBe(false);
-    expect(canCancelAppointment(actor("OWNER"))).toBe(true);
-    expect(canCancelAppointment(actor("STAFF"))).toBe(false);
     expect(canManageStaffCapability(actor("OWNER"))).toBe(true);
     expect(canManageStaffCapability(actor("MANAGER"))).toBe(false);
+  });
+
+  it("grants Cancel to operational salon roles and denies ACCOUNTANT", () => {
+    for (const role of OPERATIONAL) {
+      expect(canCancelAppointment(actor(role))).toBe(true);
+    }
+    expect(canCancelAppointment(actor("ACCOUNTANT"))).toBe(false);
+    expect(canCancelAppointment(actor("STAFF", false))).toBe(false);
+    expect(canCancelAppointment(undefined)).toBe(false);
   });
 
   it("keeps Staff management OWNER-only", () => {

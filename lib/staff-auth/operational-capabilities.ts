@@ -20,7 +20,12 @@ export const CHECKOUT_ROLES = new Set<StaffRole>([
   "RECEPTIONIST",
 ]);
 
-export const APPOINTMENT_CANCEL_ROLES = new Set<StaffRole>(["OWNER"]);
+export const APPOINTMENT_CANCEL_ROLES = new Set<StaffRole>([
+  "OWNER",
+  "MANAGER",
+  "STAFF",
+  "RECEPTIONIST",
+]);
 
 export type CapabilityActor = {
   role?: StaffRole | string | null;

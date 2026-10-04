@@ -231,6 +231,20 @@ describe("resolveStaffDayScheduleStatus", () => {
     });
     expect(status.dutyLabel).toBe("已下班");
   });
+
+  it("falls back to location default hours when a remote staff has no personal schedule", () => {
+    const status = resolveStaffDayScheduleStatus({
+      organizationId: ORG_ENJOYE_ID,
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: "staff-002",
+      day: new Date(2026, 9, 4),
+    });
+    expect(status.kind).toBe("working");
+    expect(status.workingLabel).toBe("09:00 – 21:00");
+    expect(status.isNotScheduled).toBe(false);
+    expect(status.isNonWorkingDay).toBe(false);
+    expect(formatStaffDayHeaderMeta(status)).toBe("09:00 – 21:00");
+  });
 });
 
 describe("computeStaffWorkload", () => {

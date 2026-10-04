@@ -52,6 +52,7 @@ export {
   AppointmentWritePilotDeniedError,
   AppointmentWriteCreateOnlyError,
   assertAppointmentWriteOperationalRole,
+  assertAppointmentWriteCancelRole,
   assertAppointmentWritePilotOwner,
   refuseAppointmentWriteMutation,
 } from "./appointment-write-guard";

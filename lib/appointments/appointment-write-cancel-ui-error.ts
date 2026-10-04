@@ -18,7 +18,7 @@ import {
 
 export const APPOINTMENT_CANCEL_UI = {
   stale: "預約已被更新，請重新確認後再取消",
-  denied: "僅店主可取消遠端預約",
+  denied: "沒有權限取消遠端預約",
   unauthenticated: "尚未登入，無法取消遠端預約",
   mapping: "預約資料無法對應，未取消",
   network: "連線失敗，預約尚未取消",

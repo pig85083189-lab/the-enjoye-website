@@ -6,6 +6,7 @@ import {
   APPOINTMENT_REMOTE_WRITE_PILOT_ENV,
   AppointmentWriteCreateOnlyError,
   AppointmentWritePilotDeniedError,
+  assertAppointmentWriteCancelRole,
   assertAppointmentWritePilotOwner,
   createAuthenticatedAppointmentWritePersistence,
   isAppointmentRemoteWritePilotEnabled,
@@ -231,11 +232,17 @@ describe("Phase 1C-6B.1 appointment remote write foundation", () => {
     ).toBe("local");
   });
 
-  it("Owner guard still allows only OWNER for Cancel / mutate", () => {
+  it("Owner guard remains OWNER-only; Cancel uses the operational capability", () => {
     expect(() => assertAppointmentWritePilotOwner("OWNER")).not.toThrow();
     for (const role of ["MANAGER", "STAFF", "RECEPTIONIST", "ACCOUNTANT"]) {
       expect(() => assertAppointmentWritePilotOwner(role)).toThrow(AppointmentWritePilotDeniedError);
     }
+    for (const role of ["OWNER", "MANAGER", "STAFF", "RECEPTIONIST"]) {
+      expect(() => assertAppointmentWriteCancelRole(role)).not.toThrow();
+    }
+    expect(() => assertAppointmentWriteCancelRole("ACCOUNTANT")).toThrow(
+      AppointmentWritePilotDeniedError,
+    );
   });
 
   it("create-only boundary refuses update/reschedule/cancel/status/delete", async () => {

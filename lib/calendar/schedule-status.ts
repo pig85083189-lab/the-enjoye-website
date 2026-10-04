@@ -128,7 +128,8 @@ export function resolveStaffDayScheduleStatus(input: {
     };
   }
 
-  // Missing hours OR explicit isWorking:false → 未排班 (not 休假)
+  // Explicit isWorking:false (or a non-working day record) → 未排班.
+  // Missing personal hours already resolved to location default above.
   return {
     kind: "not_scheduled",
     workingLabel: null,

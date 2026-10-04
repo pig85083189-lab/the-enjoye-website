@@ -19,7 +19,7 @@ import {
   type IdentitySupabaseClient,
   type LoadedAuthenticatedIdentity,
 } from "@/lib/persistence/authenticated-identity-catalog";
-import { assertAppointmentWritePilotOwner } from "./appointment-write-guard";
+import { assertAppointmentWriteCancelRole } from "./appointment-write-guard";
 import {
   mutateAppointmentSafely,
   type AppointmentMutateHost,
@@ -115,7 +115,7 @@ export async function runAuthenticatedAppointmentWriteMutate(
     persistence.identity.organizationDbId,
     persistence.identity.operationalStaffId,
   );
-  assertAppointmentWritePilotOwner(staff?.role);
+  assertAppointmentWriteCancelRole(staff?.role);
   if (
     input.organizationId &&
     input.organizationId !== persistence.identity.organizationAppId

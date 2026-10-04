@@ -341,7 +341,7 @@ describe("Phase 1C-6D.2A appointment write staff catalog", () => {
     expect(page).not.toMatch(/staffId: membership\?\.userId/);
   });
 
-  it("allows operational roles to create and keeps ACCOUNTANT / Cancel Owner-only", async () => {
+  it("allows operational roles to create and cancel; ACCOUNTANT remains denied", async () => {
     for (const role of ["MANAGER", "STAFF", "RECEPTIONIST"] as const) {
       const catalog = await loadAppointmentWriteFormCatalog(
         ownerClient({
@@ -359,7 +359,7 @@ describe("Phase 1C-6D.2A appointment write staff catalog", () => {
         }),
       );
       expect(catalog.canCreate).toBe(true);
-      expect(catalog.canCancel).toBe(false);
+      expect(catalog.canCancel).toBe(true);
     }
     const accountant = await loadAppointmentWriteFormCatalog(
       ownerClient({

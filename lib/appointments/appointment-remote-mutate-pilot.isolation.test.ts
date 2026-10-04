@@ -254,7 +254,7 @@ describe("Phase 1C-6D.1 appointment remote mutate foundation", () => {
     expect(() => persistence.changeStatus()).toThrow(AppointmentWriteCreateOnlyError);
   });
 
-  it("requires authentication, Owner, and the mutate flag", async () => {
+  it("requires authentication, an operational cancel role, and the mutate flag", async () => {
     await expect(
       createAuthenticatedAppointmentMutatePersistence(
         mutateClient("OWNER", { authenticated: false }),
@@ -274,7 +274,7 @@ describe("Phase 1C-6D.1 appointment remote mutate foundation", () => {
 
     await expect(
       runAuthenticatedAppointmentWriteMutate(
-        mutateClient("MANAGER"),
+        mutateClient("ACCOUNTANT"),
         {
           kind: "cancel",
           appointmentId: "apt-muqrindw-yt0l5z",
@@ -283,6 +283,20 @@ describe("Phase 1C-6D.1 appointment remote mutate foundation", () => {
         MUTATE_ON,
       ),
     ).rejects.toBeInstanceOf(AppointmentWritePilotDeniedError);
+  });
+
+  it("lets STAFF cancel through the same remote mutate runner", async () => {
+    const result = await runAuthenticatedAppointmentWriteMutate(
+      mutateClient("STAFF"),
+      {
+        kind: "cancel",
+        appointmentId: "apt-muqrindw-yt0l5z",
+        expectedUpdatedAt: "2026-10-02T00:00:00.000Z",
+      },
+      MUTATE_ON,
+    );
+    expect(result.appointment.status).toBe("CANCELLED");
+    expect(result.appointment.cancelledBy).toBe(FUTURE_QA_APPOINTMENT.staffAppId);
   });
 
   it("cancels through the Owner runner and reuses the write refresh bus", async () => {
@@ -415,6 +429,8 @@ describe("Phase 1C-6D.1 appointment remote mutate foundation", () => {
     );
     expect(factory).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY|\.upsert\(/);
     expect(factory).not.toMatch(/hasAppointmentConflict\(|allowConflict:|localStorage\./);
+    expect(factory).toMatch(/assertAppointmentWriteCancelRole/);
+    expect(factory).not.toMatch(/assertAppointmentWritePilotOwner/);
     expect(factory).toMatch(/emitAppointmentRemoteWriteRefresh/);
     expect(factory).toMatch(/Does not enable BEAUTY_OS_PERSISTENCE/);
     expect(existsSync(path.join(process.cwd(), "app/staff/appointment-mutate/page.tsx"))).toBe(false);

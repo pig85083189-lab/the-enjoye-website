@@ -368,5 +368,15 @@ describe("Phase 1C-6D.2C readback and regression", () => {
     expect(adapter).toMatch(/auth\.admin\.createUser/);
     expect(prepareStaffRemoteCreateDraft(validDraft()).password).toBe("password12");
     expect(ORG_LUMIERE_ID).toBe("org-lumiere");
+    const provision = readFileSync(
+      path.join(process.cwd(), "lib/staff/staff-remote-provision.ts"),
+      "utf8",
+    );
+    const command = readFileSync(
+      path.join(process.cwd(), "lib/staff/staff-remote-create-command.ts"),
+      "utf8",
+    );
+    expect(provision).not.toMatch(/upsertWorkingHours|working hours/);
+    expect(command).not.toMatch(/upsertWorkingHours|workingHours/);
   });
 });

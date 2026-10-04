@@ -1,6 +1,6 @@
 /**
  * Application-layer Appointment write-pilot guards.
- * Create is an operational salon capability. Cancel remains Owner-only.
+ * Create and Cancel use the shared operational capabilities.
  * Does not change RLS. RLS remains org membership + location access.
  */
 
@@ -11,6 +11,9 @@ export const APPOINTMENT_WRITE_PILOT_OWNER_ONLY_MESSAGE =
 
 export const APPOINTMENT_WRITE_PILOT_DENIED_MESSAGE =
   "Appointment remote create is not allowed for this role";
+
+export const APPOINTMENT_WRITE_PILOT_CANCEL_DENIED_MESSAGE =
+  "Appointment remote cancel is not allowed for this role";
 
 export const APPOINTMENT_WRITE_CREATE_ONLY_MESSAGE =
   "Appointment remote write pilot is create-only";
@@ -38,6 +41,12 @@ export type AppointmentWritePilotRole =
   | string;
 
 export function isAppointmentWritePilotOwner(role: string | undefined | null): boolean {
+  return role === "OWNER";
+}
+
+export function isAppointmentWriteCancelRole(
+  role: string | undefined | null,
+): boolean {
   return canCancelAppointment({ role, isActive: true });
 }
 
@@ -52,6 +61,16 @@ export function assertAppointmentWritePilotOwner(
 ): asserts role is "OWNER" {
   if (!isAppointmentWritePilotOwner(role)) {
     throw new AppointmentWritePilotDeniedError(APPOINTMENT_WRITE_PILOT_OWNER_ONLY_MESSAGE);
+  }
+}
+
+export function assertAppointmentWriteCancelRole(
+  role: string | undefined | null,
+): void {
+  if (!isAppointmentWriteCancelRole(role)) {
+    throw new AppointmentWritePilotDeniedError(
+      APPOINTMENT_WRITE_PILOT_CANCEL_DENIED_MESSAGE,
+    );
   }
 }
 
