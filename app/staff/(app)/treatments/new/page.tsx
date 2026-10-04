@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 import { TreatmentPageClient } from "@/features/treatments/TreatmentPageClient";
+import { isAppointmentRemoteReadPilotEnabled } from "@/lib/appointments/appointment-remote-read-flag";
+import { isCustomerRemoteReadPilotEnabled } from "@/lib/customers/customer-remote-read-flag";
 
 export default function NewTreatmentPage() {
   return (
@@ -10,7 +12,10 @@ export default function NewTreatmentPage() {
         </div>
       }
     >
-      <TreatmentPageClient />
+      <TreatmentPageClient
+        customerRemoteReadPilot={isCustomerRemoteReadPilotEnabled()}
+        appointmentRemoteReadPilot={isAppointmentRemoteReadPilotEnabled()}
+      />
     </Suspense>
   );
 }

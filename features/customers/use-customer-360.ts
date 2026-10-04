@@ -51,8 +51,13 @@ import {
   getCustomerStoredValueBalance,
   listStoredValueLedger,
 } from "@/lib/stored-value/store";
+import type { ScheduleAppointment } from "@/lib/appointments/domain";
 import { getMembership } from "@/lib/tenant/organization-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
+import {
+  pickRemoteAppointmentForCustomer,
+  treatmentWorkspaceEntryHref,
+} from "@/lib/treatments/treatment-identity";
 import type { Customer } from "@/types";
 
 export type Customer360Snapshot = {
@@ -73,7 +78,10 @@ export type Customer360Snapshot = {
   recentTx: RecentTransactionView[];
 };
 
-export function useCustomer360Snapshot(customer: Customer): Customer360Snapshot {
+export function useCustomer360Snapshot(
+  customer: Customer,
+  options?: { remoteAppointments?: ScheduleAppointment[] | null },
+): Customer360Snapshot {
   const { organization } = useOrganization();
   const appointmentRev = useSyncExternalStore(
     subscribeAppointments,
@@ -90,6 +98,8 @@ export function useCustomer360Snapshot(customer: Customer): Customer360Snapshot 
     getFollowUpRevision,
     () => "",
   );
+
+  const remoteAppointments = options?.remoteAppointments;
 
   return useMemo(() => {
     void appointmentRev;
@@ -163,10 +173,14 @@ export function useCustomer360Snapshot(customer: Customer): Customer360Snapshot 
       startAt: item.startAt,
     }));
     const now = new Date();
-    const apt = findAppointmentForCustomer(customerId, organizationId);
-    const treatmentHref = apt
-      ? `/staff/treatments/new?customer=${customerId}&appointment=${apt.id}`
-      : `/staff/treatments/new?customer=${customerId}`;
+    const apt =
+      remoteAppointments != null
+        ? pickRemoteAppointmentForCustomer(remoteAppointments)
+        : findAppointmentForCustomer(customerId, organizationId);
+    const treatmentHref = treatmentWorkspaceEntryHref({
+      customerId,
+      appointmentId: apt?.id,
+    });
 
     return {
       treatmentHref,
@@ -188,5 +202,12 @@ export function useCustomer360Snapshot(customer: Customer): Customer360Snapshot 
       svBalance,
       recentTx: deriveRecentTransactions(transactions),
     };
-  }, [customer, organization.id, appointmentRev, commerceRev, followUpRev]);
+  }, [
+    customer,
+    organization.id,
+    appointmentRev,
+    commerceRev,
+    followUpRev,
+    remoteAppointments,
+  ]);
 }

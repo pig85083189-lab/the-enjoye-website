@@ -6,7 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { getServiceById } from "@/data/mock-services";
-import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
+import { useTreatmentCustomerIdentity } from "@/features/treatments/use-treatment-customer-identity";
 import { localTreatmentRepository } from "@/lib/repositories/local-treatment-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
@@ -20,9 +20,13 @@ function formatDateTime(iso: string): string {
 
 interface TreatmentDetailReadonlyProps {
   treatmentId: string;
+  customerRemoteReadPilot?: boolean;
 }
 
-export function TreatmentDetailReadonly({ treatmentId }: TreatmentDetailReadonlyProps) {
+export function TreatmentDetailReadonly({
+  treatmentId,
+  customerRemoteReadPilot = false,
+}: TreatmentDetailReadonlyProps) {
   const isClient = useIsClient();
   const { organization, membership } = useOrganization();
   const treatment = useCrmJson(
@@ -38,16 +42,13 @@ export function TreatmentDetailReadonly({ treatmentId }: TreatmentDetailReadonly
     () => (treatment ? getServiceById(treatment.serviceId, organization.id) : undefined),
     [treatment, organization.id],
   );
-  const customer = useMemo(
-    () =>
-      treatment
-        ? localCustomerRepository.getById({
-            organizationId: organization.id,
-            id: treatment.customerId,
-          })
-        : undefined,
-    [treatment, organization.id],
-  );
+  const customerIdentity = useTreatmentCustomerIdentity({
+    organizationId: organization.id,
+    customerId: treatment?.customerId ?? "",
+    customerRemoteReadPilot,
+  });
+  const customer =
+    customerIdentity.status === "ready" ? customerIdentity.customer : undefined;
 
   if (!isClient) {
     return <div className="h-40 animate-pulse rounded-2xl bg-primary-light/40" />;
@@ -68,7 +69,13 @@ export function TreatmentDetailReadonly({ treatmentId }: TreatmentDetailReadonly
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div
+      className="mx-auto max-w-3xl space-y-5"
+      data-customer-identity-source={
+        customerRemoteReadPilot ? "remote-pilot" : "local"
+      }
+      data-treatment-record-source="local"
+    >
       <Link
         href={customer ? `/staff/customers/${customer.id}` : "/staff/customers"}
         className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-secondary-text"

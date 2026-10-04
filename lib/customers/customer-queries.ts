@@ -3,7 +3,9 @@
  * One Customer domain — delegates to OperationalPersistence.customers.
  * Default persistence remains local. Phase 1C-3 list/detail may pass an
  * authenticated CustomerRemoteAdapter through the Phase 1C-3 read pilot.
- * Other live surfaces stay on localCustomerRepository.
+ * Treatment entry identity may pass the same authenticated
+ * CustomerRemoteAdapter when the Customer remote-read pilot is on.
+ * Treatment records remain local-only.
  */
 
 import { normalizePhone } from "@/lib/phone";

@@ -310,17 +310,15 @@ describe("Phase 1C-3 customer remote read pilot", () => {
     expect(getPersistenceDriver({})).toBe("local");
   });
 
-  it("G. other live surfaces stay on local customer stores", () => {
-    const surfaces = [
+  it("G. Today / Calendar / Checkout stay on local customer stores; Treatment uses canonical identity", () => {
+    const localSurfaces = [
       "features/today/TodayDashboard.tsx",
       "features/calendar/CalendarPage.tsx",
-      "features/treatments/TreatmentPageClient.tsx",
-      "features/treatments/TreatmentsListPageClient.tsx",
       "features/checkout/CheckoutPageClient.tsx",
       "features/packages/PackagesPageClient.tsx",
       "features/transactions/TransactionsPageClient.tsx",
     ];
-    for (const file of surfaces) {
+    for (const file of localSurfaces) {
       const source = readFileSync(path.join(process.cwd(), file), "utf8");
       expect(source).toMatch(/localCustomerRepository|getCustomerById/);
       expect(source).not.toMatch(/listRemotePilotCustomers|getRemotePilotCustomer/);

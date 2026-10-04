@@ -43,18 +43,29 @@ describe("Phase 1B UI persistence boundary", () => {
 });
 
 describe("Phase 1C-3 customer remote read UI boundary", () => {
-  it("keeps Today / Calendar / Treatment / Checkout on local customer reads", () => {
+  it("keeps Today / Calendar / Checkout on local customer reads", () => {
     const surfaces = [
       "features/today/TodayDashboard.tsx",
       "features/calendar/CalendarPage.tsx",
-      "features/treatments/TreatmentPageClient.tsx",
-      "features/treatments/TreatmentsListPageClient.tsx",
       "features/checkout/CheckoutPageClient.tsx",
     ];
     for (const file of surfaces) {
       const source = readFileSync(path.join(ROOT, file), "utf8");
       expect(source).not.toMatch(/listRemotePilotCustomers|getRemotePilotCustomer|useCustomerRemoteList|useCustomerRemoteDetail/);
       expect(source).not.toMatch(/BEAUTY_OS_CUSTOMER_REMOTE_READ_PILOT/);
+    }
+  });
+
+  it("keeps Treatment customer identity on the Customer remote-read flag file", () => {
+    for (const file of [
+      "app/staff/(app)/treatments/new/page.tsx",
+      "app/staff/(app)/treatments/page.tsx",
+      "app/staff/(app)/treatments/[id]/page.tsx",
+    ]) {
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      expect(source).toMatch(/isCustomerRemoteReadPilotEnabled/);
+      expect(source).not.toMatch(/customer-remote-read-pilot|createAuthenticatedCustomerReadPersistence/);
+      expect(source).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
     }
   });
 

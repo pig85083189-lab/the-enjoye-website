@@ -98,7 +98,6 @@ export function CustomerSummaryPanel({
         <Button
           fullWidth
           className="min-h-11"
-          disabled={readOnly}
           onClick={onStartTreatment}
         >
           開始療程紀錄

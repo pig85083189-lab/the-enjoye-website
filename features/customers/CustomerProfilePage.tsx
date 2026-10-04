@@ -20,6 +20,7 @@ import { NotesTab } from "./tabs/NotesTab";
 import { TransactionsTab } from "./tabs/TransactionsTab";
 import { WalletTab } from "./tabs/WalletTab";
 import { useCustomer360Snapshot } from "./use-customer-360";
+import { useCustomerRemoteAppointments } from "@/features/customers/use-appointment-remote-read";
 import { useCustomerRemoteDetail } from "@/features/customers/use-customer-remote-read";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
@@ -205,7 +206,19 @@ function Customer360Workspace({
   onSelectTab: (tab: Customer360TabId, section?: Customer360WalletSection) => void;
 }) {
   const router = useRouter();
-  const snapshot = useCustomer360Snapshot(customer);
+  const { organization } = useOrganization();
+  const remoteAppointments = useCustomerRemoteAppointments(
+    organization.id,
+    customer.id,
+    appointmentRemoteReadPilot,
+  );
+  const snapshot = useCustomer360Snapshot(customer, {
+    remoteAppointments: appointmentRemoteReadPilot
+      ? remoteAppointments.status === "data"
+        ? remoteAppointments.value
+        : []
+      : null,
+  });
   const next = snapshot.nextAppointment;
   const initials = customer.name.slice(0, 1);
   const visitLabel =
@@ -286,9 +299,7 @@ function Customer360Workspace({
           <div className="hidden shrink-0 flex-wrap items-center justify-end gap-2 min-[768px]:flex">
             <Button
               className="min-h-11"
-              disabled={remoteReadPilot}
               onClick={() => {
-                if (remoteReadPilot) return;
                 router.push(snapshot.treatmentHref);
               }}
             >
@@ -331,9 +342,7 @@ function Customer360Workspace({
           <Button
             data-customer-header-cta
             className="min-h-11 shrink-0 px-3 text-sm"
-            disabled={remoteReadPilot}
             onClick={() => {
-              if (remoteReadPilot) return;
               router.push(snapshot.treatmentHref);
             }}
           >
@@ -426,7 +435,7 @@ function Customer360Workspace({
         </aside>
       </div>
 
-      <MobileStickyTreatment href={snapshot.treatmentHref} readOnly={remoteReadPilot} />
+      <MobileStickyTreatment href={snapshot.treatmentHref} />
     </div>
   );
 }

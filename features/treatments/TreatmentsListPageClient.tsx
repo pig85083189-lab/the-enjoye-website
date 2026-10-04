@@ -32,6 +32,10 @@ import {
   getCommerceRevision,
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
+import {
+  customersFromRemoteListState,
+  useCustomerRemoteList,
+} from "@/features/customers/use-customer-remote-read";
 import { listCompletedTreatmentsForOrganization } from "@/lib/repositories/local-treatment-repository";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
@@ -99,7 +103,11 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
   event.preventDefault();
 }
 
-export function TreatmentsListPageClient() {
+export function TreatmentsListPageClient({
+  customerRemoteReadPilot = false,
+}: {
+  customerRemoteReadPilot?: boolean;
+}) {
   const { organization, currentLocation } = useOrganization();
   const isClient = useIsClient();
   const draftRev = useSyncExternalStore(
@@ -122,10 +130,20 @@ export function TreatmentsListPageClient() {
   );
   const [now] = useState(() => new Date());
 
-  const customers = useCrmJson(
-    () => localCustomerRepository.list({ organizationId: organization.id }),
+  const localCustomers = useCrmJson(
+    () =>
+      customerRemoteReadPilot
+        ? ([] as Customer[])
+        : localCustomerRepository.list({ organizationId: organization.id }),
     [] as Customer[],
   );
+  const remoteCustomers = useCustomerRemoteList(
+    organization.id,
+    customerRemoteReadPilot,
+  );
+  const customers = customerRemoteReadPilot
+    ? customersFromRemoteListState(remoteCustomers)
+    : localCustomers;
   const catalog = useMemo(
     () => getServicesForOrganization(organization.id),
     [organization.id],
@@ -265,6 +283,8 @@ export function TreatmentsListPageClient() {
     <div
       data-treatment-workspace
       data-has-quickview={showQuickView ? "true" : "false"}
+      data-customer-identity-source={customerRemoteReadPilot ? "remote-pilot" : "local"}
+      data-treatment-record-source="local"
       className="min-w-0"
     >
       <header className="mb-4 flex items-start justify-between gap-4">
