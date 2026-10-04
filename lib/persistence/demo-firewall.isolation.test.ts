@@ -8,6 +8,8 @@ import {
   REMOTE_DEMO_APPOINTMENT_MESSAGE,
   assertRemoteCustomerAllowed,
   assertRemoteAppointmentAllowed,
+  assertRemoteTreatmentAllowed,
+  REMOTE_DEMO_TREATMENT_MESSAGE,
 } from "./demo-firewall";
 import { createMemoryRemotePersistence, createRemoteOperationalPersistence, REMOTE_FLAGS } from "./remote-factory";
 import { MemoryOperationalDb } from "./memory-operational-db";
@@ -53,6 +55,19 @@ describe("Phase 5A-2 demo seed firewall", () => {
     expect(() =>
       assertRemoteAppointmentAllowed({ id: "apt-001", customerId: "demo-001" }),
     ).toThrow(REMOTE_DEMO_APPOINTMENT_MESSAGE);
+    expect(() =>
+      assertRemoteTreatmentAllowed({
+        id: "treatment-seed-001",
+        customerId: "cust-muqh2jn6-xpjssl",
+      }),
+    ).toThrow(REMOTE_DEMO_TREATMENT_MESSAGE);
+    expect(() =>
+      assertRemoteTreatmentAllowed({
+        id: "treatment-apt-001c",
+        customerId: "cust-muqh2jn6-xpjssl",
+        appointmentId: "apt-001c",
+      }),
+    ).toThrow(REMOTE_DEMO_TREATMENT_MESSAGE);
   });
 });
 

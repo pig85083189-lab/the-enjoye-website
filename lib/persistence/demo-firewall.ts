@@ -9,6 +9,7 @@ import { SEED_CUSTOMERS } from "@/data/seed-crm";
 import { SEED_LUMIERE_CUSTOMERS, SEED_LUMIERE_SERVICES } from "@/data/seed-organizations";
 import { mockAppointments } from "@/data/mock-appointments";
 import { mockServices } from "@/data/service-seed";
+import { SEED_COMPLETED_TREATMENTS } from "@/lib/repositories/local-treatment-repository";
 
 export const DEMO_SEED_FLAG = "BEAUTY_OS_DEMO_SEED";
 
@@ -29,6 +30,9 @@ export const REMOTE_DEMO_APPOINTMENT_MESSAGE =
 
 export const REMOTE_DEMO_SERVICE_MESSAGE =
   "Demo / seed services cannot be written to remote service persistence";
+
+export const REMOTE_DEMO_TREATMENT_MESSAGE =
+  "Demo / seed treatments cannot be written to remote treatment persistence";
 
 const SEED_CUSTOMER_IDS = new Set<string>([
   ...SEED_CUSTOMERS.map((c) => c.id),
@@ -55,6 +59,10 @@ const SEED_SERVICE_NAMES = new Set<string>([
   ...mockServices.map((item) => item.name),
   ...SEED_LUMIERE_SERVICES.map((item) => item.name),
 ]);
+
+const SEED_TREATMENT_IDS = new Set<string>(
+  SEED_COMPLETED_TREATMENTS.map((item) => item.id),
+);
 
 export function isDemoCustomerId(id: string): boolean {
   return (
@@ -145,6 +153,36 @@ export function isGeneratedServiceAppId(id: string): boolean {
 
 export function isGeneratedAppointmentAppId(id: string): boolean {
   return /^apt-[a-z0-9]+-[a-z0-9]+$/i.test(id) && !isDemoAppointmentId(id);
+}
+
+export function isDemoTreatmentId(id: string): boolean {
+  if (SEED_TREATMENT_IDS.has(id) || id.startsWith("treatment-seed-") || id.startsWith("mock-")) {
+    return true;
+  }
+  if (id.startsWith("treatment-")) {
+    return isDemoAppointmentId(id.slice("treatment-".length));
+  }
+  return false;
+}
+
+export function isGeneratedTreatmentAppId(id: string): boolean {
+  return /^trt-[a-z0-9]+-[a-z0-9]+$/i.test(id) && !isDemoTreatmentId(id);
+}
+
+export function assertRemoteTreatmentAllowed(treatment: {
+  id: string;
+  customerId: string;
+  appointmentId?: string;
+}): void {
+  if (isDemoTreatmentId(treatment.id) || !isGeneratedTreatmentAppId(treatment.id)) {
+    throw new Error(REMOTE_DEMO_TREATMENT_MESSAGE);
+  }
+  if (isDemoCustomerId(treatment.customerId)) {
+    throw new Error(REMOTE_DEMO_TREATMENT_MESSAGE);
+  }
+  if (treatment.appointmentId && isDemoAppointmentId(treatment.appointmentId)) {
+    throw new Error(REMOTE_DEMO_TREATMENT_MESSAGE);
+  }
 }
 
 /** Always fail closed — seed remaining must never become a PURCHASE ledger. */

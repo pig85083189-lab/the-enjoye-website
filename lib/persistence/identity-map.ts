@@ -266,6 +266,17 @@ export class CanonicalIdMapper {
     this.cache.set(`aptDb:${dbId}`, appId);
   }
 
+  rememberTreatment(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`trt:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`trtDb:${dbId}`, appId);
+  }
+
+  toTreatmentAppId(treatmentDbId: string): string {
+    return this.cached(`trtDb:${treatmentDbId}`, () => {
+      throw new UnmappedIdentityError("treatment", undefined, treatmentDbId);
+    });
+  }
+
   rememberPackageDefinition(organizationDbId: string, appId: string, dbId: string): void {
     this.cache.set(`pkgdef:${organizationDbId}:${appId}`, dbId);
     this.cache.set(`pkgdefDb:${dbId}`, appId);

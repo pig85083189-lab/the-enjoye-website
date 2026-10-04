@@ -45,6 +45,15 @@ export {
   AppointmentRemoteReadOnlyError,
 } from "./authenticated-appointment-read-store";
 export {
+  AuthenticatedTreatmentTableStore,
+} from "./authenticated-treatment-store";
+export {
+  AuthenticatedTreatmentReadStore,
+  TreatmentRemoteReadOnlyError,
+} from "./authenticated-treatment-read-store";
+export { TreatmentRemoteAdapter } from "./treatment-remote-adapter";
+export { assertMappedTreatmentDependencies } from "./treatment-mapping";
+export {
   taipeiLocalToUtcIso,
   utcIsoToTaipeiLocal,
   formatTaipeiAppointmentDisplay,
@@ -55,13 +64,15 @@ export { CustomerRemoteAdapter } from "./customer-remote-adapter";
 export { ServiceRemoteAdapter } from "./service-remote-adapter";
 export { AppointmentRemoteAdapter } from "./appointment-remote-adapter";
 export { assertMappedAppointmentDependencies } from "./appointment-mapping";
-export { isGeneratedAppointmentAppId } from "./demo-firewall";
 export {
   DEMO_SEED_FLAG,
   isDemoSeedEnabled,
   promoteDemoRemainingSessionsToRemote,
   REMOTE_DEMO_PROMOTION_MESSAGE,
   assertRemoteCustomerAllowed,
+  isGeneratedAppointmentAppId,
+  isGeneratedTreatmentAppId,
+  assertRemoteTreatmentAllowed,
   assertRemoteAppointmentAllowed,
   assertRemoteServiceAllowed,
 } from "./demo-firewall";

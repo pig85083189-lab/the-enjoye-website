@@ -240,3 +240,69 @@ export interface ServiceTableStore {
   getServiceByAppId(organizationDbId: string, appId: string): MaybePromise<DbService | undefined>;
   getServiceByDbId(dbId: string): MaybePromise<DbService | undefined>;
 }
+
+export type RemoteTreatmentStatus = "DRAFT" | "COMPLETED" | "VOID";
+export type RemoteTreatmentMode = "STANDARD" | "QUICK";
+
+export interface DbTreatment {
+  id: string;
+  organization_id: string;
+  location_id: string;
+  appointment_id: string | null;
+  customer_id: string;
+  service_id: string;
+  staff_id: string | null;
+  app_id: string;
+  mode: RemoteTreatmentMode;
+  template_type: RemoteServiceType;
+  assessment: Record<string, unknown>;
+  body_markers: unknown[];
+  operations: unknown[];
+  products: unknown[];
+  professional_note: string | null;
+  client_feeling: string | null;
+  follow_up: Record<string, unknown>;
+  skipped_steps: unknown[];
+  started_at: string | null;
+  completed_at: string | null;
+  status: RemoteTreatmentStatus;
+  body_map_note: string | null;
+  discomfort_note: string | null;
+  furthest_step: string | null;
+  current_step: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  suggested_tracking_areas: unknown[];
+  selected_quick_phrases: unknown[];
+  note_manually_edited: boolean;
+  quick_record_applied_at: string | null;
+  photo_meta: unknown[];
+  created_at: string;
+  updated_at: string;
+}
+
+export type TreatmentOptimisticUpdateInput = {
+  verifiedDbUuid: string;
+  organizationDbId: string;
+  expectedUpdatedAt: string;
+  patch: Record<string, unknown>;
+};
+
+export interface TreatmentTableStore {
+  insertTreatment(row: DbTreatment): MaybePromise<void>;
+  listTreatments(organizationDbId: string): MaybePromise<DbTreatment[]>;
+  listTreatmentsByCustomer(
+    organizationDbId: string,
+    customerDbId: string,
+  ): MaybePromise<DbTreatment[]>;
+  getTreatmentByAppId(
+    organizationDbId: string,
+    appId: string,
+  ): MaybePromise<DbTreatment | undefined>;
+  getTreatmentByDbId(dbId: string): MaybePromise<DbTreatment | undefined>;
+  getTreatmentByAppointmentId(
+    organizationDbId: string,
+    appointmentDbId: string,
+  ): MaybePromise<DbTreatment | undefined>;
+  updateTreatment(input: TreatmentOptimisticUpdateInput): MaybePromise<DbTreatment[]>;
+}

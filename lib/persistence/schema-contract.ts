@@ -24,6 +24,10 @@ export const APPOINTMENT_INTEGRITY_MIGRATION_FILE =
 export const APPOINTMENT_STAFF_OVERLAP_MIGRATION_FILE =
   "supabase/migrations/20261003120000_appointment_staff_overlap_exclusion.sql";
 
+/** Phase 1C-6G Treatment remote foundation. Reuses public.treatments. */
+export const TREATMENT_REMOTE_FOUNDATION_MIGRATION_FILE =
+  "supabase/migrations/20261004120000_treatment_remote_foundation.sql";
+
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [
   "remaining_sessions",

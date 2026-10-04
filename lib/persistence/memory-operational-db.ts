@@ -14,6 +14,10 @@ import {
   APPOINTMENT_MUTATE_FORBIDDEN_COLUMNS,
   sanitizeAppointmentMutatePatch,
 } from "./appointment-mapping";
+import {
+  TREATMENT_MUTATE_FORBIDDEN_COLUMNS,
+  sanitizeTreatmentMutatePatch,
+} from "./treatment-mapping";
 import type {
   AppointmentOptimisticUpdateInput,
   DbAppointment,
@@ -26,10 +30,14 @@ import type {
   AppointmentTableStore,
   CustomerTableStore,
   DbService,
+  DbTreatment,
   PackageTableStore,
   ServiceTableStore,
   StoredValueTableStore,
+  TreatmentOptimisticUpdateInput,
+  TreatmentTableStore,
 } from "./operational-rows";
+import { TREATMENT_INSERT_ONLY_MESSAGE } from "@/lib/treatments/treatment-write-errors";
 import type { CustomerPackageStatus } from "@/lib/packages/domain";
 
 function uuid(): string {
@@ -50,7 +58,8 @@ export class MemoryOperationalDb
     StoredValueTableStore,
     CustomerTableStore,
     AppointmentTableStore,
-    ServiceTableStore
+    ServiceTableStore,
+    TreatmentTableStore
 {
   readonly organizations: OrgRow[] = [];
   readonly locations: ScopedRow[] = [];
@@ -58,6 +67,7 @@ export class MemoryOperationalDb
   readonly services: DbService[] = [];
   readonly staff: MappedStaff[] = [];
   readonly appointments: DbAppointment[] = [];
+  readonly treatments: DbTreatment[] = [];
   readonly packageDefinitions: DbPackageDefinition[] = [];
   readonly customerPackages: DbCustomerPackage[] = [];
   readonly packageLedger: DbPackageLedgerEntry[] = [];
@@ -409,6 +419,85 @@ export class MemoryOperationalDb
       );
     }
     this.appointments[idx] = next;
+    return [next];
+  }
+
+  insertTreatment(row: DbTreatment): void {
+    if (this.treatments.some((item) => item.organization_id === row.organization_id && item.app_id === row.app_id)) {
+      throw new Error(TREATMENT_INSERT_ONLY_MESSAGE);
+    }
+    if (
+      row.appointment_id &&
+      this.treatments.some(
+        (item) =>
+          item.organization_id === row.organization_id &&
+          item.appointment_id === row.appointment_id,
+      )
+    ) {
+      throw new Error(TREATMENT_INSERT_ONLY_MESSAGE);
+    }
+    this.treatments.push(row);
+  }
+  listTreatments(organizationDbId: string) {
+    return this.treatments.filter((r) => r.organization_id === organizationDbId);
+  }
+  listTreatmentsByCustomer(organizationDbId: string, customerDbId: string) {
+    return this.treatments.filter(
+      (r) => r.organization_id === organizationDbId && r.customer_id === customerDbId,
+    );
+  }
+  getTreatmentByAppId(organizationDbId: string, appId: string) {
+    return this.treatments.find(
+      (r) => r.organization_id === organizationDbId && r.app_id === appId,
+    );
+  }
+  getTreatmentByDbId(dbId: string) {
+    return this.treatments.find((r) => r.id === dbId);
+  }
+  getTreatmentByAppointmentId(organizationDbId: string, appointmentDbId: string) {
+    return this.treatments.find(
+      (r) => r.organization_id === organizationDbId && r.appointment_id === appointmentDbId,
+    );
+  }
+  updateTreatment(input: TreatmentOptimisticUpdateInput): DbTreatment[] {
+    const patch = sanitizeTreatmentMutatePatch(input.patch);
+    for (const column of TREATMENT_MUTATE_FORBIDDEN_COLUMNS) {
+      if (column in patch) {
+        throw new Error(`Treatment mutate cannot set ${column}`);
+      }
+    }
+    const idx = this.treatments.findIndex(
+      (row) =>
+        row.id === input.verifiedDbUuid &&
+        row.organization_id === input.organizationDbId &&
+        row.updated_at === input.expectedUpdatedAt,
+    );
+    if (idx < 0) return [];
+    const current = this.treatments[idx]!;
+    if (current.status === "COMPLETED" && patch.status === "DRAFT") {
+      throw new Error("completed treatment cannot return to DRAFT");
+    }
+    const previousUpdatedAt = new Date(current.updated_at).getTime();
+    const nextUpdatedAt = new Date(
+      Number.isFinite(previousUpdatedAt)
+        ? Math.max(Date.now(), previousUpdatedAt + 1)
+        : Date.now(),
+    ).toISOString();
+    const next: DbTreatment = {
+      ...current,
+      ...(patch as Partial<DbTreatment>),
+      id: current.id,
+      app_id: current.app_id,
+      organization_id: current.organization_id,
+      customer_id: current.customer_id,
+      appointment_id: current.appointment_id,
+      location_id: current.location_id,
+      created_at: current.created_at,
+      created_by: current.created_by,
+      started_at: current.started_at,
+      updated_at: nextUpdatedAt,
+    };
+    this.treatments[idx] = next;
     return [next];
   }
 

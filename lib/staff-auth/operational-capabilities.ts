@@ -27,6 +27,18 @@ export const APPOINTMENT_CANCEL_ROLES = new Set<StaffRole>([
   "RECEPTIONIST",
 ]);
 
+/**
+ * Existing Treatment product access: OWNER / MANAGER / STAFF see the nav list;
+ * RECEPTIONIST already enters Treatment from Today / Calendar.
+ * ACCOUNTANT remains denied. Do not invent OWNER-only Treatment writes.
+ */
+export const TREATMENT_ACCESS_ROLES = new Set<StaffRole>([
+  "OWNER",
+  "MANAGER",
+  "STAFF",
+  "RECEPTIONIST",
+]);
+
 export type CapabilityActor = {
   role?: StaffRole | string | null;
   isActive?: boolean;
@@ -57,6 +69,14 @@ export function canOpenOrder(actor: CapabilityActor): boolean {
 
 export function canCancelAppointment(actor: CapabilityActor): boolean {
   return hasRole(actor, APPOINTMENT_CANCEL_ROLES);
+}
+
+export function canReadTreatment(actor: CapabilityActor): boolean {
+  return hasRole(actor, TREATMENT_ACCESS_ROLES);
+}
+
+export function canWriteTreatment(actor: CapabilityActor): boolean {
+  return hasRole(actor, TREATMENT_ACCESS_ROLES);
 }
 
 export function resolveCheckoutAccess(input: {
