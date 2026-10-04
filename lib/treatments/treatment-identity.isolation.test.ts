@@ -121,7 +121,7 @@ describe("Phase 1C-6D.2F Treatment customer identity", () => {
       expect(source).not.toMatch(/createCustomer\(|buildRealCustomerCreate/);
     }
     const identity = read("lib/treatments/treatment-identity.ts");
-    expect(identity).toMatch(/stay local-only/);
+    expect(identity).toMatch(/stay local-only unless the Treatment remote-read pilot is on/);
     expect(identity).toMatch(/must not copy customers/);
   });
 });

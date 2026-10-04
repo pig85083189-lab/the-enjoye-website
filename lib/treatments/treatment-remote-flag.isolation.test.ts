@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { getPersistenceDriver } from "@/lib/persistence/driver";
@@ -82,22 +82,31 @@ describe("Phase 1C-6G Treatment remote pilots", () => {
     expect(writeFlag).toMatch(/Independent of BEAUTY_OS_PERSISTENCE/);
   });
 
-  it("keeps the adapter graph out of live Treatment UI", () => {
+  it("keeps RSC pages on flag files and live UI off service role / dual write", () => {
     for (const file of [
-      "features/treatments/TreatmentPageClient.tsx",
-      "features/treatments/TreatmentsListPageClient.tsx",
-      "features/treatments/TreatmentWorkspace.tsx",
-      "features/customers/tabs/TreatmentsTab.tsx",
-      "hooks/useTreatmentDraft.ts",
-      "lib/treatment-draft.ts",
+      "app/staff/(app)/treatments/new/page.tsx",
+      "app/staff/(app)/treatments/page.tsx",
+      "app/staff/(app)/treatments/[id]/page.tsx",
+      "app/staff/(app)/today/page.tsx",
+      "app/staff/(app)/customers/[id]/page.tsx",
     ]) {
-      const full = path.join(process.cwd(), file);
-      expect(existsSync(full), file).toBe(true);
-      const source = readFileSync(full, "utf8");
-      expect(source).not.toMatch(/BEAUTY_OS_TREATMENT_REMOTE_READ_PILOT|BEAUTY_OS_TREATMENT_REMOTE_WRITE_PILOT/);
-      expect(source).not.toMatch(
-        /treatment-remote-read-pilot|treatment-remote-write-pilot|runAuthenticatedTreatmentCreate|AuthenticatedTreatmentTableStore/,
-      );
+      const source = readFileSync(path.join(process.cwd(), file), "utf8");
+      expect(source).toMatch(/isTreatmentRemoteReadPilotEnabled/);
+      expect(source).not.toMatch(/treatment-remote-read-pilot|treatment-remote-write-pilot|AuthenticatedTreatmentTableStore|createServiceRoleClient/);
     }
+    const writeHook = readFileSync(
+      path.join(process.cwd(), "features/treatments/use-treatment-remote-write.ts"),
+      "utf8",
+    );
+    expect(writeHook).toMatch(/runAuthenticatedTreatmentCreate|runAuthenticatedTreatmentAutosave|runAuthenticatedTreatmentComplete/);
+    expect(writeHook).not.toMatch(/\[TREATMENT_REMOTE_WRITE_PILOT_ENV\]:\s*"1"/);
+    expect(writeHook).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    expect(writeHook).not.toMatch(/saveDraft\(|saveCompletedTreatment\(/);
+    const draft = readFileSync(path.join(process.cwd(), "hooks/useTreatmentDraft.ts"), "utf8");
+    expect(draft).toMatch(/remoteWrite/);
+    expect(draft).toMatch(/submitTreatmentRemoteAutosave/);
+    expect(draft).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    const localDraft = readFileSync(path.join(process.cwd(), "lib/treatment-draft.ts"), "utf8");
+    expect(localDraft).not.toMatch(/treatment-remote-read-pilot|runAuthenticatedTreatmentCreate/);
   });
 });

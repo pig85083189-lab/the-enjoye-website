@@ -1,6 +1,7 @@
 /**
  * Authenticated PostgREST treatment store.
- * Explicit remote adapter path only — live Treatment UI stays local.
+ * Explicit remote adapter path only — live Treatment UI uses this store
+ * when the Treatment remote-write pilot is on.
  * Never uses a service-role client. Insert is insert-only (no upsert).
  * Update is optimistic (id + organization_id + updated_at) and never upserts.
  */

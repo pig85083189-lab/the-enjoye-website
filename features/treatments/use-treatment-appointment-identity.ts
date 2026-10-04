@@ -10,6 +10,8 @@ import {
   listRemotePilotAppointmentsByCustomer,
 } from "@/lib/appointments/appointment-remote-read-pilot";
 import { useAppointmentRemoteWriteRevision } from "@/lib/appointments/use-appointment-remote-write-revision";
+import type { CanonicalAppointmentStatus } from "@/lib/appointments/domain";
+import { normalizeAppointmentStatus } from "@/lib/appointments/domain";
 import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-identity-catalog";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import {
@@ -24,7 +26,12 @@ export type TreatmentAppointmentIdentity =
   | { status: "loading"; source: TreatmentIdentitySource }
   | { status: "error"; source: "remote"; message: string }
   | { status: "empty"; source: TreatmentIdentitySource }
-  | { status: "ready"; source: TreatmentIdentitySource; appointment: Appointment };
+  | {
+      status: "ready";
+      source: TreatmentIdentitySource;
+      appointment: Appointment;
+      canonicalStatus: CanonicalAppointmentStatus;
+    };
 
 type Settled = Exclude<TreatmentAppointmentIdentity, { status: "loading" }>;
 
@@ -79,6 +86,7 @@ export function useTreatmentAppointmentIdentity(input: {
                 status: "ready",
                 source: "remote",
                 appointment: toTreatmentAppointment(row),
+                canonicalStatus: row.status,
               }
             : { status: "empty", source: "remote" },
         });
@@ -108,6 +116,11 @@ export function useTreatmentAppointmentIdentity(input: {
     ? getAppointmentById(appointmentId, input.organizationId)
     : findAppointmentForCustomer(input.customerId, input.organizationId);
   return local
-    ? { status: "ready", source: "local", appointment: local }
+    ? {
+        status: "ready",
+        source: "local",
+        appointment: local,
+        canonicalStatus: normalizeAppointmentStatus(local.status),
+      }
     : { status: "empty", source: "local" };
 }

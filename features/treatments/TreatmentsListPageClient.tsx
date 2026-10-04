@@ -39,14 +39,21 @@ import {
 import { listCompletedTreatmentsForOrganization } from "@/lib/repositories/local-treatment-repository";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
-import { getMembership } from "@/lib/tenant/organization-store";
+import { getMembership, listMemberships } from "@/lib/tenant/organization-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
+import {
+  appointmentsFromRemoteListState,
+  treatmentsFromRemoteListState,
+  useTreatmentRemoteAppointments,
+  useTreatmentRemoteList,
+} from "@/features/treatments/use-treatment-remote-read";
 import {
   getTreatmentDraftRevision,
   listOpenTreatmentDrafts,
   subscribeTreatmentDrafts,
 } from "@/lib/treatment-draft";
+import { resolveCanonicalStaffDisplayName } from "@/lib/treatments/treatment-display";
 import {
   buildTreatmentWorkspaceItems,
   countTreatmentWorkspaceSummary,
@@ -105,8 +112,12 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
 
 export function TreatmentsListPageClient({
   customerRemoteReadPilot = false,
+  appointmentRemoteReadPilot = false,
+  treatmentRemoteReadPilot = false,
 }: {
   customerRemoteReadPilot?: boolean;
+  appointmentRemoteReadPilot?: boolean;
+  treatmentRemoteReadPilot?: boolean;
 }) {
   const { organization, currentLocation } = useOrganization();
   const isClient = useIsClient();
@@ -148,31 +159,64 @@ export function TreatmentsListPageClient({
     () => getServicesForOrganization(organization.id),
     [organization.id],
   );
+  const remoteTreatments = useTreatmentRemoteList(
+    organization.id,
+    treatmentRemoteReadPilot,
+  );
+  const remoteAppointments = useTreatmentRemoteAppointments(
+    organization.id,
+    treatmentRemoteReadPilot,
+  );
   const appointments = useMemo(() => {
     void appointmentRev;
     if (!isClient) return [];
+    if (treatmentRemoteReadPilot) {
+      return appointmentsFromRemoteListState(remoteAppointments);
+    }
     return listAppointments({
       organizationId: organization.id,
       locationId: currentLocation?.id,
     });
-  }, [appointmentRev, currentLocation?.id, isClient, organization.id]);
+  }, [
+    appointmentRev,
+    currentLocation?.id,
+    isClient,
+    organization.id,
+    remoteAppointments,
+    treatmentRemoteReadPilot,
+  ]);
 
   const items = useMemo(() => {
     void draftRev;
     if (!isClient) return [];
+    if (treatmentRemoteReadPilot && remoteTreatments.status === "loading") {
+      return [];
+    }
+    const remoteRows = treatmentsFromRemoteListState(remoteTreatments);
+    const openDrafts = treatmentRemoteReadPilot
+      ? remoteRows.filter((item) => item.status === "draft")
+      : listOpenTreatmentDrafts(organization.id);
+    const completedTreatments = treatmentRemoteReadPilot
+      ? remoteRows.filter((item) => item.status === "completed")
+      : listCompletedTreatmentsForOrganization(organization.id);
+    const roster = listMemberships(organization.id);
     const staffNames: Record<string, string> = {};
     for (const appointment of appointments) {
-      staffNames[appointment.staffId] = appointment.staffName;
-      const membership = getMembership(organization.id, appointment.staffId);
-      if (membership?.displayName) {
-        staffNames[appointment.staffId] = membership.displayName;
-      }
+      staffNames[appointment.staffId] = resolveCanonicalStaffDisplayName({
+        staffId: appointment.staffId,
+        rosterName: getMembership(organization.id, appointment.staffId)?.displayName,
+        snapshotName: appointment.staffName,
+      });
+    }
+    for (const member of roster) {
+      staffNames[member.userId] = resolveCanonicalStaffDisplayName({
+        staffId: member.userId,
+        rosterName: member.displayName,
+      });
     }
     return buildTreatmentWorkspaceItems({
-      openDrafts: listOpenTreatmentDrafts(organization.id),
-      completedTreatments: listCompletedTreatmentsForOrganization(
-        organization.id,
-      ),
+      openDrafts,
+      completedTreatments,
       appointments,
       customers,
       catalog,
@@ -189,14 +233,21 @@ export function TreatmentsListPageClient({
     isClient,
     now,
     organization.id,
+    remoteTreatments,
+    treatmentRemoteReadPilot,
   ]);
 
   const completedTreatments = useMemo(() => {
     void draftRev;
+    if (treatmentRemoteReadPilot) {
+      return treatmentsFromRemoteListState(remoteTreatments).filter(
+        (item) => item.status === "completed",
+      );
+    }
     return isClient
       ? listCompletedTreatmentsForOrganization(organization.id)
       : [];
-  }, [draftRev, isClient, organization.id]);
+  }, [draftRev, isClient, organization.id, remoteTreatments, treatmentRemoteReadPilot]);
 
   const visible = useMemo(
     () => filterTreatmentItems(items, filter, query, dateFilter, now),
@@ -284,7 +335,8 @@ export function TreatmentsListPageClient({
       data-treatment-workspace
       data-has-quickview={showQuickView ? "true" : "false"}
       data-customer-identity-source={customerRemoteReadPilot ? "remote-pilot" : "local"}
-      data-treatment-record-source="local"
+      data-appointment-identity-source={appointmentRemoteReadPilot ? "remote-pilot" : "local"}
+      data-treatment-record-source={treatmentRemoteReadPilot ? "remote-pilot" : "local"}
       className="min-w-0"
     >
       <header className="mb-4 flex items-start justify-between gap-4">
@@ -401,8 +453,20 @@ export function TreatmentsListPageClient({
             </div>
           </div>
 
-          {!isClient ? (
+          {!isClient ||
+          (treatmentRemoteReadPilot &&
+            (remoteTreatments.status === "loading" ||
+              remoteAppointments.status === "loading")) ? (
             <ListSkeleton />
+          ) : treatmentRemoteReadPilot &&
+            (remoteTreatments.status === "error" ||
+              remoteAppointments.status === "error") ? (
+            <Card padding="lg" className="text-center">
+              <p className="text-[15px] font-medium text-text">無法讀取遠端療程</p>
+              <p className="mt-1 text-sm text-secondary-text">
+                Access unavailable — remote treatment read failed. 不會改用本機示範資料。
+              </p>
+            </Card>
           ) : visible.length === 0 ? (
             <TreatmentEmptyState
               emptyState={emptyState}

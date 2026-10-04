@@ -22,6 +22,10 @@ import { WalletTab } from "./tabs/WalletTab";
 import { useCustomer360Snapshot } from "./use-customer-360";
 import { useCustomerRemoteAppointments } from "@/features/customers/use-appointment-remote-read";
 import { useCustomerRemoteDetail } from "@/features/customers/use-customer-remote-read";
+import {
+  treatmentsFromRemoteListState,
+  useTreatmentRemoteListByCustomer,
+} from "@/features/treatments/use-treatment-remote-read";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
@@ -42,12 +46,14 @@ interface CustomerProfilePageProps {
   customerId: string;
   remoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
+  treatmentRemoteReadPilot?: boolean;
 }
 
 export function CustomerProfilePage({
   customerId,
   remoteReadPilot = false,
   appointmentRemoteReadPilot = false,
+  treatmentRemoteReadPilot = false,
 }: CustomerProfilePageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -155,6 +161,7 @@ export function CustomerProfilePage({
     <Customer360Workspace
       remoteReadPilot={remoteReadPilot}
       appointmentRemoteReadPilot={appointmentRemoteReadPilot}
+      treatmentRemoteReadPilot={treatmentRemoteReadPilot}
       customer={customer}
       tab={tab}
       walletSection={walletSection}
@@ -181,6 +188,7 @@ export function CustomerProfilePage({
 function Customer360Workspace({
   remoteReadPilot = false,
   appointmentRemoteReadPilot = false,
+  treatmentRemoteReadPilot = false,
   customer,
   tab,
   walletSection,
@@ -194,6 +202,7 @@ function Customer360Workspace({
 }: {
   remoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
+  treatmentRemoteReadPilot?: boolean;
   customer: Customer;
   tab: Customer360TabId;
   walletSection?: Customer360WalletSection;
@@ -212,11 +221,19 @@ function Customer360Workspace({
     customer.id,
     appointmentRemoteReadPilot,
   );
+  const remoteTreatments = useTreatmentRemoteListByCustomer(
+    organization.id,
+    customer.id,
+    treatmentRemoteReadPilot,
+  );
   const snapshot = useCustomer360Snapshot(customer, {
     remoteAppointments: appointmentRemoteReadPilot
       ? remoteAppointments.status === "data"
         ? remoteAppointments.value
         : []
+      : null,
+    remoteTreatments: treatmentRemoteReadPilot
+      ? treatmentsFromRemoteListState(remoteTreatments)
       : null,
   });
   const next = snapshot.nextAppointment;
@@ -396,7 +413,11 @@ function Customer360Workspace({
             ) : null}
             {tab === "consultation" ? <ConsultationsTab customerId={customer.id} /> : null}
             {tab === "treatments" ? (
-              <TreatmentsTab customerId={customer.id} treatmentHref={snapshot.treatmentHref} />
+              <TreatmentsTab
+                customerId={customer.id}
+                treatmentHref={snapshot.treatmentHref}
+                treatmentRemoteReadPilot={treatmentRemoteReadPilot}
+              />
             ) : null}
             {tab === "follow-ups" ? (
               <FollowUpsTab customerId={customer.id} treatmentHref={snapshot.treatmentHref} />

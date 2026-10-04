@@ -176,10 +176,12 @@ export function CalendarPage({
   calendarRemoteReadPilot = false,
   appointmentRemoteWritePilot = false,
   appointmentRemoteMutatePilot = false,
+  treatmentRemoteReadPilot = false,
 }: {
   calendarRemoteReadPilot?: boolean;
   appointmentRemoteWritePilot?: boolean;
   appointmentRemoteMutatePilot?: boolean;
+  treatmentRemoteReadPilot?: boolean;
 }) {
   const { organization, currentLocation, locations, membership } =
     useOrganization();
@@ -702,6 +704,7 @@ export function CalendarPage({
             readOnly={calendarRemoteReadPilot}
             allowRemoteCancel={allowRemoteCancel}
             useTaipeiTime={calendarRemoteReadPilot}
+            treatmentRemoteReadPilot={treatmentRemoteReadPilot}
             onClose={() => setSelectedId(null)}
             onEdit={() => {
               if (calendarRemoteReadPilot) return;
@@ -772,6 +775,7 @@ export function CalendarPage({
             readOnly={calendarRemoteReadPilot}
             allowRemoteCancel={allowRemoteCancel}
             useTaipeiTime={calendarRemoteReadPilot}
+            treatmentRemoteReadPilot={treatmentRemoteReadPilot}
             onClose={() => setSelectedId(null)}
             onEdit={() => {
               if (calendarRemoteReadPilot) return;

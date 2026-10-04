@@ -9,15 +9,20 @@ import {
   getAppointmentStatusRaw,
   subscribeAppointments,
 } from "@/lib/appointment-store";
+import { isMutedAppointmentStatus } from "@/lib/treatments/treatment-today";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { useSearchParams } from "next/navigation";
 
 export function TreatmentPageClient({
   customerRemoteReadPilot = false,
   appointmentRemoteReadPilot = false,
+  treatmentRemoteReadPilot = false,
+  treatmentRemoteWritePilot = false,
 }: {
   customerRemoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
+  treatmentRemoteReadPilot?: boolean;
+  treatmentRemoteWritePilot?: boolean;
 }) {
   const searchParams = useSearchParams();
   const { organization } = useOrganization();
@@ -99,6 +104,7 @@ export function TreatmentPageClient({
   }
 
   const appointment = appointmentIdentity.appointment;
+  const canonicalStatus = appointmentIdentity.canonicalStatus;
 
   if (appointment.organizationId !== organization.id) {
     return (
@@ -113,14 +119,29 @@ export function TreatmentPageClient({
     return <ComingSoon title="預約資料不符" description="請重新選擇正確的客戶與預約。" />;
   }
 
+  if (isMutedAppointmentStatus(canonicalStatus)) {
+    return (
+      <ComingSoon
+        title="無法開始療程"
+        description="已取消或未到的預約不會建立療程，也不會占用待服務或服務中。"
+      />
+    );
+  }
+
   return (
     <div
       data-customer-identity-source={
         customerIdentity.source === "remote" ? "remote-pilot" : "local"
       }
-      data-treatment-record-source="local"
+      data-treatment-record-source={treatmentRemoteReadPilot ? "remote-pilot" : "local"}
     >
-      <TreatmentWorkspace customer={customer} appointment={appointment} />
+      <TreatmentWorkspace
+        customer={customer}
+        appointment={appointment}
+        canonicalStatus={canonicalStatus}
+        treatmentRemoteReadPilot={treatmentRemoteReadPilot}
+        treatmentRemoteWritePilot={treatmentRemoteWritePilot}
+      />
     </div>
   );
 }

@@ -19,6 +19,14 @@ import {
   TodayRemoteReadErrorFallback,
 } from "@/features/today/today-remote-read-boundary";
 import { useTodayRemoteAppointments } from "@/features/today/use-today-remote-read";
+import {
+  treatmentsFromRemoteListState,
+  useTreatmentRemoteList,
+} from "@/features/treatments/use-treatment-remote-read";
+import {
+  indexTreatmentsByAppointmentId,
+  todayBucketFromTreatment,
+} from "@/lib/treatments/treatment-today";
 import { getCustomerById } from "@/data";
 import { getNextAppointment, sortAppointmentsByTime } from "@/lib/appointments";
 import {
@@ -41,8 +49,10 @@ type TimelineFilter = "all" | "waiting" | "active" | "done";
 
 export function TodayDashboard({
   todayRemoteReadPilot = false,
+  treatmentRemoteReadPilot = false,
 }: {
   todayRemoteReadPilot?: boolean;
+  treatmentRemoteReadPilot?: boolean;
 }) {
   const sessionRaw = useSyncExternalStore(subscribeAuth, getSessionRaw, () => null);
   const session = parseSession(sessionRaw);
@@ -65,17 +75,31 @@ export function TodayDashboard({
         currentLocation?.id,
         day,
       );
+  const remoteTreatments = useTreatmentRemoteList(
+    organization.id,
+    treatmentRemoteReadPilot,
+  );
+  const treatmentsByAppointment = indexTreatmentsByAppointmentId(
+    treatmentsFromRemoteListState(remoteTreatments),
+  );
   const schedule = applyRosterStaffDisplayNames(
     todayRemoteReadPilot && remoteState.status === "data"
       ? remoteState.value
       : localSchedule,
     listMemberships(organization.id),
   );
+  const bucketOf = (appointmentId: string, status: (typeof schedule)[number]["status"]) =>
+    treatmentRemoteReadPilot
+      ? todayBucketFromTreatment(
+          status,
+          treatmentsByAppointment.get(appointmentId)?.status,
+        )
+      : todayBucket(status);
   const activeSchedule = schedule.filter(
-    (item) => todayBucket(item.status) !== "muted",
+    (item) => bucketOf(item.id, item.status) !== "muted",
   );
   const mutedSchedule = schedule.filter(
-    (item) => todayBucket(item.status) === "muted",
+    (item) => bucketOf(item.id, item.status) === "muted",
   );
   const canonicalById = new Map(
     activeSchedule.map((item) => [item.id, item.status] as const),
@@ -87,13 +111,13 @@ export function TodayDashboard({
   const stats = {
     total: activeSchedule.length,
     pending: activeSchedule.filter(
-      (item) => todayBucket(item.status) === "waiting",
+      (item) => bucketOf(item.id, item.status) === "waiting",
     ).length,
     inProgress: activeSchedule.filter(
-      (item) => todayBucket(item.status) === "active",
+      (item) => bucketOf(item.id, item.status) === "active",
     ).length,
     completed: activeSchedule.filter(
-      (item) => todayBucket(item.status) === "done",
+      (item) => bucketOf(item.id, item.status) === "done",
     ).length,
   };
   const appointments = sortAppointmentsByTime(liveAppointments);
@@ -108,7 +132,7 @@ export function TodayDashboard({
             if (filter === "active") return apt.status === "in_progress";
             return apt.status === "completed";
           }
-          return todayBucket(canonical) === filter;
+          return bucketOf(apt.id, canonical) === filter;
         });
 
   const nextAppointment = getNextAppointment(appointments);
@@ -215,6 +239,12 @@ export function TodayDashboard({
             canonicalStatus={nextCanonical}
             compact
             readOnly={todayRemoteReadPilot}
+            treatmentRemoteRead={treatmentRemoteReadPilot}
+            remoteTreatment={
+              nextAppointment
+                ? treatmentsByAppointment.get(nextAppointment.id) ?? null
+                : null
+            }
           />
         </section>
       ) : (
@@ -306,6 +336,10 @@ export function TodayDashboard({
                     appointment={appointment}
                     canonicalStatus={canonicalStatus}
                     readOnly={todayRemoteReadPilot}
+                    treatmentRemoteRead={treatmentRemoteReadPilot}
+                    remoteTreatment={
+                      treatmentsByAppointment.get(appointment.id) ?? null
+                    }
                   />
                 </div>
               );
@@ -336,6 +370,12 @@ export function TodayDashboard({
               sticky
               canonicalStatus={nextCanonical}
               readOnly={todayRemoteReadPilot}
+              treatmentRemoteRead={treatmentRemoteReadPilot}
+              remoteTreatment={
+                nextAppointment
+                  ? treatmentsByAppointment.get(nextAppointment.id) ?? null
+                  : null
+              }
             />
           ) : (
             <NextCustomerEmpty sticky />

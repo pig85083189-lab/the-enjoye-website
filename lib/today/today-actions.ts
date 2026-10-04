@@ -12,7 +12,9 @@ import {
   getCompletedTreatmentsForCustomer,
   loadDraft,
 } from "@/lib/treatment-draft";
+import { isMutedAppointmentStatus } from "@/lib/treatments/treatment-today";
 import type { Appointment } from "@/types";
+import type { TreatmentDraft } from "@/types/treatment";
 
 export type TodayPrimaryAction =
   | { kind: "start_treatment"; href: string; label: string }
@@ -45,6 +47,11 @@ function completedTreatmentHref(
   return match ? `/staff/treatments/${match.id}` : undefined;
 }
 
+export type TodayPrimaryActionOptions = {
+  treatmentRemoteRead?: boolean;
+  remoteTreatment?: TreatmentDraft | null;
+};
+
 /**
  * Primary CTA for Today cards / briefing panel.
  * Priority when completed: checkout → paid record (treatment if known, else TX).
@@ -52,36 +59,54 @@ function completedTreatmentHref(
 export function resolveTodayPrimaryAction(
   appointment: Appointment,
   canonicalStatus: CanonicalAppointmentStatus | string | undefined,
+  options?: TodayPrimaryActionOptions,
 ): TodayPrimaryAction {
   const status = canonicalStatus ?? appointment.status;
+  if (isMutedAppointmentStatus(status)) {
+    return { kind: "none" };
+  }
+
   const checkoutNav: AppointmentCheckoutNav = resolveAppointmentCheckoutNav(
     appointment.organizationId,
     appointment.id,
     status,
   );
   const workspace = treatmentWorkspaceHref(appointment);
-  const openDraft = hasOpenTreatmentDraft(
-    appointment.organizationId,
-    appointment.id,
-  );
+  const remoteTreatment = options?.treatmentRemoteRead
+    ? options.remoteTreatment ?? null
+    : undefined;
+  const openDraft =
+    remoteTreatment !== undefined
+      ? remoteTreatment?.status === "draft"
+      : hasOpenTreatmentDraft(appointment.organizationId, appointment.id);
   const isInService =
     appointment.status === "in_progress" ||
-    status === "IN_SERVICE";
+    status === "IN_SERVICE" ||
+    remoteTreatment?.status === "draft";
   const isCompleted =
-    appointment.status === "completed" || status === "COMPLETED";
+    appointment.status === "completed" ||
+    status === "COMPLETED" ||
+    remoteTreatment?.status === "completed";
 
   if (isCompleted) {
     if (checkoutNav.kind === "checkout") {
       return { kind: "checkout", href: checkoutNav.href, label: "前往結帳" };
     }
     if (checkoutNav.kind === "view_transaction") {
-      const treatmentHref = completedTreatmentHref(
-        appointment.organizationId,
-        appointment,
-      );
+      const treatmentHref =
+        remoteTreatment?.status === "completed"
+          ? `/staff/treatments/${remoteTreatment.id}`
+          : completedTreatmentHref(appointment.organizationId, appointment);
       return {
         kind: "view_record",
         href: treatmentHref ?? checkoutNav.href,
+        label: "查看紀錄",
+      };
+    }
+    if (remoteTreatment?.status === "completed") {
+      return {
+        kind: "view_record",
+        href: `/staff/treatments/${remoteTreatment.id}`,
         label: "查看紀錄",
       };
     }

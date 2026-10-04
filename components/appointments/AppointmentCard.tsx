@@ -18,6 +18,7 @@ import {
 } from "@/lib/treatment-draft";
 import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
 import type { Appointment } from "@/types";
+import type { TreatmentDraft } from "@/types/treatment";
 import { cn, formatReminderTag, MEMBERSHIP_LABEL } from "@/lib/utils";
 
 interface AppointmentCardProps {
@@ -25,6 +26,8 @@ interface AppointmentCardProps {
   /** Canonical status from schedule store — preferred for checkout eligibility */
   canonicalStatus?: CanonicalAppointmentStatus;
   readOnly?: boolean;
+  treatmentRemoteRead?: boolean;
+  remoteTreatment?: TreatmentDraft | null;
 }
 
 const membershipTone = {
@@ -37,6 +40,8 @@ export function AppointmentCard({
   appointment,
   canonicalStatus,
   readOnly = false,
+  treatmentRemoteRead = false,
+  remoteTreatment = null,
 }: AppointmentCardProps) {
   useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
   useSyncExternalStore(
@@ -45,9 +50,15 @@ export function AppointmentCard({
     () => "",
   );
 
-  const isCompleted = appointment.status === "completed";
-  const isInProgress = appointment.status === "in_progress";
-  const primary = resolveTodayPrimaryAction(appointment, canonicalStatus);
+  const isCompleted =
+    remoteTreatment?.status === "completed" || appointment.status === "completed";
+  const isInProgress =
+    remoteTreatment?.status === "draft" ||
+    (!remoteTreatment && appointment.status === "in_progress");
+  const primary = resolveTodayPrimaryAction(appointment, canonicalStatus, {
+    treatmentRemoteRead,
+    remoteTreatment,
+  });
   const customerHref = `/staff/customers/${appointment.customerId}`;
 
   return (

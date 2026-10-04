@@ -39,6 +39,8 @@ import {
   lastServiceSummary,
 } from "@/lib/today/briefing";
 import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
+import { useTreatmentRemoteByAppointment } from "@/features/treatments/use-treatment-remote-read";
+import type { TreatmentDraft } from "@/types/treatment";
 import {
   getTreatmentDraftRevision,
   subscribeTreatmentDrafts,
@@ -62,6 +64,7 @@ interface AppointmentQuickViewProps {
   readOnly?: boolean;
   allowRemoteCancel?: boolean;
   useTaipeiTime?: boolean;
+  treatmentRemoteReadPilot?: boolean;
   onClose: () => void;
   onEdit: () => void;
   onRequestCancel: () => void;
@@ -74,6 +77,7 @@ export function AppointmentQuickView({
   readOnly = false,
   allowRemoteCancel = false,
   useTaipeiTime = false,
+  treatmentRemoteReadPilot = false,
   onClose,
   onEdit,
   onRequestCancel,
@@ -88,7 +92,17 @@ export function AppointmentQuickView({
 
   const customer = getCustomerById(item.customerId, item.organizationId);
   const legacy = scheduleAppointmentToLegacyView(item);
-  const primary = resolveTodayPrimaryAction(legacy, item.status);
+  const remoteTreatmentState = useTreatmentRemoteByAppointment(
+    item.organizationId,
+    item.id,
+    treatmentRemoteReadPilot,
+  );
+  const remoteTreatment: TreatmentDraft | null =
+    remoteTreatmentState.status === "data" ? remoteTreatmentState.value : null;
+  const primary = resolveTodayPrimaryAction(legacy, item.status, {
+    treatmentRemoteRead: treatmentRemoteReadPilot,
+    remoteTreatment,
+  });
   const attention = collectAttentionNotes(
     item.organizationId,
     customer,

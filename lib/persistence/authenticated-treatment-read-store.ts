@@ -1,7 +1,6 @@
 /**
- * Authenticated, RLS-bound treatment table access for the Phase 1C-6G
- * read foundation. Uses the publishable/session client only.
- * Writes are refused.
+ * Authenticated, RLS-bound treatment table access for Treatment remote
+ * read. Uses the publishable/session client only. Writes are refused.
  */
 
 import type {

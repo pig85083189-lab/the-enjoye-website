@@ -23,6 +23,7 @@ import {
 import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
 import { useClientNow } from "@/lib/use-client-now";
 import type { Appointment, Customer } from "@/types";
+import type { TreatmentDraft } from "@/types/treatment";
 import { cn, MEMBERSHIP_LABEL } from "@/lib/utils";
 
 interface NextCustomerPanelProps {
@@ -32,6 +33,8 @@ interface NextCustomerPanelProps {
   compact?: boolean;
   canonicalStatus?: CanonicalAppointmentStatus;
   readOnly?: boolean;
+  treatmentRemoteRead?: boolean;
+  remoteTreatment?: TreatmentDraft | null;
 }
 
 const membershipTone = {
@@ -78,6 +81,8 @@ export function NextCustomerPanel({
   compact = false,
   canonicalStatus,
   readOnly = false,
+  treatmentRemoteRead = false,
+  remoteTreatment = null,
 }: NextCustomerPanelProps) {
   useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
   useSyncExternalStore(
@@ -97,7 +102,10 @@ export function NextCustomerPanel({
     appointment.organizationId,
     customer,
   );
-  const primary = resolveTodayPrimaryAction(appointment, canonicalStatus);
+  const primary = resolveTodayPrimaryAction(appointment, canonicalStatus, {
+    treatmentRemoteRead,
+    remoteTreatment,
+  });
   const customerHref = `/staff/customers/${appointment.customerId}`;
   const treatmentsHref = `/staff/customers/${appointment.customerId}?tab=treatments`;
 

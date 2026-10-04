@@ -5,8 +5,9 @@
  * treatment-remote-write-flag.ts so the adapter graph stays out of RSC.
  *
  * Does not enable BEAUTY_OS_PERSISTENCE or BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
- * Live Treatment autosave / complete stay local until a later slice wires
- * this factory. No service role. No local + remote dual write.
+ * Live Treatment create / autosave / complete use this factory when the
+ * Treatment remote-write pilot is on. No service role.
+ * No local + remote dual write.
  */
 
 import type { TreatmentDraft } from "@/types/treatment";

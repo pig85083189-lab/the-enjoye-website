@@ -5,12 +5,15 @@
  * treatment-remote-read-flag.ts so the adapter graph stays out of RSC.
  *
  * Does not enable BEAUTY_OS_PERSISTENCE or BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
- * Live Treatment list / detail / Customer 360 stay local until a later slice
- * wires this factory. No service role. No localStorage fallback.
+ * Live Treatment list / detail / Customer 360 / Today entry use this factory
+ * when the Treatment remote-read pilot is on. No service role.
+ * No localStorage fallback.
  */
 
 import type { TreatmentDraft } from "@/types/treatment";
+import type { ScheduleAppointment } from "@/lib/appointments/domain";
 import { TreatmentRemoteAdapter } from "@/lib/persistence/treatment-remote-adapter";
+import { AppointmentRemoteAdapter } from "@/lib/persistence/appointment-remote-adapter";
 import {
   AuthenticatedTreatmentReadStore,
 } from "@/lib/persistence/authenticated-treatment-read-store";
@@ -81,4 +84,33 @@ export async function getRemotePilotTreatment(
   }
   const persistence = await createAuthenticatedTreatmentReadPersistence(client);
   return persistence.treatments.get(organizationId, treatmentId);
+}
+
+export async function getRemotePilotTreatmentByAppointment(
+  organizationId: string,
+  appointmentId: string,
+  client: IdentitySupabaseClient,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+): Promise<TreatmentDraft | undefined> {
+  if (!isTreatmentRemoteReadPilotEnabled(env)) {
+    throw new Error("Treatment remote read pilot is off");
+  }
+  const persistence = await createAuthenticatedTreatmentReadPersistence(client);
+  return persistence.treatments.getByAppointmentId(organizationId, appointmentId);
+}
+
+export async function listRemotePilotAppointmentsForTreatments(
+  organizationId: string,
+  client: IdentitySupabaseClient,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+): Promise<ScheduleAppointment[]> {
+  if (!isTreatmentRemoteReadPilotEnabled(env)) {
+    throw new Error("Treatment remote read pilot is off");
+  }
+  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const appointments = new AppointmentRemoteAdapter(
+    identity.mapper,
+    new AuthenticatedAppointmentReadStore(client),
+  );
+  return appointments.list({ organizationId });
 }

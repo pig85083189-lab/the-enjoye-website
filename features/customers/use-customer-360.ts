@@ -59,6 +59,7 @@ import {
   treatmentWorkspaceEntryHref,
 } from "@/lib/treatments/treatment-identity";
 import type { Customer } from "@/types";
+import type { TreatmentDraft } from "@/types/treatment";
 
 export type Customer360Snapshot = {
   treatmentHref: string;
@@ -80,7 +81,10 @@ export type Customer360Snapshot = {
 
 export function useCustomer360Snapshot(
   customer: Customer,
-  options?: { remoteAppointments?: ScheduleAppointment[] | null },
+  options?: {
+    remoteAppointments?: ScheduleAppointment[] | null;
+    remoteTreatments?: TreatmentDraft[] | null;
+  },
 ): Customer360Snapshot {
   const { organization } = useOrganization();
   const appointmentRev = useSyncExternalStore(
@@ -100,6 +104,7 @@ export function useCustomer360Snapshot(
   );
 
   const remoteAppointments = options?.remoteAppointments;
+  const remoteTreatments = options?.remoteTreatments;
 
   return useMemo(() => {
     void appointmentRev;
@@ -107,10 +112,13 @@ export function useCustomer360Snapshot(
     void followUpRev;
     const organizationId = organization.id;
     const customerId = customer.id;
-    const treatments = localTreatmentRepository.listByCustomer({
-      organizationId,
-      customerId,
-    });
+    const treatments =
+      remoteTreatments != null
+        ? remoteTreatments
+        : localTreatmentRepository.listByCustomer({
+            organizationId,
+            customerId,
+          });
     const appointments = listAppointments({ organizationId, customerId });
     const followUps = listFollowUpTasksForCustomer(organizationId, customerId);
     const consultations = localConsultationRepository.listByCustomer({
@@ -209,5 +217,6 @@ export function useCustomer360Snapshot(
     commerceRev,
     followUpRev,
     remoteAppointments,
+    remoteTreatments,
   ]);
 }

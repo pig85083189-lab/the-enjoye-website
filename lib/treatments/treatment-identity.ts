@@ -3,11 +3,11 @@
  *
  * Customer identity is canonical remote Customer (cust-*) when the
  * Customer remote-read pilot is on. Treatment drafts / completed records
- * stay local-only in this slice.
+ * stay local-only unless the Treatment remote-read pilot is on.
  *
  * Appointment identity may also come from the authenticated remote
  * Appointment adapter so an existing Treatment workspace can open.
- * That is not Treatment-record remoting and must not copy customers
+ * That is not a second identity system and must not copy customers
  * into localStorage or guess by name / phone.
  */
 
