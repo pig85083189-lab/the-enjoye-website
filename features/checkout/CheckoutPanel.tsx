@@ -65,6 +65,7 @@ interface CheckoutPanelProps {
   preselectedPackageId?: string | null;
   onClose: () => void;
   onCompleted?: (transactionId: string) => void;
+  commerceRemoteRead?: boolean;
 }
 
 export function CheckoutPanel({
@@ -76,6 +77,7 @@ export function CheckoutPanel({
   preselectedPackageId,
   onClose,
   onCompleted,
+  commerceRemoteRead = false,
 }: CheckoutPanelProps) {
   const commerceRev = useSyncExternalStore(
     subscribeCommerce,
@@ -95,6 +97,7 @@ export function CheckoutPanel({
     item.paid || item.kind === "transaction" || liveDraft?.status === "COMPLETED";
 
   useEffect(() => {
+    if (commerceRemoteRead) return;
     if (item.kind !== "appointment" || item.paid) return;
     if (!item.appointmentId) return;
     try {
@@ -131,6 +134,7 @@ export function CheckoutPanel({
     preselectedPackageId,
     staffId,
     treatmentId,
+    commerceRemoteRead,
   ]);
 
   const [tab, setTab] = useState<PanelTab>("consume");

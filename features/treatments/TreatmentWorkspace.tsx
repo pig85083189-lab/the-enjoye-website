@@ -41,6 +41,7 @@ interface TreatmentWorkspaceProps {
   canonicalStatus?: CanonicalAppointmentStatus;
   treatmentRemoteReadPilot?: boolean;
   treatmentRemoteWritePilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
 }
 
 const STEP_ORDER = TREATMENT_STEPS.map((step) => step.id);
@@ -51,6 +52,7 @@ export function TreatmentWorkspace({
   canonicalStatus,
   treatmentRemoteReadPilot = false,
   treatmentRemoteWritePilot = false,
+  commerceRemoteReadPilot = false,
 }: TreatmentWorkspaceProps) {
   const router = useRouter();
   const { setBlocked } = useLeaveGuard();
@@ -290,6 +292,7 @@ export function TreatmentWorkspace({
         template={template}
         completed
         validationError=""
+        commerceRemoteRead={commerceRemoteReadPilot}
         onBack={goBack}
         onComplete={handleComplete}
       />
@@ -410,6 +413,7 @@ export function TreatmentWorkspace({
             template={template}
             completed={false}
             validationError={completeError}
+            commerceRemoteRead={commerceRemoteReadPilot}
             onBack={goBack}
             onComplete={handleComplete}
           />

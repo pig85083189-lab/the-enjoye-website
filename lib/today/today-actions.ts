@@ -8,6 +8,10 @@ import {
   type AppointmentCheckoutNav,
 } from "@/lib/commerce/appointment-checkout-nav";
 import {
+  buildCommerceCheckoutHref,
+  resolveCommerceCheckoutEligibility,
+} from "@/lib/commerce/commerce-remote-identity";
+import {
   draftHasContent,
   getCompletedTreatmentsForCustomer,
   loadDraft,
@@ -50,6 +54,8 @@ function completedTreatmentHref(
 export type TodayPrimaryActionOptions = {
   treatmentRemoteRead?: boolean;
   remoteTreatment?: TreatmentDraft | null;
+  commerceRemoteRead?: boolean;
+  allowCheckout?: boolean;
 };
 
 /**
@@ -64,6 +70,10 @@ export function resolveTodayPrimaryAction(
   const status = canonicalStatus ?? appointment.status;
   if (isMutedAppointmentStatus(status)) {
     return { kind: "none" };
+  }
+
+  if (options?.commerceRemoteRead) {
+    return resolveRemoteCommerceTodayPrimaryAction(appointment, status, options);
   }
 
   const checkoutNav: AppointmentCheckoutNav = resolveAppointmentCheckoutNav(
@@ -121,6 +131,65 @@ export function resolveTodayPrimaryAction(
     };
   }
 
+  return {
+    kind: "start_treatment",
+    href: workspace,
+    label: "開始服務",
+  };
+}
+
+function resolveRemoteCommerceTodayPrimaryAction(
+  appointment: Appointment,
+  status: CanonicalAppointmentStatus | string,
+  options: TodayPrimaryActionOptions,
+): TodayPrimaryAction {
+  const workspace = treatmentWorkspaceHref(appointment);
+  const treatment = options.remoteTreatment ?? null;
+  const eligibility = resolveCommerceCheckoutEligibility({
+    appointmentStatus: status,
+    treatmentStatus: treatment?.status,
+    appointmentId: appointment.id,
+    treatmentId: treatment?.id,
+    customerId: appointment.customerId,
+    serviceId: appointment.serviceId,
+  });
+  if (eligibility.eligible && treatment) {
+    if (options.allowCheckout === false) {
+      return {
+        kind: "view_record",
+        href: `/staff/treatments/${treatment.id}`,
+        label: "查看紀錄",
+      };
+    }
+    return {
+      kind: "checkout",
+      href: buildCommerceCheckoutHref({
+        appointmentId: appointment.id,
+        treatmentId: treatment.id,
+      }),
+      label: "前往結帳",
+    };
+  }
+
+  const openDraft = treatment?.status === "draft";
+  const isInService =
+    appointment.status === "in_progress" ||
+    status === "IN_SERVICE" ||
+    openDraft;
+  if (isInService || openDraft) {
+    return {
+      kind: "continue_treatment",
+      href: workspace,
+      label: "繼續療程",
+    };
+  }
+  if (treatment?.status === "completed") {
+    return {
+      kind: "view_record",
+      href: `/staff/treatments/${treatment.id}`,
+      label: "查看紀錄",
+    };
+  }
   return {
     kind: "start_treatment",
     href: workspace,

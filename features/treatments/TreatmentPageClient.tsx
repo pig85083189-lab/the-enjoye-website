@@ -18,11 +18,13 @@ export function TreatmentPageClient({
   appointmentRemoteReadPilot = false,
   treatmentRemoteReadPilot = false,
   treatmentRemoteWritePilot = false,
+  commerceRemoteReadPilot = false,
 }: {
   customerRemoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
   treatmentRemoteWritePilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
 }) {
   const searchParams = useSearchParams();
   const { organization } = useOrganization();
@@ -141,6 +143,7 @@ export function TreatmentPageClient({
         canonicalStatus={canonicalStatus}
         treatmentRemoteReadPilot={treatmentRemoteReadPilot}
         treatmentRemoteWritePilot={treatmentRemoteWritePilot}
+        commerceRemoteReadPilot={commerceRemoteReadPilot}
       />
     </div>
   );

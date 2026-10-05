@@ -65,6 +65,8 @@ interface AppointmentQuickViewProps {
   allowRemoteCancel?: boolean;
   useTaipeiTime?: boolean;
   treatmentRemoteReadPilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
+  allowCheckout?: boolean;
   onClose: () => void;
   onEdit: () => void;
   onRequestCancel: () => void;
@@ -78,6 +80,8 @@ export function AppointmentQuickView({
   allowRemoteCancel = false,
   useTaipeiTime = false,
   treatmentRemoteReadPilot = false,
+  commerceRemoteReadPilot = false,
+  allowCheckout,
   onClose,
   onEdit,
   onRequestCancel,
@@ -102,7 +106,10 @@ export function AppointmentQuickView({
   const primary = resolveTodayPrimaryAction(legacy, item.status, {
     treatmentRemoteRead: treatmentRemoteReadPilot,
     remoteTreatment,
+    commerceRemoteRead: commerceRemoteReadPilot,
+    allowCheckout,
   });
+  const showRemoteCheckout = primary.kind === "checkout";
   const attention = collectAttentionNotes(
     item.organizationId,
     customer,
@@ -332,7 +339,19 @@ export function AppointmentQuickView({
               行事曆遠端讀取試點為唯讀
             </p>
           ) : null}
-          {actions.canTransition && primary.kind !== "none" ? (
+          {showRemoteCheckout ? (
+            <Link
+              href={primary.href}
+              className={cn(
+                "inline-flex h-[50px] min-h-[50px] w-full items-center justify-center gap-1.5 rounded-full text-[15px] font-medium text-white transition-colors",
+                CALENDAR_ROSE_FILL,
+                CALENDAR_ROSE_HOVER,
+              )}
+            >
+              <Play className="h-3.5 w-3.5 fill-current" aria-hidden />
+              {primary.label}
+            </Link>
+          ) : actions.canTransition && primary.kind !== "none" ? (
             <Link
               href={primary.href}
               className={cn(

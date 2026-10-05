@@ -41,6 +41,7 @@ import { getSessionRaw, parseSession, subscribeAuth } from "@/lib/auth";
 import { taipeiBusinessYmdFromInstant } from "@/lib/calendar/calendar-appointment-time";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
+import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import { scheduleAppointmentToTodayView } from "@/lib/today/today-appointment-view";
 import { useClientNow } from "@/lib/use-client-now";
 import { cn, formatTodayLabel, getGreeting } from "@/lib/utils";
@@ -50,9 +51,11 @@ type TimelineFilter = "all" | "waiting" | "active" | "done";
 export function TodayDashboard({
   todayRemoteReadPilot = false,
   treatmentRemoteReadPilot = false,
+  commerceRemoteReadPilot = false,
 }: {
   todayRemoteReadPilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
 }) {
   const sessionRaw = useSyncExternalStore(subscribeAuth, getSessionRaw, () => null);
   const session = parseSession(sessionRaw);
@@ -61,6 +64,7 @@ export function TodayDashboard({
   const now = useClientNow();
   const day = now ?? new Date();
   const [filter, setFilter] = useState<TimelineFilter>("all");
+  const checkoutAllowed = canCheckout(membership);
   const locationId = currentLocation?.id ?? "";
   const remoteState = useTodayRemoteAppointments({
     organizationId: organization.id,
@@ -245,6 +249,8 @@ export function TodayDashboard({
                 ? treatmentsByAppointment.get(nextAppointment.id) ?? null
                 : null
             }
+            commerceRemoteRead={commerceRemoteReadPilot}
+            allowCheckout={checkoutAllowed}
           />
         </section>
       ) : (
@@ -340,6 +346,8 @@ export function TodayDashboard({
                     remoteTreatment={
                       treatmentsByAppointment.get(appointment.id) ?? null
                     }
+                    commerceRemoteRead={commerceRemoteReadPilot}
+                    allowCheckout={checkoutAllowed}
                   />
                 </div>
               );
@@ -376,6 +384,8 @@ export function TodayDashboard({
                   ? treatmentsByAppointment.get(nextAppointment.id) ?? null
                   : null
               }
+              commerceRemoteRead={commerceRemoteReadPilot}
+              allowCheckout={checkoutAllowed}
             />
           ) : (
             <NextCustomerEmpty sticky />

@@ -21,6 +21,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { CheckoutPanel } from "@/features/checkout/CheckoutPanel";
+import { CommerceIdentityPanel } from "@/features/checkout/CommerceIdentityPanel";
+import {
+  candidatesFromRemoteListState,
+  useCommerceRemoteCheckoutCandidate,
+  useCommerceRemoteCheckoutCandidates,
+} from "@/features/checkout/use-commerce-remote-read";
 import { getServicesForOrganization } from "@/data/mock-services";
 import { formatHm } from "@/lib/appointments/domain";
 import {
@@ -41,8 +47,10 @@ import { listTransactions } from "@/lib/commerce/transaction-store";
 import {
   CHECKOUT_WORKSPACE_GAP_PX,
   buildCheckoutWorkspaceItems,
+  buildRemoteCommerceCheckoutItems,
   checkoutRowId,
   countCheckoutSummary,
+  countRemoteCommerceCheckoutSummary,
   filterCheckoutItems,
   isCheckoutRowKeyboardActivation,
   remapCheckoutSelection,
@@ -101,7 +109,11 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
   event.preventDefault();
 }
 
-export function CheckoutPageClient() {
+export function CheckoutPageClient({
+  commerceRemoteReadPilot = false,
+}: {
+  commerceRemoteReadPilot?: boolean;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { organization, currentLocation, locations, membership } = useOrganization();
@@ -120,6 +132,7 @@ export function CheckoutPageClient() {
   const locationId = currentLocation?.id ?? locations[0]?.id ?? "";
   const staffId = membership?.userId ?? "";
   const checkoutAllowed = canCheckout(membership);
+  const remoteReadEnabled = commerceRemoteReadPilot && checkoutAllowed;
   const appointmentIdParam = searchParams.get("appointment");
   const draftIdParam = searchParams.get("draft");
   const treatmentIdParam = searchParams.get("treatment");
@@ -127,7 +140,7 @@ export function CheckoutPageClient() {
 
   const [filter, setFilter] = useState<CheckoutListFilter>("pending");
   const [dateFilter, setDateFilter] = useState<CheckoutDateFilter>(() =>
-    appointmentIdParam ? "all" : "today",
+    appointmentIdParam || commerceRemoteReadPilot ? "all" : "today",
   );
   const [query, setQuery] = useState("");
   const [selectedCheckoutId, setSelectedCheckoutId] = useState<string | null>(() => {
@@ -140,27 +153,56 @@ export function CheckoutPageClient() {
   const [generalSaleOpen, setGeneralSaleOpen] = useState(false);
   const [saleQuery, setSaleQuery] = useState("");
 
+  const remoteListState = useCommerceRemoteCheckoutCandidates({
+    organizationId: organization.id,
+    locationId: currentLocation?.id,
+    actor: membership,
+    enabled: remoteReadEnabled,
+  });
+  const remoteDetailState = useCommerceRemoteCheckoutCandidate({
+    organizationId: organization.id,
+    appointmentId: appointmentIdParam,
+    treatmentId: treatmentIdParam,
+    actor: membership,
+    enabled: remoteReadEnabled,
+  });
+  const remoteCandidates = useMemo(() => {
+    const listed = candidatesFromRemoteListState(remoteListState);
+    if (remoteDetailState.status !== "data") return listed;
+    if (listed.some((row) => row.identity.appointmentId === remoteDetailState.value.identity.appointmentId)) {
+      return listed;
+    }
+    return [...listed, remoteDetailState.value];
+  }, [remoteDetailState, remoteListState]);
+
   const customers = useCrmJson(
-    () => localCustomerRepository.list({ organizationId: organization.id }),
+    () =>
+      commerceRemoteReadPilot
+        ? ([] as Customer[])
+        : localCustomerRepository.list({ organizationId: organization.id }),
     [] as Customer[],
   );
   const catalog = useMemo(() => {
     void commerceRev;
+    if (commerceRemoteReadPilot) return [];
     return getServicesForOrganization(organization.id);
-  }, [commerceRev, organization.id]);
+  }, [commerceRev, commerceRemoteReadPilot, organization.id]);
 
   const appointments = useMemo(() => {
     void appointmentRev;
-    if (!isClient) return [];
+    if (!isClient || commerceRemoteReadPilot) return [];
     return listAppointments({
       organizationId: organization.id,
       locationId: currentLocation?.id,
     });
-  }, [appointmentRev, currentLocation?.id, isClient, organization.id]);
+  }, [appointmentRev, commerceRemoteReadPilot, currentLocation?.id, isClient, organization.id]);
 
   const items = useMemo(() => {
     void commerceRev;
     if (!isClient) return [];
+    if (commerceRemoteReadPilot) {
+      return buildRemoteCommerceCheckoutItems(remoteCandidates, currentLocation?.id);
+    }
     const openDrafts = [
       ...listCheckoutDrafts(organization.id, { status: "OPEN" }),
       ...listCheckoutDrafts(organization.id, { status: "READY" }),
@@ -179,11 +221,13 @@ export function CheckoutPageClient() {
   }, [
     appointments,
     catalog,
+    commerceRemoteReadPilot,
     currentLocation?.id,
     customers,
     isClient,
     organization.id,
     commerceRev,
+    remoteCandidates,
   ]);
 
   const visible = useMemo(
@@ -191,8 +235,11 @@ export function CheckoutPageClient() {
     [dateFilter, filter, items, now, query],
   );
   const summary = useMemo(
-    () => countCheckoutSummary(items, appointments, now),
-    [appointments, items, now],
+    () =>
+      commerceRemoteReadPilot
+        ? countRemoteCommerceCheckoutSummary(items)
+        : countCheckoutSummary(items, appointments, now),
+    [appointments, commerceRemoteReadPilot, items, now],
   );
 
   const remappedSelectedId = remapCheckoutSelection(items, selectedCheckoutId);
@@ -207,9 +254,14 @@ export function CheckoutPageClient() {
   const selectedCustomer = selectedItem
     ? customers.find((row) => row.id === selectedItem.customerId) ?? null
     : null;
+  const selectedRemoteCandidate = selectedItem
+    ? remoteCandidates.find(
+        (row) => row.identity.appointmentId === selectedItem.appointmentId,
+      ) ?? (remoteDetailState.status === "data" ? remoteDetailState.value : null)
+    : null;
 
   function ensureAppointmentDraft(appointmentId: string) {
-    if (!appointmentId) return;
+    if (!appointmentId || commerceRemoteReadPilot) return;
     if (!checkoutAllowed) {
       setError("沒有權限結帳");
       return;
@@ -272,6 +324,7 @@ export function CheckoutPageClient() {
 
   function startGeneralSale(customerId: string) {
     setError("");
+    if (commerceRemoteReadPilot) return;
     if (!checkoutAllowed) {
       setError("沒有權限結帳");
       return;
@@ -319,7 +372,9 @@ export function CheckoutPageClient() {
             結帳
           </h1>
           <p className="text-sm text-secondary-text">
-            處理今日待結帳的預約、一般銷售與收款
+            {commerceRemoteReadPilot
+              ? "顯示已完成療程的待結帳身分，此階段不收款"
+              : "處理今日待結帳的預約、一般銷售與收款"}
           </p>
           {!checkoutAllowed ? (
             <p className="text-[13px] text-[#B07A4A]" role="alert">
@@ -327,6 +382,7 @@ export function CheckoutPageClient() {
             </p>
           ) : null}
         </div>
+        {commerceRemoteReadPilot ? null : (
         <Button
           className="h-9 min-h-9 shrink-0 rounded-full px-4 text-[13px]"
           disabled={!checkoutAllowed}
@@ -338,6 +394,7 @@ export function CheckoutPageClient() {
           <Plus className="h-3.5 w-3.5" aria-hidden />
           一般銷售
         </Button>
+        )}
       </header>
 
       {error ? (
@@ -436,8 +493,13 @@ export function CheckoutPageClient() {
             </div>
           </div>
 
-          {!isClient ? (
+          {!isClient || (remoteReadEnabled && remoteListState.status === "loading") ? (
             <ListSkeleton />
+          ) : remoteReadEnabled && remoteListState.status === "error" ? (
+            <Card padding="lg" className="text-center">
+              <p className="text-[15px] font-medium text-text">無法讀取待結帳資料</p>
+              <p className="mt-1 text-sm text-secondary-text">{remoteListState.message}</p>
+            </Card>
           ) : visible.length === 0 ? (
             <Card padding="lg" className="text-center">
               <Sparkles className="mx-auto h-10 w-10 text-primary/50" aria-hidden />
@@ -453,7 +515,9 @@ export function CheckoutPageClient() {
                   ? "試試調整搜尋、狀態或日期篩選"
                   : filter === "paid"
                     ? "完成收款後，今日交易會出現在這裡"
-                    : "可從右上角開始一般銷售，或查看已結帳紀錄"}
+                    : commerceRemoteReadPilot
+                      ? "完成療程後，待結帳項目會出現在這裡"
+                      : "可從右上角開始一般銷售，或查看已結帳紀錄"}
               </p>
             </Card>
           ) : (
@@ -501,6 +565,17 @@ export function CheckoutPageClient() {
 
         {showPanel && selectedItem ? (
           <div className="hidden min-[1200px]:block">
+            {commerceRemoteReadPilot && selectedRemoteCandidate ? (
+              <CommerceIdentityPanel
+                key={selectedItem.id}
+                candidate={selectedRemoteCandidate}
+                locationName={
+                  locations.find((row) => row.id === selectedRemoteCandidate.locationId)?.name ??
+                  currentLocation?.name
+                }
+                onClose={closePanel}
+              />
+            ) : commerceRemoteReadPilot ? null : (
             <CheckoutPanel
               key={selectedItem.id}
               item={selectedItem}
@@ -512,12 +587,24 @@ export function CheckoutPageClient() {
               onClose={closePanel}
               onCompleted={(txId) => router.push(`/staff/transactions?id=${txId}`)}
             />
+            )}
           </div>
         ) : null}
       </div>
 
       {showPanel && selectedItem ? (
         <div className="min-[1200px]:hidden">
+          {commerceRemoteReadPilot && selectedRemoteCandidate ? (
+            <CommerceIdentityPanel
+              key={selectedItem.id}
+              candidate={selectedRemoteCandidate}
+              locationName={
+                locations.find((row) => row.id === selectedRemoteCandidate.locationId)?.name ??
+                currentLocation?.name
+              }
+              onClose={closePanel}
+            />
+          ) : commerceRemoteReadPilot ? null : (
           <CheckoutPanel
             key={selectedItem.id}
             item={selectedItem}
@@ -529,10 +616,11 @@ export function CheckoutPageClient() {
             onClose={closePanel}
             onCompleted={(txId) => router.push(`/staff/transactions?id=${txId}`)}
           />
+          )}
         </div>
       ) : null}
 
-      {generalSaleOpen ? (
+      {commerceRemoteReadPilot ? null : generalSaleOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-text/30 p-0 min-[720px]:items-center min-[720px]:p-6">
           <div
             data-checkout-general-sale

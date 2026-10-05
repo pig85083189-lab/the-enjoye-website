@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { TreatmentPageClient } from "@/features/treatments/TreatmentPageClient";
 import { isAppointmentRemoteReadPilotEnabled } from "@/lib/appointments/appointment-remote-read-flag";
 import { isCustomerRemoteReadPilotEnabled } from "@/lib/customers/customer-remote-read-flag";
+import { isCommerceRemoteReadPilotEnabled } from "@/lib/commerce/commerce-remote-read-flag";
 import { isTreatmentRemoteReadPilotEnabled } from "@/lib/treatments/treatment-remote-read-flag";
 import { isTreatmentRemoteWritePilotEnabled } from "@/lib/treatments/treatment-remote-write-flag";
 
@@ -19,6 +20,7 @@ export default function NewTreatmentPage() {
         appointmentRemoteReadPilot={isAppointmentRemoteReadPilotEnabled()}
         treatmentRemoteReadPilot={isTreatmentRemoteReadPilotEnabled()}
         treatmentRemoteWritePilot={isTreatmentRemoteWritePilotEnabled()}
+        commerceRemoteReadPilot={isCommerceRemoteReadPilotEnabled()}
       />
     </Suspense>
   );

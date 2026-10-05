@@ -28,6 +28,8 @@ interface AppointmentCardProps {
   readOnly?: boolean;
   treatmentRemoteRead?: boolean;
   remoteTreatment?: TreatmentDraft | null;
+  commerceRemoteRead?: boolean;
+  allowCheckout?: boolean;
 }
 
 const membershipTone = {
@@ -42,6 +44,8 @@ export function AppointmentCard({
   readOnly = false,
   treatmentRemoteRead = false,
   remoteTreatment = null,
+  commerceRemoteRead = false,
+  allowCheckout,
 }: AppointmentCardProps) {
   useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
   useSyncExternalStore(
@@ -58,7 +62,10 @@ export function AppointmentCard({
   const primary = resolveTodayPrimaryAction(appointment, canonicalStatus, {
     treatmentRemoteRead,
     remoteTreatment,
+    commerceRemoteRead,
+    allowCheckout,
   });
+  const hidePrimary = readOnly && primary.kind !== "checkout";
   const customerHref = `/staff/customers/${appointment.customerId}`;
 
   return (
@@ -134,7 +141,7 @@ export function AppointmentCard({
         </div>
 
         <div className="flex flex-col gap-1.5 sm:min-w-[7.5rem] sm:items-stretch">
-          {readOnly ? null : primary.kind !== "none" ? (
+          {hidePrimary ? null : primary.kind !== "none" ? (
             <Link href={primary.href} className="block">
               <Button fullWidth className="min-h-10 px-4 text-sm">
                 {primary.label}

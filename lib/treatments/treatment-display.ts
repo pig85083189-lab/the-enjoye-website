@@ -16,6 +16,18 @@ export function isRawCustomerId(value: string | undefined | null): boolean {
   return Boolean(value && /^cust-[a-z0-9-]+$/i.test(value.trim()));
 }
 
+export function isRawAppointmentId(value: string | undefined | null): boolean {
+  return Boolean(value && /^apt-[a-z0-9-]+$/i.test(value.trim()));
+}
+
+export function isRawTreatmentId(value: string | undefined | null): boolean {
+  return Boolean(value && /^trt-[a-z0-9-]+$/i.test(value.trim()));
+}
+
+export function isRawLocationId(value: string | undefined | null): boolean {
+  return Boolean(value && /^loc-[a-z0-9-]+$/i.test(value.trim()));
+}
+
 export function resolveCanonicalServiceDisplayName(input: {
   serviceId: string;
   catalogName?: string | null;

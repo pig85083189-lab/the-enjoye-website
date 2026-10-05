@@ -518,3 +518,30 @@ describe("Phase 1C-6B.1 appointment remote write UI boundary", () => {
     }
   });
 });
+
+describe("Phase 1C-6H.1 commerce remote identity UI boundary", () => {
+  it("cuts Commerce remote read only at Checkout / Today / Complete", () => {
+    const checkoutPage = readFileSync(path.join(ROOT, "app/staff/(app)/checkout/page.tsx"), "utf8");
+    const todayPage = readFileSync(path.join(ROOT, "app/staff/(app)/today/page.tsx"), "utf8");
+    const flag = readFileSync(path.join(ROOT, "lib/commerce/commerce-remote-read-flag.ts"), "utf8");
+    expect(checkoutPage).toMatch(/isCommerceRemoteReadPilotEnabled/);
+    expect(checkoutPage).toMatch(/commerce-remote-read-flag/);
+    expect(checkoutPage).not.toMatch(/commerce-remote-read-pilot/);
+    expect(checkoutPage).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    expect(todayPage).toMatch(/isCommerceRemoteReadPilotEnabled/);
+    expect(todayPage).not.toMatch(/commerce-remote-read-pilot/);
+    expect(flag).not.toMatch(/AppointmentRemoteAdapter|TreatmentRemoteAdapter|IdentitySupabaseClient/);
+    const checkout = readFileSync(path.join(ROOT, "features/checkout/CheckoutPageClient.tsx"), "utf8");
+    expect(checkout).toMatch(/useCommerceRemoteCheckoutCandidates/);
+    expect(checkout).toMatch(/CommerceIdentityPanel/);
+    expect(checkout).not.toMatch(/completeCheckout|createServiceRoleClient/);
+  });
+
+  it("does not enable the Commerce read pilot in Production or Development env files", () => {
+    for (const file of [".env", ".env.local", ".env.development", "vercel.json"]) {
+      if (!existsSync(path.join(ROOT, file))) continue;
+      const source = readFileSync(path.join(ROOT, file), "utf8");
+      expect(source).not.toMatch(/BEAUTY_OS_COMMERCE_REMOTE_READ_PILOT/);
+    }
+  });
+});

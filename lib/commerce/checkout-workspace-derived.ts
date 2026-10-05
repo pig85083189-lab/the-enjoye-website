@@ -13,6 +13,7 @@ import {
   type PaymentDraft,
   type Transaction,
 } from "@/lib/commerce/domain";
+import type { CommerceCheckoutCandidate } from "@/lib/commerce/commerce-remote-identity";
 import type { Customer } from "@/types";
 
 export const CHECKOUT_PANEL_WIDTH_PX = 400;
@@ -53,6 +54,7 @@ export interface CheckoutWorkspaceItem {
   id: string;
   kind: CheckoutRowKind;
   appointmentId: string;
+  treatmentId?: string;
   draftId: string;
   transactionId: string;
   customerId: string;
@@ -247,6 +249,57 @@ export function buildCheckoutWorkspaceItems(input: {
     const bTime = b.startAt ?? b.transaction?.completedAt ?? b.draft?.createdAt ?? "";
     return aTime.localeCompare(bTime);
   });
+}
+
+export function toRemoteCommerceCheckoutItem(
+  candidate: CommerceCheckoutCandidate,
+): CheckoutWorkspaceItem {
+  return {
+    id: checkoutRowId("appointment", candidate.identity.appointmentId),
+    kind: "appointment",
+    appointmentId: candidate.identity.appointmentId,
+    treatmentId: candidate.identity.treatmentId,
+    draftId: "",
+    transactionId: "",
+    customerId: candidate.identity.customerId,
+    customerName: candidate.customerName,
+    customerPhone: candidate.customerPhone,
+    customerInitials: initialsFrom(candidate.customerName),
+    membership: null,
+    serviceName: candidate.serviceName,
+    serviceCategory: "",
+    durationMinutes: candidate.durationMinutes || null,
+    staffName: candidate.staffName,
+    staffInitials: initialsFrom(candidate.staffName),
+    startAt: candidate.startAt,
+    amountMinor: null,
+    paid: false,
+    status: { kind: "pending", title: "待結帳" },
+    appointment: null,
+    draft: null,
+    transaction: null,
+  };
+}
+
+export function buildRemoteCommerceCheckoutItems(
+  candidates: CommerceCheckoutCandidate[],
+  locationId?: string,
+): CheckoutWorkspaceItem[] {
+  return candidates
+    .filter((item) => !locationId || item.locationId === locationId)
+    .map(toRemoteCommerceCheckoutItem)
+    .sort((a, b) => (a.startAt ?? "").localeCompare(b.startAt ?? ""));
+}
+
+export function countRemoteCommerceCheckoutSummary(
+  items: CheckoutWorkspaceItem[],
+): CheckoutWorkspaceSummary {
+  return {
+    pending: items.filter((item) => !item.paid).length,
+    completedService: items.length,
+    inService: 0,
+    todayRevenueMinor: 0,
+  };
 }
 
 function toAppointmentItem(input: {

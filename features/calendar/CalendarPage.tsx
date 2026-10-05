@@ -67,6 +67,7 @@ import {
   transitionAppointmentStatus,
   updateAppointment,
 } from "@/lib/appointments/store";
+import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import { applyRosterStaffDisplayNames } from "@/lib/staff-auth/roster-display-name";
 import {
   resolveSelectedAppointment,
@@ -177,11 +178,13 @@ export function CalendarPage({
   appointmentRemoteWritePilot = false,
   appointmentRemoteMutatePilot = false,
   treatmentRemoteReadPilot = false,
+  commerceRemoteReadPilot = false,
 }: {
   calendarRemoteReadPilot?: boolean;
   appointmentRemoteWritePilot?: boolean;
   appointmentRemoteMutatePilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
 }) {
   const { organization, currentLocation, locations, membership } =
     useOrganization();
@@ -705,6 +708,8 @@ export function CalendarPage({
             allowRemoteCancel={allowRemoteCancel}
             useTaipeiTime={calendarRemoteReadPilot}
             treatmentRemoteReadPilot={treatmentRemoteReadPilot}
+            commerceRemoteReadPilot={commerceRemoteReadPilot}
+            allowCheckout={canCheckout(membership)}
             onClose={() => setSelectedId(null)}
             onEdit={() => {
               if (calendarRemoteReadPilot) return;
@@ -776,6 +781,8 @@ export function CalendarPage({
             allowRemoteCancel={allowRemoteCancel}
             useTaipeiTime={calendarRemoteReadPilot}
             treatmentRemoteReadPilot={treatmentRemoteReadPilot}
+            commerceRemoteReadPilot={commerceRemoteReadPilot}
+            allowCheckout={canCheckout(membership)}
             onClose={() => setSelectedId(null)}
             onEdit={() => {
               if (calendarRemoteReadPilot) return;

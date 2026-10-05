@@ -35,6 +35,8 @@ interface NextCustomerPanelProps {
   readOnly?: boolean;
   treatmentRemoteRead?: boolean;
   remoteTreatment?: TreatmentDraft | null;
+  commerceRemoteRead?: boolean;
+  allowCheckout?: boolean;
 }
 
 const membershipTone = {
@@ -83,6 +85,8 @@ export function NextCustomerPanel({
   readOnly = false,
   treatmentRemoteRead = false,
   remoteTreatment = null,
+  commerceRemoteRead = false,
+  allowCheckout,
 }: NextCustomerPanelProps) {
   useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
   useSyncExternalStore(
@@ -105,7 +109,10 @@ export function NextCustomerPanel({
   const primary = resolveTodayPrimaryAction(appointment, canonicalStatus, {
     treatmentRemoteRead,
     remoteTreatment,
+    commerceRemoteRead,
+    allowCheckout,
   });
+  const hidePrimary = readOnly && primary.kind !== "checkout";
   const customerHref = `/staff/customers/${appointment.customerId}`;
   const treatmentsHref = `/staff/customers/${appointment.customerId}?tab=treatments`;
 
@@ -225,7 +232,7 @@ export function NextCustomerPanel({
       )}
 
       <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">
-        {readOnly ? null : primary.kind !== "none" ? (
+        {hidePrimary ? null : primary.kind !== "none" ? (
           <Link
             href={primary.href}
             className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-primary px-5 text-[15px] font-medium text-white transition-colors hover:bg-[#b9686c]"
