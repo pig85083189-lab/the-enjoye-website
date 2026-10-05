@@ -2,7 +2,8 @@
 
 import { Component, type ReactNode } from "react";
 
-export function TodayRemoteReadErrorFallback({ message: _message }: { message: string }) {
+export function TodayRemoteReadErrorFallback({ message }: { message: string }) {
+  void message;
   return (
     <div
       data-today-remote-error
