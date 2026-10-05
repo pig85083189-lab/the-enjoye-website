@@ -422,7 +422,7 @@ export class MemoryOperationalDb
     return [next];
   }
 
-  insertTreatment(row: DbTreatment): void {
+  insertTreatment(row: DbTreatment): DbTreatment {
     if (this.treatments.some((item) => item.organization_id === row.organization_id && item.app_id === row.app_id)) {
       throw new Error(TREATMENT_INSERT_ONLY_MESSAGE);
     }
@@ -437,6 +437,7 @@ export class MemoryOperationalDb
       throw new Error(TREATMENT_INSERT_ONLY_MESSAGE);
     }
     this.treatments.push(row);
+    return row;
   }
   listTreatments(organizationDbId: string) {
     return this.treatments.filter((r) => r.organization_id === organizationDbId);

@@ -141,7 +141,7 @@ describe("Phase 1C-6G canonical treatment remote adapter", () => {
     const spyStore: TreatmentTableStore = {
       insertTreatment: (row) => {
         insert(row);
-        db.insertTreatment(row);
+        return db.insertTreatment(row);
       },
       listTreatments: (org) => db.listTreatments(org),
       listTreatmentsByCustomer: (org, customer) => db.listTreatmentsByCustomer(org, customer),
@@ -196,6 +196,65 @@ describe("Phase 1C-6G canonical treatment remote adapter", () => {
         appointmentId: appointment.id,
       }),
     ).rejects.toBeInstanceOf(TreatmentDuplicateError);
+  });
+
+  it("hydrates create from the authoritative INSERT updated_at", async () => {
+    const { db, remote } = createMemoryRemotePersistence();
+    seedTwoOrgs(db);
+    const appointment = await seedAppointment(remote, "apt-trt-auth-abcdef");
+    const dbStamp = "2026-10-05T03:00:00.123Z";
+    const store: TreatmentTableStore = {
+      insertTreatment: (row) => {
+        const authoritative = { ...row, updated_at: dbStamp, created_at: dbStamp };
+        db.insertTreatment(authoritative);
+        return authoritative;
+      },
+      listTreatments: (org) => db.listTreatments(org),
+      listTreatmentsByCustomer: (org, customer) => db.listTreatmentsByCustomer(org, customer),
+      getTreatmentByAppId: (org, appId) => db.getTreatmentByAppId(org, appId),
+      getTreatmentByDbId: (id) => db.getTreatmentByDbId(id),
+      getTreatmentByAppointmentId: (org, apt) => db.getTreatmentByAppointmentId(org, apt),
+      updateTreatment: (input) => db.updateTreatment(input),
+    };
+    const adapter = new TreatmentRemoteAdapter(remote.mapper, store, db, () =>
+      new Date("2026-10-05T02:59:00.000Z"),
+    );
+    const created = await adapter.create(ORG_A, {
+      id: "trt-auth01-abcdef",
+      locationId: LOC_A1,
+      customerId: CUST_SHARED,
+      serviceId: SVC_SHARED,
+      staffId: STAFF_A,
+      appointmentId: appointment.id,
+      createdBy: STAFF_A,
+    });
+    expect(created.updatedAt).toBe(dbStamp);
+    expect(created.createdAt).toBe(dbStamp);
+    const saved = await adapter.update(ORG_A, {
+      treatmentId: created.id,
+      expectedUpdatedAt: created.updatedAt,
+      updatedBy: STAFF_A,
+      locationId: LOC_A1,
+      customerId: CUST_SHARED,
+      serviceId: SVC_SHARED,
+      staffId: STAFF_A,
+      appointmentId: appointment.id,
+      draft: draftFor(appointment.id, created.id),
+    });
+    expect(saved.updatedAt).not.toBe(created.updatedAt);
+    await expect(
+      adapter.update(ORG_A, {
+        treatmentId: created.id,
+        expectedUpdatedAt: created.updatedAt,
+        updatedBy: STAFF_A,
+        locationId: LOC_A1,
+        customerId: CUST_SHARED,
+        serviceId: SVC_SHARED,
+        staffId: STAFF_A,
+        appointmentId: appointment.id,
+        draft: draftFor(appointment.id, created.id),
+      }),
+    ).rejects.toBeInstanceOf(TreatmentWriteZeroRowError);
   });
 
   it("autosaves with OCC and refuses stale / completed overwrite", async () => {

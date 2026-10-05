@@ -17,8 +17,16 @@ import {
 } from "@/features/treatments/use-treatment-remote-write";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-identity-catalog";
+import { TREATMENT_REMOTE_READ_PILOT_ENV } from "@/lib/treatments/treatment-remote-read-flag";
 import { getRemotePilotTreatmentByAppointment } from "@/lib/treatments/treatment-remote-read-pilot";
 import { TreatmentDuplicateError } from "@/lib/treatments/treatment-write-errors";
+
+function treatmentReadPilotEnv(): NodeJS.Dict<string> {
+  return {
+    ...process.env,
+    [TREATMENT_REMOTE_READ_PILOT_ENV]: "1",
+  };
+}
 import { shouldCreateTreatmentForAppointment } from "@/lib/treatments/treatment-today";
 import {
   createEmptyDraft,
@@ -130,6 +138,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
             args.organizationId,
             args.appointmentId,
             client,
+            treatmentReadPilotEnv(),
           );
           if (
             !existing &&
@@ -150,6 +159,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
                 args.organizationId,
                 args.appointmentId,
                 client,
+                treatmentReadPilotEnv(),
               );
             }
           }

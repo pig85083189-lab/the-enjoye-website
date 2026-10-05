@@ -289,7 +289,7 @@ export type TreatmentOptimisticUpdateInput = {
 };
 
 export interface TreatmentTableStore {
-  insertTreatment(row: DbTreatment): MaybePromise<void>;
+  insertTreatment(row: DbTreatment): MaybePromise<DbTreatment | void>;
   listTreatments(organizationDbId: string): MaybePromise<DbTreatment[]>;
   listTreatmentsByCustomer(
     organizationDbId: string,

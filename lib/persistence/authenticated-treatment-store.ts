@@ -60,7 +60,7 @@ function asTreatments(value: unknown): DbTreatment[] {
 export class AuthenticatedTreatmentTableStore implements TreatmentTableStore {
   constructor(private readonly client: AuthenticatedTreatmentSupabaseClient) {}
 
-  async insertTreatment(row: DbTreatment): Promise<void> {
+  async insertTreatment(row: DbTreatment): Promise<DbTreatment> {
     const existing = await this.getTreatmentByAppId(row.organization_id, row.app_id);
     if (existing) {
       throw new Error(TREATMENT_INSERT_ONLY_MESSAGE);
@@ -70,7 +70,12 @@ export class AuthenticatedTreatmentTableStore implements TreatmentTableStore {
       .from("treatments")
       .insert(payload)
       .select(TREATMENT_COLUMNS);
-    requireRows(result, "insert treatment");
+    const inserted = asTreatments(requireRows(result, "insert treatment"));
+    const authoritative = inserted[0];
+    if (!authoritative?.app_id || !authoritative.updated_at) {
+      throw new Error("insert treatment: authoritative row missing");
+    }
+    return authoritative;
   }
 
   async listTreatments(organizationDbId: string): Promise<DbTreatment[]> {

@@ -168,8 +168,10 @@ describe("Phase 1C-6G authenticated treatment store", () => {
     const { client, inserted } = clientWith([]);
     const store = new AuthenticatedTreatmentTableStore(client);
     const next = row();
-    await store.insertTreatment(next);
+    const authoritative = await store.insertTreatment(next);
     expect(inserted).toHaveLength(1);
+    expect(authoritative.app_id).toBe(next.app_id);
+    expect(authoritative.updated_at).toBe(next.updated_at);
     expect(remoteTreatmentPayload(inserted[0] as unknown as DbTreatment).app_id).toBe(next.app_id);
     await expect(store.insertTreatment(next)).rejects.toThrow(TREATMENT_INSERT_ONLY_MESSAGE);
   });

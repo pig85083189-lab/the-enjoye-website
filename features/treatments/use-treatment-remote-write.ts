@@ -6,9 +6,19 @@ import {
   runAuthenticatedTreatmentCreate,
   type TreatmentWriteClient,
 } from "@/lib/treatments/treatment-remote-write-pilot";
+import { TREATMENT_REMOTE_READ_PILOT_ENV } from "@/lib/treatments/treatment-remote-read-flag";
+import { TREATMENT_REMOTE_WRITE_PILOT_ENV } from "@/lib/treatments/treatment-remote-write-flag";
 import { emitTreatmentRemoteWriteRefresh } from "@/lib/treatments/treatment-write-refresh";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import type { TreatmentDraft } from "@/types/treatment";
+
+function treatmentWritePilotEnv(): NodeJS.Dict<string> {
+  return {
+    ...process.env,
+    [TREATMENT_REMOTE_READ_PILOT_ENV]: "1",
+    [TREATMENT_REMOTE_WRITE_PILOT_ENV]: "1",
+  };
+}
 
 function writeClient(): TreatmentWriteClient | null {
   return createBrowserClientOrNull() as TreatmentWriteClient | null;
@@ -32,7 +42,11 @@ export async function submitTreatmentRemoteCreate(input: {
   draft?: Partial<TreatmentDraft>;
   templateType?: string;
 }): Promise<TreatmentDraft> {
-  const created = await runAuthenticatedTreatmentCreate(requireClient(), input);
+  const created = await runAuthenticatedTreatmentCreate(
+    requireClient(),
+    input,
+    treatmentWritePilotEnv(),
+  );
   emitTreatmentRemoteWriteRefresh({
     organizationId: created.organizationId,
     customerId: created.customerId,
@@ -52,7 +66,11 @@ export async function submitTreatmentRemoteAutosave(input: {
   appointmentId?: string;
   draft: TreatmentDraft;
 }): Promise<TreatmentDraft> {
-  const saved = await runAuthenticatedTreatmentAutosave(requireClient(), input);
+  const saved = await runAuthenticatedTreatmentAutosave(
+    requireClient(),
+    input,
+    treatmentWritePilotEnv(),
+  );
   emitTreatmentRemoteWriteRefresh({
     organizationId: saved.organizationId,
     customerId: saved.customerId,
@@ -72,7 +90,11 @@ export async function submitTreatmentRemoteComplete(input: {
   appointmentId?: string;
   draft: TreatmentDraft;
 }): Promise<TreatmentDraft> {
-  const completed = await runAuthenticatedTreatmentComplete(requireClient(), input);
+  const completed = await runAuthenticatedTreatmentComplete(
+    requireClient(),
+    input,
+    treatmentWritePilotEnv(),
+  );
   emitTreatmentRemoteWriteRefresh({
     organizationId: completed.organizationId,
     customerId: completed.customerId,

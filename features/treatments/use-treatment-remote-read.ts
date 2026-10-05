@@ -11,8 +11,16 @@ import {
   listRemotePilotTreatments,
   listRemotePilotTreatmentsByCustomer,
 } from "@/lib/treatments/treatment-remote-read-pilot";
+import { TREATMENT_REMOTE_READ_PILOT_ENV } from "@/lib/treatments/treatment-remote-read-flag";
 import { useTreatmentRemoteWriteRevision } from "@/lib/treatments/use-treatment-remote-write-revision";
 import type { TreatmentDraft } from "@/types/treatment";
+
+function treatmentReadPilotEnv(): NodeJS.Dict<string> {
+  return {
+    ...process.env,
+    [TREATMENT_REMOTE_READ_PILOT_ENV]: "1",
+  };
+}
 
 export type TreatmentRemoteReadState<T> =
   | { status: "off" }
@@ -60,7 +68,11 @@ export function useTreatmentRemoteList(
       try {
         const client = readClient();
         if (!client) throw new Error("Authenticated Supabase client is unavailable");
-        const rows = await listRemotePilotTreatments(organizationId, client);
+        const rows = await listRemotePilotTreatments(
+          organizationId,
+          client,
+          treatmentReadPilotEnv(),
+        );
         if (cancelled) return;
         setResult({
           key: requestKey,
@@ -106,6 +118,7 @@ export function useTreatmentRemoteListByCustomer(
           organizationId,
           customerId,
           client,
+          treatmentReadPilotEnv(),
         );
         if (cancelled) return;
         setResult({
@@ -149,7 +162,12 @@ export function useTreatmentRemoteDetail(
       try {
         const client = readClient();
         if (!client) throw new Error("Authenticated Supabase client is unavailable");
-        const row = await getRemotePilotTreatment(organizationId, treatmentId, client);
+        const row = await getRemotePilotTreatment(
+          organizationId,
+          treatmentId,
+          client,
+          treatmentReadPilotEnv(),
+        );
         if (cancelled) return;
         setResult({
           key: requestKey,
@@ -196,6 +214,7 @@ export function useTreatmentRemoteByAppointment(
           organizationId,
           appointmentId,
           client,
+          treatmentReadPilotEnv(),
         );
         if (cancelled) return;
         setResult({
@@ -239,7 +258,11 @@ export function useTreatmentRemoteAppointments(
       try {
         const client = readClient();
         if (!client) throw new Error("Authenticated Supabase client is unavailable");
-        const rows = await listRemotePilotAppointmentsForTreatments(organizationId, client);
+        const rows = await listRemotePilotAppointmentsForTreatments(
+          organizationId,
+          client,
+          treatmentReadPilotEnv(),
+        );
         if (cancelled) return;
         setResult({
           key: requestKey,

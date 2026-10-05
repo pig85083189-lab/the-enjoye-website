@@ -142,7 +142,16 @@ describe("Phase 1C-6G.1 live Treatment remote wiring", () => {
     expect(hook).toMatch(/submitTreatmentRemoteAutosave/);
     expect(hook).toMatch(/submitTreatmentRemoteComplete/);
     expect(write).not.toMatch(/saveDraft\(|saveCompletedTreatment\(|localStorage/);
-    expect(write).not.toMatch(/\[TREATMENT_REMOTE_WRITE_PILOT_ENV\]:\s*"1"/);
+    expect(write).toMatch(/\[TREATMENT_REMOTE_WRITE_PILOT_ENV\]:\s*"1"/);
+    expect(write).toMatch(/\[TREATMENT_REMOTE_READ_PILOT_ENV\]:\s*"1"/);
+    expect(write).toMatch(/treatmentWritePilotEnv/);
+    expect(source("features/treatments/use-treatment-remote-read.ts")).toMatch(
+      /\[TREATMENT_REMOTE_READ_PILOT_ENV\]:\s*"1"/,
+    );
+    expect(hook).toMatch(/treatmentReadPilotEnv/);
+    expect(hook).toMatch(/skipNextSave\.current = true/);
+    expect(hook).toMatch(/if \(!draft\.id\.startsWith\("trt-"\)\) return;/);
+    expect(hook).toMatch(/expectedUpdatedAt/);
   });
 
   it("4-10. remote create, uniqueness, OCC, stale, complete, no DRAFT return", async () => {

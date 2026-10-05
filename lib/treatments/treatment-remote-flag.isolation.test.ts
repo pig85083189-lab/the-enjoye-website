@@ -99,7 +99,8 @@ describe("Phase 1C-6G Treatment remote pilots", () => {
       "utf8",
     );
     expect(writeHook).toMatch(/runAuthenticatedTreatmentCreate|runAuthenticatedTreatmentAutosave|runAuthenticatedTreatmentComplete/);
-    expect(writeHook).not.toMatch(/\[TREATMENT_REMOTE_WRITE_PILOT_ENV\]:\s*"1"/);
+    expect(writeHook).toMatch(/\[TREATMENT_REMOTE_WRITE_PILOT_ENV\]:\s*"1"/);
+    expect(writeHook).toMatch(/\[TREATMENT_REMOTE_READ_PILOT_ENV\]:\s*"1"/);
     expect(writeHook).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
     expect(writeHook).not.toMatch(/saveDraft\(|saveCompletedTreatment\(/);
     const draft = readFileSync(path.join(process.cwd(), "hooks/useTreatmentDraft.ts"), "utf8");

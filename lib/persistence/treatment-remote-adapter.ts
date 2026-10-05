@@ -213,9 +213,17 @@ export class TreatmentRemoteAdapter {
       updated_at: stamp,
     };
     remoteTreatmentPayload(row);
-    await this.store.insertTreatment(row);
-    this.mapper.rememberTreatment(mapped.organizationDbId, row.app_id, row.id);
-    return this.toDomain(organizationId, row);
+    const inserted = await this.store.insertTreatment(row);
+    const authoritative = inserted ?? row;
+    if (!authoritative.app_id || !authoritative.updated_at) {
+      throw new Error("insert treatment: authoritative row missing");
+    }
+    this.mapper.rememberTreatment(
+      mapped.organizationDbId,
+      authoritative.app_id,
+      authoritative.id,
+    );
+    return this.toDomain(organizationId, authoritative);
   }
 
   async update(
