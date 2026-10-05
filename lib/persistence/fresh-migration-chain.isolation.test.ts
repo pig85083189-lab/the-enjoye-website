@@ -78,11 +78,12 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
     const executable = bridge.slice(bridge.indexOf("do $$"));
     expect(executable).toMatch(/data_type = 'uuid'/);
     expect(executable).toMatch(/drop policy if exists audit_logs_insert_org/);
+    expect(executable).toMatch(/create aggregate public\.min\(uuid\)/);
     expect(executable).not.toMatch(/alter column actor_id type/i);
     expect(executable).not.toMatch(/alter table public\.audit_logs/i);
     expect(executable).not.toMatch(/create policy/i);
     expect(executable).not.toMatch(/create table/i);
-    expect(executable).not.toMatch(/create or replace function/i);
+    expect(executable).not.toMatch(/create or replace function public\.current_organization_id/);
     expect(executable).not.toMatch(/drop policy if exists audit_logs_select_managers/);
     expect(executable).not.toMatch(/drop table/i);
     expect(executable).not.toMatch(/\btruncate\s+table\b/i);

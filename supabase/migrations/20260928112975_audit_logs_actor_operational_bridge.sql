@@ -15,25 +15,23 @@
 --     then recreates audit_logs_insert_org for staff-*
 --   20261006120000 Strategy B qualification (final RLS)
 --
--- PostgreSQL SQLSTATE 0A000:
---   cannot alter type of a column used in a policy definition
---
 -- Catalog audit on a DB that has applied only 18120000–112950:
---   * The only policy that references actor_id is audit_logs_insert_org.
---   * audit_logs_select_managers references organization_id only.
---   * No view / trigger / function body depends on actor_id.
---   * No index on actor_id.
---   * audit_logs_actor_id_fkey is dropped by 113000 before the ALTER.
---   * Other 113000 uuid→text columns (appointments.staff_id / created_by,
---     treatments.staff_id, customer_consultations.created_by / updated_by,
---     treatment_photos.created_by) have no policy expressions on them.
+--   1) Policy audit_logs_insert_org is the only object that blocks
+--      actor_id uuid → text (SQLSTATE 0A000).
+--      audit_logs_select_managers does not reference actor_id.
+--      No view / trigger / function / index depends on actor_id.
+--      audit_logs_actor_id_fkey is dropped by 113000 before the conversion.
+--      Other 113000 uuid→text columns have no policy expressions on them.
+--   2) Immutable 113000 current_organization_id() uses min(o.id) on uuid.
+--      Stock PostgreSQL / Supabase has no min(uuid), so CREATE FUNCTION
+--      fails after the policy is gone. This file adds a public.min(uuid)
+--      aggregate only. It does not replace current_organization_id.
+--      20261006120000 later installs the count-gated Strategy B helper.
 --
--- This file only drops the blocking foundation insert policy while
--- actor_id is still uuid. It does not change the column type. It does
--- not recreate 113000. RLS stays enabled, so insert is fail-closed
--- until immutable 113000 rebuilds the policy.
+-- Preview: actor_id is already text, so the policy drop is a no-op.
+-- min(uuid) is created only when missing.
 --
--- Preview (actor_id already text after 113000) is a no-op.
+-- Fail-closed: RLS stays enabled; insert policy is absent until 113000.
 -- Additive. No DROP TABLE. No business INSERT / seed / QA copy.
 -- =============================================================================
 
@@ -48,6 +46,40 @@ begin
       and data_type = 'uuid'
   ) then
     drop policy if exists audit_logs_insert_org on public.audit_logs;
+  end if;
+end
+$$;
+
+create or replace function public.uuid_min_state(left_id uuid, right_id uuid)
+returns uuid
+language sql
+immutable
+as $$
+  select case
+    when left_id is null then right_id
+    when right_id is null then left_id
+    when left_id < right_id then left_id
+    else right_id
+  end;
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'min'
+      and p.prokind = 'a'
+      and pg_get_function_identity_arguments(p.oid) = 'uuid'
+  ) then
+    create aggregate public.min(uuid) (
+      sfunc = public.uuid_min_state,
+      stype = uuid,
+      combinefunc = public.uuid_min_state,
+      sortop = <
+    );
   end if;
 end
 $$;
