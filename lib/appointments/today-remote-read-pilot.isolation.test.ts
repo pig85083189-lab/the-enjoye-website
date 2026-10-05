@@ -383,7 +383,8 @@ describe("Phase 1C-5E Today remote read pilot", () => {
       createElement(TodayRemoteReadErrorFallback, { message: state.message }),
     );
     expect(html).toContain("無法讀取今日預約資料");
-    expect(html).toContain("today appointment render exploded");
+    expect(html).toContain("請稍後再試。");
+    expect(html).not.toContain("today appointment render exploded");
     expect(html).not.toContain("This page couldn’t load");
   });
 

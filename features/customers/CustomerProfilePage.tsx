@@ -130,7 +130,7 @@ export function CustomerProfilePage({
       <Card padding="lg" className="text-center" data-customer-read-state="error">
         <p className="text-[15px] font-medium text-text">無法載入客戶資料</p>
         <p className="mt-2 text-sm text-secondary-text">
-          Access unavailable — remote customer read failed. 不會改用本機示範資料。
+          請稍後再試。
         </p>
         <Link href="/staff/customers" className="mt-3 inline-flex min-h-11 items-center text-primary">
           返回客戶管理
@@ -148,7 +148,7 @@ export function CustomerProfilePage({
       >
         <p className="text-[15px] font-medium text-text">找不到此客戶</p>
         <p className="mt-2 text-sm text-secondary-text">
-          Access unavailable — 此客戶不屬於目前店家，或資料不存在。
+          此客戶不屬於目前店家，或資料不存在。
         </p>
         <Link href="/staff/customers" className="mt-3 inline-flex min-h-11 items-center text-primary">
           返回客戶管理
@@ -254,7 +254,6 @@ function Customer360Workspace({
           <ArrowLeft className="h-4 w-4" aria-hidden />
           客戶管理
         </Link>
-        <p className="text-xs text-secondary-text">僅供內部服務紀錄使用</p>
       </div>
 
       <Card

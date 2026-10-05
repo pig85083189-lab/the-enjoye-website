@@ -28,6 +28,16 @@ export function resolveCanonicalServiceDisplayName(input: {
   return "療程";
 }
 
+export function resolveTreatmentTemplateLabel(input: {
+  serviceId: string;
+  catalogName?: string | null;
+  snapshotName?: string | null;
+}): string {
+  const name = resolveCanonicalServiceDisplayName(input);
+  if (name && name !== "療程") return `${name} 療程模板`;
+  return "通用療程模板";
+}
+
 export function resolveCanonicalStaffDisplayName(input: {
   staffId: string;
   rosterName?: string | null;

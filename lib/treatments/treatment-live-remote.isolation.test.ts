@@ -29,6 +29,7 @@ import {
   isRawServiceId,
   resolveCanonicalCustomerDisplayName,
   resolveCanonicalServiceDisplayName,
+  resolveTreatmentTemplateLabel,
   resolveCanonicalStaffDisplayName,
 } from "@/lib/treatments/treatment-display";
 import {
@@ -332,6 +333,29 @@ describe("Phase 1C-6G.1 live Treatment remote wiring", () => {
       customerId: "cust-remote-qa",
       catalogName: "Remote QA Customer",
     })).toBe("Remote QA Customer");
+    expect(resolveTreatmentTemplateLabel({
+      serviceId: "svc-muqm5pht-nqlpr3",
+      snapshotName: "Remote QA Bust Care",
+    })).toBe("Remote QA Bust Care 療程模板");
+    expect(resolveTreatmentTemplateLabel({
+      serviceId: "svc-muqm5pht-nqlpr3",
+      snapshotName: "svc-muqm5pht-nqlpr3",
+    })).toBe("通用療程模板");
+    const workspace = source("features/treatments/TreatmentWorkspace.tsx");
+    expect(workspace).toMatch(/resolveTreatmentTemplateLabel/);
+    expect(workspace).not.toMatch(/目前使用通用療程模板|尚未寫入遠端|試點|RLS|OCC|Supabase/);
+    expect(source("components/treatments/AutoSaveIndicator.tsx")).toMatch(/儲存中…/);
+    expect(source("components/treatments/AutoSaveIndicator.tsx")).toMatch(/✓ 已自動儲存/);
+    expect(source("components/treatments/AutoSaveIndicator.tsx")).toMatch(/儲存失敗，請重試/);
+    expect(source("components/appointments/NextCustomerPanel.tsx")).not.toMatch(
+      /今日遠端讀取試點為唯讀/,
+    );
+    expect(source("components/appointments/AppointmentCard.tsx")).not.toMatch(
+      /今日遠端讀取試點為唯讀/,
+    );
+    expect(source("features/customers/CustomerProfilePage.tsx")).not.toMatch(
+      /僅供內部服務紀錄使用/,
+    );
     const derived = source("lib/treatments/treatment-workspace-derived.ts");
     expect(derived).toMatch(/resolveCanonicalServiceDisplayName/);
     expect(derived).not.toMatch(/serviceName: service\?\.name \|\| appointment\?\.serviceName \|\| serviceId/);

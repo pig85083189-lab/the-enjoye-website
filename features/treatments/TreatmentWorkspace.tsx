@@ -19,6 +19,7 @@ import { PhotosStep } from "@/features/treatments/steps/PhotosStep";
 import { ProfessionalNoteStep } from "@/features/treatments/steps/ProfessionalNoteStep";
 import { useTreatmentDraft } from "@/hooks/useTreatmentDraft";
 import { getTreatmentTemplateForService } from "@/data/treatment-templates";
+import { resolveTreatmentTemplateLabel } from "@/lib/treatments/treatment-display";
 import type { CanonicalAppointmentStatus } from "@/lib/appointments/domain";
 import { setAppointmentStatus } from "@/lib/appointment-store";
 import {
@@ -436,19 +437,19 @@ export function TreatmentWorkspace({
           ← 返回今日工作台
         </button>
         <div className="flex flex-wrap items-center gap-3">
-          {template.isGeneric ? (
-            <span className="rounded-full bg-[#F3EEEC] px-2.5 py-1 text-xs text-secondary-text">
-              目前使用通用療程模板
-            </span>
-          ) : null}
+          <span className="rounded-full bg-[#F3EEEC] px-2.5 py-1 text-xs text-secondary-text">
+            {resolveTreatmentTemplateLabel({
+              serviceId: appointment.serviceId,
+              snapshotName: appointment.serviceName,
+            })}
+          </span>
           {!finished ? (
             <div className="space-y-1 text-right">
-              <AutoSaveIndicator savedAt={savedAt} saving={saving} />
-              {saveError ? (
-                <p className="text-xs text-[#C56B70]" role="alert">
-                  自動儲存失敗，尚未寫入遠端。
-                </p>
-              ) : null}
+              <AutoSaveIndicator
+                savedAt={savedAt}
+                saving={saving}
+                error={Boolean(saveError)}
+              />
             </div>
           ) : null}
         </div>

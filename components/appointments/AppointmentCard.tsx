@@ -134,11 +134,7 @@ export function AppointmentCard({
         </div>
 
         <div className="flex flex-col gap-1.5 sm:min-w-[7.5rem] sm:items-stretch">
-          {readOnly ? (
-            <p className="rounded-2xl bg-[#FAF7F5] px-3 py-2 text-center text-[12px] text-secondary-text">
-              今日遠端讀取試點為唯讀
-            </p>
-          ) : primary.kind !== "none" ? (
+          {readOnly ? null : primary.kind !== "none" ? (
             <Link href={primary.href} className="block">
               <Button fullWidth className="min-h-10 px-4 text-sm">
                 {primary.label}

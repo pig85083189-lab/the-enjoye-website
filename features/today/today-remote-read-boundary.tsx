@@ -2,7 +2,7 @@
 
 import { Component, type ReactNode } from "react";
 
-export function TodayRemoteReadErrorFallback({ message }: { message: string }) {
+export function TodayRemoteReadErrorFallback({ message: _message }: { message: string }) {
   return (
     <div
       data-today-remote-error
@@ -10,7 +10,7 @@ export function TodayRemoteReadErrorFallback({ message }: { message: string }) {
       role="alert"
     >
       <p className="font-medium text-text">無法讀取今日預約資料</p>
-      <p className="mt-1 text-[15px] text-secondary-text">{message}</p>
+      <p className="mt-1 text-[15px] text-secondary-text">請稍後再試。</p>
     </div>
   );
 }

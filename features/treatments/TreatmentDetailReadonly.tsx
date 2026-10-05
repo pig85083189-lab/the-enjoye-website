@@ -89,7 +89,7 @@ export function TreatmentDetailReadonly({
       <Card padding="lg" className="text-center">
         <p className="text-[15px] font-medium text-text">找不到此療程紀錄</p>
         <p className="mt-2 text-sm text-secondary-text">
-          Access unavailable — remote treatment read failed. 不會改用本機示範資料。
+          請稍後再試。
         </p>
       </Card>
     );
@@ -100,7 +100,7 @@ export function TreatmentDetailReadonly({
       <Card padding="lg" className="text-center">
         <p className="text-[15px] font-medium text-text">找不到此療程紀錄</p>
         <p className="mt-2 text-sm text-secondary-text">
-          Access unavailable — 此紀錄不屬於目前店家，或資料不存在。
+          此紀錄不屬於目前店家，或資料不存在。
         </p>
         <Link href="/staff/customers" className="mt-3 inline-flex min-h-11 items-center text-primary">
           返回客戶管理
@@ -128,7 +128,7 @@ export function TreatmentDetailReadonly({
       <Card padding="lg">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm text-secondary-text">療程紀錄（唯讀）</p>
+            <p className="text-sm text-secondary-text">療程紀錄</p>
             <h1 className="mt-1 text-2xl font-semibold text-text">
               {serviceName}
             </h1>
@@ -210,7 +210,6 @@ export function TreatmentDetailReadonly({
         ) : null}
       </Card>
 
-      <p className="text-center text-xs text-secondary-text">僅供內部服務紀錄使用 · Prototype 唯讀</p>
     </div>
   );
 }

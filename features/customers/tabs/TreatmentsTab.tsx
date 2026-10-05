@@ -59,9 +59,9 @@ export function TreatmentsTab({
   if (treatmentRemoteReadPilot && remote.status === "error") {
     return (
       <Card padding="lg" className="text-center" data-treatment-record-source="remote-pilot">
-        <p className="text-[15px] font-medium text-text">無法讀取遠端療程</p>
+        <p className="text-[15px] font-medium text-text">無法載入療程紀錄</p>
         <p className="mt-1 text-sm text-secondary-text">
-          Access unavailable — remote treatment read failed. 不會改用本機示範資料。
+          請稍後再試。
         </p>
       </Card>
     );

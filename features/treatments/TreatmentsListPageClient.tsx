@@ -462,9 +462,9 @@ export function TreatmentsListPageClient({
             (remoteTreatments.status === "error" ||
               remoteAppointments.status === "error") ? (
             <Card padding="lg" className="text-center">
-              <p className="text-[15px] font-medium text-text">無法讀取遠端療程</p>
+              <p className="text-[15px] font-medium text-text">無法載入療程紀錄</p>
               <p className="mt-1 text-sm text-secondary-text">
-                Access unavailable — remote treatment read failed. 不會改用本機示範資料。
+                請稍後再試。
               </p>
             </Card>
           ) : visible.length === 0 ? (

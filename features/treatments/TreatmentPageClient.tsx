@@ -61,7 +61,7 @@ export function TreatmentPageClient({
     return (
       <ComingSoon
         title="找不到客戶"
-        description="Access unavailable — remote customer read failed. 不會改用本機示範資料。"
+        description="請稍後再試。"
       />
     );
   }
@@ -70,7 +70,7 @@ export function TreatmentPageClient({
     return (
       <ComingSoon
         title="找不到客戶"
-        description="Access unavailable — 此客戶不屬於目前店家，或資料不存在。"
+        description="此客戶不屬於目前店家，或資料不存在。"
       />
     );
   }
@@ -92,7 +92,7 @@ export function TreatmentPageClient({
     return (
       <ComingSoon
         title="找不到預約"
-        description="Access unavailable — remote appointment read failed. 不會改用本機示範資料。"
+        description="請稍後再試。"
       />
     );
   }
@@ -110,7 +110,7 @@ export function TreatmentPageClient({
     return (
       <ComingSoon
         title="找不到預約"
-        description="Access unavailable — 此預約不屬於目前店家。"
+        description="此預約不屬於目前店家。"
       />
     );
   }
