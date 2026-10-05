@@ -4,6 +4,10 @@
  */
 
 import { IdentityCatalogError, UnmappedIdentityError } from "@/lib/persistence/identity-errors";
+import {
+  CUSTOMER_BIRTHDAY_MESSAGE,
+  CustomerBirthdayError,
+} from "@/lib/persistence/customer-mapping";
 import { REMOTE_DEMO_CUSTOMER_MESSAGE } from "@/lib/persistence/demo-firewall";
 import {
   CustomerDuplicateError,
@@ -17,6 +21,7 @@ export const CUSTOMER_WRITE_UI = {
   location: "分店不屬於目前機構，未建立",
   duplicate: "此電話已有客戶，未重複建立",
   required: "請填寫姓名與電話",
+  birthday: CUSTOMER_BIRTHDAY_MESSAGE,
   demo: "示範客戶不能寫入遠端",
   network: "連線失敗，客戶尚未確認",
   createOnly: "目前僅能新增客戶",
@@ -34,6 +39,7 @@ export function customerWriteUserMessage(error: unknown): string {
   if (error instanceof CustomerWritePilotOffError) return CUSTOMER_WRITE_UI.off;
   if (error instanceof CustomerWriteCreateOnlyError) return CUSTOMER_WRITE_UI.createOnly;
   if (error instanceof CustomerDuplicateError) return CUSTOMER_WRITE_UI.duplicate;
+  if (error instanceof CustomerBirthdayError) return CUSTOMER_WRITE_UI.birthday;
   if (error instanceof UnmappedIdentityError) {
     if (error.kind === "location") return CUSTOMER_WRITE_UI.location;
     return CUSTOMER_WRITE_UI.mapping;
@@ -45,6 +51,12 @@ export function customerWriteUserMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("姓名為必填") || message.includes("電話為必填")) {
     return CUSTOMER_WRITE_UI.required;
+  }
+  if (error instanceof Error && error.name === "CustomerBirthdayError") {
+    return CUSTOMER_WRITE_UI.birthday;
+  }
+  if (message.includes(CUSTOMER_BIRTHDAY_MESSAGE) || /Invalid birthday/i.test(message)) {
+    return CUSTOMER_WRITE_UI.birthday;
   }
   if (message.includes(REMOTE_DEMO_CUSTOMER_MESSAGE)) {
     return CUSTOMER_WRITE_UI.demo;
