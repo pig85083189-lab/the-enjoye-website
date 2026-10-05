@@ -21,6 +21,18 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { CheckoutPanel } from "@/features/checkout/CheckoutPanel";
+import { CommerceIdentityPanel } from "@/features/checkout/CommerceIdentityPanel";
+import {
+  candidatesFromRemoteListState,
+  useCommerceRemoteCheckoutCandidate,
+  useCommerceRemoteCheckoutCandidates,
+} from "@/features/checkout/use-commerce-remote-read";
+import {
+  useCommerceRemoteDraft,
+  type CommerceRemoteDraftState,
+} from "@/features/checkout/use-commerce-remote-write";
+import type { CommerceCheckoutCandidate } from "@/lib/commerce/commerce-remote-identity";
+import { useCommerceRemoteTransactions } from "@/features/transactions/use-commerce-remote-transactions";
 import { getServicesForOrganization } from "@/data/mock-services";
 import { formatHm } from "@/lib/appointments/domain";
 import {
@@ -41,8 +53,11 @@ import { listTransactions } from "@/lib/commerce/transaction-store";
 import {
   CHECKOUT_WORKSPACE_GAP_PX,
   buildCheckoutWorkspaceItems,
+  attachRemoteCommerceDraft,
+  buildRemoteCommerceWorkspaceItems,
   checkoutRowId,
   countCheckoutSummary,
+  countRemoteCommerceCheckoutSummary,
   filterCheckoutItems,
   isCheckoutRowKeyboardActivation,
   remapCheckoutSelection,
@@ -55,6 +70,7 @@ import {
 } from "@/lib/commerce/checkout-workspace-derived";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
+import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
 import { cn } from "@/lib/utils";
@@ -100,7 +116,13 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
   event.preventDefault();
 }
 
-export function CheckoutPageClient() {
+export function CheckoutPageClient({
+  commerceRemoteReadPilot = false,
+  commerceRemoteWritePilot = false,
+}: {
+  commerceRemoteReadPilot?: boolean;
+  commerceRemoteWritePilot?: boolean;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { organization, currentLocation, locations, membership } = useOrganization();
@@ -117,7 +139,10 @@ export function CheckoutPageClient() {
   );
 
   const locationId = currentLocation?.id ?? locations[0]?.id ?? "";
-  const staffId = membership?.userId ?? "staff-001";
+  const staffId = membership?.userId ?? "";
+  const checkoutAllowed = canCheckout(membership);
+  const remoteReadEnabled = commerceRemoteReadPilot && checkoutAllowed;
+  const remoteWriteEnabled = commerceRemoteWritePilot && checkoutAllowed;
   const appointmentIdParam = searchParams.get("appointment");
   const draftIdParam = searchParams.get("draft");
   const treatmentIdParam = searchParams.get("treatment");
@@ -125,7 +150,7 @@ export function CheckoutPageClient() {
 
   const [filter, setFilter] = useState<CheckoutListFilter>("pending");
   const [dateFilter, setDateFilter] = useState<CheckoutDateFilter>(() =>
-    appointmentIdParam ? "all" : "today",
+    appointmentIdParam || commerceRemoteReadPilot ? "all" : "today",
   );
   const [query, setQuery] = useState("");
   const [selectedCheckoutId, setSelectedCheckoutId] = useState<string | null>(() => {
@@ -138,27 +163,75 @@ export function CheckoutPageClient() {
   const [generalSaleOpen, setGeneralSaleOpen] = useState(false);
   const [saleQuery, setSaleQuery] = useState("");
 
+  const remoteListState = useCommerceRemoteCheckoutCandidates({
+    organizationId: organization.id,
+    locationId: currentLocation?.id,
+    actor: membership,
+    enabled: remoteReadEnabled,
+  });
+  const remoteDetailState = useCommerceRemoteCheckoutCandidate({
+    organizationId: organization.id,
+    appointmentId: appointmentIdParam,
+    treatmentId: treatmentIdParam,
+    actor: membership,
+    enabled: remoteReadEnabled,
+  });
+  const remoteCandidates = useMemo(() => {
+    const listed = candidatesFromRemoteListState(remoteListState);
+    if (remoteDetailState.status !== "data") return listed;
+    if (listed.some((row) => row.identity.appointmentId === remoteDetailState.value.identity.appointmentId)) {
+      return listed;
+    }
+    return [...listed, remoteDetailState.value];
+  }, [remoteDetailState, remoteListState]);
+  const remoteTransactionState = useCommerceRemoteTransactions({
+    organizationId: organization.id,
+    enabled: remoteReadEnabled,
+  });
+  const remoteTransactions = useMemo(
+    () =>
+      remoteTransactionState.status === "data" ? remoteTransactionState.transactions : [],
+    [remoteTransactionState],
+  );
+  const remoteTransactionCustomers = useMemo(
+    () =>
+      remoteTransactionState.status === "data" ? remoteTransactionState.customers : [],
+    [remoteTransactionState],
+  );
+
   const customers = useCrmJson(
-    () => localCustomerRepository.list({ organizationId: organization.id }),
+    () =>
+      commerceRemoteReadPilot
+        ? ([] as Customer[])
+        : localCustomerRepository.list({ organizationId: organization.id }),
     [] as Customer[],
   );
   const catalog = useMemo(() => {
     void commerceRev;
+    if (commerceRemoteReadPilot) return [];
     return getServicesForOrganization(organization.id);
-  }, [commerceRev, organization.id]);
+  }, [commerceRev, commerceRemoteReadPilot, organization.id]);
 
   const appointments = useMemo(() => {
     void appointmentRev;
-    if (!isClient) return [];
+    if (!isClient || commerceRemoteReadPilot) return [];
     return listAppointments({
       organizationId: organization.id,
       locationId: currentLocation?.id,
     });
-  }, [appointmentRev, currentLocation?.id, isClient, organization.id]);
+  }, [appointmentRev, commerceRemoteReadPilot, currentLocation?.id, isClient, organization.id]);
 
   const items = useMemo(() => {
     void commerceRev;
     if (!isClient) return [];
+    if (commerceRemoteReadPilot) {
+      return buildRemoteCommerceWorkspaceItems({
+        candidates: remoteCandidates,
+        transactions: remoteTransactions,
+        customers: remoteTransactionCustomers,
+        locationId: currentLocation?.id,
+      });
+    }
     const openDrafts = [
       ...listCheckoutDrafts(organization.id, { status: "OPEN" }),
       ...listCheckoutDrafts(organization.id, { status: "READY" }),
@@ -177,11 +250,15 @@ export function CheckoutPageClient() {
   }, [
     appointments,
     catalog,
+    commerceRemoteReadPilot,
     currentLocation?.id,
     customers,
     isClient,
     organization.id,
     commerceRev,
+    remoteCandidates,
+    remoteTransactions,
+    remoteTransactionCustomers,
   ]);
 
   const visible = useMemo(
@@ -189,8 +266,11 @@ export function CheckoutPageClient() {
     [dateFilter, filter, items, now, query],
   );
   const summary = useMemo(
-    () => countCheckoutSummary(items, appointments, now),
-    [appointments, items, now],
+    () =>
+      commerceRemoteReadPilot
+        ? countRemoteCommerceCheckoutSummary(items, now)
+        : countCheckoutSummary(items, appointments, now),
+    [appointments, commerceRemoteReadPilot, items, now],
   );
 
   const remappedSelectedId = remapCheckoutSelection(items, selectedCheckoutId);
@@ -205,9 +285,34 @@ export function CheckoutPageClient() {
   const selectedCustomer = selectedItem
     ? customers.find((row) => row.id === selectedItem.customerId) ?? null
     : null;
+  const selectedRemoteCandidate = selectedItem
+    ? remoteCandidates.find(
+        (row) => row.identity.appointmentId === selectedItem.appointmentId,
+      ) ?? (remoteDetailState.status === "data" ? remoteDetailState.value : null)
+    : null;
+  const remoteDraftState = useCommerceRemoteDraft({
+    appointmentId: selectedItem?.appointmentId ?? appointmentIdParam,
+    treatmentId:
+      selectedItem?.treatmentId ??
+      selectedRemoteCandidate?.identity.treatmentId ??
+      treatmentIdParam,
+    enabled: remoteWriteEnabled && Boolean(selectedItem && !selectedItem.paid),
+  });
+  const selectedPanelItem =
+    selectedItem && remoteDraftState.status === "data"
+      ? attachRemoteCommerceDraft(
+          selectedItem,
+          remoteDraftState.draft,
+          remoteDraftState.transaction,
+        )
+      : selectedItem;
 
   function ensureAppointmentDraft(appointmentId: string) {
-    if (!appointmentId) return;
+    if (!appointmentId || commerceRemoteReadPilot) return;
+    if (!checkoutAllowed) {
+      setError("沒有權限結帳");
+      return;
+    }
     try {
       const existing = getOpenDraftForAppointment(organization.id, appointmentId);
       if (existing) return;
@@ -266,6 +371,11 @@ export function CheckoutPageClient() {
 
   function startGeneralSale(customerId: string) {
     setError("");
+    if (commerceRemoteReadPilot) return;
+    if (!checkoutAllowed) {
+      setError("沒有權限結帳");
+      return;
+    }
     if (!locationId) {
       setError("請先選擇可存取的分店");
       return;
@@ -309,11 +419,20 @@ export function CheckoutPageClient() {
             結帳
           </h1>
           <p className="text-sm text-secondary-text">
-            處理今日待結帳的預約、一般銷售與收款
+            {commerceRemoteReadPilot && !commerceRemoteWritePilot
+              ? "顯示已完成療程的待結帳項目。遠端收款尚未開放。"
+              : "處理今日待結帳的預約、一般銷售與收款"}
           </p>
+          {!checkoutAllowed ? (
+            <p className="text-[13px] text-[#B07A4A]" role="alert">
+              沒有權限結帳
+            </p>
+          ) : null}
         </div>
+        {commerceRemoteReadPilot ? null : (
         <Button
           className="h-9 min-h-9 shrink-0 rounded-full px-4 text-[13px]"
+          disabled={!checkoutAllowed}
           onClick={() => {
             closePanel();
             setGeneralSaleOpen(true);
@@ -322,6 +441,7 @@ export function CheckoutPageClient() {
           <Plus className="h-3.5 w-3.5" aria-hidden />
           一般銷售
         </Button>
+        )}
       </header>
 
       {error ? (
@@ -420,8 +540,13 @@ export function CheckoutPageClient() {
             </div>
           </div>
 
-          {!isClient ? (
+          {!isClient || (remoteReadEnabled && remoteListState.status === "loading") ? (
             <ListSkeleton />
+          ) : remoteReadEnabled && remoteListState.status === "error" ? (
+            <Card padding="lg" className="text-center">
+              <p className="text-[15px] font-medium text-text">無法讀取待結帳資料</p>
+              <p className="mt-1 text-sm text-secondary-text">{remoteListState.message}</p>
+            </Card>
           ) : visible.length === 0 ? (
             <Card padding="lg" className="text-center">
               <Sparkles className="mx-auto h-10 w-10 text-primary/50" aria-hidden />
@@ -437,7 +562,9 @@ export function CheckoutPageClient() {
                   ? "試試調整搜尋、狀態或日期篩選"
                   : filter === "paid"
                     ? "完成收款後，今日交易會出現在這裡"
-                    : "可從右上角開始一般銷售，或查看已結帳紀錄"}
+                    : commerceRemoteReadPilot
+                      ? "完成療程後，待結帳項目會出現在這裡"
+                      : "可從右上角開始一般銷售，或查看已結帳紀錄"}
               </p>
             </Card>
           ) : (
@@ -483,16 +610,25 @@ export function CheckoutPageClient() {
           )}
         </div>
 
-        {showPanel && selectedItem ? (
+        {showPanel && selectedPanelItem ? (
           <div className="hidden min-[1200px]:block">
-            <CheckoutPanel
-              key={selectedItem.id}
-              item={selectedItem}
+            <CheckoutWorkspacePanel
+              item={selectedPanelItem}
               customer={selectedCustomer}
               organizationId={organization.id}
               staffId={staffId}
               treatmentId={treatmentIdParam}
               preselectedPackageId={packageIdParam}
+              remoteRead={commerceRemoteReadPilot}
+              remoteWrite={remoteWriteEnabled}
+              remoteCandidate={selectedRemoteCandidate}
+              remoteDraftState={remoteDraftState}
+              locationName={
+                selectedRemoteCandidate
+                  ? locations.find((row) => row.id === selectedRemoteCandidate.locationId)?.name ??
+                    currentLocation?.name
+                  : currentLocation?.name
+              }
               onClose={closePanel}
               onCompleted={(txId) => router.push(`/staff/transactions?id=${txId}`)}
             />
@@ -500,23 +636,32 @@ export function CheckoutPageClient() {
         ) : null}
       </div>
 
-      {showPanel && selectedItem ? (
+      {showPanel && selectedPanelItem ? (
         <div className="min-[1200px]:hidden">
-          <CheckoutPanel
-            key={selectedItem.id}
-            item={selectedItem}
+          <CheckoutWorkspacePanel
+            item={selectedPanelItem}
             customer={selectedCustomer}
             organizationId={organization.id}
             staffId={staffId}
             treatmentId={treatmentIdParam}
             preselectedPackageId={packageIdParam}
+            remoteRead={commerceRemoteReadPilot}
+            remoteWrite={remoteWriteEnabled}
+            remoteCandidate={selectedRemoteCandidate}
+            remoteDraftState={remoteDraftState}
+            locationName={
+              selectedRemoteCandidate
+                ? locations.find((row) => row.id === selectedRemoteCandidate.locationId)?.name ??
+                  currentLocation?.name
+                : currentLocation?.name
+            }
             onClose={closePanel}
             onCompleted={(txId) => router.push(`/staff/transactions?id=${txId}`)}
           />
         </div>
       ) : null}
 
-      {generalSaleOpen ? (
+      {commerceRemoteReadPilot ? null : generalSaleOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-text/30 p-0 min-[720px]:items-center min-[720px]:p-6">
           <div
             data-checkout-general-sale
@@ -584,6 +729,90 @@ export function CheckoutPageClient() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function CheckoutWorkspacePanel({
+  item,
+  customer,
+  organizationId,
+  staffId,
+  treatmentId,
+  preselectedPackageId,
+  remoteRead,
+  remoteWrite,
+  remoteCandidate,
+  remoteDraftState,
+  locationName,
+  onClose,
+  onCompleted,
+}: {
+  item: CheckoutWorkspaceItem;
+  customer: Customer | null;
+  organizationId: string;
+  staffId: string;
+  treatmentId?: string | null;
+  preselectedPackageId?: string | null;
+  remoteRead: boolean;
+  remoteWrite: boolean;
+  remoteCandidate: CommerceCheckoutCandidate | null;
+  remoteDraftState: CommerceRemoteDraftState;
+  locationName?: string;
+  onClose: () => void;
+  onCompleted: (txId: string) => void;
+}) {
+  if (remoteRead && remoteWrite && remoteDraftState.status === "data") {
+    return (
+      <CheckoutPanel
+        key={item.id}
+        item={item}
+        customer={customer}
+        organizationId={organizationId}
+        staffId={staffId}
+        treatmentId={treatmentId}
+        preselectedPackageId={preselectedPackageId}
+        commerceRemoteRead
+        commerceRemoteWrite
+        remoteDraft={remoteDraftState.draft}
+        remoteTransaction={remoteDraftState.transaction}
+        onClose={onClose}
+        onCompleted={onCompleted}
+      />
+    );
+  }
+  if (remoteRead && remoteCandidate) {
+    return (
+      <CommerceIdentityPanel
+        key={item.id}
+        candidate={remoteCandidate}
+        locationName={locationName}
+        readiness={
+          remoteWrite
+            ? remoteDraftState.status === "loading"
+              ? "loading"
+              : remoteDraftState.status === "error"
+                ? "error"
+                : "ready"
+            : "write_off"
+        }
+        message={remoteDraftState.status === "error" ? remoteDraftState.message : undefined}
+        onClose={onClose}
+      />
+    );
+  }
+  if (remoteRead) return null;
+  return (
+    <CheckoutPanel
+      key={item.id}
+      item={item}
+      customer={customer}
+      organizationId={organizationId}
+      staffId={staffId}
+      treatmentId={treatmentId}
+      preselectedPackageId={preselectedPackageId}
+      onClose={onClose}
+      onCompleted={onCompleted}
+    />
   );
 }
 

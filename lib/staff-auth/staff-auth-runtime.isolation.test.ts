@@ -50,7 +50,7 @@ function ownerMembership(): StaffMembership {
     userId: "staff-001",
     locationIds: [LOC_ENJOYE_PRIMARY_ID],
     role: "OWNER",
-    displayName: "怡蓁",
+    displayName: "測試帳號",
     isActive: true,
     createdAt: "2025-01-01T00:00:00+08:00",
     authUserId: AUTH_OWNER,
@@ -249,11 +249,22 @@ describe("I–M logout / routes / unconfigured", () => {
   });
 
   it("M missing Supabase env does not crash and does not demo-login", () => {
-    expect(tryGetSupabaseEnv()).toBeNull();
-    expect(source("features/auth/LoginForm.tsx")).toMatch(/目前無法登入/);
-    expect(source("features/auth/LoginForm.tsx")).toMatch(/tryGetSupabaseEnv/);
-    expect(source("lib/supabase/proxy.ts")).toMatch(/tryGetSupabaseEnv/);
-    expect(validateCredentials("yizhen", "123456")).toBeNull();
+    const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const prevKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    try {
+      expect(tryGetSupabaseEnv()).toBeNull();
+      expect(source("features/auth/LoginForm.tsx")).toMatch(/目前無法登入/);
+      expect(source("features/auth/LoginForm.tsx")).toMatch(/tryGetSupabaseEnv/);
+      expect(source("lib/supabase/proxy.ts")).toMatch(/tryGetSupabaseEnv/);
+      expect(validateCredentials("yizhen", "123456")).toBeNull();
+    } finally {
+      if (prevUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      else process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl;
+      if (prevKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      else process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = prevKey;
+    }
   });
 });
 

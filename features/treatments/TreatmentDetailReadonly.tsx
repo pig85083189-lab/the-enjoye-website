@@ -6,10 +6,16 @@ import { ArrowLeft } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { getServiceById } from "@/data/mock-services";
-import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
+import { useTreatmentCustomerIdentity } from "@/features/treatments/use-treatment-customer-identity";
+import { useTreatmentRemoteDetail } from "@/features/treatments/use-treatment-remote-read";
 import { localTreatmentRepository } from "@/lib/repositories/local-treatment-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
+import { getMembership } from "@/lib/tenant/organization-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
+import {
+  resolveCanonicalServiceDisplayName,
+  resolveCanonicalStaffDisplayName,
+} from "@/lib/treatments/treatment-display";
 import type { TreatmentDraft } from "@/types/treatment";
 
 function formatDateTime(iso: string): string {
@@ -20,37 +26,73 @@ function formatDateTime(iso: string): string {
 
 interface TreatmentDetailReadonlyProps {
   treatmentId: string;
+  customerRemoteReadPilot?: boolean;
+  treatmentRemoteReadPilot?: boolean;
 }
 
-export function TreatmentDetailReadonly({ treatmentId }: TreatmentDetailReadonlyProps) {
+export function TreatmentDetailReadonly({
+  treatmentId,
+  customerRemoteReadPilot = false,
+  treatmentRemoteReadPilot = false,
+}: TreatmentDetailReadonlyProps) {
   const isClient = useIsClient();
   const { organization, membership } = useOrganization();
-  const treatment = useCrmJson(
+  const localTreatment = useCrmJson(
     () =>
-      localTreatmentRepository.getById({
-        organizationId: organization.id,
-        id: treatmentId,
-      }) ?? null,
+      treatmentRemoteReadPilot
+        ? null
+        : localTreatmentRepository.getById({
+            organizationId: organization.id,
+            id: treatmentId,
+          }) ?? null,
     null as TreatmentDraft | null,
   );
+  const remoteTreatment = useTreatmentRemoteDetail(
+    organization.id,
+    treatmentId,
+    treatmentRemoteReadPilot,
+  );
+  const treatment = treatmentRemoteReadPilot
+    ? remoteTreatment.status === "data"
+      ? remoteTreatment.value
+      : null
+    : localTreatment;
 
   const service = useMemo(
     () => (treatment ? getServiceById(treatment.serviceId, organization.id) : undefined),
     [treatment, organization.id],
   );
-  const customer = useMemo(
-    () =>
-      treatment
-        ? localCustomerRepository.getById({
-            organizationId: organization.id,
-            id: treatment.customerId,
-          })
-        : undefined,
-    [treatment, organization.id],
-  );
+  const serviceName = resolveCanonicalServiceDisplayName({
+    serviceId: treatment?.serviceId ?? "",
+    catalogName: service?.name,
+  });
+  const staffName = resolveCanonicalStaffDisplayName({
+    staffId: treatment?.staffId ?? "",
+    rosterName: treatment
+      ? getMembership(organization.id, treatment.staffId)?.displayName
+      : membership?.displayName,
+  });
+  const customerIdentity = useTreatmentCustomerIdentity({
+    organizationId: organization.id,
+    customerId: treatment?.customerId ?? "",
+    customerRemoteReadPilot,
+  });
+  const customer =
+    customerIdentity.status === "ready" ? customerIdentity.customer : undefined;
 
-  if (!isClient) {
+  if (!isClient || (treatmentRemoteReadPilot && remoteTreatment.status === "loading")) {
     return <div className="h-40 animate-pulse rounded-2xl bg-primary-light/40" />;
+  }
+
+  if (treatmentRemoteReadPilot && remoteTreatment.status === "error") {
+    return (
+      <Card padding="lg" className="text-center">
+        <p className="text-[15px] font-medium text-text">找不到此療程紀錄</p>
+        <p className="mt-2 text-sm text-secondary-text">
+          請稍後再試。
+        </p>
+      </Card>
+    );
   }
 
   if (!treatment) {
@@ -58,7 +100,7 @@ export function TreatmentDetailReadonly({ treatmentId }: TreatmentDetailReadonly
       <Card padding="lg" className="text-center">
         <p className="text-[15px] font-medium text-text">找不到此療程紀錄</p>
         <p className="mt-2 text-sm text-secondary-text">
-          Access unavailable — 此紀錄不屬於目前店家，或資料不存在。
+          此紀錄不屬於目前店家，或資料不存在。
         </p>
         <Link href="/staff/customers" className="mt-3 inline-flex min-h-11 items-center text-primary">
           返回客戶管理
@@ -68,7 +110,13 @@ export function TreatmentDetailReadonly({ treatmentId }: TreatmentDetailReadonly
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div
+      className="mx-auto max-w-3xl space-y-5"
+      data-customer-identity-source={
+        customerRemoteReadPilot ? "remote-pilot" : "local"
+      }
+      data-treatment-record-source={treatmentRemoteReadPilot ? "remote-pilot" : "local"}
+    >
       <Link
         href={customer ? `/staff/customers/${customer.id}` : "/staff/customers"}
         className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-secondary-text"
@@ -80,9 +128,9 @@ export function TreatmentDetailReadonly({ treatmentId }: TreatmentDetailReadonly
       <Card padding="lg">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm text-secondary-text">療程紀錄（唯讀）</p>
+            <p className="text-sm text-secondary-text">療程紀錄</p>
             <h1 className="mt-1 text-2xl font-semibold text-text">
-              {service?.name ?? "療程"}
+              {serviceName}
             </h1>
             <p className="mt-2 text-[15px] text-secondary-text">
               {formatDateTime(treatment.updatedAt)}
@@ -99,7 +147,7 @@ export function TreatmentDetailReadonly({ treatmentId }: TreatmentDetailReadonly
           <div>
             <dt className="text-sm text-secondary-text">美容師</dt>
             <dd className="mt-1 font-medium text-text">
-              {membership?.displayName ?? "—"}
+              {staffName}
             </dd>
           </div>
           <div>
@@ -162,7 +210,6 @@ export function TreatmentDetailReadonly({ treatmentId }: TreatmentDetailReadonly
         ) : null}
       </Card>
 
-      <p className="text-center text-xs text-secondary-text">僅供內部服務紀錄使用 · Prototype 唯讀</p>
     </div>
   );
 }

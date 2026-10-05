@@ -141,7 +141,8 @@ export function getCustomerStoredValueBalance(
   organizationId: string,
   customerId: string,
 ): number {
-  assertCustomer(organizationId, customerId);
+  // Read-only. A remote-only customer is not in the local mock catalog;
+  // no local account means balance 0. Writes still assertCustomer.
   const account = listStoredValueAccounts(organizationId, { customerId }).find(
     (a) => a.status === "ACTIVE",
   );

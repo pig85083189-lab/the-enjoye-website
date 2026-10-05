@@ -12,6 +12,9 @@ import type { DayOfWeek } from "@/lib/staff-schedule/domain";
 import { DAY_OF_WEEK_LABEL } from "@/lib/staff-schedule/domain";
 import type { StaffApplyHoursDraft } from "@/lib/staff/staff-workspace-derived";
 import type { Location, StaffRole } from "@/types/saas";
+import { STAFF_REMOTE_CREATABLE_ROLES } from "./staff-remote-create-command";
+
+export { STAFF_REMOTE_CREATABLE_ROLES };
 
 export const STAFF_HAS_AUTH_ACCOUNT_CREATE = false;
 export const STAFF_HAS_EMPLOYEE_DOMAIN = false;
@@ -60,7 +63,7 @@ export const STAFF_ONBOARDING_STEPS: Array<{
   { id: 3, label: "初始班表" },
 ];
 
-/** Mirrors canonical /staff/staff nav roles (staff.manage → OWNER / MANAGER). */
+/** Mirrors canonical /staff/staff nav roles (staff.manage → OWNER). */
 export function canManageStaff(role: StaffRole | undefined): boolean {
   const staffNav = NAVIGATION_ITEMS.find((item) => item.id === "staff");
   if (!staffNav) return false;

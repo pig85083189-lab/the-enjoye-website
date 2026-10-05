@@ -433,7 +433,7 @@ describe("T source contract + fail-safe", () => {
 
   it("RBAC uses existing staff nav roles and later-mode skips hours writes", () => {
     expect(canManageStaff("OWNER")).toBe(true);
-    expect(canManageStaff("MANAGER")).toBe(true);
+    expect(canManageStaff("MANAGER")).toBe(false);
     expect(canManageStaff("STAFF")).toBe(false);
     expect(canManageStaff("RECEPTIONIST")).toBe(false);
     expect(canManageStaff("ACCOUNTANT")).toBe(false);

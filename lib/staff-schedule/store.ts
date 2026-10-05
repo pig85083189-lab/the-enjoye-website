@@ -6,10 +6,6 @@ import {
   getStaffWorkingHoursKey,
 } from "@/lib/tenant/storage-keys";
 import { newId } from "@/lib/repositories/storage";
-import {
-  CALENDAR_DAY_END_HOUR,
-  CALENDAR_DAY_START_HOUR,
-} from "@/lib/appointments/calendar-config";
 import type {
   DayOfWeek,
   StaffBreak,
@@ -17,6 +13,7 @@ import type {
   StaffWorkingHours,
 } from "./domain";
 import { canReceiveAppointments } from "./capability";
+import { createLocationDefaultWorkingHours } from "./location-default-hours";
 
 const SCHEDULE_EVENT = "enjoye-staff-schedule-change";
 
@@ -98,28 +95,10 @@ function assertStaffMembership(
   }
 }
 
-function defaultHoursForStaff(
-  organizationId: string,
-  locationId: string,
-  staffId: string,
-): StaffWorkingHours[] {
-  const now = new Date().toISOString();
-  const start = `${String(CALENDAR_DAY_START_HOUR).padStart(2, "0")}:00`;
-  const end = `${String(CALENDAR_DAY_END_HOUR).padStart(2, "0")}:00`;
-  return Array.from({ length: 7 }, (_, dayOfWeek) => {
-    const isWorking = dayOfWeek !== 0; // Sunday off by default
-    return {
-      id: newId("swh"),
-      organizationId,
-      locationId,
-      staffId,
-      dayOfWeek: dayOfWeek as DayOfWeek,
-      startTime: start,
-      endTime: end,
-      isWorking,
-      updatedAt: now,
-    };
-  });
+function readStoredWorkingHours(organizationId: string): StaffWorkingHours[] {
+  return readJson<StaffWorkingHours>(getStaffWorkingHoursKey(organizationId)).filter(
+    (item) => item.organizationId === organizationId,
+  );
 }
 
 /** Bookable staff for a location (from StaffMembership — no parallel mock roster). */
@@ -136,25 +115,7 @@ export function listWorkingHours(
   organizationId: string,
   opts?: { locationId?: string; staffId?: string },
 ): StaffWorkingHours[] {
-  const key = getStaffWorkingHoursKey(organizationId);
-  let list = readJson<StaffWorkingHours>(key).filter(
-    (item) => item.organizationId === organizationId,
-  );
-
-  // Seed defaults once per staff/location when empty for that pair.
-  if (opts?.locationId && opts?.staffId) {
-    const has = list.some(
-      (item) => item.locationId === opts.locationId && item.staffId === opts.staffId,
-    );
-    if (!has) {
-      assertOrgLocation(organizationId, opts.locationId);
-      assertStaffMembership(organizationId, opts.staffId, opts.locationId);
-      const seeded = defaultHoursForStaff(organizationId, opts.locationId, opts.staffId);
-      list = [...list, ...seeded];
-      writeJson(organizationId, key, list);
-    }
-  }
-
+  let list = readStoredWorkingHours(organizationId);
   if (opts?.locationId) list = list.filter((item) => item.locationId === opts.locationId);
   if (opts?.staffId) list = list.filter((item) => item.staffId === opts.staffId);
   return list;
@@ -165,10 +126,17 @@ export function getWorkingHoursForDay(
   locationId: string,
   staffId: string,
   dayOfWeek: DayOfWeek,
-): StaffWorkingHours | undefined {
-  return listWorkingHours(organizationId, { locationId, staffId }).find(
+): StaffWorkingHours {
+  const stored = listWorkingHours(organizationId, { locationId, staffId }).find(
     (item) => item.dayOfWeek === dayOfWeek,
   );
+  if (stored) return stored;
+  return createLocationDefaultWorkingHours({
+    organizationId,
+    locationId,
+    staffId,
+    dayOfWeek,
+  });
 }
 
 export function upsertWorkingHours(

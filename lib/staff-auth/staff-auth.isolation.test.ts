@@ -36,7 +36,7 @@ import {
   updateMembership,
 } from "@/lib/tenant/organization-store";
 import { getActiveMembership } from "@/lib/tenant/access";
-import { listBookableStaff, listWorkingHours } from "@/lib/staff-schedule/store";
+import { listBookableStaff, getWorkingHoursForDay } from "@/lib/staff-schedule/store";
 import { createAppointment, listAppointments } from "@/lib/appointments/store";
 import { canManageStaff } from "@/lib/staff/staff-onboarding-derived";
 
@@ -222,7 +222,7 @@ describe("L–N staff management actor guards", () => {
     expect(created.authUserId).toBeNull();
   });
 
-  it("M MANAGER can invite/manage", () => {
+  it("M MANAGER cannot invite/manage", () => {
     const manager = createMembership({
       organizationId: ORG_ENJOYE_ID,
       displayName: "店長",
@@ -230,15 +230,16 @@ describe("L–N staff management actor guards", () => {
       locationIds: [LOC_ENJOYE_PRIMARY_ID],
       actorStaffId: "staff-001",
     });
-    expect(canActorManageStaff(ORG_ENJOYE_ID, manager.userId)).toBe(true);
-    const created = createMembership({
-      organizationId: ORG_ENJOYE_ID,
-      displayName: "店長新增",
-      role: "STAFF",
-      locationIds: [LOC_ENJOYE_PRIMARY_ID],
-      actorStaffId: manager.userId,
-    });
-    expect(created.userId).not.toBe(manager.id);
+    expect(canActorManageStaff(ORG_ENJOYE_ID, manager.userId)).toBe(false);
+    expect(() =>
+      createMembership({
+        organizationId: ORG_ENJOYE_ID,
+        displayName: "店長新增",
+        role: "STAFF",
+        locationIds: [LOC_ENJOYE_PRIMARY_ID],
+        actorStaffId: manager.userId,
+      }),
+    ).toThrow(/沒有權限/);
   });
 
   it("N STAFF cannot manage staff", () => {
@@ -313,15 +314,14 @@ describe("O–R mapping keeps operational joins", () => {
   });
 
   it("R Schedule still joins userId", () => {
-    const hours = listWorkingHours(ORG_ENJOYE_ID, {
-      locationId: LOC_ENJOYE_PRIMARY_ID,
-      staffId: "staff-001",
-    });
-    expect(hours.length).toBeGreaterThan(0);
-    expect(hours.every((item) => item.staffId === "staff-001")).toBe(true);
-    expect(hours.some((item) => item.staffId === MEMBERSHIP_ENJOYE_OWNER_ID)).toBe(
-      false,
+    const hours = getWorkingHoursForDay(
+      ORG_ENJOYE_ID,
+      LOC_ENJOYE_PRIMARY_ID,
+      "staff-001",
+      1,
     );
+    expect(hours.staffId).toBe("staff-001");
+    expect(hours.staffId).not.toBe(MEMBERSHIP_ENJOYE_OWNER_ID);
   });
 });
 

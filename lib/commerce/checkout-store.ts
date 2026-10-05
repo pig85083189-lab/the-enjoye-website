@@ -2,8 +2,10 @@ import { listTodayAppointments } from "@/lib/appointments/store";
 import { getCustomerById } from "@/data/mock-customers";
 import { getServiceById } from "@/data/mock-services";
 import { getScheduleAppointment } from "@/lib/appointments/store";
-import { SEED_MEMBERSHIPS } from "@/data/seed-organizations";
 import { canAccessLocation } from "@/lib/tenant/access";
+import { listMemberships } from "@/lib/staff-auth/membership-query";
+import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
+import { assertOperationalStaffId } from "@/lib/staff-auth/staff-id";
 import { getCheckoutDraftsKey } from "@/lib/tenant/storage-keys";
 import { newId } from "@/lib/repositories/storage";
 import type { ScheduleAppointment } from "@/lib/appointments/domain";
@@ -88,13 +90,17 @@ function writeDrafts(organizationId: string, list: CheckoutDraft[]): void {
 }
 
 function assertStaff(organizationId: string, staffId: string): void {
-  const m = SEED_MEMBERSHIPS.find(
-    (item) =>
-      item.organizationId === organizationId &&
-      item.userId === staffId &&
-      item.isActive,
+  if (!staffId) throw new Error("請先登入後再結帳");
+  assertOperationalStaffId(staffId);
+  const membership = listMemberships(organizationId).find(
+    (item) => item.userId === staffId && item.isActive,
   );
-  if (!m) throw new Error("Staff membership does not belong to this organization");
+  if (!membership) {
+    throw new Error("Staff membership does not belong to this organization");
+  }
+  if (!canCheckout(membership)) {
+    throw new Error("沒有權限結帳");
+  }
 }
 
 /** Fail closed when treatmentId is present but not owned by this org/appointment. */

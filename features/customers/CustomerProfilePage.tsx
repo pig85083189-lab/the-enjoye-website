@@ -20,6 +20,12 @@ import { NotesTab } from "./tabs/NotesTab";
 import { TransactionsTab } from "./tabs/TransactionsTab";
 import { WalletTab } from "./tabs/WalletTab";
 import { useCustomer360Snapshot } from "./use-customer-360";
+import { useCustomerRemoteAppointments } from "@/features/customers/use-appointment-remote-read";
+import { useCustomerRemoteDetail } from "@/features/customers/use-customer-remote-read";
+import {
+  treatmentsFromRemoteListState,
+  useTreatmentRemoteListByCustomer,
+} from "@/features/treatments/use-treatment-remote-read";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
@@ -38,21 +44,41 @@ function isWalletSection(value: string | null): value is Customer360WalletSectio
 
 interface CustomerProfilePageProps {
   customerId: string;
+  remoteReadPilot?: boolean;
+  appointmentRemoteReadPilot?: boolean;
+  treatmentRemoteReadPilot?: boolean;
 }
 
-export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
+export function CustomerProfilePage({
+  customerId,
+  remoteReadPilot = false,
+  appointmentRemoteReadPilot = false,
+  treatmentRemoteReadPilot = false,
+}: CustomerProfilePageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { organization } = useOrganization();
   const isClient = useIsClient();
-  const customer = useCrmJson(
+  const localCustomer = useCrmJson(
     () =>
-      localCustomerRepository.getById({
-        organizationId: organization.id,
-        id: customerId,
-      }) ?? null,
+      remoteReadPilot
+        ? null
+        : localCustomerRepository.getById({
+            organizationId: organization.id,
+            id: customerId,
+          }) ?? null,
     null as Customer | null,
   );
+  const remote = useCustomerRemoteDetail(
+    organization.id,
+    customerId,
+    remoteReadPilot,
+  );
+  const customer = remoteReadPilot
+    ? remote.status === "data"
+      ? remote.value
+      : null
+    : localCustomer;
   const initialTab = searchParams.get("tab");
   const initialSection = searchParams.get("section");
   const [tab, setTab] = useState<Customer360TabId>(
@@ -90,7 +116,10 @@ export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
     };
   }, [desktopMoreOpen, mobileMoreOpen]);
 
-  if (!isClient) {
+  if (
+    !isClient ||
+    (remoteReadPilot && (remote.status === "loading" || remote.status === "off"))
+  ) {
     return (
       <div className="space-y-3">
         <div className="h-10 w-40 animate-pulse rounded-2xl bg-primary-light/50" />
@@ -99,12 +128,36 @@ export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
     );
   }
 
+  if (remoteReadPilot && remote.status === "error") {
+    return (
+      <Card
+        padding="lg"
+        className="text-center"
+        data-customer-read-state="error"
+        data-customer-id={customerId}
+      >
+        <p className="text-[15px] font-medium text-text">無法載入客戶資料</p>
+        <p className="mt-2 text-sm text-secondary-text">
+          請稍後再試。
+        </p>
+        <Link href="/staff/customers" className="mt-3 inline-flex min-h-11 items-center text-primary">
+          返回客戶管理
+        </Link>
+      </Card>
+    );
+  }
+
   if (!customer) {
     return (
-      <Card padding="lg" className="text-center">
+      <Card
+        padding="lg"
+        className="text-center"
+        data-customer-read-state={remoteReadPilot ? "empty" : "local-missing"}
+        data-customer-id={customerId}
+      >
         <p className="text-[15px] font-medium text-text">找不到此客戶</p>
         <p className="mt-2 text-sm text-secondary-text">
-          Access unavailable — 此客戶不屬於目前店家，或資料不存在。
+          此客戶不屬於目前店家，或資料不存在。
         </p>
         <Link href="/staff/customers" className="mt-3 inline-flex min-h-11 items-center text-primary">
           返回客戶管理
@@ -115,6 +168,9 @@ export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
 
   return (
     <Customer360Workspace
+      remoteReadPilot={remoteReadPilot}
+      appointmentRemoteReadPilot={appointmentRemoteReadPilot}
+      treatmentRemoteReadPilot={treatmentRemoteReadPilot}
       customer={customer}
       tab={tab}
       walletSection={walletSection}
@@ -139,6 +195,9 @@ export function CustomerProfilePage({ customerId }: CustomerProfilePageProps) {
 }
 
 function Customer360Workspace({
+  remoteReadPilot = false,
+  appointmentRemoteReadPilot = false,
+  treatmentRemoteReadPilot = false,
   customer,
   tab,
   walletSection,
@@ -150,6 +209,9 @@ function Customer360Workspace({
   onMobileMoreOpen,
   onSelectTab,
 }: {
+  remoteReadPilot?: boolean;
+  appointmentRemoteReadPilot?: boolean;
+  treatmentRemoteReadPilot?: boolean;
   customer: Customer;
   tab: Customer360TabId;
   walletSection?: Customer360WalletSection;
@@ -162,14 +224,37 @@ function Customer360Workspace({
   onSelectTab: (tab: Customer360TabId, section?: Customer360WalletSection) => void;
 }) {
   const router = useRouter();
-  const snapshot = useCustomer360Snapshot(customer);
+  const { organization } = useOrganization();
+  const remoteAppointments = useCustomerRemoteAppointments(
+    organization.id,
+    customer.id,
+    appointmentRemoteReadPilot,
+  );
+  const remoteTreatments = useTreatmentRemoteListByCustomer(
+    organization.id,
+    customer.id,
+    treatmentRemoteReadPilot,
+  );
+  const snapshot = useCustomer360Snapshot(customer, {
+    remoteAppointments: appointmentRemoteReadPilot
+      ? remoteAppointments.status === "data"
+        ? remoteAppointments.value
+        : []
+      : null,
+    remoteTreatments: treatmentRemoteReadPilot
+      ? treatmentsFromRemoteListState(remoteTreatments)
+      : null,
+  });
   const next = snapshot.nextAppointment;
   const initials = customer.name.slice(0, 1);
   const visitLabel =
     snapshot.visitCount > 0 ? `第 ${snapshot.visitCount} 次來店` : "尚未到店";
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-[1180px] space-y-4 overflow-x-hidden pb-16 min-[768px]:pb-0">
+    <div
+      className="mx-auto w-full min-w-0 max-w-[1180px] space-y-4 overflow-x-hidden pb-16 min-[768px]:pb-0"
+      data-customer-read-source={remoteReadPilot ? "remote-pilot" : "local"}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
           href="/staff/customers"
@@ -178,7 +263,6 @@ function Customer360Workspace({
           <ArrowLeft className="h-4 w-4" aria-hidden />
           客戶管理
         </Link>
-        <p className="text-xs text-secondary-text">僅供內部服務紀錄使用</p>
       </div>
 
       <Card
@@ -224,37 +308,57 @@ function Customer360Workspace({
               ) : (
                 <>
                   尚未安排
-                  <Link
-                    href={snapshot.createHref}
-                    className="ml-2 font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                  >
-                    ＋ 安排預約
-                  </Link>
+                  {remoteReadPilot ? null : (
+                    <Link
+                      href={snapshot.createHref}
+                      className="ml-2 font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    >
+                      ＋ 安排預約
+                    </Link>
+                  )}
                 </>
               )}
             </p>
           </div>
 
           <div className="hidden shrink-0 flex-wrap items-center justify-end gap-2 min-[768px]:flex">
-            <Button className="min-h-11" onClick={() => router.push(snapshot.treatmentHref)}>
+            <Button
+              className="min-h-11"
+              onClick={() => {
+                router.push(snapshot.treatmentHref);
+              }}
+            >
               開始療程紀錄
             </Button>
-            <Link href={snapshot.createHref}>
-              <Button variant="secondary" className="min-h-11">
+            {remoteReadPilot || appointmentRemoteReadPilot ? (
+              <Button variant="secondary" className="min-h-11" disabled>
                 新增預約
               </Button>
-            </Link>
-            <Link href={customerEditHref(customer.id)}>
-              <Button variant="outline" className="min-h-11">
+            ) : (
+              <Link href={snapshot.createHref}>
+                <Button variant="secondary" className="min-h-11">
+                  新增預約
+                </Button>
+              </Link>
+            )}
+            {remoteReadPilot ? (
+              <Button variant="outline" className="min-h-11" disabled>
                 編輯資料
               </Button>
-            </Link>
+            ) : (
+              <Link href={customerEditHref(customer.id)}>
+                <Button variant="outline" className="min-h-11">
+                  編輯資料
+                </Button>
+              </Link>
+            )}
             <HeaderMore
               customerId={customer.id}
               open={desktopMoreOpen}
               wrapRef={desktopMoreRef}
               onOpen={onDesktopMoreOpen}
               onNotes={() => onSelectTab("notes")}
+              readOnly={remoteReadPilot}
             />
           </div>
         </div>
@@ -263,7 +367,9 @@ function Customer360Workspace({
           <Button
             data-customer-header-cta
             className="min-h-11 shrink-0 px-3 text-sm"
-            onClick={() => router.push(snapshot.treatmentHref)}
+            onClick={() => {
+              router.push(snapshot.treatmentHref);
+            }}
           >
             開始療程
           </Button>
@@ -274,8 +380,9 @@ function Customer360Workspace({
             onOpen={onMobileMoreOpen}
             onNotes={() => onSelectTab("notes")}
             onFollowUp={() => onSelectTab("follow-ups")}
-            includeEdit
-            createHref={snapshot.createHref}
+            includeEdit={!remoteReadPilot}
+            createHref={remoteReadPilot || appointmentRemoteReadPilot ? undefined : snapshot.createHref}
+            readOnly={remoteReadPilot}
           />
         </div>
       </Card>
@@ -286,12 +393,13 @@ function Customer360Workspace({
           <span className="text-xs font-normal text-secondary-text">展開</span>
         </summary>
         <div className="mt-3">
-          <CustomerSummaryPanel
+            <CustomerSummaryPanel
             customer={customer}
             snapshot={snapshot}
             onStartTreatment={() => router.push(snapshot.treatmentHref)}
             onAddFollowUp={() => onSelectTab("follow-ups")}
             onOpenNotes={() => onSelectTab("notes")}
+            readOnly={remoteReadPilot}
           />
         </div>
       </details>
@@ -313,14 +421,22 @@ function Customer360Workspace({
             ) : null}
             {tab === "consultation" ? <ConsultationsTab customerId={customer.id} /> : null}
             {tab === "treatments" ? (
-              <TreatmentsTab customerId={customer.id} treatmentHref={snapshot.treatmentHref} />
+              <TreatmentsTab
+                customerId={customer.id}
+                treatmentHref={snapshot.treatmentHref}
+                treatmentRemoteReadPilot={treatmentRemoteReadPilot}
+              />
             ) : null}
             {tab === "follow-ups" ? (
               <FollowUpsTab customerId={customer.id} treatmentHref={snapshot.treatmentHref} />
             ) : null}
             {tab === "photos" ? <PhotosTab customerId={customer.id} /> : null}
             {tab === "appointments" ? (
-              <AppointmentsTab customerId={customer.id} createHref={snapshot.createHref} />
+              <AppointmentsTab
+                customerId={customer.id}
+                createHref={appointmentRemoteReadPilot ? undefined : snapshot.createHref}
+                remoteReadPilot={appointmentRemoteReadPilot}
+              />
             ) : null}
             {tab === "wallet" ? (
               <WalletTab
@@ -342,6 +458,7 @@ function Customer360Workspace({
               onStartTreatment={() => router.push(snapshot.treatmentHref)}
               onAddFollowUp={() => onSelectTab("follow-ups")}
               onOpenNotes={() => onSelectTab("notes")}
+              readOnly={remoteReadPilot}
             />
           </div>
         </aside>
@@ -352,7 +469,13 @@ function Customer360Workspace({
   );
 }
 
-function MobileStickyTreatment({ href }: { href: string }) {
+function MobileStickyTreatment({
+  href,
+  readOnly = false,
+}: {
+  href: string;
+  readOnly?: boolean;
+}) {
   const router = useRouter();
   const [show, setShow] = useState(false);
 
@@ -376,7 +499,11 @@ function MobileStickyTreatment({ href }: { href: string }) {
     >
       <Button
         className="pointer-events-auto w-full shadow-[0_1px_2px_rgba(48,43,43,0.06)]"
-        onClick={() => router.push(href)}
+        disabled={readOnly}
+        onClick={() => {
+          if (readOnly) return;
+          router.push(href);
+        }}
       >
         開始療程紀錄
       </Button>
@@ -393,6 +520,7 @@ function HeaderMore({
   onFollowUp,
   includeEdit = false,
   createHref,
+  readOnly = false,
 }: {
   customerId: string;
   open: boolean;
@@ -402,6 +530,7 @@ function HeaderMore({
   onFollowUp?: () => void;
   includeEdit?: boolean;
   createHref?: string;
+  readOnly?: boolean;
 }) {
   return (
     <div className="relative" ref={wrapRef}>
@@ -420,7 +549,7 @@ function HeaderMore({
           role="menu"
           className="absolute right-0 z-30 mt-1 w-48 rounded-2xl border border-border bg-surface p-1 shadow-[0_8px_24px_rgba(48,43,43,0.08)]"
         >
-          {includeEdit && createHref ? (
+          {includeEdit && createHref && !readOnly ? (
             <Link
               href={createHref}
               role="menuitem"
@@ -430,7 +559,7 @@ function HeaderMore({
               新增預約
             </Link>
           ) : null}
-          {onFollowUp ? (
+          {onFollowUp && !readOnly ? (
             <button
               type="button"
               role="menuitem"
@@ -443,7 +572,7 @@ function HeaderMore({
               新增追蹤
             </button>
           ) : null}
-          {includeEdit ? (
+          {includeEdit && !readOnly ? (
             <Link
               href={customerEditHref(customerId)}
               role="menuitem"
@@ -453,14 +582,16 @@ function HeaderMore({
               編輯資料
             </Link>
           ) : null}
-          <Link
-            href={customerConsultationNewHref(customerId)}
-            role="menuitem"
-            className="flex min-h-11 items-center rounded-xl px-3 text-sm text-text hover:bg-[#FBF4F3]"
-            onClick={() => onOpen(false)}
-          >
-            新增諮詢更新
-          </Link>
+          {readOnly ? null : (
+            <Link
+              href={customerConsultationNewHref(customerId)}
+              role="menuitem"
+              className="flex min-h-11 items-center rounded-xl px-3 text-sm text-text hover:bg-[#FBF4F3]"
+              onClick={() => onOpen(false)}
+            >
+              新增諮詢更新
+            </Link>
+          )}
           <button
             type="button"
             role="menuitem"

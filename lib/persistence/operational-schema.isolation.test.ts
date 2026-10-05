@@ -2,6 +2,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  APPOINTMENT_INTEGRITY_MIGRATION_FILE,
+  AUDIT_LOGS_ACTOR_BRIDGE_MIGRATION_FILE,
+  COMMERCE_REMOTE_SETTLEMENT_MIGRATION_FILE,
+  COMMERCE_TABLE_WRITE_HARDENING_MIGRATION_FILE,
+  STRATEGY_B_RLS_MIGRATION_FILE,
   ENUM_ADAPT_MIGRATION_FILE,
   FORBIDDEN_STORED_COLUMNS,
   FOUNDATION_MIGRATION_FILE,
@@ -49,6 +54,31 @@ describe("Phase 5A-1 operational schema contract", () => {
     expect(operational).not.toMatch(/drop table/i);
     expect(operational).not.toMatch(/\btruncate\s+table\b/i);
     expect(operational).not.toMatch(/\bdelete\s+from\b/i);
+    const integrity = readMigration(APPOINTMENT_INTEGRITY_MIGRATION_FILE);
+    expect(integrity).not.toMatch(/drop table/i);
+    expect(integrity).not.toMatch(/\btruncate\s+table\b/i);
+    expect(integrity).toContain("appointments_customer_same_org_fkey");
+    const settlement = readMigration(COMMERCE_REMOTE_SETTLEMENT_MIGRATION_FILE);
+    expect(settlement).not.toMatch(/drop table/i);
+    expect(settlement).not.toMatch(/\btruncate\s+table\b/i);
+    expect(settlement).toMatch(/settle_checkout_draft/);
+    const strategyB = readMigration(STRATEGY_B_RLS_MIGRATION_FILE);
+    expect(strategyB).not.toMatch(/drop table/i);
+    expect(strategyB).not.toMatch(/\btruncate\s+table\b/i);
+    expect(strategyB).not.toMatch(/\bdelete\s+from\b/i);
+    expect(strategyB).toContain("create or replace function public.current_organization_id()");
+    const tableWrite = readMigration(COMMERCE_TABLE_WRITE_HARDENING_MIGRATION_FILE);
+    expect(tableWrite).not.toMatch(/drop table/i);
+    expect(tableWrite).not.toMatch(/\btruncate\s+table\b/i);
+    expect(tableWrite).toMatch(/revoke all on public\.checkout_drafts/);
+    expect(tableWrite).toMatch(/grant select on public\.transactions/);
+    const bridge = readMigration(AUDIT_LOGS_ACTOR_BRIDGE_MIGRATION_FILE);
+    const bridgeSql = bridge.slice(bridge.indexOf("do $$"));
+    expect(bridgeSql).toMatch(/drop policy if exists audit_logs_insert_org/);
+    expect(bridgeSql).not.toMatch(/alter column actor_id type/i);
+    expect(bridgeSql).not.toMatch(/drop table/i);
+    expect(bridgeSql).not.toMatch(/\btruncate\s+table\b/i);
+    expect(bridgeSql).not.toMatch(/\binsert into\b/i);
   });
 
   it("creates every operational table named in the contract", () => {

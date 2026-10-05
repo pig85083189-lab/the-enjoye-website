@@ -111,7 +111,7 @@ export const SEED_MEMBERSHIPS: StaffMembership[] = [
     userId: "staff-001",
     locationIds: ENJOYE_LOCATION_IDS,
     role: "OWNER",
-    displayName: "怡蓁",
+    displayName: "測試帳號",
     isActive: true,
     createdAt: "2025-01-01T00:00:00+08:00",
   },

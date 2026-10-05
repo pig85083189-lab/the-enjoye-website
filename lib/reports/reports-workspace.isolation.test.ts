@@ -606,7 +606,7 @@ describe("N staff attribution by ID", () => {
     const yizhen = staff.find((row) => row.staffId === "staff-001");
     const xiaomei = staff.find((row) => row.staffId === "staff-002");
     const anan = staff.find((row) => row.staffId === "staff-004");
-    expect(yizhen?.displayName).toBe("怡蓁");
+    expect(yizhen?.displayName).toBe("測試帳號");
     expect(yizhen?.handledExternalMinor).toBeGreaterThan(0);
     expect(xiaomei?.completedTreatments).toBeGreaterThanOrEqual(1);
     expect(anan?.staffId).toBe("staff-004");

@@ -1,11 +1,16 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { CustomerProfilePage } from "@/features/customers/CustomerProfilePage";
+import { isAppointmentRemoteReadPilotEnabled } from "@/lib/appointments/appointment-remote-read-flag";
+import { isCustomerRemoteReadPilotEnabled } from "@/lib/customers/customer-remote-read-flag";
+import { isTreatmentRemoteReadPilotEnabled } from "@/lib/treatments/treatment-remote-read-flag";
 
 export default async function CustomerPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await connection();
   const { id } = await params;
   return (
     <Suspense
@@ -16,7 +21,12 @@ export default async function CustomerPage({
         </div>
       }
     >
-      <CustomerProfilePage customerId={id} />
+      <CustomerProfilePage
+        customerId={id}
+        remoteReadPilot={isCustomerRemoteReadPilotEnabled()}
+        appointmentRemoteReadPilot={isAppointmentRemoteReadPilotEnabled()}
+        treatmentRemoteReadPilot={isTreatmentRemoteReadPilotEnabled()}
+      />
     </Suspense>
   );
 }

@@ -7,9 +7,15 @@ import { ArrowLeft, Check } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { getSession } from "@/lib/auth";
-import { formatPhoneDisplay } from "@/lib/phone";
+import { formatPhoneDisplay, phonesMatch } from "@/lib/phone";
 import { newId } from "@/lib/repositories/storage";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
+import {
+  customersFromRemoteListState,
+  useCustomerRemoteList,
+} from "@/features/customers/use-customer-remote-read";
+import { submitCustomerRemoteCreate } from "@/features/customers/use-customer-remote-write";
+import { customerWriteUserMessage } from "@/lib/customers/customer-write-ui-error";
 import { localConsultationRepository } from "@/lib/repositories/local-consultation-repository";
 import {
   clearConsultationDraft,
@@ -156,6 +162,7 @@ const labelClass = "mb-1.5 block text-sm text-secondary-text";
 interface ConsultationWizardProps {
   mode: "new" | "existing";
   customerId?: string;
+  remoteWritePilot?: boolean;
 }
 
 function buildInitialState(
@@ -210,17 +217,31 @@ function buildInitialState(
   };
 }
 
-export function ConsultationWizard({ mode, customerId }: ConsultationWizardProps) {
+export function ConsultationWizard({
+  mode,
+  customerId,
+  remoteWritePilot = false,
+}: ConsultationWizardProps) {
   const isClient = useIsClient();
   if (!isClient) {
     return <div className="h-40 animate-pulse rounded-2xl bg-primary-light/40" />;
   }
-  return <ConsultationWizardInner mode={mode} customerId={customerId} />;
+  return (
+    <ConsultationWizardInner
+      mode={mode}
+      customerId={customerId}
+      remoteWritePilot={remoteWritePilot}
+    />
+  );
 }
 
-function ConsultationWizardInner({ mode, customerId }: ConsultationWizardProps) {
+function ConsultationWizardInner({
+  mode,
+  customerId,
+  remoteWritePilot = false,
+}: ConsultationWizardProps) {
   const router = useRouter();
-  const { organization, membership } = useOrganization();
+  const { organization, membership, currentLocation } = useOrganization();
   const draftKey = mode === "new" ? "new" : (customerId ?? "new");
   const staffFallback = {
     id: membership?.userId ?? "staff-001",
@@ -234,14 +255,25 @@ function ConsultationWizardInner({ mode, customerId }: ConsultationWizardProps) 
   const [savedFlash, setSavedFlash] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [remoteCustomerId] = useState(() => newId("cust"));
+  const remoteCustomers = useCustomerRemoteList(
+    organization.id,
+    remoteWritePilot && mode === "new",
+  );
 
   const duplicates = useMemo(() => {
     if (mode !== "new" || !form.phone.trim()) return [];
+    if (remoteWritePilot) {
+      return customersFromRemoteListState(remoteCustomers).filter((customer) =>
+        phonesMatch(customer.phone, form.phone),
+      );
+    }
     return localCustomerRepository.findByPhone({
       organizationId: organization.id,
       phone: form.phone,
     });
-  }, [form.phone, mode, organization.id]);
+  }, [form.phone, mode, organization.id, remoteCustomers, remoteWritePilot]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -286,9 +318,27 @@ function ConsultationWizardInner({ mode, customerId }: ConsultationWizardProps) 
     return true;
   }
 
-  function handleComplete() {
-    if (!canProceed() || submitting) return;
-    setSubmitting(true);
+  async function completeRemoteCreate() {
+    const created = await submitCustomerRemoteCreate({
+      id: remoteCustomerId,
+      organizationId: organization.id,
+      locationId: currentLocation?.id,
+      name: form.name,
+      phone: form.phone,
+      birthday: form.birthday || undefined,
+      email: form.email || undefined,
+      lineId: form.lineId || undefined,
+      gender: form.gender,
+      source: form.source || undefined,
+      primaryStaffId: form.primaryStaffId,
+      allowDuplicate: form.forceCreateDuplicate,
+    });
+    clearConsultationDraft(organization.id, draftKey);
+    setDirty(false);
+    router.push(`/staff/customers/${created.id}`);
+  }
+
+  function completeLocalCreate() {
     const session = getSession();
     const now = new Date().toISOString();
     const consultedBy = session?.staffId ?? membership?.userId ?? "staff-001";
@@ -358,7 +408,6 @@ function ConsultationWizardInner({ mode, customerId }: ConsultationWizardProps) 
         id: targetId,
       });
       if (!existing) {
-        setSubmitting(false);
         return;
       }
       customer = {
@@ -435,6 +484,23 @@ function ConsultationWizardInner({ mode, customerId }: ConsultationWizardProps) 
     router.push(`/staff/customers/${targetId}`);
   }
 
+  async function handleComplete() {
+    if (!canProceed() || submitting) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      if (remoteWritePilot && mode === "new") {
+        await completeRemoteCreate();
+        return;
+      }
+      completeLocalCreate();
+    } catch (err: unknown) {
+      setError(customerWriteUserMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -458,6 +524,11 @@ function ConsultationWizardInner({ mode, customerId }: ConsultationWizardProps) 
         <p className="mt-1 text-[15px] text-secondary-text">
           為了讓美容師提供更適合您的服務，請協助確認以下狀況。
         </p>
+        {remoteWritePilot && mode === "new" ? (
+          <p className="mt-2 text-sm text-secondary-text" data-customer-write="remote-create">
+            此次將建立遠端客戶；諮詢表尚未寫入遠端。
+          </p>
+        ) : null}
       </div>
 
       {/* Mobile progress */}
@@ -507,6 +578,11 @@ function ConsultationWizardInner({ mode, customerId }: ConsultationWizardProps) 
         </nav>
 
         <Card padding="lg" className="space-y-5">
+          {error ? (
+            <p className="rounded-2xl bg-primary-light/60 px-3 py-2 text-sm text-primary" role="alert">
+              {error}
+            </p>
+          ) : null}
           {step === 0 ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-1">

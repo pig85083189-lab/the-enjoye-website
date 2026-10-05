@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { createStaffOnboardingFromDraft } from "@/lib/staff/staff-onboarding";
+import { provisionStaffEmployeeAction } from "@/lib/staff-auth/actions";
 import {
   applyOnboardingHoursPattern,
   canManageStaff,
@@ -11,6 +12,7 @@ import {
   STAFF_HAS_AUTH_ACCOUNT_CREATE,
   STAFF_ONBOARDING_ROLES,
   STAFF_ONBOARDING_STEPS,
+  STAFF_REMOTE_CREATABLE_ROLES,
   STAFF_ROLE_PRESENTATION,
   staffOnboardingDayLabel,
   toggleOnboardingLocation,
@@ -18,6 +20,8 @@ import {
   type StaffOnboardingDraft,
   type StaffOnboardingStep,
 } from "@/lib/staff/staff-onboarding-derived";
+import { STAFF_REMOTE_CREATE_MIN_PASSWORD_LENGTH } from "@/lib/staff/staff-remote-create-command";
+import { isValidStaffEmail } from "@/lib/staff-auth/email";
 import type { Location, StaffMembership, StaffRole } from "@/types/saas";
 import { cn } from "@/lib/utils";
 
@@ -28,9 +32,14 @@ interface StaffOnboardingDialogProps {
   actorRole: StaffRole | undefined;
   defaultLocationId?: string;
   onClose: () => void;
+  remoteCreateEnabled?: boolean;
+  remoteRosterLocked?: boolean;
   onCreated: (result: {
     membership: StaffMembership;
+    membershipFull?: StaffMembership;
     scheduleError: string | null;
+    remote?: boolean;
+    notice?: string;
   }) => void;
 }
 
@@ -43,6 +52,8 @@ export function StaffOnboardingDialog({
   locations,
   actorRole,
   defaultLocationId,
+  remoteCreateEnabled = false,
+  remoteRosterLocked = false,
   onClose,
   onCreated,
 }: StaffOnboardingDialogProps) {
@@ -54,7 +65,17 @@ export function StaffOnboardingDialog({
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isActive, setIsActive] = useState(true);
   const canManage = canManageStaff(actorRole);
+  const roleOptions = remoteCreateEnabled ? STAFF_REMOTE_CREATABLE_ROLES : STAFF_ONBOARDING_ROLES.filter((role) => role !== "OWNER");
+  const steps = remoteCreateEnabled
+    ? STAFF_ONBOARDING_STEPS.filter((entry) => entry.id !== 3)
+    : STAFF_ONBOARDING_STEPS;
+  const lastStep = (remoteCreateEnabled ? 2 : 3) as StaffOnboardingStep;
 
   useEffect(() => {
     if (!open) return;
@@ -109,8 +130,22 @@ export function StaffOnboardingDialog({
       setError(invalid);
       return;
     }
+    if (remoteCreateEnabled && step === 1) {
+      if (!isValidStaffEmail(email)) {
+        setError("請輸入有效的登入 Email");
+        return;
+      }
+      if (password.length < STAFF_REMOTE_CREATE_MIN_PASSWORD_LENGTH) {
+        setError(`密碼至少需要 ${STAFF_REMOTE_CREATE_MIN_PASSWORD_LENGTH} 個字元`);
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("兩次輸入的密碼不一致");
+        return;
+      }
+    }
     setError("");
-    setStep((current) => (current < 3 ? ((current + 1) as StaffOnboardingStep) : current));
+    setStep((current) => (current < lastStep ? ((current + 1) as StaffOnboardingStep) : current));
   }
 
   function goBack() {
@@ -118,9 +153,86 @@ export function StaffOnboardingDialog({
     setStep((current) => (current > 1 ? ((current - 1) as StaffOnboardingStep) : current));
   }
 
-  function submit() {
+  async function submit() {
     if (!canManage) {
       setError("沒有權限新增員工");
+      return;
+    }
+    if (remoteRosterLocked) {
+      setError("遠端員工建立尚未啟用");
+      return;
+    }
+    if (remoteCreateEnabled) {
+      const invalid = validateOnboardingStep(2, draft, locations);
+      if (invalid) {
+        setError(invalid);
+        return;
+      }
+      if (!isValidStaffEmail(email)) {
+        setError("請輸入有效的登入 Email");
+        return;
+      }
+      if (password.length < STAFF_REMOTE_CREATE_MIN_PASSWORD_LENGTH) {
+        setError(`密碼至少需要 ${STAFF_REMOTE_CREATE_MIN_PASSWORD_LENGTH} 個字元`);
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("兩次輸入的密碼不一致");
+        return;
+      }
+      if (busy) return;
+      setBusy(true);
+      try {
+        const result = await provisionStaffEmployeeAction({
+          displayName: draft.displayName,
+          email,
+          password,
+          role: draft.role,
+          locationIds: draft.locationIds,
+          isActive,
+        });
+        setPassword("");
+        setConfirmPassword("");
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        onCreated({
+          membership: {
+            id: result.membership.id,
+            organizationId: result.membership.organizationId,
+            userId: result.membership.userId,
+            locationIds: result.membership.locationIds,
+            role: result.membership.role,
+            displayName: result.membership.displayName,
+            isActive: result.membership.isActive,
+            createdAt: result.membership.createdAt,
+            authUserId: result.membership.authUserId,
+            email: result.membership.email,
+          },
+          membershipFull: {
+            id: result.membership.id,
+            organizationId: result.membership.organizationId,
+            userId: result.membership.userId,
+            locationIds: result.membership.locationIds,
+            role: result.membership.role,
+            displayName: result.membership.displayName,
+            isActive: result.membership.isActive,
+            createdAt: result.membership.createdAt,
+            authUserId: result.membership.authUserId,
+            email: result.membership.email,
+          },
+          scheduleError: null,
+          remote: true,
+          notice: "員工帳號已建立",
+        });
+      } catch (err) {
+        setPassword("");
+        setConfirmPassword("");
+        setError(err instanceof Error ? err.message : "建立失敗");
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     const invalid = validateOnboardingStep(3, draft, locations);
@@ -182,7 +294,7 @@ export function StaffOnboardingDialog({
           className="flex shrink-0 gap-2 overflow-x-hidden px-5 pb-3"
           aria-label="新增員工步驟"
         >
-          {STAFF_ONBOARDING_STEPS.map((entry) => {
+          {steps.map((entry) => {
             const current = step === entry.id;
             const done = step > entry.id;
             return (
@@ -214,6 +326,11 @@ export function StaffOnboardingDialog({
               沒有權限新增員工
             </p>
           ) : null}
+          {remoteRosterLocked ? (
+            <p className="rounded-2xl bg-[#F6EEEE] px-3 py-2 text-[13px] text-[#B07A4A]" role="alert">
+              遠端員工建立尚未啟用
+            </p>
+          ) : null}
 
           {step === 1 ? (
             <div className="space-y-3">
@@ -227,11 +344,63 @@ export function StaffOnboardingDialog({
                   autoComplete="off"
                 />
               </label>
-              <p className="rounded-2xl bg-[#FAF7F5] px-3 py-2 text-[12px] leading-relaxed text-secondary-text">
-                {STAFF_HAS_AUTH_ACCOUNT_CREATE
-                  ? "將同時建立登入帳號。"
-                  : "登入帳號功能尚未提供。這裡只建立員工資料，不會寄送邀請信或建立密碼。"}
-              </p>
+              {remoteCreateEnabled ? (
+                <>
+                  <label className="block text-[12px] text-secondary-text">
+                    登入 Email *
+                    <input
+                      type="email"
+                      autoComplete="off"
+                      className="mt-1 h-10 min-h-10 w-full rounded-xl border border-border px-3 text-[14px] text-text outline-none ring-primary/30 focus:ring-2"
+                      value={email}
+                      onChange={(event) => {
+                        setEmail(event.target.value);
+                        setError("");
+                      }}
+                    />
+                  </label>
+                  <label className="block text-[12px] text-secondary-text">
+                    初始密碼 *
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      className="mt-1 h-10 min-h-10 w-full rounded-xl border border-border px-3 text-[14px] text-text outline-none ring-primary/30 focus:ring-2"
+                      value={password}
+                      onChange={(event) => {
+                        setPassword(event.target.value);
+                        setError("");
+                      }}
+                    />
+                  </label>
+                  <label className="block text-[12px] text-secondary-text">
+                    確認密碼 *
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      className="mt-1 h-10 min-h-10 w-full rounded-xl border border-border px-3 text-[14px] text-text outline-none ring-primary/30 focus:ring-2"
+                      value={confirmPassword}
+                      onChange={(event) => {
+                        setConfirmPassword(event.target.value);
+                        setError("");
+                      }}
+                    />
+                  </label>
+                  <label className="flex min-h-10 items-center gap-2 text-[13px] text-secondary-text">
+                    <input
+                      type="checkbox"
+                      checked={showPassword}
+                      onChange={(event) => setShowPassword(event.target.checked)}
+                    />
+                    顯示密碼
+                  </label>
+                </>
+              ) : (
+                <p className="rounded-2xl bg-[#FAF7F5] px-3 py-2 text-[12px] leading-relaxed text-secondary-text">
+                  {STAFF_HAS_AUTH_ACCOUNT_CREATE
+                    ? "將同時建立登入帳號。"
+                    : "登入帳號功能尚未提供。這裡只建立員工資料，不會寄送邀請信或建立密碼。"}
+                </p>
+              )}
             </div>
           ) : null}
 
@@ -240,7 +409,7 @@ export function StaffOnboardingDialog({
               <fieldset>
                 <legend className="text-[12px] text-secondary-text">角色 *</legend>
                 <div className="mt-2 grid grid-cols-1 gap-1.5 min-[480px]:grid-cols-2">
-                  {STAFF_ONBOARDING_ROLES.map((role) => (
+                  {roleOptions.map((role) => (
                     <label
                       key={role}
                       className={cn(
@@ -295,6 +464,32 @@ export function StaffOnboardingDialog({
                   })}
                 </div>
               </fieldset>
+
+              {remoteCreateEnabled ? (
+                <fieldset>
+                  <legend className="text-[12px] text-secondary-text">在職狀態</legend>
+                  <div className="mt-2 space-y-1.5">
+                    <label className="flex min-h-10 items-center gap-2 rounded-xl border border-border px-3 text-[13px]">
+                      <input
+                        type="radio"
+                        name="staff-onboarding-active"
+                        checked={isActive}
+                        onChange={() => setIsActive(true)}
+                      />
+                      在職
+                    </label>
+                    <label className="flex min-h-10 items-center gap-2 rounded-xl border border-border px-3 text-[13px]">
+                      <input
+                        type="radio"
+                        name="staff-onboarding-active"
+                        checked={!isActive}
+                        onChange={() => setIsActive(false)}
+                      />
+                      停用
+                    </label>
+                  </div>
+                </fieldset>
+              ) : null}
             </div>
           ) : null}
 
@@ -460,10 +655,10 @@ export function StaffOnboardingDialog({
                 取消
               </Button>
             )}
-            {step < 3 ? (
+            {step < lastStep ? (
               <Button
                 className="h-10 min-h-10 flex-1 rounded-full text-[13px]"
-                disabled={!canManage || busy}
+                disabled={!canManage || busy || remoteRosterLocked}
                 onClick={goNext}
               >
                 下一步
@@ -472,8 +667,8 @@ export function StaffOnboardingDialog({
               <Button
                 data-staff-onboarding-submit
                 className="h-10 min-h-10 flex-1 rounded-full text-[13px]"
-                disabled={!canManage || busy}
-                onClick={submit}
+                disabled={!canManage || busy || remoteRosterLocked}
+                onClick={() => void submit()}
               >
                 {busy ? "建立中…" : "建立員工"}
               </Button>

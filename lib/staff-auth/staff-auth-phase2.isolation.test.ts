@@ -55,11 +55,11 @@ const AUTH_NONE = "33333333-3333-4333-8333-333333333333";
 
 const PHASE_5A_FILES: Record<string, string> = {
   "lib/packages/domain.ts":
-    "1f058e7f3649daf282712ee9009e878e60f79f76f86257c3646d5094e8c25545",
+    "e47e86586dcf4f116563ea8282df7f7077d9651f298643f1fe3580cf09d64a7f",
   "lib/packages/store.ts":
-    "d65cfced0ccd48edc120fc38ca03780360fc68e1e1987721823c4978feb424a8",
+    "9fe22d538f28328d210f11296ee2dd348192cc4eab56024919b5b64597f3b815",
   "types/database.ts":
-    "e5d02ee909d51e5d52c1234dc95de91272f1022845030bc0ef23e0f91ded6601",
+    "dafe5f47a731b267a34e039e08e96a50efc62abdccac07516a969499a4cad38f",
   "supabase/migrations/20260928112900_beauty_os_enum_adapt.sql":
     "ac16bce1a5baa0de2b52f7ade010ae340c1196897ee77c1984ff47b3b792acaf",
 };
@@ -83,7 +83,7 @@ function ownerMembership(over: Partial<StaffMembership> = {}): StaffMembership {
     userId: "staff-001",
     locationIds: [LOC_ENJOYE_PRIMARY_ID],
     role: "OWNER",
-    displayName: "怡蓁",
+    displayName: "測試帳號",
     isActive: true,
     createdAt: "2025-01-01T00:00:00+08:00",
     authUserId: AUTH_A,

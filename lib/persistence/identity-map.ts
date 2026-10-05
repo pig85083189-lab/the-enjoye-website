@@ -87,7 +87,7 @@ export class CanonicalIdMapper {
     });
   }
 
-    /**
+  /**
    * Auth profile lookup only (profiles.id).
    * Never write this value into Appointment.staffId or created_by_staff_id.
    */
@@ -127,6 +127,23 @@ export class CanonicalIdMapper {
   /** Reverse map from a stored operational staff-* column. */
   toOperationalStaffId(organizationAppId: string, storedStaffId: string): string {
     return this.requireOperationalStaffId(organizationAppId, storedStaffId);
+  }
+
+  /**
+   * Auth UUID → operational staff-* via membership.auth_user_id.
+   * Never returns the Auth UUID. Fails closed if unmapped or colliding.
+   */
+  resolveOperationalStaffFromAuth(
+    organizationAppId: string,
+    authUserId: string,
+  ): string {
+    if (!isAuthUuid(authUserId)) {
+      throw new UnmappedIdentityError("auth_user", organizationAppId, authUserId);
+    }
+    const orgDbId = this.resolveOrganizationDbId(organizationAppId);
+    const row = this.catalog.findStaffByAuthUserId(orgDbId, authUserId);
+    if (!row) throw new UnmappedIdentityError("staff_auth", organizationAppId, authUserId);
+    return this.requireOperationalStaffId(organizationAppId, row.staffAppId);
   }
 
   /** Reverse map from auth profile uuid → staff-*. Not for operational columns. */
@@ -231,6 +248,54 @@ export class CanonicalIdMapper {
         throw new UnmappedIdentityError("stored_value_ledger_entry", organizationAppId, ledgerAppId);
       }
       return row.dbId;
+    });
+  }
+
+  rememberCustomer(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`cust:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`custDb:${dbId}`, appId);
+  }
+
+  rememberService(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`svc:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`svcDb:${dbId}`, appId);
+  }
+
+  rememberAppointment(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`apt:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`aptDb:${dbId}`, appId);
+  }
+
+  rememberTreatment(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`trt:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`trtDb:${dbId}`, appId);
+  }
+
+  rememberCheckout(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`chk:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`chkDb:${dbId}`, appId);
+  }
+
+  rememberTransaction(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`tx:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`txDb:${dbId}`, appId);
+  }
+
+  toCheckoutAppId(checkoutDbId: string): string {
+    return this.cached(`chkDb:${checkoutDbId}`, () => {
+      throw new UnmappedIdentityError("checkout_draft", undefined, checkoutDbId);
+    });
+  }
+
+  toTransactionAppId(transactionDbId: string): string {
+    return this.cached(`txDb:${transactionDbId}`, () => {
+      throw new UnmappedIdentityError("transaction", undefined, transactionDbId);
+    });
+  }
+
+  toTreatmentAppId(treatmentDbId: string): string {
+    return this.cached(`trtDb:${treatmentDbId}`, () => {
+      throw new UnmappedIdentityError("treatment", undefined, treatmentDbId);
     });
   }
 

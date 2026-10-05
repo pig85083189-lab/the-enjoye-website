@@ -7,6 +7,7 @@ import type { StaffAuthUser } from "@/lib/staff-auth/session";
 import type { StaffMembership } from "@/types/saas";
 import {
   bindStaffAuthMembershipAuthUser,
+  deleteStaffAuthMembership,
   fetchStaffAuthMembershipsByAuthUserId,
   fetchStaffAuthMembershipsByOrganizationId,
   upsertStaffAuthMembership,
@@ -100,6 +101,14 @@ export async function persistServerStaffMembership(
   return upsertStaffAuthMembership(admin, membership);
 }
 
+export async function deleteServerStaffMembership(membershipId: string): Promise<void> {
+  const admin = createServiceRoleClient();
+  if (!admin) {
+    throw new Error("登入對應尚未設定，請聯絡系統管理員。");
+  }
+  await deleteStaffAuthMembership(admin, membershipId);
+}
+
 export async function bindServerStaffMembershipAuthUser(
   membershipId: string,
   authUserId: string,
@@ -122,6 +131,21 @@ async function ensureOwnerBootstrapRow(authUserId: string): Promise<void> {
   if (!bootstrap || bootstrap !== authUserId) return;
   const admin = createServiceRoleClient();
   if (!admin) return;
+  const existing = await fetchStaffAuthMembershipsByOrganizationId(
+    admin,
+    ORG_ENJOYE_ID,
+  );
+  const owner = existing.find((item) => item.id === MEMBERSHIP_ENJOYE_OWNER_ID);
+  if (owner) {
+    if (!owner.authUserId) {
+      await bindStaffAuthMembershipAuthUser(
+        admin,
+        MEMBERSHIP_ENJOYE_OWNER_ID,
+        bootstrap,
+      );
+    }
+    return;
+  }
   const seeded = SEED_MEMBERSHIPS.find((item) => item.id === MEMBERSHIP_ENJOYE_OWNER_ID);
   if (!seeded) return;
   await upsertStaffAuthMembership(admin, {

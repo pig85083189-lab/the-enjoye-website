@@ -19,12 +19,14 @@ import { PhotosStep } from "@/features/treatments/steps/PhotosStep";
 import { ProfessionalNoteStep } from "@/features/treatments/steps/ProfessionalNoteStep";
 import { useTreatmentDraft } from "@/hooks/useTreatmentDraft";
 import { getTreatmentTemplateForService } from "@/data/treatment-templates";
+import { resolveTreatmentTemplateLabel } from "@/lib/treatments/treatment-display";
+import type { CanonicalAppointmentStatus } from "@/lib/appointments/domain";
 import { setAppointmentStatus } from "@/lib/appointment-store";
 import {
   getPreviousTreatmentHints,
   mapFollowUpToSuggestedAreas,
 } from "@/lib/treatment-hints";
-import { saveCompletedTreatment, stepIndex } from "@/lib/treatment-draft";
+import { stepIndex } from "@/lib/treatment-draft";
 import type { Appointment, Customer } from "@/types";
 import {
   TREATMENT_STEPS,
@@ -36,11 +38,22 @@ import { cn } from "@/lib/utils";
 interface TreatmentWorkspaceProps {
   customer: Customer;
   appointment: Appointment;
+  canonicalStatus?: CanonicalAppointmentStatus;
+  treatmentRemoteReadPilot?: boolean;
+  treatmentRemoteWritePilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
 }
 
 const STEP_ORDER = TREATMENT_STEPS.map((step) => step.id);
 
-export function TreatmentWorkspace({ customer, appointment }: TreatmentWorkspaceProps) {
+export function TreatmentWorkspace({
+  customer,
+  appointment,
+  canonicalStatus,
+  treatmentRemoteReadPilot = false,
+  treatmentRemoteWritePilot = false,
+  commerceRemoteReadPilot = false,
+}: TreatmentWorkspaceProps) {
   const router = useRouter();
   const { setBlocked } = useLeaveGuard();
   const [finished, setFinished] = useState(false);
@@ -69,6 +82,9 @@ export function TreatmentWorkspace({ customer, appointment }: TreatmentWorkspace
     savedAt,
     hasContent,
     hydrated,
+    saving,
+    saveError,
+    completeTreatment,
   } = useTreatmentDraft({
     organizationId: appointment.organizationId,
     locationId: appointment.locationId,
@@ -76,13 +92,22 @@ export function TreatmentWorkspace({ customer, appointment }: TreatmentWorkspace
     customerId: customer.id,
     staffId: appointment.staffId,
     serviceId: appointment.serviceId,
+    remoteReadPilot: treatmentRemoteReadPilot,
+    remoteWritePilot: treatmentRemoteWritePilot,
+    appointmentStatus: canonicalStatus,
   });
 
   useEffect(() => {
+    if (treatmentRemoteReadPilot) return;
     if (appointment.status !== "completed" && appointment.status !== "in_progress") {
       setAppointmentStatus(appointment.id, "in_progress", appointment.organizationId);
     }
-  }, [appointment.id, appointment.organizationId, appointment.status]);
+  }, [
+    appointment.id,
+    appointment.organizationId,
+    appointment.status,
+    treatmentRemoteReadPilot,
+  ]);
 
   useEffect(() => {
     setBlocked(hasContent && !finished);
@@ -208,7 +233,7 @@ export function TreatmentWorkspace({ customer, appointment }: TreatmentWorkspace
     );
   }
 
-  function handleComplete() {
+  async function handleComplete() {
     if (draft.clientFeeling === "不舒服" && !draft.discomfortNote.trim()) {
       setCompleteError("請記錄客人不舒服的部位或情況後再完成服務。");
       return;
@@ -228,15 +253,25 @@ export function TreatmentWorkspace({ customer, appointment }: TreatmentWorkspace
       });
     });
 
-    saveCompletedTreatment({
+    const next = {
       ...draft,
-      status: "completed",
-      currentStep: "complete",
+      status: "completed" as const,
+      currentStep: "complete" as const,
       photos: mergedPhotos,
-    });
-    setAppointmentStatus(appointment.id, "completed", appointment.organizationId);
-    setFinished(true);
-    setBlocked(false);
+    };
+
+    try {
+      await completeTreatment(next);
+      if (!treatmentRemoteReadPilot) {
+        setAppointmentStatus(appointment.id, "completed", appointment.organizationId);
+      }
+      setFinished(true);
+      setBlocked(false);
+    } catch (error: unknown) {
+      setCompleteError(
+        error instanceof Error ? error.message : "完成療程失敗，請稍後再試。",
+      );
+    }
   }
 
   let stepContent = null;
@@ -257,6 +292,7 @@ export function TreatmentWorkspace({ customer, appointment }: TreatmentWorkspace
         template={template}
         completed
         validationError=""
+        commerceRemoteRead={commerceRemoteReadPilot}
         onBack={goBack}
         onComplete={handleComplete}
       />
@@ -377,6 +413,7 @@ export function TreatmentWorkspace({ customer, appointment }: TreatmentWorkspace
             template={template}
             completed={false}
             validationError={completeError}
+            commerceRemoteRead={commerceRemoteReadPilot}
             onBack={goBack}
             onComplete={handleComplete}
           />
@@ -404,12 +441,21 @@ export function TreatmentWorkspace({ customer, appointment }: TreatmentWorkspace
           ← 返回今日工作台
         </button>
         <div className="flex flex-wrap items-center gap-3">
-          {template.isGeneric ? (
-            <span className="rounded-full bg-[#F3EEEC] px-2.5 py-1 text-xs text-secondary-text">
-              目前使用通用療程模板
-            </span>
+          <span className="rounded-full bg-[#F3EEEC] px-2.5 py-1 text-xs text-secondary-text">
+            {resolveTreatmentTemplateLabel({
+              serviceId: appointment.serviceId,
+              snapshotName: appointment.serviceName,
+            })}
+          </span>
+          {!finished ? (
+            <div className="space-y-1 text-right">
+              <AutoSaveIndicator
+                savedAt={savedAt}
+                saving={saving}
+                error={Boolean(saveError)}
+              />
+            </div>
           ) : null}
-          {!finished ? <AutoSaveIndicator savedAt={savedAt} /> : null}
         </div>
       </div>
 

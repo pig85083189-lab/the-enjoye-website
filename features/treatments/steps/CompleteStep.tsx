@@ -18,6 +18,7 @@ import {
   getCommerceRevision,
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
+import { buildCommerceCheckoutHref } from "@/lib/commerce/commerce-remote-identity";
 import {
   applyPostTreatmentCheckoutIntent,
   loadEligiblePackagesForTreatment,
@@ -38,6 +39,7 @@ interface CompleteStepProps {
   template: TreatmentTemplate;
   completed: boolean;
   validationError: string;
+  commerceRemoteRead?: boolean;
   onBack: () => void;
   onComplete: () => void;
 }
@@ -143,6 +145,7 @@ export function CompleteStep({
   template,
   completed,
   validationError,
+  commerceRemoteRead = false,
   onBack,
   onComplete,
 }: CompleteStepProps) {
@@ -189,6 +192,7 @@ export function CompleteStep({
 
   const eligible = useMemo(() => {
     void commerceRev;
+    if (commerceRemoteRead) return { status: "ok" as const, packages: [] };
     if (!isClient || !completed) return { status: "loading" as const };
     return loadEligiblePackagesForTreatment({
       organizationId: appointment.organizationId,
@@ -199,6 +203,7 @@ export function CompleteStep({
     appointment.customerId,
     appointment.organizationId,
     appointment.serviceId,
+    commerceRemoteRead,
     commerceRev,
     completed,
     isClient,
@@ -218,6 +223,15 @@ export function CompleteStep({
 
   function goCheckout(customerPackageId?: string | null) {
     setActionError("");
+    if (commerceRemoteRead) {
+      router.push(
+        buildCommerceCheckoutHref({
+          appointmentId: appointment.id,
+          treatmentId: draft.id,
+        }),
+      );
+      return;
+    }
     try {
       const result = applyPostTreatmentCheckoutIntent({
         organizationId: appointment.organizationId,
@@ -334,6 +348,11 @@ export function CompleteStep({
 
           {summaryGrid}
 
+          {commerceRemoteRead ? (
+            <p className="mt-8 text-left text-[14px] leading-relaxed text-secondary-text">
+              療程已完成，可前往待結帳。此階段不會建立本地結帳草稿，也不會收款。
+            </p>
+          ) : (
           <section className="mt-8 min-w-0 text-left" data-eligible-packages>
             <h2 className="text-[15px] font-semibold text-text">付款方式</h2>
             {eligible.status === "loading" ? (
@@ -373,6 +392,7 @@ export function CompleteStep({
               </div>
             ) : null}
           </section>
+          )}
 
           {actionError ? (
             <p className="mt-4 rounded-2xl bg-[#F7E8E8] px-4 py-3 text-sm text-[#B15B5B]" role="alert">

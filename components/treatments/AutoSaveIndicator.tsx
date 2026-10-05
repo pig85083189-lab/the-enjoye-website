@@ -1,27 +1,43 @@
 "use client";
 
-import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AutoSaveIndicatorProps {
   savedAt: Date | null;
   saving?: boolean;
+  error?: boolean;
 }
 
-export function AutoSaveIndicator({ savedAt, saving }: AutoSaveIndicatorProps) {
-  if (!savedAt && !saving) return null;
+export function AutoSaveIndicator({ savedAt, saving, error }: AutoSaveIndicatorProps) {
+  if (error) {
+    return (
+      <p className="text-xs text-[#C56B70]" role="alert">
+        儲存失敗，請重試
+      </p>
+    );
+  }
 
-  const time = savedAt
-    ? savedAt.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })
-    : null;
+  if (saving) {
+    return (
+      <p className="text-xs text-secondary-text" aria-live="polite">
+        儲存中…
+      </p>
+    );
+  }
+
+  if (!savedAt) return null;
+
+  const time = savedAt.toLocaleTimeString("zh-TW", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   return (
     <p
       className="inline-flex items-center gap-1.5 text-xs text-secondary-text"
       aria-live="polite"
     >
-      <Check className="h-3.5 w-3.5 text-success" aria-hidden />
-      {saving ? "儲存中…" : `已自動儲存${time ? ` ${time}` : ""}`}
+      ✓ 已自動儲存 {time}
     </p>
   );
 }

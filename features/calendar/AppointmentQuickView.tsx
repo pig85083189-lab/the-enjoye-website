@@ -23,16 +23,24 @@ import {
   type CanonicalAppointmentStatus,
   type ScheduleAppointment,
 } from "@/lib/appointments/domain";
+import { resolveCalendarQuickViewActions } from "@/lib/appointments/appointment-write-cancel-surface";
+import {
+  AppointmentCancelSubmission,
+} from "@/lib/appointments/appointment-write-cancel-submit";
+import { appointmentCancelUserMessage } from "@/lib/appointments/appointment-write-cancel-ui-error";
 import {
   getCommerceRevision,
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
+import { formatCalendarAppointmentDisplay } from "@/lib/calendar/calendar-appointment-time";
 import { getCustomerById } from "@/data/mock-customers";
 import {
   collectAttentionNotes,
   lastServiceSummary,
 } from "@/lib/today/briefing";
 import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
+import { useTreatmentRemoteByAppointment } from "@/features/treatments/use-treatment-remote-read";
+import type { TreatmentDraft } from "@/types/treatment";
 import {
   getTreatmentDraftRevision,
   subscribeTreatmentDrafts,
@@ -53,6 +61,12 @@ const membershipTone = {
 interface AppointmentQuickViewProps {
   item: ScheduleAppointment;
   locationName?: string;
+  readOnly?: boolean;
+  allowRemoteCancel?: boolean;
+  useTaipeiTime?: boolean;
+  treatmentRemoteReadPilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
+  allowCheckout?: boolean;
   onClose: () => void;
   onEdit: () => void;
   onRequestCancel: () => void;
@@ -62,6 +76,12 @@ interface AppointmentQuickViewProps {
 export function AppointmentQuickView({
   item,
   locationName,
+  readOnly = false,
+  allowRemoteCancel = false,
+  useTaipeiTime = false,
+  treatmentRemoteReadPilot = false,
+  commerceRemoteReadPilot = false,
+  allowCheckout,
   onClose,
   onEdit,
   onRequestCancel,
@@ -76,28 +96,47 @@ export function AppointmentQuickView({
 
   const customer = getCustomerById(item.customerId, item.organizationId);
   const legacy = scheduleAppointmentToLegacyView(item);
-  const primary = resolveTodayPrimaryAction(legacy, item.status);
+  const remoteTreatmentState = useTreatmentRemoteByAppointment(
+    item.organizationId,
+    item.id,
+    treatmentRemoteReadPilot,
+  );
+  const remoteTreatment: TreatmentDraft | null =
+    remoteTreatmentState.status === "data" ? remoteTreatmentState.value : null;
+  const primary = resolveTodayPrimaryAction(legacy, item.status, {
+    treatmentRemoteRead: treatmentRemoteReadPilot,
+    remoteTreatment,
+    commerceRemoteRead: commerceRemoteReadPilot,
+    allowCheckout,
+  });
+  const showRemoteCheckout = primary.kind === "checkout";
   const attention = collectAttentionNotes(
     item.organizationId,
     customer,
     legacy,
   );
   const lastService = lastServiceSummary(item.organizationId, customer);
-  const canEdit = item.status === "BOOKED" || item.status === "CONFIRMED";
-  const canCancel =
-    item.status === "BOOKED" ||
-    item.status === "CONFIRMED" ||
-    item.status === "ARRIVED";
+  const actions = resolveCalendarQuickViewActions({
+    readOnly,
+    allowRemoteCancel,
+    status: item.status,
+  });
+  const canEdit = actions.canEdit;
+  const canCancel = actions.canCancel;
   const membership = item.membership ?? customer?.membership ?? "regular";
-  const start = new Date(item.startAt);
-  const end = new Date(item.endAt);
+  const display = formatCalendarAppointmentDisplay(
+    item.startAt,
+    item.endAt,
+    useTaipeiTime,
+  );
+  const startHm = display.time.split("–")[0] ?? display.time;
   const [tab, setTab] = useState<"info" | "customer">("info");
 
   const infoRows = [
     {
       icon: Clock3,
       label: "時間",
-      value: `${formatYmd(start).replace(/-/g, "/")} ${formatHm(start)}–${formatHm(end)}`,
+      value: `${display.date} ${display.time}`,
     },
     {
       icon: Sparkles,
@@ -138,7 +177,7 @@ export function AppointmentQuickView({
       >
         <div className="flex shrink-0 items-center justify-between gap-3 px-5 pt-3.5 pb-1.5">
           <p className="text-[15px] font-semibold text-text">
-            {formatHm(start)}的預約
+            {startHm}的預約
           </p>
           <button
             type="button"
@@ -290,7 +329,29 @@ export function AppointmentQuickView({
         </div>
 
         <div className="shrink-0 space-y-1.5 px-5 pt-1.5 pb-5">
-          {primary.kind !== "none" ? (
+          {readOnly && allowRemoteCancel ? (
+            <p className="rounded-2xl bg-[#FAF7F5] px-3.5 py-2.5 text-center text-[12px] text-secondary-text">
+              遠端預約目前僅能取消
+            </p>
+          ) : null}
+          {readOnly && !allowRemoteCancel ? (
+            <p className="rounded-2xl bg-[#FAF7F5] px-3.5 py-2.5 text-center text-[12px] text-secondary-text">
+              行事曆遠端讀取試點為唯讀
+            </p>
+          ) : null}
+          {showRemoteCheckout ? (
+            <Link
+              href={primary.href}
+              className={cn(
+                "inline-flex h-[50px] min-h-[50px] w-full items-center justify-center gap-1.5 rounded-full text-[15px] font-medium text-white transition-colors",
+                CALENDAR_ROSE_FILL,
+                CALENDAR_ROSE_HOVER,
+              )}
+            >
+              <Play className="h-3.5 w-3.5 fill-current" aria-hidden />
+              {primary.label}
+            </Link>
+          ) : actions.canTransition && primary.kind !== "none" ? (
             <Link
               href={primary.href}
               className={cn(
@@ -350,7 +411,7 @@ export function AppointmentQuickView({
 interface CancelConfirmProps {
   item: ScheduleAppointment;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 }
 
 export function CancelAppointmentDialog({
@@ -359,6 +420,8 @@ export function CancelAppointmentDialog({
   onConfirm,
 }: CancelConfirmProps) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submission] = useState(() => new AppointmentCancelSubmission<void>());
   return (
     <div
       className="fixed inset-0 z-[60] flex items-end justify-center bg-text/35 sm:items-center"
@@ -383,16 +446,38 @@ export function CancelAppointmentDialog({
           <br />
           {item.serviceName}
         </p>
+        {error ? (
+          <p className="mt-3 text-sm text-[#B15B5B]" role="alert">
+            {error}
+          </p>
+        ) : null}
         <div className="mt-5 flex gap-2">
-          <Button variant="outline" className="min-h-11 flex-1" onClick={onClose}>
+          <Button
+            variant="outline"
+            className="min-h-11 flex-1"
+            disabled={busy}
+            onClick={onClose}
+          >
             返回
           </Button>
           <Button
             className="min-h-11 flex-1 bg-[#B15B5B] hover:bg-[#9a4d4d]"
-            disabled={busy}
+            disabled={busy || submission.disabled}
             onClick={() => {
-              setBusy(true);
-              onConfirm();
+              void (async () => {
+                setError(null);
+                setBusy(true);
+                const outcome = await submission.submit(async () => {
+                  await onConfirm();
+                });
+                if (outcome === "ignored") {
+                  return;
+                }
+                if (outcome === "error") {
+                  setBusy(false);
+                  setError(appointmentCancelUserMessage(submission.error));
+                }
+              })();
             }}
           >
             確認取消

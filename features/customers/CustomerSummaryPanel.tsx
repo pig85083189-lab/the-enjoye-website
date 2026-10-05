@@ -19,6 +19,7 @@ interface CustomerSummaryPanelProps {
   onStartTreatment: () => void;
   onAddFollowUp: () => void;
   onOpenNotes: () => void;
+  readOnly?: boolean;
 }
 
 export function CustomerSummaryPanel({
@@ -27,6 +28,7 @@ export function CustomerSummaryPanel({
   onStartTreatment,
   onAddFollowUp,
   onOpenNotes,
+  readOnly = false,
 }: CustomerSummaryPanelProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const next = snapshot.nextAppointment;
@@ -93,15 +95,31 @@ export function CustomerSummaryPanel({
 
       <div className="space-y-2">
         <p className="text-xs font-medium tracking-wide text-secondary-text">快速操作</p>
-        <Button fullWidth className="min-h-11" onClick={onStartTreatment}>
+        <Button
+          fullWidth
+          className="min-h-11"
+          onClick={onStartTreatment}
+        >
           開始療程紀錄
         </Button>
-        <Link href={snapshot.createHref} className="block">
-          <Button fullWidth variant="secondary" className="min-h-11">
+        {readOnly ? (
+          <Button fullWidth variant="secondary" className="min-h-11" disabled>
             新增預約
           </Button>
-        </Link>
-        <Button fullWidth variant="outline" className="min-h-11" onClick={onAddFollowUp}>
+        ) : (
+          <Link href={snapshot.createHref} className="block">
+            <Button fullWidth variant="secondary" className="min-h-11">
+              新增預約
+            </Button>
+          </Link>
+        )}
+        <Button
+          fullWidth
+          variant="outline"
+          className="min-h-11"
+          disabled={readOnly}
+          onClick={onAddFollowUp}
+        >
           新增追蹤
         </Button>
         <div className="relative">
@@ -121,22 +139,26 @@ export function CustomerSummaryPanel({
               role="menu"
               className="absolute inset-x-0 z-20 mt-1 rounded-2xl border border-border bg-surface p-1 shadow-[0_8px_24px_rgba(48,43,43,0.08)]"
             >
-              <Link
-                href={customerEditHref(customer.id)}
-                role="menuitem"
-                className="flex min-h-11 items-center rounded-xl px-3 text-sm text-text hover:bg-[#FBF4F3]"
-                onClick={() => setMoreOpen(false)}
-              >
-                編輯資料
-              </Link>
-              <Link
-                href={customerConsultationNewHref(customer.id)}
-                role="menuitem"
-                className="flex min-h-11 items-center rounded-xl px-3 text-sm text-text hover:bg-[#FBF4F3]"
-                onClick={() => setMoreOpen(false)}
-              >
-                新增諮詢更新
-              </Link>
+              {readOnly ? null : (
+                <Link
+                  href={customerEditHref(customer.id)}
+                  role="menuitem"
+                  className="flex min-h-11 items-center rounded-xl px-3 text-sm text-text hover:bg-[#FBF4F3]"
+                  onClick={() => setMoreOpen(false)}
+                >
+                  編輯資料
+                </Link>
+              )}
+              {readOnly ? null : (
+                <Link
+                  href={customerConsultationNewHref(customer.id)}
+                  role="menuitem"
+                  className="flex min-h-11 items-center rounded-xl px-3 text-sm text-text hover:bg-[#FBF4F3]"
+                  onClick={() => setMoreOpen(false)}
+                >
+                  新增諮詢更新
+                </Link>
+              )}
               <button
                 type="button"
                 role="menuitem"

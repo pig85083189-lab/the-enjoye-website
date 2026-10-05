@@ -29,7 +29,7 @@
 --   '00000000-0000-4000-8000-000000000000', -- replace with auth.users.id
 --   'org-the-enjoye',
 --   'OWNER',
---   '怡蓁',
+--   '測試帳號',
 --   null, -- optional login email; never a password
 --   true
 -- )

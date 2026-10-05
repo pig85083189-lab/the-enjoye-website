@@ -1179,17 +1179,17 @@ drop policy if exists audit_logs_insert_org on public.audit_logs;
 drop policy if exists audit_logs_select_managers on public.audit_logs;
 create policy audit_logs_insert_org on public.audit_logs for insert to authenticated
   with check (
-    public.user_has_org_membership(organization_id)
+    public.user_has_org_membership(audit_logs.organization_id)
     and (
-      actor_id is null
+      audit_logs.actor_id is null
       or exists (
         select 1
         from public.staff_auth_memberships m
         join public.organizations o on o.app_id = m.organization_id
-        where o.id = organization_id
+        where o.id = audit_logs.organization_id
           and m.auth_user_id = auth.uid()
           and m.is_active = true
-          and m.user_id = actor_id
+          and m.user_id = audit_logs.actor_id
       )
     )
   );

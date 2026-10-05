@@ -380,7 +380,10 @@ export function matchesTransactionPaymentFilter(
 export function buildTransactionWorkspaceRows(input: {
   organizationId: string;
   transactions: Transaction[];
-  customers: Customer[];
+  customers: Array<
+    Pick<Customer, "id" | "name" | "organizationId"> &
+      Partial<Pick<Customer, "phone" | "membership">>
+  >;
   locations?: TransactionLocationHint[];
   staff?: TransactionStaffHint[];
   appointments?: TransactionAppointmentHint[];
@@ -419,10 +422,13 @@ export function buildTransactionWorkspaceRows(input: {
         locationId: transaction.locationId,
         locationName: locationsById.get(transaction.locationId) ?? "",
         customerId: transaction.customerId,
-        customerName: name,
+        customerName: name.startsWith("cust-") ? "客戶" : name,
         customerPhone: customer?.phone ?? "",
-        customerInitials: initialsFrom(name),
-        membership: customer ? membershipBadge(customer) : null,
+        customerInitials: initialsFrom(name.startsWith("cust-") ? "客戶" : name),
+        membership:
+          customer && customer.membership
+            ? membershipBadge(customer as Customer)
+            : null,
         status: {
           kind: transaction.status,
           title: TRANSACTION_STATUS_LABEL[transaction.status],

@@ -16,6 +16,7 @@ export interface StaffAuthMembershipStore {
   upsert(membership: StaffMembership): StaffMembership;
   bindAuthUser(membershipId: string, authUserId: string): StaffMembership;
   deactivate(membershipId: string): StaffMembership;
+  delete(membershipId: string): void;
   listByAuthUserId(authUserId: string): StaffMembership[];
   listByOrganizationId(organizationId: string): StaffMembership[];
   getById(membershipId: string): StaffMembership | undefined;
@@ -88,6 +89,12 @@ export function createMemoryStaffAuthMembershipStore(
       const current = byId.get(membershipId);
       if (!current) throw new Error("Staff membership not found");
       return write({ ...current, isActive: false });
+    },
+    delete(membershipId) {
+      if (membershipId === "mem-enjoye-owner") {
+        throw new StaffAuthMembershipConflictError("不得刪除現有店主");
+      }
+      byId.delete(membershipId);
     },
     listByAuthUserId(authUserId) {
       if (!authUserId) return [];

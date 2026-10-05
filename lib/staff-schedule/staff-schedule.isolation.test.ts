@@ -12,8 +12,12 @@ import {
 } from "@/lib/appointments/store";
 import { findAvailableStaff, getStaffAvailability } from "@/lib/staff-schedule/availability";
 import {
+  isLocationDefaultWorkingHours,
+} from "@/lib/staff-schedule/location-default-hours";
+import {
   createBreak,
   createTimeOff,
+  getWorkingHoursForDay,
   listBookableStaff,
   listWorkingHours,
   upsertWorkingHours,
@@ -409,5 +413,144 @@ describe("availability engine", () => {
     expect(
       listAppointments({ organizationId: ORG_ENJOYE_ID }).some((a) => a.id === created.id),
     ).toBe(true);
+  });
+});
+
+describe("Phase 1C-6D.2E location default working-hours fallback", () => {
+  const remoteStaffId = "staff-002";
+  const sundayStart = new Date(2026, 9, 4, 14, 0).toISOString();
+  const sundayEnd = new Date(2026, 9, 4, 15, 30).toISOString();
+
+  it("does not persist hours and treats missing personal schedule as location defaults", () => {
+    expect(
+      listWorkingHours(ORG_ENJOYE_ID, {
+        locationId: LOC_ENJOYE_PRIMARY_ID,
+        staffId: remoteStaffId,
+      }),
+    ).toEqual([]);
+    const hours = getWorkingHoursForDay(
+      ORG_ENJOYE_ID,
+      LOC_ENJOYE_PRIMARY_ID,
+      remoteStaffId,
+      0,
+    );
+    expect(isLocationDefaultWorkingHours(hours)).toBe(true);
+    expect(hours).toMatchObject({
+      staffId: remoteStaffId,
+      dayOfWeek: 0,
+      startTime: "09:00",
+      endTime: "21:00",
+      isWorking: true,
+    });
+    expect(localStorage.getItem(getStaffWorkingHoursKey(ORG_ENJOYE_ID))).toBeNull();
+    expect(
+      listWorkingHours(ORG_ENJOYE_ID, {
+        locationId: LOC_ENJOYE_PRIMARY_ID,
+        staffId: remoteStaffId,
+      }),
+    ).toEqual([]);
+    expect(
+      getStaffAvailability({
+        organizationId: ORG_ENJOYE_ID,
+        locationId: LOC_ENJOYE_PRIMARY_ID,
+        staffId: remoteStaffId,
+        startAt: sundayStart,
+        endAt: sundayEnd,
+        appointments: [],
+      }).available,
+    ).toBe(true);
+  });
+
+  it("prefers an explicit personal schedule over the location default", () => {
+    upsertWorkingHours(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: remoteStaffId,
+      dayOfWeek: 0,
+      startTime: "11:00",
+      endTime: "16:00",
+      isWorking: true,
+    });
+    const hours = getWorkingHoursForDay(
+      ORG_ENJOYE_ID,
+      LOC_ENJOYE_PRIMARY_ID,
+      remoteStaffId,
+      0,
+    );
+    expect(isLocationDefaultWorkingHours(hours)).toBe(false);
+    expect(hours).toMatchObject({
+      startTime: "11:00",
+      endTime: "16:00",
+      isWorking: true,
+    });
+    expect(
+      getStaffAvailability({
+        organizationId: ORG_ENJOYE_ID,
+        locationId: LOC_ENJOYE_PRIMARY_ID,
+        staffId: remoteStaffId,
+        startAt: sundayStart,
+        endAt: sundayEnd,
+        appointments: [],
+      }).available,
+    ).toBe(true);
+    expect(
+      getStaffAvailability({
+        organizationId: ORG_ENJOYE_ID,
+        locationId: LOC_ENJOYE_PRIMARY_ID,
+        staffId: remoteStaffId,
+        startAt: new Date(2026, 9, 4, 16, 0).toISOString(),
+        endAt: new Date(2026, 9, 4, 17, 0).toISOString(),
+        appointments: [],
+      }).reasons,
+    ).toContain("OUTSIDE_WORKING_HOURS");
+  });
+
+  it("keeps explicit isWorking:false as unavailable and does not invent hours", () => {
+    upsertWorkingHours(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: remoteStaffId,
+      dayOfWeek: 0,
+      startTime: "09:00",
+      endTime: "21:00",
+      isWorking: false,
+    });
+    const hours = getWorkingHoursForDay(
+      ORG_ENJOYE_ID,
+      LOC_ENJOYE_PRIMARY_ID,
+      remoteStaffId,
+      0,
+    );
+    expect(hours.isWorking).toBe(false);
+    expect(isLocationDefaultWorkingHours(hours)).toBe(false);
+    expect(
+      getStaffAvailability({
+        organizationId: ORG_ENJOYE_ID,
+        locationId: LOC_ENJOYE_PRIMARY_ID,
+        staffId: remoteStaffId,
+        startAt: sundayStart,
+        endAt: sundayEnd,
+        appointments: [],
+      }).reasons,
+    ).toContain("OUTSIDE_WORKING_HOURS");
+  });
+
+  it("locks approved time off even when personal hours are missing", () => {
+    createTimeOff(ORG_ENJOYE_ID, {
+      locationId: LOC_ENJOYE_PRIMARY_ID,
+      staffId: remoteStaffId,
+      startAt: new Date(2026, 9, 4, 0, 0).toISOString(),
+      endAt: new Date(2026, 9, 5, 0, 0).toISOString(),
+      reason: "休假",
+      status: "APPROVED",
+    });
+    expect(
+      getStaffAvailability({
+        organizationId: ORG_ENJOYE_ID,
+        locationId: LOC_ENJOYE_PRIMARY_ID,
+        staffId: remoteStaffId,
+        startAt: sundayStart,
+        endAt: sundayEnd,
+        appointments: [],
+      }).reasons,
+    ).toContain("TIME_OFF");
   });
 });

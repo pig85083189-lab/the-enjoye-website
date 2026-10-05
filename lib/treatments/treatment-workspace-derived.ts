@@ -14,6 +14,11 @@ import {
 } from "@/lib/customers/crm-derived";
 import { getStepCompletionState } from "@/lib/treatment-draft";
 import { formatReminderTag } from "@/lib/utils";
+import {
+  resolveCanonicalCustomerDisplayName,
+  resolveCanonicalServiceDisplayName,
+  resolveCanonicalStaffDisplayName,
+} from "@/lib/treatments/treatment-display";
 import type { Customer } from "@/types";
 import type { TreatmentDraft, TreatmentStepId } from "@/types/treatment";
 
@@ -387,11 +392,16 @@ function toItem(input: {
   const staffId = draft?.staffId ?? appointment?.staffId ?? "";
   const customer = lookupCustomer(input.customers, customerId);
   const service = lookupService(input.catalog, serviceId);
-  const staffName =
-    appointment?.staffName ||
-    input.staffNames[staffId] ||
-    staffId;
-  const customerName = customer?.name || appointment?.customerName || customerId;
+  const staffName = resolveCanonicalStaffDisplayName({
+    staffId,
+    rosterName: input.staffNames[staffId],
+    snapshotName: appointment?.staffName,
+  });
+  const customerName = resolveCanonicalCustomerDisplayName({
+    customerId,
+    catalogName: customer?.name,
+    snapshotName: appointment?.customerName,
+  });
   const record = deriveRecordProgress(draft);
   const startAt = appointment?.startAt ?? draft?.createdAt ?? null;
   const endAt = appointment?.endAt ?? draft?.updatedAt ?? null;
@@ -428,7 +438,11 @@ function toItem(input: {
         : appointment?.membership === "new"
           ? { id: "new", label: "新客" }
           : null,
-    serviceName: service?.name || appointment?.serviceName || serviceId,
+    serviceName: resolveCanonicalServiceDisplayName({
+      serviceId,
+      catalogName: service?.name,
+      snapshotName: appointment?.serviceName,
+    }),
     serviceCategory: service?.category ?? "",
     serviceType: service?.serviceType,
     durationMinutes:
@@ -635,7 +649,10 @@ export function deriveLastCompletedTreatment(input: {
   const note = latest.professionalNote.trim() || latest.followUp.note.trim() || null;
   return {
     dateLabel: when ? formatSlashDate(when) : latest.updatedAt,
-    serviceName: service?.name || latest.serviceId,
+    serviceName: resolveCanonicalServiceDisplayName({
+      serviceId: latest.serviceId,
+      catalogName: service?.name,
+    }),
     durationLabel: service?.durationMinutes
       ? `${service.durationMinutes} 分鐘`
       : null,

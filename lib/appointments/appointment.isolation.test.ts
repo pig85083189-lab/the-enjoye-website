@@ -9,6 +9,8 @@ import {
   assertTransition,
   canTransition,
   hasAppointmentConflict,
+  isAppointmentCancellable,
+  occupiesCalendarSlot,
   normalizeAppointmentStatus,
   rangesOverlap,
   type ScheduleAppointment,
@@ -59,6 +61,18 @@ describe("status normalization and transitions", () => {
     expect(canTransition("CANCELLED", "IN_SERVICE")).toBe(false);
     expect(canTransition("NO_SHOW", "COMPLETED")).toBe(false);
     expect(() => assertTransition("COMPLETED", "BOOKED")).toThrow(/Invalid/);
+    expect(isAppointmentCancellable("BOOKED")).toBe(true);
+    expect(isAppointmentCancellable("CONFIRMED")).toBe(true);
+    expect(isAppointmentCancellable("ARRIVED")).toBe(true);
+    expect(isAppointmentCancellable("IN_SERVICE")).toBe(false);
+    expect(isAppointmentCancellable("COMPLETED")).toBe(false);
+    expect(isAppointmentCancellable("CANCELLED")).toBe(false);
+    expect(isAppointmentCancellable("NO_SHOW")).toBe(false);
+    expect(occupiesCalendarSlot("BOOKED")).toBe(true);
+    expect(occupiesCalendarSlot("CONFIRMED")).toBe(true);
+    expect(occupiesCalendarSlot("ARRIVED")).toBe(true);
+    expect(occupiesCalendarSlot("CANCELLED")).toBe(false);
+    expect(occupiesCalendarSlot("NO_SHOW")).toBe(false);
   });
 });
 

@@ -51,9 +51,15 @@ import {
   getCustomerStoredValueBalance,
   listStoredValueLedger,
 } from "@/lib/stored-value/store";
+import type { ScheduleAppointment } from "@/lib/appointments/domain";
 import { getMembership } from "@/lib/tenant/organization-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
+import {
+  pickRemoteAppointmentForCustomer,
+  treatmentWorkspaceEntryHref,
+} from "@/lib/treatments/treatment-identity";
 import type { Customer } from "@/types";
+import type { TreatmentDraft } from "@/types/treatment";
 
 export type Customer360Snapshot = {
   treatmentHref: string;
@@ -73,7 +79,13 @@ export type Customer360Snapshot = {
   recentTx: RecentTransactionView[];
 };
 
-export function useCustomer360Snapshot(customer: Customer): Customer360Snapshot {
+export function useCustomer360Snapshot(
+  customer: Customer,
+  options?: {
+    remoteAppointments?: ScheduleAppointment[] | null;
+    remoteTreatments?: TreatmentDraft[] | null;
+  },
+): Customer360Snapshot {
   const { organization } = useOrganization();
   const appointmentRev = useSyncExternalStore(
     subscribeAppointments,
@@ -91,16 +103,22 @@ export function useCustomer360Snapshot(customer: Customer): Customer360Snapshot 
     () => "",
   );
 
+  const remoteAppointments = options?.remoteAppointments;
+  const remoteTreatments = options?.remoteTreatments;
+
   return useMemo(() => {
     void appointmentRev;
     void commerceRev;
     void followUpRev;
     const organizationId = organization.id;
     const customerId = customer.id;
-    const treatments = localTreatmentRepository.listByCustomer({
-      organizationId,
-      customerId,
-    });
+    const treatments =
+      remoteTreatments != null
+        ? remoteTreatments
+        : localTreatmentRepository.listByCustomer({
+            organizationId,
+            customerId,
+          });
     const appointments = listAppointments({ organizationId, customerId });
     const followUps = listFollowUpTasksForCustomer(organizationId, customerId);
     const consultations = localConsultationRepository.listByCustomer({
@@ -163,10 +181,14 @@ export function useCustomer360Snapshot(customer: Customer): Customer360Snapshot 
       startAt: item.startAt,
     }));
     const now = new Date();
-    const apt = findAppointmentForCustomer(customerId, organizationId);
-    const treatmentHref = apt
-      ? `/staff/treatments/new?customer=${customerId}&appointment=${apt.id}`
-      : `/staff/treatments/new?customer=${customerId}`;
+    const apt =
+      remoteAppointments != null
+        ? pickRemoteAppointmentForCustomer(remoteAppointments)
+        : findAppointmentForCustomer(customerId, organizationId);
+    const treatmentHref = treatmentWorkspaceEntryHref({
+      customerId,
+      appointmentId: apt?.id,
+    });
 
     return {
       treatmentHref,
@@ -188,5 +210,13 @@ export function useCustomer360Snapshot(customer: Customer): Customer360Snapshot 
       svBalance,
       recentTx: deriveRecentTransactions(transactions),
     };
-  }, [customer, organization.id, appointmentRev, commerceRev, followUpRev]);
+  }, [
+    customer,
+    organization.id,
+    appointmentRev,
+    commerceRev,
+    followUpRev,
+    remoteAppointments,
+    remoteTreatments,
+  ]);
 }
