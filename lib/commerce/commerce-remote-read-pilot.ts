@@ -6,7 +6,8 @@
  *
  * Does not enable BEAUTY_OS_PERSISTENCE or BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
  * Composes existing authenticated Customer / Appointment / Treatment /
- * Service read stores. No CheckoutDraft persist. No settle. No service role.
+ * Service read stores. Transaction list is a remote read of public.transactions.
+ * No CheckoutDraft persist. No settle. No service role.
  * No localStorage fallback.
  */
 
@@ -19,9 +20,14 @@ import {
 } from "@/lib/persistence/authenticated-service-store";
 import { AuthenticatedTreatmentReadStore } from "@/lib/persistence/authenticated-treatment-read-store";
 import {
+  AuthenticatedCommerceStore,
+  type CommerceSupabaseClient,
+} from "@/lib/persistence/authenticated-commerce-store";
+import {
   loadAuthenticatedIdentityCatalog,
   type IdentitySupabaseClient,
 } from "@/lib/persistence/authenticated-identity-catalog";
+import type { Transaction } from "./domain";
 import { CustomerRemoteAdapter } from "@/lib/persistence/customer-remote-adapter";
 import { ServiceRemoteAdapter } from "@/lib/persistence/service-remote-adapter";
 import { TreatmentRemoteAdapter } from "@/lib/persistence/treatment-remote-adapter";
@@ -183,4 +189,31 @@ export async function getRemoteCommerceCheckoutCandidate(
       service,
     }) ?? undefined
   );
+}
+
+export async function listRemoteCommerceTransactions(
+  organizationId: string,
+  client: IdentitySupabaseClient & Partial<CommerceSupabaseClient>,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+): Promise<{
+  transactions: Transaction[];
+  customers: Array<{ id: string; name: string; phone: string }>;
+}> {
+  requirePilot(env);
+  const persistence = await createAuthenticatedCommerceReadPersistence(client);
+  persistence.identity.mapper.resolveOrganizationDbId(organizationId);
+  const customers = (await persistence.customers.list({ organizationId })).map((row) => ({
+    id: row.id,
+    name: row.name,
+    phone: row.phone ?? "",
+  }));
+  if (typeof client.rpc !== "function") {
+    return { transactions: [], customers };
+  }
+  const store = new AuthenticatedCommerceStore(client as CommerceSupabaseClient);
+  const rows = await store.listTransactions();
+  return {
+    transactions: rows.filter((row) => row.organizationId === organizationId),
+    customers,
+  };
 }

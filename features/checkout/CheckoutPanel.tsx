@@ -20,6 +20,13 @@ import {
   updateCheckoutItemQuantity,
 } from "@/lib/commerce/checkout-store";
 import {
+  submitCommerceRemoteSaveDraft,
+  submitCommerceRemoteSettle,
+} from "@/features/checkout/use-commerce-remote-write";
+import { REMOTE_DISABLED_PAYMENT_METHODS } from "@/lib/commerce/commerce-remote-payments";
+import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
+import type { CheckoutDraft, Transaction } from "@/lib/commerce/domain";
+import {
   ACTIVE_PAYMENT_METHODS,
   PAYMENT_METHOD_LABEL,
   type DiscountType,
@@ -66,6 +73,9 @@ interface CheckoutPanelProps {
   onClose: () => void;
   onCompleted?: (transactionId: string) => void;
   commerceRemoteRead?: boolean;
+  commerceRemoteWrite?: boolean;
+  remoteDraft?: CheckoutDraft | null;
+  remoteTransaction?: Transaction | null;
 }
 
 export function CheckoutPanel({
@@ -78,13 +88,16 @@ export function CheckoutPanel({
   onClose,
   onCompleted,
   commerceRemoteRead = false,
+  commerceRemoteWrite = false,
+  remoteDraft = null,
+  remoteTransaction = null,
 }: CheckoutPanelProps) {
   const commerceRev = useSyncExternalStore(
     subscribeCommerce,
     getCommerceRevision,
     () => "",
   );
-  const liveDraft =
+  const localDraft =
     (item.draftId
       ? getCheckoutDraft(organizationId, item.draftId)
       : undefined) ??
@@ -92,9 +105,21 @@ export function CheckoutPanel({
       ? getOpenDraftForAppointment(organizationId, item.appointmentId)
       : undefined) ??
     item.draft;
-  const transaction = item.transaction;
+  const [remoteDraftState, setRemoteDraftState] = useState<CheckoutDraft | null>(
+    remoteDraft,
+  );
+  useEffect(() => {
+    setRemoteDraftState(remoteDraft);
+  }, [remoteDraft]);
+  const liveDraft = commerceRemoteWrite ? remoteDraftState ?? remoteDraft : localDraft;
+  const transaction = commerceRemoteWrite
+    ? remoteTransaction ?? item.transaction
+    : item.transaction;
   const readOnly =
-    item.paid || item.kind === "transaction" || liveDraft?.status === "COMPLETED";
+    item.paid ||
+    item.kind === "transaction" ||
+    liveDraft?.status === "COMPLETED" ||
+    Boolean(transaction);
 
   useEffect(() => {
     if (commerceRemoteRead) return;
@@ -146,6 +171,8 @@ export function CheckoutPanel({
   const [mixedOpen, setMixedOpen] = useState(false);
   const [mixedCash, setMixedCash] = useState("");
   const [mixedCard, setMixedCard] = useState("");
+  const [mixedTransfer, setMixedTransfer] = useState("");
+  const [mixedOther, setMixedOther] = useState("");
   const [mixedStored, setMixedStored] = useState("");
 
   const membership = item.membership;
@@ -161,21 +188,23 @@ export function CheckoutPanel({
 
   const services = useMemo(() => {
     void commerceRev;
+    if (commerceRemoteWrite) return [];
     return getServicesForOrganization(organizationId);
-  }, [commerceRev, organizationId]);
-  const svBalance = item.customerId
-    ? getCustomerStoredValueBalance(organizationId, item.customerId)
-    : 0;
+  }, [commerceRev, commerceRemoteWrite, organizationId]);
+  const svBalance =
+    commerceRemoteWrite || !item.customerId
+      ? 0
+      : getCustomerStoredValueBalance(organizationId, item.customerId);
   const primaryService =
     liveDraft?.items.find((row) => row.type === "SERVICE") ?? null;
   const usablePackages =
-    !readOnly && primaryService?.referenceId
-      ? listUsablePackagesForService(
+    commerceRemoteWrite || readOnly || !primaryService?.referenceId
+      ? []
+      : listUsablePackagesForService(
           organizationId,
           liveDraft!.customerId,
           primaryService.referenceId,
-        )
-      : [];
+        );
   const selectedUsable = usablePackages.find(
     (pkg) => pkg.id === liveDraft?.packageRedemption?.customerPackageId,
   );
@@ -223,14 +252,62 @@ export function CheckoutPanel({
       action();
       setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "無法更新結帳");
+      setError(toCommerceUserMessage(err));
     }
+  }
+
+  async function persistRemotePayments(
+    payments: Array<{ method: PaymentMethod; amount: number }>,
+  ) {
+    if (!liveDraft) return;
+    const next = await submitCommerceRemoteSaveDraft({
+      draftId: liveDraft.id,
+      expectedUpdatedAt: liveDraft.updatedAt,
+      payments: payments.map((payment) => ({
+        id: "",
+        method: payment.method,
+        amount: payment.amount,
+      })),
+      discounts: liveDraft.discounts,
+    });
+    setRemoteDraftState(next.draft);
+  }
+
+  async function persistRemoteDiscounts(
+    discounts: CheckoutDraft["discounts"],
+  ) {
+    if (!liveDraft) return;
+    const next = await submitCommerceRemoteSaveDraft({
+      draftId: liveDraft.id,
+      expectedUpdatedAt: liveDraft.updatedAt,
+      payments: liveDraft.payments,
+      discounts,
+    });
+    setRemoteDraftState(next.draft);
   }
 
   function applySinglePayment(method: PaymentMethod) {
     if (!liveDraft || readOnly) return;
+    if (commerceRemoteWrite && REMOTE_DISABLED_PAYMENT_METHODS.includes(method)) {
+      setError("此付款方式目前尚未開放");
+      return;
+    }
     if (total === 0) {
+      if (commerceRemoteWrite) {
+        void persistRemotePayments([]).then(
+          () => setError(""),
+          (err: unknown) => setError(toCommerceUserMessage(err)),
+        );
+        return;
+      }
       run(() => setCheckoutPayments(organizationId, liveDraft.id, []));
+      return;
+    }
+    if (commerceRemoteWrite) {
+      void persistRemotePayments([{ method, amount: total }]).then(
+        () => setError(""),
+        (err: unknown) => setError(toCommerceUserMessage(err)),
+      );
       return;
     }
     run(() =>
@@ -242,10 +319,14 @@ export function CheckoutPanel({
     if (!liveDraft || readOnly) return;
     const cash = parseMoneyInput(mixedCash) ?? 0;
     const card = parseMoneyInput(mixedCard) ?? 0;
-    const stored = parseMoneyInput(mixedStored) ?? 0;
+    const transfer = parseMoneyInput(mixedTransfer) ?? 0;
+    const other = parseMoneyInput(mixedOther) ?? 0;
+    const stored = commerceRemoteWrite ? 0 : parseMoneyInput(mixedStored) ?? 0;
     const leftover = mixedPaymentRemaining(total, {
       CASH: cash,
       CARD: card,
+      TRANSFER: transfer,
+      OTHER: other,
       STORED_VALUE: stored,
     });
     if (leftover !== 0) {
@@ -255,7 +336,16 @@ export function CheckoutPanel({
     const next: Array<{ method: PaymentMethod; amount: number }> = [];
     if (cash > 0) next.push({ method: "CASH", amount: cash });
     if (card > 0) next.push({ method: "CARD", amount: card });
+    if (transfer > 0) next.push({ method: "TRANSFER", amount: transfer });
+    if (other > 0) next.push({ method: "OTHER", amount: other });
     if (stored > 0) next.push({ method: "STORED_VALUE", amount: stored });
+    if (commerceRemoteWrite) {
+      void persistRemotePayments(next).then(
+        () => setError(""),
+        (err: unknown) => setError(toCommerceUserMessage(err)),
+      );
+      return;
+    }
     run(() => setCheckoutPayments(organizationId, liveDraft.id, next));
   }
 
@@ -406,7 +496,7 @@ export function CheckoutPanel({
                             {formatTwd(row.lineTotal)}
                           </p>
                         </div>
-                        {!readOnly && liveDraft ? (
+                        {!readOnly && liveDraft && !commerceRemoteWrite ? (
                           <div className="mt-2 flex items-center justify-end gap-1">
                             {row.type === "PRODUCT" ? (
                               <>
@@ -538,7 +628,7 @@ export function CheckoutPanel({
                   </div>
                 ) : null}
 
-                {!readOnly && liveDraft ? (
+                {!readOnly && liveDraft && !commerceRemoteWrite ? (
                   <div>
                     <button
                       type="button"
@@ -680,18 +770,27 @@ export function CheckoutPanel({
                             setError("折扣數值無效");
                             return;
                           }
+                          const nextDiscounts = [
+                            {
+                              id: "",
+                              type: discountType,
+                              value,
+                              label:
+                                discountType === "ORDER_FIXED"
+                                  ? `折 ${formatTwd(value)}`
+                                  : `${(value / 100).toFixed(0)}% off`,
+                              createdByStaffId: staffId,
+                            },
+                          ];
+                          if (commerceRemoteWrite) {
+                            void persistRemoteDiscounts(nextDiscounts).then(
+                              () => setError(""),
+                              (err: unknown) => setError(toCommerceUserMessage(err)),
+                            );
+                            return;
+                          }
                           run(() =>
-                            setCheckoutDiscounts(organizationId, liveDraft.id, [
-                              {
-                                type: discountType,
-                                value,
-                                label:
-                                  discountType === "ORDER_FIXED"
-                                    ? `折 ${formatTwd(value)}`
-                                    : `${(value / 100).toFixed(0)}% off`,
-                                createdByStaffId: staffId,
-                              },
-                            ]),
+                            setCheckoutDiscounts(organizationId, liveDraft.id, nextDiscounts),
                           );
                         }}
                       >
@@ -701,11 +800,18 @@ export function CheckoutPanel({
                         <Button
                           variant="ghost"
                           className="h-9 min-h-9 px-2 text-[12px]"
-                          onClick={() =>
+                          onClick={() => {
+                            if (commerceRemoteWrite) {
+                              void persistRemoteDiscounts([]).then(
+                                () => setError(""),
+                                (err: unknown) => setError(toCommerceUserMessage(err)),
+                              );
+                              return;
+                            }
                             run(() =>
                               setCheckoutDiscounts(organizationId, liveDraft.id, []),
-                            )
-                          }
+                            );
+                          }}
                         >
                           清除
                         </Button>
@@ -750,26 +856,39 @@ export function CheckoutPanel({
                   <div className="space-y-2">
                     <p className="text-[12px] font-medium text-secondary-text">付款方式</p>
                     <div className="flex flex-wrap gap-1.5">
-                      {ACTIVE_PAYMENT_METHODS.map((method) => (
+                      {ACTIVE_PAYMENT_METHODS.map((method) => {
+                        const remoteDisabled =
+                          commerceRemoteWrite &&
+                          REMOTE_DISABLED_PAYMENT_METHODS.includes(method);
+                        return (
                         <button
                           key={method}
                           type="button"
                           aria-pressed={selectedMethods.has(method)}
+                          aria-disabled={remoteDisabled}
                           className={cn(
                             "h-9 rounded-full px-3 text-[12px] font-medium",
                             selectedMethods.has(method)
                               ? "bg-primary text-white"
                               : "bg-[#F6F1EE] text-text hover:bg-primary-light",
+                            remoteDisabled && "cursor-not-allowed opacity-50",
                           )}
                           onClick={() => {
+                            if (remoteDisabled) {
+                              setError("此付款方式目前尚未開放");
+                              return;
+                            }
                             setMixedOpen(false);
                             applySinglePayment(method);
                           }}
                         >
                           {PAYMENT_METHOD_LABEL[method]}
-                          {method === "STORED_VALUE" ? ` ${formatTwd(svBalance)}` : ""}
+                          {method === "STORED_VALUE" && !commerceRemoteWrite
+                            ? ` ${formatTwd(svBalance)}`
+                            : ""}
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                     <button
                       type="button"
@@ -802,6 +921,31 @@ export function CheckoutPanel({
                           />
                         </label>
                         <label className="flex items-center justify-between gap-2 text-[12px] text-secondary-text">
+                          轉帳
+                          <input
+                            className="h-9 w-28 rounded-xl border border-border px-2 text-right text-[13px] tabular-nums"
+                            value={mixedTransfer}
+                            onChange={(event) => setMixedTransfer(event.target.value)}
+                            inputMode="numeric"
+                            aria-label="轉帳金額"
+                          />
+                        </label>
+                        <label className="flex items-center justify-between gap-2 text-[12px] text-secondary-text">
+                          其他
+                          <input
+                            className="h-9 w-28 rounded-xl border border-border px-2 text-right text-[13px] tabular-nums"
+                            value={mixedOther}
+                            onChange={(event) => setMixedOther(event.target.value)}
+                            inputMode="numeric"
+                            aria-label="其他金額"
+                          />
+                        </label>
+                        {commerceRemoteWrite ? (
+                          <p className="text-[12px] text-secondary-text">
+                            儲值與套票目前尚未開放
+                          </p>
+                        ) : (
+                        <label className="flex items-center justify-between gap-2 text-[12px] text-secondary-text">
                           儲值
                           <input
                             className="h-9 w-28 rounded-xl border border-border px-2 text-right text-[13px] tabular-nums"
@@ -811,6 +955,7 @@ export function CheckoutPanel({
                             aria-label="儲值金額"
                           />
                         </label>
+                        )}
                         <p className="text-[12px] text-secondary-text">
                           剩餘{" "}
                           <span className="tabular-nums text-text">
@@ -820,7 +965,11 @@ export function CheckoutPanel({
                                 mixedPaymentRemaining(total, {
                                   CASH: parseMoneyInput(mixedCash) ?? 0,
                                   CARD: parseMoneyInput(mixedCard) ?? 0,
-                                  STORED_VALUE: parseMoneyInput(mixedStored) ?? 0,
+                                  TRANSFER: parseMoneyInput(mixedTransfer) ?? 0,
+                                  OTHER: parseMoneyInput(mixedOther) ?? 0,
+                                  STORED_VALUE: commerceRemoteWrite
+                                    ? 0
+                                    : parseMoneyInput(mixedStored) ?? 0,
                                 }),
                               ),
                             )}
@@ -859,6 +1008,13 @@ export function CheckoutPanel({
 
             {tab === "wallet" ? (
               <div className="space-y-3">
+                {commerceRemoteWrite ? (
+                  <div className="rounded-xl border border-border px-3 py-2.5">
+                    <p className="text-[13px] text-secondary-text">
+                      此付款方式目前尚未開放
+                    </p>
+                  </div>
+                ) : null}
                 <div className="rounded-xl border border-border px-3 py-2.5">
                   <p className="text-[12px] text-secondary-text">儲值餘額</p>
                   <p className="mt-1 text-[20px] font-semibold tabular-nums text-text">
@@ -971,6 +1127,19 @@ export function CheckoutPanel({
               className="flex h-[50px] w-full items-center justify-center rounded-2xl bg-[#C56B70] text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               onClick={() => {
                 if (!liveDraft || !canConfirm) return;
+                if (commerceRemoteWrite) {
+                  void submitCommerceRemoteSettle({
+                    draftId: liveDraft.id,
+                    expectedUpdatedAt: liveDraft.updatedAt,
+                  }).then(
+                    (bundle) => {
+                      setRemoteDraftState(bundle.draft);
+                      if (bundle.transaction) onCompleted?.(bundle.transaction.id);
+                    },
+                    (err: unknown) => setError(toCommerceUserMessage(err)),
+                  );
+                  return;
+                }
                 run(() => {
                   const tx = completeCheckout(organizationId, liveDraft.id);
                   onCompleted?.(tx.id);

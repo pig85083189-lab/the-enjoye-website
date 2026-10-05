@@ -542,6 +542,39 @@ describe("Phase 1C-6H.1 commerce remote identity UI boundary", () => {
       if (!existsSync(path.join(ROOT, file))) continue;
       const source = readFileSync(path.join(ROOT, file), "utf8");
       expect(source).not.toMatch(/BEAUTY_OS_COMMERCE_REMOTE_READ_PILOT/);
+      expect(source).not.toMatch(/BEAUTY_OS_COMMERCE_REMOTE_WRITE_PILOT/);
     }
+  });
+});
+
+describe("Phase 1C-6H.2 commerce remote write UI boundary", () => {
+  it("keeps RSC pages on flag files and CheckoutPanel as the remote settle surface", () => {
+    const checkoutPage = readFileSync(path.join(ROOT, "app/staff/(app)/checkout/page.tsx"), "utf8");
+    const transactionsPage = readFileSync(
+      path.join(ROOT, "app/staff/(app)/transactions/page.tsx"),
+      "utf8",
+    );
+    const writeFlag = readFileSync(
+      path.join(ROOT, "lib/commerce/commerce-remote-write-flag.ts"),
+      "utf8",
+    );
+    expect(checkoutPage).toMatch(/isCommerceRemoteWritePilotEnabled/);
+    expect(checkoutPage).toMatch(/commerce-remote-write-flag/);
+    expect(checkoutPage).not.toMatch(/commerce-remote-write-pilot|AuthenticatedCommerceStore/);
+    expect(checkoutPage).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    expect(transactionsPage).toMatch(/isCommerceRemoteReadPilotEnabled/);
+    expect(transactionsPage).not.toMatch(/commerce-remote-write-pilot|createServiceRoleClient/);
+    expect(writeFlag).not.toMatch(
+      /AuthenticatedCommerceStore|loadAuthenticatedIdentityCatalog|IdentitySupabaseClient/,
+    );
+    const checkout = readFileSync(path.join(ROOT, "features/checkout/CheckoutPageClient.tsx"), "utf8");
+    const panel = readFileSync(path.join(ROOT, "features/checkout/CheckoutPanel.tsx"), "utf8");
+    expect(checkout).toMatch(/CheckoutPanel/);
+    expect(checkout).toMatch(/CommerceIdentityPanel/);
+    expect(checkout).toMatch(/useCommerceRemoteDraft/);
+    expect(checkout).not.toMatch(/completeCheckout|createServiceRoleClient/);
+    expect(panel).toMatch(/submitCommerceRemoteSettle/);
+    expect(panel).toMatch(/此付款方式目前尚未開放/);
+    expect(panel).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
   });
 });

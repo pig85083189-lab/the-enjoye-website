@@ -422,7 +422,7 @@ describe("Phase 1C-6H.1 commerce remote read pilot", () => {
     const page = read("features/checkout/CheckoutPageClient.tsx");
     expect(page).toMatch(/commerceRemoteReadPilot/);
     expect(page).toMatch(/useCommerceRemoteCheckoutCandidates/);
-    expect(page).toMatch(/buildRemoteCommerceCheckoutItems/);
+    expect(page).toMatch(/buildRemoteCommerceWorkspaceItems|buildRemoteCommerceCheckoutItems/);
     expect(page).toMatch(/CommerceIdentityPanel/);
     expect(page).toMatch(/commerceRemoteReadPilot\s*\?\s*\(\[\] as Customer\[\]\)/);
     expect(page).toMatch(/if \(commerceRemoteReadPilot\) return;/);
@@ -462,6 +462,7 @@ describe("Phase 1C-6H.1 commerce remote read pilot", () => {
     for (const file of envFiles) {
       if (!existsSync(path.join(process.cwd(), file))) continue;
       expect(read(file)).not.toMatch(/BEAUTY_OS_COMMERCE_REMOTE_READ_PILOT/);
+      expect(read(file)).not.toMatch(/BEAUTY_OS_COMMERCE_REMOTE_WRITE_PILOT/);
     }
   });
 });

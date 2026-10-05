@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   APPOINTMENT_INTEGRITY_MIGRATION_FILE,
+  COMMERCE_REMOTE_SETTLEMENT_MIGRATION_FILE,
   ENUM_ADAPT_MIGRATION_FILE,
   FORBIDDEN_STORED_COLUMNS,
   FOUNDATION_MIGRATION_FILE,
@@ -54,6 +55,10 @@ describe("Phase 5A-1 operational schema contract", () => {
     expect(integrity).not.toMatch(/drop table/i);
     expect(integrity).not.toMatch(/\btruncate\s+table\b/i);
     expect(integrity).toContain("appointments_customer_same_org_fkey");
+    const settlement = readMigration(COMMERCE_REMOTE_SETTLEMENT_MIGRATION_FILE);
+    expect(settlement).not.toMatch(/drop table/i);
+    expect(settlement).not.toMatch(/\btruncate\s+table\b/i);
+    expect(settlement).toMatch(/settle_checkout_draft/);
   });
 
   it("creates every operational table named in the contract", () => {

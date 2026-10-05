@@ -21,10 +21,14 @@ function visibleLabel(value: string, fallback: string, isRaw: (value: string) =>
 export function CommerceIdentityPanel({
   candidate,
   locationName,
+  readiness = "write_off",
+  message,
   onClose,
 }: {
   candidate: CommerceCheckoutCandidate;
   locationName?: string;
+  readiness?: "write_off" | "loading" | "ready" | "error";
+  message?: string;
   onClose: () => void;
 }) {
   const customerName = visibleLabel(candidate.customerName, "客戶", isRawCustomerId);
@@ -86,13 +90,17 @@ export function CommerceIdentityPanel({
           <dd className="text-right font-medium text-text">已完成</dd>
         </div>
         <p className="rounded-2xl bg-[#FAF7F5] px-3.5 py-3 text-[13px] leading-relaxed text-secondary-text">
-          此筆已完成療程，可進入待結帳。正式收款與 CheckoutDraft 寫入將於下一階段開放。
+          {readiness === "loading"
+            ? "正在準備結帳資料…"
+            : readiness === "error"
+              ? message || "目前無法開啟結帳，請稍後再試"
+              : "此筆已完成療程已可結帳。遠端收款尚未開放。"}
         </p>
       </dl>
 
       <div className="border-t border-border px-5 py-4">
         <Button variant="outline" fullWidth disabled>
-          正式結帳尚未開放
+          {readiness === "loading" ? "準備中" : "正式結帳尚未開放"}
         </Button>
       </div>
     </aside>

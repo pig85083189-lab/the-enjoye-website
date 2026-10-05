@@ -285,20 +285,119 @@ export function buildRemoteCommerceCheckoutItems(
   candidates: CommerceCheckoutCandidate[],
   locationId?: string,
 ): CheckoutWorkspaceItem[] {
-  return candidates
-    .filter((item) => !locationId || item.locationId === locationId)
-    .map(toRemoteCommerceCheckoutItem)
-    .sort((a, b) => (a.startAt ?? "").localeCompare(b.startAt ?? ""));
+  return buildRemoteCommerceWorkspaceItems({ candidates, locationId });
+}
+
+export function buildRemoteCommerceWorkspaceItems(input: {
+  candidates: CommerceCheckoutCandidate[];
+  transactions?: Transaction[];
+  customers?: Array<{ id: string; name: string; phone?: string }>;
+  locationId?: string;
+}): CheckoutWorkspaceItem[] {
+  const paidByAppointment = new Map<string, Transaction>();
+  const customersById = new Map((input.customers ?? []).map((row) => [row.id, row]));
+  const candidateByAppointment = new Map(
+    input.candidates.map((row) => [row.identity.appointmentId, row]),
+  );
+  const txRows: CheckoutWorkspaceItem[] = [];
+  for (const tx of input.transactions ?? []) {
+    if (tx.status !== "COMPLETED") continue;
+    if (input.locationId && tx.locationId && tx.locationId !== input.locationId) continue;
+    if (tx.appointmentId) paidByAppointment.set(tx.appointmentId, tx);
+    const candidate = tx.appointmentId
+      ? candidateByAppointment.get(tx.appointmentId)
+      : undefined;
+    const customer = customersById.get(tx.customerId);
+    txRows.push(
+      toRemoteTransactionItem(tx, {
+        customerName: customer?.name || candidate?.customerName,
+        customerPhone: customer?.phone || candidate?.customerPhone,
+        staffName: candidate?.staffName,
+      }),
+    );
+  }
+
+  const pending = input.candidates
+    .filter((item) => !input.locationId || item.locationId === input.locationId)
+    .filter((item) => !paidByAppointment.has(item.identity.appointmentId))
+    .map((item) => {
+      const row = toRemoteCommerceCheckoutItem(item);
+      return row;
+    });
+
+  return [...pending, ...txRows].sort((a, b) =>
+    (a.startAt ?? "").localeCompare(b.startAt ?? ""),
+  );
+}
+
+export function attachRemoteCommerceDraft(
+  item: CheckoutWorkspaceItem,
+  draft: CheckoutDraft | null,
+  transaction: Transaction | null,
+): CheckoutWorkspaceItem {
+  if (!draft && !transaction) return item;
+  const paid = Boolean(transaction && transaction.status === "COMPLETED");
+  return {
+    ...item,
+    draftId: draft?.id ?? item.draftId,
+    transactionId: transaction?.id ?? item.transactionId,
+    amountMinor: transaction?.total ?? draft?.total ?? item.amountMinor,
+    paid,
+    status: paid ? { kind: "paid", title: "已結帳" } : item.status,
+    draft: draft ?? item.draft,
+    transaction: transaction ?? item.transaction,
+  };
 }
 
 export function countRemoteCommerceCheckoutSummary(
   items: CheckoutWorkspaceItem[],
+  now: Date = new Date(),
 ): CheckoutWorkspaceSummary {
+  const todayKey = localDayKey(now);
   return {
     pending: items.filter((item) => !item.paid).length,
     completedService: items.length,
     inService: 0,
-    todayRevenueMinor: 0,
+    todayRevenueMinor: items
+      .filter((item) => item.paid && item.transaction)
+      .filter((item) => {
+        const when = parseInstant(item.transaction?.completedAt);
+        return when ? localDayKey(when) === todayKey : false;
+      })
+      .reduce((sum, item) => sum + (item.amountMinor ?? 0), 0),
+  };
+}
+
+function toRemoteTransactionItem(
+  tx: Transaction,
+  hints?: { customerName?: string; customerPhone?: string; staffName?: string },
+): CheckoutWorkspaceItem {
+  const primary = tx.items[0];
+  const customerName = hints?.customerName?.trim() || "客戶";
+  return {
+    id: checkoutRowId("transaction", tx.id),
+    kind: "transaction",
+    appointmentId: tx.appointmentId ?? "",
+    treatmentId: tx.treatmentId,
+    draftId: tx.checkoutDraftId ?? "",
+    transactionId: tx.id,
+    customerId: tx.customerId,
+    customerName,
+    customerPhone: hints?.customerPhone ?? "",
+    customerInitials: initialsFrom(customerName),
+    membership: null,
+    serviceName: primary?.nameSnapshot || tx.transactionNumber,
+    serviceCategory: "",
+    durationMinutes: null,
+    staffName: hints?.staffName ?? "",
+    staffInitials: initialsFrom(hints?.staffName ?? ""),
+    startAt: tx.completedAt,
+    amountMinor: tx.total,
+    paid: true,
+    status: { kind: "paid", title: "已結帳" },
+    appointment: null,
+    draft: null,
+    transaction: tx,
   };
 }
 
@@ -565,17 +664,21 @@ export function canConfirmCheckoutPayment(input: {
 
 export function mixedPaymentRemaining(
   total: number,
-  parts: Partial<Record<"CASH" | "CARD" | "STORED_VALUE", number>>,
+  parts: Partial<Record<"CASH" | "CARD" | "TRANSFER" | "OTHER" | "STORED_VALUE", number>>,
 ): number {
-  const cash = parts.CASH ?? 0;
-  const card = parts.CARD ?? 0;
-  const stored = parts.STORED_VALUE ?? 0;
-  return total - cash - card - stored;
+  return (
+    total -
+    (parts.CASH ?? 0) -
+    (parts.CARD ?? 0) -
+    (parts.TRANSFER ?? 0) -
+    (parts.OTHER ?? 0) -
+    (parts.STORED_VALUE ?? 0)
+  );
 }
 
 export function isMixedPaymentComplete(
   total: number,
-  parts: Partial<Record<"CASH" | "CARD" | "STORED_VALUE", number>>,
+  parts: Partial<Record<"CASH" | "CARD" | "TRANSFER" | "OTHER" | "STORED_VALUE", number>>,
 ): boolean {
   return mixedPaymentRemaining(total, parts) === 0;
 }

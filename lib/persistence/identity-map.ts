@@ -271,6 +271,28 @@ export class CanonicalIdMapper {
     this.cache.set(`trtDb:${dbId}`, appId);
   }
 
+  rememberCheckout(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`chk:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`chkDb:${dbId}`, appId);
+  }
+
+  rememberTransaction(organizationDbId: string, appId: string, dbId: string): void {
+    this.cache.set(`tx:${organizationDbId}:${appId}`, dbId);
+    this.cache.set(`txDb:${dbId}`, appId);
+  }
+
+  toCheckoutAppId(checkoutDbId: string): string {
+    return this.cached(`chkDb:${checkoutDbId}`, () => {
+      throw new UnmappedIdentityError("checkout_draft", undefined, checkoutDbId);
+    });
+  }
+
+  toTransactionAppId(transactionDbId: string): string {
+    return this.cached(`txDb:${transactionDbId}`, () => {
+      throw new UnmappedIdentityError("transaction", undefined, transactionDbId);
+    });
+  }
+
   toTreatmentAppId(treatmentDbId: string): string {
     return this.cached(`trtDb:${treatmentDbId}`, () => {
       throw new UnmappedIdentityError("treatment", undefined, treatmentDbId);

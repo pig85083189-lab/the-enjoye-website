@@ -15,6 +15,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { TransactionQuickView } from "@/features/transactions/TransactionQuickView";
+import { useCommerceRemoteTransactions } from "@/features/transactions/use-commerce-remote-transactions";
 import { listAppointments } from "@/lib/appointments/store";
 import {
   getCommerceRevision,
@@ -81,7 +82,11 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
   event.preventDefault();
 }
 
-function TransactionsInner() {
+function TransactionsInner({
+  commerceRemoteReadPilot = false,
+}: {
+  commerceRemoteReadPilot?: boolean;
+}) {
   const searchParams = useSearchParams();
   const inboundId = searchParams.get("id");
   const { organization, currentLocation, membership } = useOrganization();
@@ -94,7 +99,9 @@ function TransactionsInner() {
 
   const staffId = membership?.userId ?? "";
   const canVoid =
-    Boolean(staffId) && canActorVoidTransaction(organization.id, staffId);
+    !commerceRemoteReadPilot &&
+    Boolean(staffId) &&
+    canActorVoidTransaction(organization.id, staffId);
 
   const [filters, setFilters] = useState<{
     status: TransactionListStatusFilter;
@@ -118,13 +125,20 @@ function TransactionsInner() {
   const [voidBusy, setVoidBusy] = useState(false);
   const [voidError, setVoidError] = useState("");
 
+  const remoteTransactionState = useCommerceRemoteTransactions({
+    organizationId: organization.id,
+    enabled: commerceRemoteReadPilot,
+  });
   const customers = useCrmJson(
-    () => localCustomerRepository.list({ organizationId: organization.id }),
+    () =>
+      commerceRemoteReadPilot
+        ? ([] as Customer[])
+        : localCustomerRepository.list({ organizationId: organization.id }),
     [] as Customer[],
   );
   const catalog = useMemo(
-    () => getServicesForOrganization(organization.id),
-    [organization.id],
+    () => (commerceRemoteReadPilot ? [] : getServicesForOrganization(organization.id)),
+    [commerceRemoteReadPilot, organization.id],
   );
   const locations = useMemo(
     () => listLocations(organization.id).map((row) => ({ id: row.id, name: row.name })),
@@ -134,19 +148,33 @@ function TransactionsInner() {
   const transactions = useMemo(() => {
     void commerceRev;
     if (!isClient) return [];
+    if (commerceRemoteReadPilot) {
+      return remoteTransactionState.status === "data"
+        ? remoteTransactionState.transactions
+        : [];
+    }
     return listTransactions(organization.id);
-  }, [commerceRev, isClient, organization.id]);
+  }, [
+    commerceRemoteReadPilot,
+    commerceRev,
+    isClient,
+    organization.id,
+    remoteTransactionState,
+  ]);
+
+  const remoteCustomers =
+    remoteTransactionState.status === "data" ? remoteTransactionState.customers : [];
 
   const appointments = useMemo(() => {
     void commerceRev;
-    if (!isClient) return [];
+    if (!isClient || commerceRemoteReadPilot) return [];
     return listAppointments({ organizationId: organization.id }).map((row) => ({
       id: row.id,
       staffId: row.staffId,
       staffName: row.staffName,
       locationId: row.locationId,
     }));
-  }, [commerceRev, isClient, organization.id]);
+  }, [commerceRemoteReadPilot, commerceRev, isClient, organization.id]);
 
   const staff = useMemo(() => {
     const ids = new Set(transactions.map((row) => row.createdByStaffId));
@@ -161,13 +189,30 @@ function TransactionsInner() {
       buildTransactionWorkspaceRows({
         organizationId: organization.id,
         transactions,
-        customers,
+        customers: commerceRemoteReadPilot
+          ? remoteCustomers.map((row) => ({
+              id: row.id,
+              organizationId: organization.id,
+              name: row.name,
+              phone: row.phone,
+            }))
+          : customers,
         locations,
         staff,
         appointments,
         catalog,
       }),
-    [appointments, catalog, customers, locations, organization.id, staff, transactions],
+    [
+      appointments,
+      catalog,
+      commerceRemoteReadPilot,
+      customers,
+      locations,
+      organization.id,
+      remoteCustomers,
+      staff,
+      transactions,
+    ],
   );
 
   const visible = useMemo(
@@ -252,6 +297,10 @@ function TransactionsInner() {
 
   function confirmVoid(reason: string) {
     if (!selectedRow) return;
+    if (commerceRemoteReadPilot) {
+      setVoidError("此交易目前無法作廢");
+      return;
+    }
     setVoidBusy(true);
     setVoidError("");
     try {
@@ -527,10 +576,14 @@ function TransactionsInner() {
   );
 }
 
-export function TransactionsPageClient() {
+export function TransactionsPageClient({
+  commerceRemoteReadPilot = false,
+}: {
+  commerceRemoteReadPilot?: boolean;
+}) {
   return (
     <Suspense fallback={<p className="text-sm text-secondary-text">載入交易…</p>}>
-      <TransactionsInner />
+      <TransactionsInner commerceRemoteReadPilot={commerceRemoteReadPilot} />
     </Suspense>
   );
 }

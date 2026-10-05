@@ -28,6 +28,10 @@ export const APPOINTMENT_STAFF_OVERLAP_MIGRATION_FILE =
 export const TREATMENT_REMOTE_FOUNDATION_MIGRATION_FILE =
   "supabase/migrations/20261004120000_treatment_remote_foundation.sql";
 
+/** Phase 1C-6H.2 Commerce remote settlement RPCs. Reuses checkout_* / transaction_*. */
+export const COMMERCE_REMOTE_SETTLEMENT_MIGRATION_FILE =
+  "supabase/migrations/20261005120000_commerce_remote_settlement.sql";
+
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [
   "remaining_sessions",
