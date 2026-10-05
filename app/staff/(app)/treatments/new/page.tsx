@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { TreatmentPageClient } from "@/features/treatments/TreatmentPageClient";
 import { isAppointmentRemoteReadPilotEnabled } from "@/lib/appointments/appointment-remote-read-flag";
 import { isCustomerRemoteReadPilotEnabled } from "@/lib/customers/customer-remote-read-flag";
@@ -6,7 +7,8 @@ import { isCommerceRemoteReadPilotEnabled } from "@/lib/commerce/commerce-remote
 import { isTreatmentRemoteReadPilotEnabled } from "@/lib/treatments/treatment-remote-read-flag";
 import { isTreatmentRemoteWritePilotEnabled } from "@/lib/treatments/treatment-remote-write-flag";
 
-export default function NewTreatmentPage() {
+export default async function NewTreatmentPage() {
+  await connection();
   return (
     <Suspense
       fallback={

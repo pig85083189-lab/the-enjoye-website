@@ -288,10 +288,18 @@ describe("Phase 1C-6D.2C failure and rollback", () => {
     ).rejects.toMatchObject({ reason: "partial_provisioning" });
   });
 
-  it("keeps the pilot disabled in Production and when the env is unset", () => {
+  it("keeps the pilot disabled when the env is unset and requires explicit 1 plus Supabase keys", () => {
     expect(isStaffRemoteCreatePilotEnabled({ VERCEL_ENV: "production", [STAFF_REMOTE_CREATE_PILOT_ENV]: "1" })).toBe(
       false,
     );
+    expect(
+      isStaffRemoteCreatePilotEnabled({
+        VERCEL_ENV: "production",
+        [STAFF_REMOTE_CREATE_PILOT_ENV]: "1",
+        NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
+      }),
+    ).toBe(true);
     expect(isStaffRemoteCreatePilotEnabled({ VERCEL_ENV: "preview" })).toBe(false);
     expect(isStaffRemoteCreatePilotEnabled(PILOT_ENV)).toBe(true);
   });

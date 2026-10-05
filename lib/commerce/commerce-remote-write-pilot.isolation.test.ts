@@ -245,7 +245,7 @@ describe("Phase 1C-6H.2 commerce remote write / settle", () => {
     localStorage.clear();
   });
 
-  it("keeps WRITE off unless READ is on, and forces Production off", () => {
+  it("keeps WRITE off unless READ is on; Production needs the same explicit env", () => {
     expect(isCommerceRemoteWritePilotEnabled({})).toBe(false);
     expect(
       isCommerceRemoteWritePilotEnabled({ [COMMERCE_REMOTE_WRITE_PILOT_ENV]: "1" }),
@@ -253,7 +253,7 @@ describe("Phase 1C-6H.2 commerce remote write / settle", () => {
     expect(isCommerceRemoteWritePilotEnabled(WRITE_ON)).toBe(true);
     expect(
       isCommerceRemoteWritePilotEnabled({ ...WRITE_ON, VERCEL_ENV: "production" }),
-    ).toBe(false);
+    ).toBe(true);
     expect(getPersistenceDriver(WRITE_ON)).toBe("local");
   });
 

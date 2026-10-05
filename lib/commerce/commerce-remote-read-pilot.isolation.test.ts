@@ -281,10 +281,10 @@ describe("Phase 1C-6H.1 commerce remote read pilot", () => {
     expect(isCommerceRemoteReadPilotEnabled(PILOT_ON)).toBe(true);
     expect(
       isCommerceRemoteReadPilotEnabled({ ...PILOT_ON, VERCEL_ENV: "production" }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isCommerceRemoteReadPilotEnabled({ ...PILOT_ON, VERCEL_TARGET_ENV: "production" }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isCommerceRemoteReadPilotEnabled({
         BEAUTY_OS_PERSISTENCE: "supabase",

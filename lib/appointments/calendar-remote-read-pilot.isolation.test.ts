@@ -276,13 +276,13 @@ describe("Phase 1C-5D calendar remote read pilot", () => {
         [CALENDAR_REMOTE_READ_PILOT_ENV]: "1",
         VERCEL_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isCalendarRemoteReadPilotEnabled({
         [CALENDAR_REMOTE_READ_PILOT_ENV]: "1",
         VERCEL_TARGET_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(getPersistenceDriver({ [CALENDAR_REMOTE_READ_PILOT_ENV]: "1" })).toBe("local");
   });
 

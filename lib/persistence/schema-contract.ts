@@ -32,6 +32,14 @@ export const TREATMENT_REMOTE_FOUNDATION_MIGRATION_FILE =
 export const COMMERCE_REMOTE_SETTLEMENT_MIGRATION_FILE =
   "supabase/migrations/20261005120000_commerce_remote_settlement.sql";
 
+/** Phase 1C-6H.2P additive Strategy B / RLS qualification. */
+export const STRATEGY_B_RLS_MIGRATION_FILE =
+  "supabase/migrations/20261006120000_strategy_b_rls_qualification.sql";
+
+/** Phase 1C-6H.2P checkout / transaction direct-table write hardening. */
+export const COMMERCE_TABLE_WRITE_HARDENING_MIGRATION_FILE =
+  "supabase/migrations/20261006130000_commerce_table_write_hardening.sql";
+
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [
   "remaining_sessions",

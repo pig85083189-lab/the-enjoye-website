@@ -35,7 +35,7 @@ describe("Phase 1C-6D.2 calendar remote cancel surface", () => {
         ...MUTATE_ON,
         VERCEL_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       resolveCalendarCancelSurface({
         calendarRemoteReadPilot: true,

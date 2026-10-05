@@ -249,13 +249,13 @@ describe("Phase 1C-5E Today remote read pilot", () => {
         [TODAY_REMOTE_READ_PILOT_ENV]: "1",
         VERCEL_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isTodayRemoteReadPilotEnabled({
         [TODAY_REMOTE_READ_PILOT_ENV]: "1",
         VERCEL_TARGET_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(getPersistenceDriver({ [TODAY_REMOTE_READ_PILOT_ENV]: "1" })).toBe("local");
     expect(isCalendarRemoteReadPilotEnabled({ [TODAY_REMOTE_READ_PILOT_ENV]: "1" })).toBe(false);
     expect(isAppointmentRemoteReadPilotEnabled({ [TODAY_REMOTE_READ_PILOT_ENV]: "1" })).toBe(false);

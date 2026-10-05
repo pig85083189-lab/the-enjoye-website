@@ -25,10 +25,10 @@ describe("Phase 1C-6G Treatment remote pilots", () => {
     expect(isTreatmentRemoteWritePilotEnabled(WRITE_ON)).toBe(true);
     expect(
       isTreatmentRemoteReadPilotEnabled({ ...READ_ON, VERCEL_ENV: "production" }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isTreatmentRemoteWritePilotEnabled({ ...WRITE_ON, VERCEL_TARGET_ENV: "production" }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("write requires read and stays independent of global persistence", () => {

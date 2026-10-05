@@ -210,13 +210,13 @@ describe("Phase 1C-6B.1 appointment remote write foundation", () => {
         ...WRITE_ON,
         VERCEL_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAppointmentRemoteWritePilotEnabled({
         ...WRITE_ON,
         VERCEL_TARGET_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAppointmentRemoteWritePilotEnabled({
         [APPOINTMENT_REMOTE_WRITE_PILOT_ENV]: "1",

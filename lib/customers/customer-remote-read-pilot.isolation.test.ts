@@ -305,7 +305,7 @@ describe("Phase 1C-3 customer remote read pilot", () => {
         [CUSTOMER_REMOTE_READ_PILOT_ENV]: "1",
         VERCEL_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(getPersistenceDriver({ [CUSTOMER_REMOTE_READ_PILOT_ENV]: "1" })).toBe("local");
     expect(getPersistenceDriver({})).toBe("local");
   });

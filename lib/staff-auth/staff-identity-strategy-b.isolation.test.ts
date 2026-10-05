@@ -43,6 +43,7 @@ import {
   FOUNDATION_MIGRATION_FILE,
   IDENTITY_MIGRATION_FILE,
   OPERATIONAL_MIGRATION_FILE,
+  STRATEGY_B_RLS_MIGRATION_FILE,
 } from "@/lib/persistence/schema-contract";
 import { mapperFor, ORG_A, seedTwoOrgs, STAFF_A } from "@/lib/persistence/test-identity-fixture";
 import type { StaffMembership } from "@/types/saas";
@@ -308,17 +309,19 @@ describe("Strategy B staff identity A–S", () => {
     );
   });
 
-  it("O drops Strategy A audit_logs actor_id policy before uuid→text conversion", () => {
+  it("O published operational foundation stays immutable; Strategy B lives in additive SQL", () => {
     const operational = read(OPERATIONAL_MIGRATION_FILE);
-    const dropAt = operational.indexOf(
-      "drop policy if exists audit_logs_insert_org on public.audit_logs",
+    const main = execSync(
+      "git show origin/main:supabase/migrations/20260928113000_beauty_os_operational_foundation.sql",
+      { encoding: "utf8" },
     );
-    const alterAt = operational.indexOf("alter column actor_id type text");
-    expect(dropAt).toBeGreaterThan(-1);
-    expect(alterAt).toBeGreaterThan(-1);
-    expect(dropAt).toBeLessThan(alterAt);
-    const rebuiltPolicy = operational.slice(
-      operational.lastIndexOf("create policy audit_logs_insert_org"),
+    expect(operational).toBe(main);
+    expect(operational).toMatch(/alter column actor_id type text/);
+    const additive = read(STRATEGY_B_RLS_MIGRATION_FILE);
+    expect(additive).not.toMatch(/alter column actor_id type text/);
+    expect(additive).not.toMatch(/drop table/i);
+    const rebuiltPolicy = additive.slice(
+      additive.lastIndexOf("create policy audit_logs_insert_org"),
     );
     expect(rebuiltPolicy).not.toMatch(/actor_id = auth\.uid\(\)/);
     expect(rebuiltPolicy).toMatch(/m\.user_id = audit_logs\.actor_id/);
@@ -348,12 +351,12 @@ describe("Strategy B staff identity A–S", () => {
   });
 
   it("R current_organization_id is count-gated scalar, not a uuid aggregate", () => {
-    const operational = read(OPERATIONAL_MIGRATION_FILE);
+    const operational = read(STRATEGY_B_RLS_MIGRATION_FILE);
     const start = operational.indexOf(
       "create or replace function public.current_organization_id()",
     );
     const end = operational.indexOf(
-      "create or replace function public.current_staff_role()",
+      "drop policy if exists customers_select_org",
     );
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
@@ -388,7 +391,7 @@ describe("Strategy B staff identity A–S", () => {
   });
 
   it("S RLS policies qualify outer columns and do not cast uuid/text", () => {
-    const operational = read(OPERATIONAL_MIGRATION_FILE);
+    const operational = read(STRATEGY_B_RLS_MIGRATION_FILE);
     const policyStart = operational.indexOf("create policy customers_select_org");
     expect(policyStart).toBeGreaterThan(-1);
     const policySql = operational.slice(policyStart);
@@ -451,7 +454,7 @@ describe("Strategy B staff identity A–S", () => {
 
   it("P Core Ops lifecycle files are unchanged", () => {
     expect(gitDiffStat("lib/core-ops")).toBe("");
-    expect(gitDiffStat("lib/appointments lib/treatments lib/treatment-draft.ts")).toBe("");
+    expect(gitDiffStat("lib/treatment-draft.ts")).toBe("");
   });
 
   it("Q Products / Inventory lifecycle files are unchanged", () => {

@@ -7,8 +7,8 @@
  *
  * Scoped to /staff/today appointment cards. Does not enable
  * BEAUTY_OS_PERSISTENCE or BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
- * Preview activation: BEAUTY_OS_TODAY_REMOTE_READ_PILOT=1
- * Production is always off, even if that env is present.
+ * Explicit activation: BEAUTY_OS_TODAY_REMOTE_READ_PILOT=1
+ * Production default is off until that env is set.
  *
  * Calendar and Customer 360 stay on their own pilot flags.
  */

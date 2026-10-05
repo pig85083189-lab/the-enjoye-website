@@ -4,8 +4,8 @@
  * Scoped to /staff/customers list + detail and Treatment customer
  * identity. Does not enable
  * BEAUTY_OS_PERSISTENCE or BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
- * Preview activation: BEAUTY_OS_CUSTOMER_REMOTE_READ_PILOT=1
- * Production is always off, even if that env is present.
+ * Explicit activation: BEAUTY_OS_CUSTOMER_REMOTE_READ_PILOT=1
+ * Production default is off until that env is set.
  */
 
 import { getCustomer, listCustomers } from "@/lib/customers/customer-queries";

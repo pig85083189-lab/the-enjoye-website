@@ -186,17 +186,7 @@ create index if not exists idx_locations_organization_id
 -- Convert checkpointed foundation operational staff columns from
 -- uuid → profiles.id to text staff-*. Empty DB: USING staff_id::text is safe.
 -- profiles.id remains auth.users.id (auth profile metadata only).
---
--- Postgres cannot ALTER COLUMN TYPE while a policy expression depends on it.
--- Foundation audit_logs_insert_org still compared the actor column to the
--- Auth UUID (Strategy A). Drop that coupling before conversion. Do not
--- recast the actor column to keep Auth UUID equality — recreate Strategy B
--- policies after user_has_org_membership exists: actor_id must equal the
--- caller's staff_auth_memberships.user_id (staff-*), never auth.users.id.
 -- ---------------------------------------------------------------------------
-drop policy if exists audit_logs_insert_org on public.audit_logs;
-drop policy if exists audit_logs_select_managers on public.audit_logs;
-
 alter table public.appointments drop constraint if exists appointments_staff_id_fkey;
 alter table public.appointments drop constraint if exists appointments_created_by_fkey;
 alter table public.treatments drop constraint if exists treatments_staff_id_fkey;
@@ -338,9 +328,7 @@ as $$
 $$;
 
 -- Honest replacements for foundation helpers. Not isolation SoT.
--- Returns a uuid only when the Auth user has exactly one active membership
--- that resolves through organizations.app_id. 0 or >1 → NULL.
--- Do not aggregate uuid: min()/max() are undefined for uuid.
+-- Returns a uuid only when the Auth user has exactly one active membership.
 create or replace function public.current_organization_id()
 returns uuid
 language sql
@@ -348,23 +336,11 @@ stable
 security definer
 set search_path = public
 as $$
-  select case
-    when (
-      select count(*)
-      from public.staff_auth_memberships m
-      join public.organizations o on o.app_id = m.organization_id
-      where m.auth_user_id = auth.uid()
-        and m.is_active = true
-    ) = 1
-    then (
-      select o.id
-      from public.staff_auth_memberships m
-      join public.organizations o on o.app_id = m.organization_id
-      where m.auth_user_id = auth.uid()
-        and m.is_active = true
-    )
-    else null
-  end;
+  select case when count(*) filter (where true) = 1 then min(o.id) else null end
+  from public.staff_auth_memberships m
+  join public.organizations o on o.app_id = m.organization_id
+  where m.auth_user_id = auth.uid()
+    and m.is_active = true;
 $$;
 
 create or replace function public.current_staff_role()
@@ -1063,16 +1039,6 @@ alter table public.follow_up_tasks
 
 -- ---------------------------------------------------------------------------
 -- RLS: membership-based org isolation for new tables
---
--- PostgreSQL name resolution (CREATE POLICY USING / WITH CHECK are SQL
--- boolean expressions, same as WHERE): innermost FROM wins. If a subquery
--- FROM staff_auth_memberships introduces organization_id, an unqualified
--- organization_id is m.organization_id (text app_id), not the policy
--- table's uuid organizations.id. That is uuid = text (SQLSTATE 42883).
---
--- Target-table columns may be written as table.column. That is legal
--- disambiguation, not a cast. Qualify every outer column a subquery
--- could shadow. Do not use ::text / ::uuid to hide an identity mismatch.
 -- ---------------------------------------------------------------------------
 alter table public.locations enable row level security;
 alter table public.products enable row level security;
@@ -1098,16 +1064,16 @@ drop policy if exists customers_insert_org on public.customers;
 drop policy if exists customers_update_org on public.customers;
 drop policy if exists customers_delete_org on public.customers;
 create policy customers_select_org on public.customers for select to authenticated
-  using (public.user_has_org_membership(customers.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy customers_insert_org on public.customers for insert to authenticated
-  with check (public.user_has_org_membership(customers.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy customers_update_org on public.customers for update to authenticated
-  using (public.user_has_org_membership(customers.organization_id))
-  with check (public.user_has_org_membership(customers.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 create policy customers_delete_org on public.customers for delete to authenticated
   using (
-    public.user_has_org_membership(customers.organization_id)
-    and public.staff_role_is_managerial(public.user_org_role(customers.organization_id))
+    public.user_has_org_membership(organization_id)
+    and public.staff_role_is_managerial(public.user_org_role(organization_id))
   );
 
 drop policy if exists customer_consultations_select_org on public.customer_consultations;
@@ -1115,30 +1081,30 @@ drop policy if exists customer_consultations_insert_org on public.customer_consu
 drop policy if exists customer_consultations_update_org on public.customer_consultations;
 drop policy if exists customer_consultations_delete_org on public.customer_consultations;
 create policy customer_consultations_select_org on public.customer_consultations for select to authenticated
-  using (public.user_has_org_membership(customer_consultations.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy customer_consultations_insert_org on public.customer_consultations for insert to authenticated
-  with check (public.user_has_org_membership(customer_consultations.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy customer_consultations_update_org on public.customer_consultations for update to authenticated
-  using (public.user_has_org_membership(customer_consultations.organization_id))
-  with check (public.user_has_org_membership(customer_consultations.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 create policy customer_consultations_delete_org on public.customer_consultations for delete to authenticated
-  using (public.user_has_org_membership(customer_consultations.organization_id));
+  using (public.user_has_org_membership(organization_id));
 
 drop policy if exists services_select_org on public.services;
 drop policy if exists services_insert_org on public.services;
 drop policy if exists services_update_org on public.services;
 drop policy if exists services_delete_org on public.services;
 create policy services_select_org on public.services for select to authenticated
-  using (public.user_has_org_membership(services.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy services_insert_org on public.services for insert to authenticated
-  with check (public.user_has_org_membership(services.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy services_update_org on public.services for update to authenticated
-  using (public.user_has_org_membership(services.organization_id))
-  with check (public.user_has_org_membership(services.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 create policy services_delete_org on public.services for delete to authenticated
   using (
-    public.user_has_org_membership(services.organization_id)
-    and public.staff_role_is_managerial(public.user_org_role(services.organization_id))
+    public.user_has_org_membership(organization_id)
+    and public.staff_role_is_managerial(public.user_org_role(organization_id))
   );
 
 drop policy if exists appointments_select_org on public.appointments;
@@ -1147,24 +1113,24 @@ drop policy if exists appointments_update_org on public.appointments;
 drop policy if exists appointments_delete_org on public.appointments;
 create policy appointments_select_org on public.appointments for select to authenticated
   using (
-    public.user_has_org_membership(appointments.organization_id)
-    and public.user_can_access_location(appointments.organization_id, appointments.location_id)
+    public.user_has_org_membership(organization_id)
+    and public.user_can_access_location(organization_id, location_id)
   );
 create policy appointments_insert_org on public.appointments for insert to authenticated
   with check (
-    public.user_has_org_membership(appointments.organization_id)
-    and public.user_can_access_location(appointments.organization_id, appointments.location_id)
+    public.user_has_org_membership(organization_id)
+    and public.user_can_access_location(organization_id, location_id)
   );
 create policy appointments_update_org on public.appointments for update to authenticated
-  using (public.user_has_org_membership(appointments.organization_id))
+  using (public.user_has_org_membership(organization_id))
   with check (
-    public.user_has_org_membership(appointments.organization_id)
-    and public.user_can_access_location(appointments.organization_id, appointments.location_id)
+    public.user_has_org_membership(organization_id)
+    and public.user_can_access_location(organization_id, location_id)
   );
 create policy appointments_delete_org on public.appointments for delete to authenticated
   using (
-    public.user_has_org_membership(appointments.organization_id)
-    and public.staff_role_is_managerial(public.user_org_role(appointments.organization_id))
+    public.user_has_org_membership(organization_id)
+    and public.staff_role_is_managerial(public.user_org_role(organization_id))
   );
 
 drop policy if exists treatments_select_org on public.treatments;
@@ -1172,16 +1138,16 @@ drop policy if exists treatments_insert_org on public.treatments;
 drop policy if exists treatments_update_org on public.treatments;
 drop policy if exists treatments_delete_org on public.treatments;
 create policy treatments_select_org on public.treatments for select to authenticated
-  using (public.user_has_org_membership(treatments.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy treatments_insert_org on public.treatments for insert to authenticated
-  with check (public.user_has_org_membership(treatments.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy treatments_update_org on public.treatments for update to authenticated
-  using (public.user_has_org_membership(treatments.organization_id))
-  with check (public.user_has_org_membership(treatments.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 create policy treatments_delete_org on public.treatments for delete to authenticated
   using (
-    public.user_has_org_membership(treatments.organization_id)
-    and public.staff_role_is_managerial(public.user_org_role(treatments.organization_id))
+    public.user_has_org_membership(organization_id)
+    and public.staff_role_is_managerial(public.user_org_role(organization_id))
   );
 
 drop policy if exists treatment_photos_select_org on public.treatment_photos;
@@ -1189,51 +1155,48 @@ drop policy if exists treatment_photos_insert_org on public.treatment_photos;
 drop policy if exists treatment_photos_update_org on public.treatment_photos;
 drop policy if exists treatment_photos_delete_org on public.treatment_photos;
 create policy treatment_photos_select_org on public.treatment_photos for select to authenticated
-  using (public.user_has_org_membership(treatment_photos.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy treatment_photos_insert_org on public.treatment_photos for insert to authenticated
-  with check (public.user_has_org_membership(treatment_photos.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy treatment_photos_update_org on public.treatment_photos for update to authenticated
-  using (public.user_has_org_membership(treatment_photos.organization_id))
-  with check (public.user_has_org_membership(treatment_photos.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 create policy treatment_photos_delete_org on public.treatment_photos for delete to authenticated
-  using (public.user_has_org_membership(treatment_photos.organization_id));
+  using (public.user_has_org_membership(organization_id));
 
 drop policy if exists organizations_select_own on public.organizations;
 create policy organizations_select_own on public.organizations for select to authenticated
-  using (public.user_has_org_membership(organizations.id));
+  using (public.user_has_org_membership(id));
 
 drop policy if exists profiles_select_own_or_org on public.profiles;
 create policy profiles_select_own_or_org on public.profiles for select to authenticated
   using (
-    profiles.id = auth.uid()
-    or public.user_has_org_membership(profiles.organization_id)
+    id = auth.uid()
+    or public.user_has_org_membership(organization_id)
   );
 
--- Innermost FROM is staff_auth_memberships m / organizations o.
--- Unqualified organization_id here is m.organization_id (text), not
--- audit_logs.organization_id (uuid). Qualify the target table.
 drop policy if exists audit_logs_insert_org on public.audit_logs;
 drop policy if exists audit_logs_select_managers on public.audit_logs;
 create policy audit_logs_insert_org on public.audit_logs for insert to authenticated
   with check (
-    public.user_has_org_membership(audit_logs.organization_id)
+    public.user_has_org_membership(organization_id)
     and (
-      audit_logs.actor_id is null
+      actor_id is null
       or exists (
         select 1
         from public.staff_auth_memberships m
-        join public.organizations o on m.organization_id = o.app_id
-        where o.id = audit_logs.organization_id
-          and m.user_id = audit_logs.actor_id
+        join public.organizations o on o.app_id = m.organization_id
+        where o.id = organization_id
           and m.auth_user_id = auth.uid()
           and m.is_active = true
+          and m.user_id = actor_id
       )
     )
   );
 create policy audit_logs_select_managers on public.audit_logs for select to authenticated
   using (
-    public.user_has_org_membership(audit_logs.organization_id)
-    and public.staff_role_is_managerial(public.user_org_role(audit_logs.organization_id))
+    public.user_has_org_membership(organization_id)
+    and public.staff_role_is_managerial(public.user_org_role(organization_id))
   );
 
 -- Generic org member policies for new tables
@@ -1288,34 +1251,32 @@ drop policy if exists locations_update_org on public.locations;
 drop policy if exists locations_select_org on public.locations;
 drop policy if exists locations_write_org on public.locations;
 create policy locations_select_org on public.locations for select to authenticated
-  using (public.user_has_org_membership(locations.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy locations_insert_org on public.locations for insert to authenticated
   with check (
-    public.user_has_org_membership(locations.organization_id)
-    and public.staff_role_is_managerial(public.user_org_role(locations.organization_id))
+    public.user_has_org_membership(organization_id)
+    and public.staff_role_is_managerial(public.user_org_role(organization_id))
   );
 create policy locations_update_org on public.locations for update to authenticated
-  using (public.user_has_org_membership(locations.organization_id))
+  using (public.user_has_org_membership(organization_id))
   with check (
-    public.user_has_org_membership(locations.organization_id)
-    and public.staff_role_is_managerial(public.user_org_role(locations.organization_id))
+    public.user_has_org_membership(organization_id)
+    and public.staff_role_is_managerial(public.user_org_role(organization_id))
   );
 
 -- Canonical membership: authenticated may SELECT colleagues in orgs they
 -- actively belong to. Writes stay service-role only (no insert/update policy).
--- organizations has no organization_id; an unqualified name would still bind
--- to the outer text app_id. Qualify anyway so the text↔text join is explicit.
 drop policy if exists staff_auth_memberships_select_org on public.staff_auth_memberships;
 create policy staff_auth_memberships_select_org
 on public.staff_auth_memberships
 for select
 to authenticated
 using (
-  staff_auth_memberships.auth_user_id = auth.uid()
+  auth_user_id = auth.uid()
   or exists (
     select 1
     from public.organizations o
-    where o.app_id = staff_auth_memberships.organization_id
+    where o.app_id = organization_id
       and public.user_has_org_membership(o.id)
   )
 );
@@ -1330,8 +1291,8 @@ using (
   exists (
     select 1
     from public.staff_auth_memberships m
-    join public.organizations o on m.organization_id = o.app_id
-    where m.id = staff_auth_membership_locations.membership_id
+    join public.organizations o on o.app_id = m.organization_id
+    where m.id = membership_id
       and (
         m.auth_user_id = auth.uid()
         or public.user_has_org_membership(o.id)
@@ -1341,125 +1302,125 @@ using (
 
 -- Helper macro-style policies via repeated patterns
 create policy products_select_org on public.products for select to authenticated
-  using (public.user_has_org_membership(products.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy products_insert_org on public.products for insert to authenticated
-  with check (public.user_has_org_membership(products.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy products_update_org on public.products for update to authenticated
-  using (public.user_has_org_membership(products.organization_id))
-  with check (public.user_has_org_membership(products.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 
 create policy checkout_drafts_select_org on public.checkout_drafts for select to authenticated
-  using (public.user_has_org_membership(checkout_drafts.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy checkout_drafts_insert_org on public.checkout_drafts for insert to authenticated
-  with check (public.user_has_org_membership(checkout_drafts.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy checkout_drafts_update_org on public.checkout_drafts for update to authenticated
-  using (public.user_has_org_membership(checkout_drafts.organization_id))
-  with check (public.user_has_org_membership(checkout_drafts.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 
 create policy checkout_items_select_org on public.checkout_items for select to authenticated
-  using (public.user_has_org_membership(checkout_items.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy checkout_items_insert_org on public.checkout_items for insert to authenticated
-  with check (public.user_has_org_membership(checkout_items.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy checkout_items_update_org on public.checkout_items for update to authenticated
-  using (public.user_has_org_membership(checkout_items.organization_id))
-  with check (public.user_has_org_membership(checkout_items.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 create policy checkout_items_delete_org on public.checkout_items for delete to authenticated
-  using (public.user_has_org_membership(checkout_items.organization_id));
+  using (public.user_has_org_membership(organization_id));
 
 create policy checkout_discounts_select_org on public.checkout_discounts for select to authenticated
-  using (public.user_has_org_membership(checkout_discounts.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy checkout_discounts_insert_org on public.checkout_discounts for insert to authenticated
-  with check (public.user_has_org_membership(checkout_discounts.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy checkout_discounts_update_org on public.checkout_discounts for update to authenticated
-  using (public.user_has_org_membership(checkout_discounts.organization_id))
-  with check (public.user_has_org_membership(checkout_discounts.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 create policy checkout_discounts_delete_org on public.checkout_discounts for delete to authenticated
-  using (public.user_has_org_membership(checkout_discounts.organization_id));
+  using (public.user_has_org_membership(organization_id));
 
 create policy checkout_payments_select_org on public.checkout_payments for select to authenticated
-  using (public.user_has_org_membership(checkout_payments.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy checkout_payments_insert_org on public.checkout_payments for insert to authenticated
-  with check (public.user_has_org_membership(checkout_payments.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy checkout_payments_update_org on public.checkout_payments for update to authenticated
-  using (public.user_has_org_membership(checkout_payments.organization_id))
-  with check (public.user_has_org_membership(checkout_payments.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 create policy checkout_payments_delete_org on public.checkout_payments for delete to authenticated
-  using (public.user_has_org_membership(checkout_payments.organization_id));
+  using (public.user_has_org_membership(organization_id));
 
 -- Transactions: select/insert; update allowed for VOIDED transition (app-enforced);
 -- no delete (history must survive customer/service changes via RESTRICT FKs)
 create policy transactions_select_org on public.transactions for select to authenticated
-  using (public.user_has_org_membership(transactions.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy transactions_insert_org on public.transactions for insert to authenticated
-  with check (public.user_has_org_membership(transactions.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy transactions_update_org on public.transactions for update to authenticated
   using (
-    public.user_has_org_membership(transactions.organization_id)
-    and public.staff_role_is_managerial(public.user_org_role(transactions.organization_id))
+    public.user_has_org_membership(organization_id)
+    and public.staff_role_is_managerial(public.user_org_role(organization_id))
   )
-  with check (public.user_has_org_membership(transactions.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 
 create policy transaction_items_select_org on public.transaction_items for select to authenticated
-  using (public.user_has_org_membership(transaction_items.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy transaction_items_insert_org on public.transaction_items for insert to authenticated
-  with check (public.user_has_org_membership(transaction_items.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 
 create policy transaction_discounts_select_org on public.transaction_discounts for select to authenticated
-  using (public.user_has_org_membership(transaction_discounts.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy transaction_discounts_insert_org on public.transaction_discounts for insert to authenticated
-  with check (public.user_has_org_membership(transaction_discounts.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 
 create policy transaction_payments_select_org on public.transaction_payments for select to authenticated
-  using (public.user_has_org_membership(transaction_payments.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy transaction_payments_insert_org on public.transaction_payments for insert to authenticated
-  with check (public.user_has_org_membership(transaction_payments.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 
 create policy package_definitions_select_org on public.package_definitions for select to authenticated
-  using (public.user_has_org_membership(package_definitions.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy package_definitions_insert_org on public.package_definitions for insert to authenticated
-  with check (public.user_has_org_membership(package_definitions.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy package_definitions_update_org on public.package_definitions for update to authenticated
-  using (public.user_has_org_membership(package_definitions.organization_id))
-  with check (public.user_has_org_membership(package_definitions.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 
 create policy customer_packages_select_org on public.customer_packages for select to authenticated
-  using (public.user_has_org_membership(customer_packages.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy customer_packages_insert_org on public.customer_packages for insert to authenticated
-  with check (public.user_has_org_membership(customer_packages.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy customer_packages_update_org on public.customer_packages for update to authenticated
-  using (public.user_has_org_membership(customer_packages.organization_id))
-  with check (public.user_has_org_membership(customer_packages.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 
 create policy package_ledger_select_org on public.package_ledger_entries for select to authenticated
-  using (public.user_has_org_membership(package_ledger_entries.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy package_ledger_insert_org on public.package_ledger_entries for insert to authenticated
-  with check (public.user_has_org_membership(package_ledger_entries.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 
 create policy stored_value_accounts_select_org on public.stored_value_accounts for select to authenticated
-  using (public.user_has_org_membership(stored_value_accounts.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy stored_value_accounts_insert_org on public.stored_value_accounts for insert to authenticated
-  with check (public.user_has_org_membership(stored_value_accounts.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy stored_value_accounts_update_org on public.stored_value_accounts for update to authenticated
-  using (public.user_has_org_membership(stored_value_accounts.organization_id))
-  with check (public.user_has_org_membership(stored_value_accounts.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 
 create policy stored_value_ledger_select_org on public.stored_value_ledger_entries for select to authenticated
-  using (public.user_has_org_membership(stored_value_ledger_entries.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy stored_value_ledger_insert_org on public.stored_value_ledger_entries for insert to authenticated
-  with check (public.user_has_org_membership(stored_value_ledger_entries.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 
 create policy inventory_movements_select_org on public.inventory_movements for select to authenticated
-  using (public.user_has_org_membership(inventory_movements.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy inventory_movements_insert_org on public.inventory_movements for insert to authenticated
-  with check (public.user_has_org_membership(inventory_movements.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 
 create policy follow_up_tasks_select_org on public.follow_up_tasks for select to authenticated
-  using (public.user_has_org_membership(follow_up_tasks.organization_id));
+  using (public.user_has_org_membership(organization_id));
 create policy follow_up_tasks_insert_org on public.follow_up_tasks for insert to authenticated
-  with check (public.user_has_org_membership(follow_up_tasks.organization_id));
+  with check (public.user_has_org_membership(organization_id));
 create policy follow_up_tasks_update_org on public.follow_up_tasks for update to authenticated
-  using (public.user_has_org_membership(follow_up_tasks.organization_id))
-  with check (public.user_has_org_membership(follow_up_tasks.organization_id));
+  using (public.user_has_org_membership(organization_id))
+  with check (public.user_has_org_membership(organization_id));
 
 grant select, insert, update, delete on public.locations to authenticated;
 grant select, insert, update on public.products to authenticated;

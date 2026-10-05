@@ -8,7 +8,7 @@
  * Scoped to Customer 360 Appointments tab. Does not enable
  * BEAUTY_OS_PERSISTENCE or BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
  * Preview activation: BEAUTY_OS_APPOINTMENT_REMOTE_READ_PILOT=1
- * Production is always off, even if that env is present.
+ * Production default is off until that env is set.
  * Today and Calendar stay on their own independent pilot flags.
  */
 

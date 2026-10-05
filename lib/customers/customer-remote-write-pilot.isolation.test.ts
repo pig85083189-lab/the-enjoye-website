@@ -198,7 +198,7 @@ describe("Customer remote write pilot flag", () => {
         ...WRITE_ON,
         VERCEL_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isCustomerRemoteWritePilotEnabled({
         ...WRITE_ON,

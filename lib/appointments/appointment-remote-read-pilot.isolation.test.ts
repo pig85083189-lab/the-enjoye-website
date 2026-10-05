@@ -457,13 +457,13 @@ describe("Phase 1C-5C appointment remote read pilot", () => {
         [APPOINTMENT_REMOTE_READ_PILOT_ENV]: "1",
         VERCEL_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAppointmentRemoteReadPilotEnabled({
         [APPOINTMENT_REMOTE_READ_PILOT_ENV]: "1",
         VERCEL_TARGET_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(getPersistenceDriver({ [APPOINTMENT_REMOTE_READ_PILOT_ENV]: "1" })).toBe("local");
     expect(
       isCustomerRemoteReadPilotEnabled({

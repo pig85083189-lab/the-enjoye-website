@@ -39,19 +39,19 @@ describe("Phase 1C-6D.1 appointment remote mutate flag", () => {
     ).toBe(false);
   });
 
-  it("is forced off in Production and ignores global persistence", () => {
+  it("honors explicit Production env and ignores global persistence", () => {
     expect(
       isAppointmentRemoteMutatePilotEnabled({
         ...MUTATE_ON,
         VERCEL_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAppointmentRemoteMutatePilotEnabled({
         ...MUTATE_ON,
         VERCEL_TARGET_ENV: "production",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isAppointmentRemoteMutatePilotEnabled({
         ...MUTATE_ON,
