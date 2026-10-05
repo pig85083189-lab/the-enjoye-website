@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   APPOINTMENT_INTEGRITY_MIGRATION_FILE,
+  AUDIT_LOGS_ACTOR_BRIDGE_MIGRATION_FILE,
   COMMERCE_REMOTE_SETTLEMENT_MIGRATION_FILE,
   COMMERCE_TABLE_WRITE_HARDENING_MIGRATION_FILE,
   STRATEGY_B_RLS_MIGRATION_FILE,
@@ -71,6 +72,13 @@ describe("Phase 5A-1 operational schema contract", () => {
     expect(tableWrite).not.toMatch(/\btruncate\s+table\b/i);
     expect(tableWrite).toMatch(/revoke all on public\.checkout_drafts/);
     expect(tableWrite).toMatch(/grant select on public\.transactions/);
+    const bridge = readMigration(AUDIT_LOGS_ACTOR_BRIDGE_MIGRATION_FILE);
+    const bridgeSql = bridge.slice(bridge.indexOf("do $$"));
+    expect(bridgeSql).toMatch(/drop policy if exists audit_logs_insert_org/);
+    expect(bridgeSql).not.toMatch(/alter column actor_id type/i);
+    expect(bridgeSql).not.toMatch(/drop table/i);
+    expect(bridgeSql).not.toMatch(/\btruncate\s+table\b/i);
+    expect(bridgeSql).not.toMatch(/\binsert into\b/i);
   });
 
   it("creates every operational table named in the contract", () => {

@@ -13,6 +13,10 @@ export const ENUM_ADAPT_MIGRATION_FILE =
 export const IDENTITY_MIGRATION_FILE =
   "supabase/migrations/20260928112950_staff_auth_memberships.sql";
 
+/** Phase 1C-6H.2P2A pre-113000 fresh-DB policy bridge. Does not alter types. */
+export const AUDIT_LOGS_ACTOR_BRIDGE_MIGRATION_FILE =
+  "supabase/migrations/20260928112975_audit_logs_actor_operational_bridge.sql";
+
 export const FOUNDATION_MIGRATION_FILE =
   "supabase/migrations/20260918120000_beauty_os_foundation.sql";
 
