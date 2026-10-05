@@ -162,8 +162,11 @@ function TransactionsInner({
     remoteTransactionState,
   ]);
 
-  const remoteCustomers =
-    remoteTransactionState.status === "data" ? remoteTransactionState.customers : [];
+  const remoteCustomers = useMemo(
+    () =>
+      remoteTransactionState.status === "data" ? remoteTransactionState.customers : [],
+    [remoteTransactionState],
+  );
 
   const appointments = useMemo(() => {
     void commerceRev;

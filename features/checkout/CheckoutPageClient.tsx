@@ -188,10 +188,16 @@ export function CheckoutPageClient({
     organizationId: organization.id,
     enabled: remoteReadEnabled,
   });
-  const remoteTransactions =
-    remoteTransactionState.status === "data" ? remoteTransactionState.transactions : [];
-  const remoteTransactionCustomers =
-    remoteTransactionState.status === "data" ? remoteTransactionState.customers : [];
+  const remoteTransactions = useMemo(
+    () =>
+      remoteTransactionState.status === "data" ? remoteTransactionState.transactions : [],
+    [remoteTransactionState],
+  );
+  const remoteTransactionCustomers = useMemo(
+    () =>
+      remoteTransactionState.status === "data" ? remoteTransactionState.customers : [],
+    [remoteTransactionState],
+  );
 
   const customers = useCrmJson(
     () =>

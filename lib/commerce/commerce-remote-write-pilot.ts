@@ -20,7 +20,6 @@ import {
   type CommerceSupabaseClient,
 } from "@/lib/persistence/authenticated-commerce-store";
 import {
-  COMMERCE_WRITE_FORBIDDEN_MESSAGE,
   COMMERCE_WRITE_PILOT_OFF_MESSAGE,
   CommerceWritePilotDeniedError,
   CommerceWriteStaleError,

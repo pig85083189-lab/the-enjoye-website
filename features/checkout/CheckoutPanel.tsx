@@ -105,13 +105,16 @@ export function CheckoutPanel({
       ? getOpenDraftForAppointment(organizationId, item.appointmentId)
       : undefined) ??
     item.draft;
-  const [remoteDraftState, setRemoteDraftState] = useState<CheckoutDraft | null>(
-    remoteDraft,
+  const [editedRemoteDraft, setEditedRemoteDraft] = useState<CheckoutDraft | null>(
+    null,
   );
-  useEffect(() => {
-    setRemoteDraftState(remoteDraft);
-  }, [remoteDraft]);
-  const liveDraft = commerceRemoteWrite ? remoteDraftState ?? remoteDraft : localDraft;
+  const liveDraft = commerceRemoteWrite
+    ? editedRemoteDraft &&
+      editedRemoteDraft.id === remoteDraft?.id &&
+      editedRemoteDraft.updatedAt >= (remoteDraft?.updatedAt ?? "")
+      ? editedRemoteDraft
+      : remoteDraft
+    : localDraft;
   const transaction = commerceRemoteWrite
     ? remoteTransaction ?? item.transaction
     : item.transaction;
@@ -270,7 +273,7 @@ export function CheckoutPanel({
       })),
       discounts: liveDraft.discounts,
     });
-    setRemoteDraftState(next.draft);
+    setEditedRemoteDraft(next.draft);
   }
 
   async function persistRemoteDiscounts(
@@ -283,7 +286,7 @@ export function CheckoutPanel({
       payments: liveDraft.payments,
       discounts,
     });
-    setRemoteDraftState(next.draft);
+    setEditedRemoteDraft(next.draft);
   }
 
   function applySinglePayment(method: PaymentMethod) {
@@ -1133,7 +1136,7 @@ export function CheckoutPanel({
                     expectedUpdatedAt: liveDraft.updatedAt,
                   }).then(
                     (bundle) => {
-                      setRemoteDraftState(bundle.draft);
+                      setEditedRemoteDraft(bundle.draft);
                       if (bundle.transaction) onCompleted?.(bundle.transaction.id);
                     },
                     (err: unknown) => setError(toCommerceUserMessage(err)),
