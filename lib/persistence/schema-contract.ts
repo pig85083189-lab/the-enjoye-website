@@ -7,6 +7,17 @@
 export const OPERATIONAL_MIGRATION_FILE =
   "supabase/migrations/20260928113000_beauty_os_operational_foundation.sql";
 
+/** Defective origin/main 113000 (unqualified audit_logs policy). */
+export const OPERATIONAL_MIGRATION_DEFECTIVE_SHA256 =
+  "2c01751cdbcef8294d16b0cb580c17948ce9598528bb0e7ca4dada0ff1a24618";
+
+/** Phase 1C-6H.2P2B qualified replay repair. */
+export const OPERATIONAL_MIGRATION_REPAIRED_SHA256 =
+  "baa230a5f4aa44d506aa811e3350cbf39265ce56d1083aba56a1c8ace65911f5";
+
+export const OPERATIONAL_MIGRATION_REPAIR_DOC =
+  "docs/supabase/migration-repair-20260928113000.md";
+
 export const ENUM_ADAPT_MIGRATION_FILE =
   "supabase/migrations/20260928112900_beauty_os_enum_adapt.sql";
 

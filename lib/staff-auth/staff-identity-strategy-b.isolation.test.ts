@@ -309,14 +309,11 @@ describe("Strategy B staff identity A–S", () => {
     );
   });
 
-  it("O published operational foundation stays immutable; Strategy B lives in additive SQL", () => {
+  it("O published operational foundation keeps Strategy B in additive SQL", () => {
     const operational = read(OPERATIONAL_MIGRATION_FILE);
-    const main = execSync(
-      "git show origin/main:supabase/migrations/20260928113000_beauty_os_operational_foundation.sql",
-      { encoding: "utf8" },
-    );
-    expect(operational).toBe(main);
     expect(operational).toMatch(/alter column actor_id type text/);
+    expect(operational).toMatch(/o\.id = audit_logs\.organization_id/);
+    expect(operational).toMatch(/m\.user_id = audit_logs\.actor_id/);
     const additive = read(STRATEGY_B_RLS_MIGRATION_FILE);
     expect(additive).not.toMatch(/alter column actor_id type text/);
     expect(additive).not.toMatch(/drop table/i);
