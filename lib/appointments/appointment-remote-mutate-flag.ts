@@ -10,7 +10,7 @@
  * BEAUTY_OS_PERSISTENCE / BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
  */
 
-import { isExplicitRemotePilotEnabled } from "@/lib/persistence/remote-pilot-flag";
+import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 import { isAppointmentRemoteWritePilotEnabled } from "./appointment-remote-write-flag";
 import { isCalendarRemoteReadPilotEnabled } from "./calendar-remote-read-flag";
 

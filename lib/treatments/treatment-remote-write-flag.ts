@@ -9,7 +9,7 @@
  * and of Customer / Appointment / Staff pilots.
  */
 
-import { isExplicitRemotePilotEnabled } from "@/lib/persistence/remote-pilot-flag";
+import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 import { isTreatmentRemoteReadPilotEnabled } from "./treatment-remote-read-flag";
 
 export const TREATMENT_REMOTE_WRITE_PILOT_ENV =

@@ -6,13 +6,16 @@ import { isCustomerRemoteReadPilotEnabled } from "@/lib/customers/customer-remot
 import {
   APPOINTMENT_INTEGRITY_MIGRATION_FILE,
   OPERATIONAL_MIGRATION_FILE,
+  STRATEGY_B_RLS_MIGRATION_FILE,
 } from "./schema-contract";
 
 const OPERATIONAL = path.join(process.cwd(), OPERATIONAL_MIGRATION_FILE);
 const INTEGRITY = path.join(process.cwd(), APPOINTMENT_INTEGRITY_MIGRATION_FILE);
+const STRATEGY_B = path.join(process.cwd(), STRATEGY_B_RLS_MIGRATION_FILE);
 
 describe("Phase 1C-5A appointment RLS readiness", () => {
-  const sql = readFileSync(OPERATIONAL, "utf8");
+  const sql = `${readFileSync(INTEGRITY, "utf8")}\n${readFileSync(STRATEGY_B, "utf8")}`;
+  const operational = readFileSync(OPERATIONAL, "utf8");
 
   it("INSERT requires org membership and location helper", () => {
     expect(sql).toMatch(
@@ -35,13 +38,13 @@ describe("Phase 1C-5A appointment RLS readiness", () => {
   });
 
   it("location helper still allows null location_id globally", () => {
-    expect(sql).toMatch(/target_loc is null/);
+    expect(operational).toMatch(/target_loc is null/);
   });
 
   it("staff columns are operational text, never Auth UUID FK", () => {
-    expect(sql).toMatch(/appointments_staff_id_operational/);
-    expect(sql).toMatch(/is_operational_staff_id\(staff_id\)/);
-    expect(sql).toMatch(/alter column staff_id type text/);
+    expect(operational).toMatch(/appointments_staff_id_operational/);
+    expect(operational).toMatch(/is_operational_staff_id\(staff_id\)/);
+    expect(operational).toMatch(/alter column staff_id type text/);
   });
 
   it("does not enable global persistence or Customer pilot changes", () => {

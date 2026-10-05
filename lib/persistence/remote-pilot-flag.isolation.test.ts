@@ -10,7 +10,7 @@ import { CUSTOMER_REMOTE_READ_PILOT_ENV, isCustomerRemoteReadPilotEnabled } from
 import { CUSTOMER_REMOTE_WRITE_PILOT_ENV, isCustomerRemoteWritePilotEnabled } from "@/lib/customers/customer-remote-write-flag";
 import { TREATMENT_REMOTE_READ_PILOT_ENV, isTreatmentRemoteReadPilotEnabled } from "@/lib/treatments/treatment-remote-read-flag";
 import { TREATMENT_REMOTE_WRITE_PILOT_ENV, isTreatmentRemoteWritePilotEnabled } from "@/lib/treatments/treatment-remote-write-flag";
-import { isExplicitRemotePilotEnabled } from "./remote-pilot-flag";
+import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 
 const PREVIEW_VERIFIED = {
   [CUSTOMER_REMOTE_READ_PILOT_ENV]: "1",

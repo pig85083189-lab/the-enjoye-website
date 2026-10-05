@@ -12,7 +12,7 @@
  * Transaction writes.
  */
 
-import { isExplicitRemotePilotEnabled } from "@/lib/persistence/remote-pilot-flag";
+import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 
 export const COMMERCE_REMOTE_READ_PILOT_ENV = "BEAUTY_OS_COMMERCE_REMOTE_READ_PILOT";
 

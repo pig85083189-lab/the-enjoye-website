@@ -7,7 +7,7 @@
  * Enabled only when the env is explicitly "1". Production default is off.
  */
 
-import { isExplicitRemotePilotEnabled } from "@/lib/persistence/remote-pilot-flag";
+import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 
 export const TODAY_REMOTE_READ_PILOT_ENV = "BEAUTY_OS_TODAY_REMOTE_READ_PILOT";
 

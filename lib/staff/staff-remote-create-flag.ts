@@ -6,7 +6,7 @@
  * BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE. Requires authenticated Supabase Staff Auth.
  */
 
-import { isExplicitRemotePilotEnabled } from "@/lib/persistence/remote-pilot-flag";
+import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 
 export const STAFF_REMOTE_CREATE_PILOT_ENV = "BEAUTY_OS_STAFF_REMOTE_CREATE_PILOT";
 

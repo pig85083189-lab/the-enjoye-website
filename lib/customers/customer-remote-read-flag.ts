@@ -8,7 +8,7 @@
  * Does not enable BEAUTY_OS_PERSISTENCE or BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
  */
 
-import { isExplicitRemotePilotEnabled } from "@/lib/persistence/remote-pilot-flag";
+import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 
 export const CUSTOMER_REMOTE_READ_PILOT_ENV = "BEAUTY_OS_CUSTOMER_REMOTE_READ_PILOT";
 

@@ -9,7 +9,7 @@
  * and of Customer / Appointment / Staff pilots.
  */
 
-import { isExplicitRemotePilotEnabled } from "@/lib/persistence/remote-pilot-flag";
+import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 
 export const TREATMENT_REMOTE_READ_PILOT_ENV = "BEAUTY_OS_TREATMENT_REMOTE_READ_PILOT";
 

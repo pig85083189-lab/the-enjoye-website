@@ -10,7 +10,7 @@
  * Requires the Calendar remote-read foundation.
  */
 
-import { isExplicitRemotePilotEnabled } from "@/lib/persistence/remote-pilot-flag";
+import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 import { isCalendarRemoteReadPilotEnabled } from "./calendar-remote-read-flag";
 
 export const APPOINTMENT_REMOTE_WRITE_PILOT_ENV =

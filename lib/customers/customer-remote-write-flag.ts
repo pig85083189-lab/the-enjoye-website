@@ -9,7 +9,7 @@
  * Requires the Customer remote-read foundation.
  */
 
-import { isExplicitRemotePilotEnabled } from "@/lib/persistence/remote-pilot-flag";
+import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 import { isCustomerRemoteReadPilotEnabled } from "./customer-remote-read-flag";
 
 export const CUSTOMER_REMOTE_WRITE_PILOT_ENV = "BEAUTY_OS_CUSTOMER_REMOTE_WRITE_PILOT";
