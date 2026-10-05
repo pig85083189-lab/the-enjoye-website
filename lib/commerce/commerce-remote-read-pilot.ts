@@ -13,7 +13,10 @@
 import { AppointmentRemoteAdapter } from "@/lib/persistence/appointment-remote-adapter";
 import { AuthenticatedAppointmentReadStore } from "@/lib/persistence/authenticated-appointment-read-store";
 import { AuthenticatedCustomerReadStore } from "@/lib/persistence/authenticated-customer-read-store";
-import { AuthenticatedServiceTableStore } from "@/lib/persistence/authenticated-service-store";
+import {
+  AuthenticatedServiceTableStore,
+  type AuthenticatedServiceSupabaseClient,
+} from "@/lib/persistence/authenticated-service-store";
 import { AuthenticatedTreatmentReadStore } from "@/lib/persistence/authenticated-treatment-read-store";
 import {
   loadAuthenticatedIdentityCatalog,
@@ -40,6 +43,28 @@ export {
 export const COMMERCE_REMOTE_READ_PILOT_OFF_MESSAGE =
   "Commerce remote read pilot is off";
 
+const COMMERCE_SERVICE_READ_ONLY_MESSAGE =
+  "Commerce remote identity path does not write services";
+
+function asServiceReadClient(
+  client: IdentitySupabaseClient,
+): AuthenticatedServiceSupabaseClient {
+  return {
+    from(table: string) {
+      const query = client.from(table);
+      return {
+        select: (columns: string) => query.select(columns),
+        insert() {
+          throw new Error(COMMERCE_SERVICE_READ_ONLY_MESSAGE);
+        },
+        update() {
+          throw new Error(COMMERCE_SERVICE_READ_ONLY_MESSAGE);
+        },
+      };
+    },
+  } as unknown as AuthenticatedServiceSupabaseClient;
+}
+
 export async function createAuthenticatedCommerceReadPersistence(
   client: IdentitySupabaseClient,
 ) {
@@ -59,7 +84,7 @@ export async function createAuthenticatedCommerceReadPersistence(
     ),
     services: new ServiceRemoteAdapter(
       identity.mapper,
-      new AuthenticatedServiceTableStore(client),
+      new AuthenticatedServiceTableStore(asServiceReadClient(client)),
     ),
   };
 }
