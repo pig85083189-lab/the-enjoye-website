@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { useCustomerRemoteDetail } from "@/features/customers/use-customer-remote-read";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
@@ -50,36 +51,80 @@ function fromCustomer(c: Customer): EditFormState {
 
 interface CustomerEditFormProps {
   customerId: string;
+  remoteReadPilot?: boolean;
 }
 
-export function CustomerEditForm({ customerId }: CustomerEditFormProps) {
+export function CustomerEditForm({
+  customerId,
+  remoteReadPilot = false,
+}: CustomerEditFormProps) {
   const router = useRouter();
   const { organization } = useOrganization();
   const isClient = useIsClient();
-  const customer = useCrmJson(
+  const localCustomer = useCrmJson(
     () =>
-      localCustomerRepository.getById({
-        organizationId: organization.id,
-        id: customerId,
-      }) ?? null,
+      remoteReadPilot
+        ? null
+        : localCustomerRepository.getById({
+            organizationId: organization.id,
+            id: customerId,
+          }) ?? null,
     null as Customer | null,
   );
+  const remote = useCustomerRemoteDetail(
+    organization.id,
+    customerId,
+    remoteReadPilot,
+  );
+  const customer = remoteReadPilot
+    ? remote.status === "data"
+      ? remote.value
+      : null
+    : localCustomer;
   const [form, setForm] = useState<EditFormState | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  if (!isClient) {
+  if (
+    !isClient ||
+    (remoteReadPilot && (remote.status === "loading" || remote.status === "off"))
+  ) {
     return (
       <div className="h-40 animate-pulse rounded-2xl bg-primary-light/40" />
     );
   }
 
+  if (remoteReadPilot && remote.status === "error") {
+    return (
+      <Card
+        padding="lg"
+        className="text-center"
+        data-customer-read-state="error"
+        data-customer-id={customerId}
+      >
+        <p className="text-[15px] font-medium text-text">無法載入客戶資料</p>
+        <p className="mt-2 text-sm text-secondary-text">請稍後再試。</p>
+        <Link
+          href="/staff/customers"
+          className="mt-3 inline-flex min-h-11 items-center text-primary"
+        >
+          返回客戶管理
+        </Link>
+      </Card>
+    );
+  }
+
   if (!customer) {
     return (
-      <Card padding="lg" className="text-center">
+      <Card
+        padding="lg"
+        className="text-center"
+        data-customer-read-state={remoteReadPilot ? "empty" : "local-missing"}
+        data-customer-id={customerId}
+      >
         <p className="text-[15px] font-medium text-text">找不到此客戶</p>
         <p className="mt-2 text-sm text-secondary-text">
-          Access unavailable — 此客戶不屬於目前店家，或資料不存在。
+          此客戶不屬於目前店家，或資料不存在。
         </p>
         <Link
           href="/staff/customers"
@@ -99,6 +144,10 @@ export function CustomerEditForm({ customerId }: CustomerEditFormProps) {
   }
 
   function handleSave() {
+    if (remoteReadPilot) {
+      setError("目前無法編輯此客戶資料");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -303,10 +352,10 @@ export function CustomerEditForm({ customerId }: CustomerEditFormProps) {
           <Button
             className="min-h-11 sm:order-2"
             fullWidth
-            disabled={saving}
+            disabled={saving || remoteReadPilot}
             onClick={handleSave}
           >
-            {saving ? "儲存中…" : "儲存"}
+            {remoteReadPilot ? "目前無法編輯" : saving ? "儲存中…" : "儲存"}
           </Button>
         </div>
       </Card>

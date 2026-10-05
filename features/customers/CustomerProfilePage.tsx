@@ -116,7 +116,10 @@ export function CustomerProfilePage({
     };
   }, [desktopMoreOpen, mobileMoreOpen]);
 
-  if (!isClient || (remoteReadPilot && remote.status === "loading")) {
+  if (
+    !isClient ||
+    (remoteReadPilot && (remote.status === "loading" || remote.status === "off"))
+  ) {
     return (
       <div className="space-y-3">
         <div className="h-10 w-40 animate-pulse rounded-2xl bg-primary-light/50" />
@@ -127,7 +130,12 @@ export function CustomerProfilePage({
 
   if (remoteReadPilot && remote.status === "error") {
     return (
-      <Card padding="lg" className="text-center" data-customer-read-state="error">
+      <Card
+        padding="lg"
+        className="text-center"
+        data-customer-read-state="error"
+        data-customer-id={customerId}
+      >
         <p className="text-[15px] font-medium text-text">無法載入客戶資料</p>
         <p className="mt-2 text-sm text-secondary-text">
           請稍後再試。
@@ -145,6 +153,7 @@ export function CustomerProfilePage({
         padding="lg"
         className="text-center"
         data-customer-read-state={remoteReadPilot ? "empty" : "local-missing"}
+        data-customer-id={customerId}
       >
         <p className="text-[15px] font-medium text-text">找不到此客戶</p>
         <p className="mt-2 text-sm text-secondary-text">
