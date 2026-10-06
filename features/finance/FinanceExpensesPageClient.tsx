@@ -208,7 +208,9 @@ function ExpensesBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
           <Button
             className="min-[1024px]:hidden"
             fullWidth
+            variant={formDisabled ? "outline" : "primary"}
             disabled={formDisabled}
+            aria-disabled={formDisabled}
             onClick={() => setSheetOpen(true)}
           >
             新增支出
