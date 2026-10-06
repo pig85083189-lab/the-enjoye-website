@@ -20,7 +20,10 @@ import {
   lastServiceSummary,
   resolveBriefingTiming,
 } from "@/lib/today/briefing";
-import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
+import {
+  resolveTodayPrimaryAction,
+  shouldShowTodayPrimaryAction,
+} from "@/lib/today/today-actions";
 import { useClientNow } from "@/lib/use-client-now";
 import type { Appointment, Customer } from "@/types";
 import type { TreatmentDraft } from "@/types/treatment";
@@ -112,7 +115,7 @@ export function NextCustomerPanel({
     commerceRemoteRead,
     allowCheckout,
   });
-  const hidePrimary = readOnly && primary.kind !== "checkout";
+  const hidePrimary = !shouldShowTodayPrimaryAction(primary.kind, readOnly);
   const customerHref = `/staff/customers/${appointment.customerId}`;
   const treatmentsHref = `/staff/customers/${appointment.customerId}?tab=treatments`;
 

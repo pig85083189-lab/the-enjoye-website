@@ -16,7 +16,10 @@ import {
   getTreatmentDraftRevision,
   subscribeTreatmentDrafts,
 } from "@/lib/treatment-draft";
-import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
+import {
+  resolveTodayPrimaryAction,
+  shouldShowTodayPrimaryAction,
+} from "@/lib/today/today-actions";
 import type { Appointment } from "@/types";
 import type { TreatmentDraft } from "@/types/treatment";
 import { cn, formatReminderTag, MEMBERSHIP_LABEL } from "@/lib/utils";
@@ -65,7 +68,7 @@ export function AppointmentCard({
     commerceRemoteRead,
     allowCheckout,
   });
-  const hidePrimary = readOnly && primary.kind !== "checkout";
+  const hidePrimary = !shouldShowTodayPrimaryAction(primary.kind, readOnly);
   const customerHref = `/staff/customers/${appointment.customerId}`;
 
   return (

@@ -31,6 +31,21 @@ function treatmentWorkspaceHref(appointment: Appointment): string {
   return `/staff/treatments/new?customer=${appointment.customerId}&appointment=${appointment.id}`;
 }
 
+/** Appointment remote-read does not hide Treatment start / continue / record. */
+export function shouldShowTodayPrimaryAction(
+  kind: TodayPrimaryAction["kind"],
+  readOnly: boolean,
+): boolean {
+  if (kind === "none") return false;
+  if (!readOnly) return true;
+  return (
+    kind === "start_treatment" ||
+    kind === "continue_treatment" ||
+    kind === "view_record" ||
+    kind === "checkout"
+  );
+}
+
 export function hasOpenTreatmentDraft(
   organizationId: string,
   appointmentId: string,
