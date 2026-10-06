@@ -4,7 +4,10 @@ import {
   collectAttentionNotes,
   resolveBriefingTiming,
 } from "@/lib/today/briefing";
-import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
+import {
+  resolveTodayPrimaryAction,
+  shouldShowTodayPrimaryAction,
+} from "@/lib/today/today-actions";
 import type { Appointment, Customer } from "@/types";
 
 const baseAppointment: Appointment = {
@@ -127,6 +130,14 @@ describe("resolveTodayPrimaryAction", () => {
       expect(action.label).toBe("開始服務");
       expect(action.href).toContain("/staff/treatments/new");
     }
+  });
+
+  it("keeps start treatment visible when Today is appointment-read-only", () => {
+    expect(shouldShowTodayPrimaryAction("start_treatment", true)).toBe(true);
+    expect(shouldShowTodayPrimaryAction("continue_treatment", true)).toBe(true);
+    expect(shouldShowTodayPrimaryAction("view_record", true)).toBe(true);
+    expect(shouldShowTodayPrimaryAction("checkout", true)).toBe(true);
+    expect(shouldShowTodayPrimaryAction("none", true)).toBe(false);
   });
 
   it("maps in_progress to continue treatment", () => {

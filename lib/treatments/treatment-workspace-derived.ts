@@ -6,6 +6,7 @@
 import { serviceTypeCardTone } from "@/features/calendar/grid-shared";
 import { formatHm, type CanonicalAppointmentStatus, type ScheduleAppointment } from "@/lib/appointments/domain";
 import type { AppointmentCheckoutNav } from "@/lib/commerce/appointment-checkout-nav";
+import { buildCommerceCheckoutHref } from "@/lib/commerce/commerce-remote-identity";
 import {
   collectCustomerAttentionNotes,
   formatSlashDate,
@@ -721,6 +722,29 @@ export function shouldShowCheckoutCta(
   nav: AppointmentCheckoutNav | { kind: "none" },
 ): boolean {
   return nav.kind === "checkout";
+}
+
+export function resolveTreatmentQuickViewCheckoutHref(
+  item: Pick<TreatmentWorkspaceItem, "kind" | "appointmentId" | "draft">,
+  options?: { paidAppointmentIds?: ReadonlyMap<string, string> },
+): string | null {
+  const appointmentId = item.appointmentId.trim();
+  const treatmentId = item.draft?.id?.trim() ?? "";
+  if (!appointmentId || !treatmentId) return null;
+  const completed = item.kind === "completed" || item.draft?.status === "completed";
+  if (!completed) return null;
+  if (options?.paidAppointmentIds?.has(appointmentId)) return null;
+  return buildCommerceCheckoutHref({ appointmentId, treatmentId });
+}
+
+export function resolveTreatmentQuickViewSettledHref(
+  item: Pick<TreatmentWorkspaceItem, "appointmentId">,
+  paidAppointmentIds?: ReadonlyMap<string, string>,
+): string | null {
+  const appointmentId = item.appointmentId.trim();
+  if (!appointmentId) return null;
+  const transactionId = paidAppointmentIds?.get(appointmentId);
+  return transactionId ? `/staff/transactions?id=${transactionId}` : null;
 }
 
 export function resolveSelectedTreatment(

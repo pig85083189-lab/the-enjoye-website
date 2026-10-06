@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { resolveAppointmentCheckoutNav } from "@/lib/commerce/appointment-checkout-nav";
 import { MEMBERSHIP_LABEL, cn } from "@/lib/utils";
 import {
   collectTreatmentAttentionNotes,
@@ -20,7 +19,8 @@ import {
   deriveTreatmentPrimaryCta,
   formatAppointmentRange,
   recordSectionHref,
-  shouldShowCheckoutCta,
+  resolveTreatmentQuickViewCheckoutHref,
+  resolveTreatmentQuickViewSettledHref,
   visitCountLabel,
   type TreatmentCatalogHint,
   type TreatmentWorkspaceItem,
@@ -45,6 +45,7 @@ interface TreatmentQuickViewProps {
   catalog: TreatmentCatalogHint[];
   completedTreatments: TreatmentDraft[];
   organizationId: string;
+  paidAppointmentIds?: ReadonlyMap<string, string>;
   onClose: () => void;
 }
 
@@ -53,9 +54,11 @@ export function TreatmentQuickView({
   customer,
   catalog,
   completedTreatments,
-  organizationId,
+  organizationId: _organizationId,
+  paidAppointmentIds,
   onClose,
 }: TreatmentQuickViewProps) {
+  void _organizationId;
   const [tab, setTab] = useState<"record" | "full">("record");
   const membership = item.membership;
   const membershipText = customer
@@ -87,15 +90,10 @@ export function TreatmentQuickView({
     ),
   });
   const primary = deriveTreatmentPrimaryCta(item);
-  const checkoutNav =
-    item.appointmentId && item.appointmentStatus
-      ? resolveAppointmentCheckoutNav(
-          organizationId,
-          item.appointmentId,
-          item.appointmentStatus,
-        )
-      : { kind: "none" as const };
-  const showCheckout = shouldShowCheckoutCta(checkoutNav);
+  const checkoutHref = resolveTreatmentQuickViewCheckoutHref(item, {
+    paidAppointmentIds,
+  });
+  const settledHref = resolveTreatmentQuickViewSettledHref(item, paidAppointmentIds);
   const profileHref = item.customerId
     ? `/staff/customers/${item.customerId}`
     : "";
@@ -383,8 +381,25 @@ export function TreatmentQuickView({
                 </Button>
               </Link>
             ) : null}
-            {showCheckout && checkoutNav.kind === "checkout" ? (
-              <Link href={checkoutNav.href} className="block">
+            {settledHref ? (
+              <Link
+                href={settledHref}
+                data-treatment-settled-href={settledHref}
+                className="block"
+              >
+                <Button
+                  variant="ghost"
+                  className="h-9 min-h-9 w-full rounded-full text-[13px] font-normal text-secondary-text hover:text-text"
+                >
+                  已結帳
+                </Button>
+              </Link>
+            ) : checkoutHref ? (
+              <Link
+                href={checkoutHref}
+                data-treatment-checkout-href={checkoutHref}
+                className="block"
+              >
                 <Button
                   variant="ghost"
                   className="h-9 min-h-9 w-full rounded-full text-[13px] font-normal text-secondary-text hover:text-text"

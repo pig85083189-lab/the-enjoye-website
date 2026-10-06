@@ -9,6 +9,8 @@ import {
 } from "@/lib/commerce/appointment-checkout-nav";
 import {
   buildCommerceCheckoutHref,
+  buildCommerceTransactionHref,
+  isAppointmentSettledByTransaction,
   resolveCommerceCheckoutEligibility,
 } from "@/lib/commerce/commerce-remote-identity";
 import {
@@ -29,6 +31,21 @@ export type TodayPrimaryAction =
 
 function treatmentWorkspaceHref(appointment: Appointment): string {
   return `/staff/treatments/new?customer=${appointment.customerId}&appointment=${appointment.id}`;
+}
+
+/** Appointment remote-read does not hide Treatment start / continue / record. */
+export function shouldShowTodayPrimaryAction(
+  kind: TodayPrimaryAction["kind"],
+  readOnly: boolean,
+): boolean {
+  if (kind === "none") return false;
+  if (!readOnly) return true;
+  return (
+    kind === "start_treatment" ||
+    kind === "continue_treatment" ||
+    kind === "view_record" ||
+    kind === "checkout"
+  );
 }
 
 export function hasOpenTreatmentDraft(
@@ -56,6 +73,8 @@ export type TodayPrimaryActionOptions = {
   remoteTreatment?: TreatmentDraft | null;
   commerceRemoteRead?: boolean;
   allowCheckout?: boolean;
+  /** appointmentId → COMPLETED Transaction id. Never inferred from Appointment status. */
+  paidAppointmentIds?: ReadonlyMap<string, string>;
 };
 
 /**
@@ -138,6 +157,29 @@ export function resolveTodayPrimaryAction(
   };
 }
 
+function settledRecordAction(
+  appointmentId: string,
+  treatment: TreatmentDraft | null,
+  paidAppointmentIds?: ReadonlyMap<string, string>,
+): TodayPrimaryAction {
+  const transactionId = paidAppointmentIds?.get(appointmentId);
+  if (transactionId) {
+    return {
+      kind: "view_record",
+      href: buildCommerceTransactionHref(transactionId),
+      label: "已結帳",
+    };
+  }
+  if (treatment?.status === "completed") {
+    return {
+      kind: "view_record",
+      href: `/staff/treatments/${treatment.id}`,
+      label: "查看紀錄",
+    };
+  }
+  return { kind: "none" };
+}
+
 function resolveRemoteCommerceTodayPrimaryAction(
   appointment: Appointment,
   status: CanonicalAppointmentStatus | string,
@@ -145,6 +187,13 @@ function resolveRemoteCommerceTodayPrimaryAction(
 ): TodayPrimaryAction {
   const workspace = treatmentWorkspaceHref(appointment);
   const treatment = options.remoteTreatment ?? null;
+  if (isAppointmentSettledByTransaction(options.paidAppointmentIds, appointment.id)) {
+    return settledRecordAction(
+      appointment.id,
+      treatment,
+      options.paidAppointmentIds,
+    );
+  }
   const eligibility = resolveCommerceCheckoutEligibility({
     appointmentStatus: status,
     treatmentStatus: treatment?.status,

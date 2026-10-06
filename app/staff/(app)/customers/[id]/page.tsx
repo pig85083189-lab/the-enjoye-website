@@ -2,7 +2,10 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { CustomerProfilePage } from "@/features/customers/CustomerProfilePage";
 import { isAppointmentRemoteReadPilotEnabled } from "@/lib/appointments/appointment-remote-read-flag";
+import { isAppointmentRemoteWritePilotEnabled } from "@/lib/appointments/appointment-remote-write-flag";
+import { isCommerceRemoteReadPilotEnabled } from "@/lib/commerce/commerce-remote-read-flag";
 import { isCustomerRemoteReadPilotEnabled } from "@/lib/customers/customer-remote-read-flag";
+import { isServiceRemoteReadPilotEnabled } from "@/lib/services/service-remote-read-flag";
 import { isTreatmentRemoteReadPilotEnabled } from "@/lib/treatments/treatment-remote-read-flag";
 
 export default async function CustomerPage({
@@ -25,7 +28,10 @@ export default async function CustomerPage({
         customerId={id}
         remoteReadPilot={isCustomerRemoteReadPilotEnabled()}
         appointmentRemoteReadPilot={isAppointmentRemoteReadPilotEnabled()}
+        appointmentRemoteWritePilot={isAppointmentRemoteWritePilotEnabled()}
         treatmentRemoteReadPilot={isTreatmentRemoteReadPilotEnabled()}
+        serviceRemoteReadPilot={isServiceRemoteReadPilotEnabled()}
+        commerceRemoteReadPilot={isCommerceRemoteReadPilotEnabled()}
       />
     </Suspense>
   );

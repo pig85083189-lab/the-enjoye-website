@@ -20,6 +20,7 @@ import {
   type StoredValueLedgerEntry,
 } from "@/lib/stored-value/domain";
 import type { Transaction } from "@/lib/commerce/domain";
+import { resolveCanonicalServiceDisplayName } from "@/lib/treatments/treatment-display";
 import type { Customer, Service } from "@/types";
 import type { CustomerConsultation } from "@/types/customer";
 import type { TreatmentDraft } from "@/types/treatment";
@@ -79,6 +80,31 @@ export function isFinancialTab(tab: Customer360TabId): boolean {
 /** Profile workbench only — excludes /new, /edit, consultation nested routes. */
 export function isCustomerProfileWorkbenchPath(pathname: string): boolean {
   return /^\/staff\/customers\/(?!new$)[^/]+$/.test(pathname);
+}
+
+/** Remote rows win when the pilot handed an array (including empty). Null keeps local. */
+export function resolveCustomer360Appointments(
+  remoteAppointments: ScheduleAppointment[] | null | undefined,
+  localAppointments: ScheduleAppointment[],
+): ScheduleAppointment[] {
+  return remoteAppointments != null ? remoteAppointments : localAppointments;
+}
+
+/** Remote rows win when the pilot handed an array (including empty). Null keeps local. */
+export function resolveCustomer360Transactions(
+  remoteTransactions: Transaction[] | null | undefined,
+  localTransactions: Transaction[],
+): Transaction[] {
+  return remoteTransactions != null ? remoteTransactions : localTransactions;
+}
+
+/** Canonical cust-* only. Never match by name or phone. */
+export function filterCommerceTransactionsByCustomerId(
+  transactions: Transaction[],
+  customerId: string,
+): Transaction[] {
+  if (!customerId) return [];
+  return transactions.filter((tx) => tx.customerId === customerId);
 }
 
 export function customerCreateAppointmentHref(customerId: string): string {
@@ -236,10 +262,24 @@ export function deriveFrequentServices(input: {
   >();
   const seenAppointments = new Set<string>();
 
+  const appointmentNameById = new Map(
+    input.appointments.map((apt) => [apt.id, apt.serviceName] as const),
+  );
+
   for (const treatment of input.treatments) {
     if (treatment.status && treatment.status !== "completed") continue;
     const at = treatmentCompletedAt(treatment);
-    bump(counted, treatment.serviceId, treatment.appointmentId, at, input.catalog);
+    const snapshotName = treatment.appointmentId
+      ? appointmentNameById.get(treatment.appointmentId)
+      : undefined;
+    bump(
+      counted,
+      treatment.serviceId,
+      treatment.appointmentId,
+      at,
+      input.catalog,
+      snapshotName,
+    );
     if (treatment.appointmentId) seenAppointments.add(treatment.appointmentId);
   }
 
@@ -260,7 +300,11 @@ export function deriveFrequentServices(input: {
       const parts = dateParts(row.lastUsedAt);
       return {
         serviceId: row.serviceId,
-        serviceName: service?.name ?? row.name,
+        serviceName: resolveCanonicalServiceDisplayName({
+          serviceId: row.serviceId,
+          catalogName: service?.name,
+          snapshotName: row.name,
+        }),
         usageCount: row.count,
         lastUsedAt: row.lastUsedAt,
         lastUsedLabel: parts.dateLabel,
@@ -283,7 +327,11 @@ function bump(
 ): void {
   if (!serviceId) return;
   const current = counted.get(serviceId);
-  const name = catalog.find((item) => item.id === serviceId)?.name ?? fallbackName ?? serviceId;
+  const name = resolveCanonicalServiceDisplayName({
+    serviceId,
+    catalogName: catalog.find((item) => item.id === serviceId)?.name,
+    snapshotName: fallbackName,
+  });
   if (!current) {
     counted.set(serviceId, { serviceId, count: 1, lastUsedAt: at, name });
     return;
@@ -312,6 +360,10 @@ export function deriveCustomerTimeline(input: {
     const at = treatmentCompletedAt(treatment);
     const parts = dateParts(at);
     const service = input.catalog.find((item) => item.id === treatment.serviceId);
+    const snapshotName = treatment.appointmentId
+      ? input.appointments.find((apt) => apt.id === treatment.appointmentId)
+          ?.serviceName
+      : undefined;
     items.push({
       id: `treatment:${treatment.id}`,
       at: parts.at,
@@ -319,7 +371,11 @@ export function deriveCustomerTimeline(input: {
       timeLabel: parts.timeLabel,
       type: "treatment_completed",
       typeLabel: "完成服務",
-      title: service?.name ?? "療程",
+      title: resolveCanonicalServiceDisplayName({
+        serviceId: treatment.serviceId,
+        catalogName: service?.name,
+        snapshotName,
+      }),
       summary: treatment.professionalNote?.trim() || treatment.followUp.tags.join("、") || null,
       staffName: staff[treatment.staffId] ?? null,
       href: `/staff/treatments/${treatment.id}`,

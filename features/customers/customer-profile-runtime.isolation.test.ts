@@ -55,6 +55,7 @@ function liveRemoteCustomerShape(): Customer {
     trackingFocus: [],
     alerts: [],
     tags: [],
+    primaryStaffId: "staff-001",
     joinedAt: "2026/10/02",
     createdAt: "2026-10-02T04:30:00.000Z",
     updatedAt: "2026-10-02T04:30:00.000Z",
@@ -104,7 +105,7 @@ vi.mock("@/features/customers/use-appointment-remote-read", () => ({
   useCustomerRemoteAppointments: () => remoteAppointments.current,
 }));
 
-function renderProfile(): { host: HTMLDivElement; root: Root } {
+function renderProfile(writePilot = false): { host: HTMLDivElement; root: Root } {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -114,6 +115,7 @@ function renderProfile(): { host: HTMLDivElement; root: Root } {
         customerId: FUTURE_QA_APPOINTMENT.customerAppId,
         remoteReadPilot: true,
         appointmentRemoteReadPilot: true,
+        appointmentRemoteWritePilot: writePilot,
       }),
     );
   });
@@ -155,6 +157,21 @@ describe("Phase 1C-5C Customer Profile runtime", () => {
     expect(host.textContent).not.toContain("This page couldn’t load");
   });
 
+  it("shows the remote BOOKED appointment on Overview next-appointment summary", () => {
+    search.current = "";
+    const { host, root } = renderProfile();
+    roots.push(root);
+    expect(host.textContent).toContain("下次預約");
+    expect(host.textContent).toContain("2026/10/09");
+    expect(host.textContent).toContain("10:00");
+    expect(host.textContent).toContain("Remote QA Bust Care");
+    expect(host.textContent).toContain("測試帳號");
+    expect(host.textContent).not.toContain("尚未安排");
+    expect(host.querySelector("[data-customer-next-appointment]")?.textContent).toContain(
+      "Remote QA Bust Care",
+    );
+  });
+
   it("renders the appointments tab inside Customer Profile without throwing", () => {
     const { host, root } = renderProfile();
     roots.push(root);
@@ -163,5 +180,21 @@ describe("Phase 1C-5C Customer Profile runtime", () => {
     expect(host.textContent).toContain("2026/10/09");
     expect(host.textContent).toContain("已預約");
     expect(host.textContent).not.toContain("This page couldn’t load");
+  });
+
+  it("re-enables Customer 360 create links onto the Calendar create flow when WRITE is on", () => {
+    search.current = "";
+    remoteAppointments.current = { status: "data", value: [] };
+    const { host, root } = renderProfile(true);
+    roots.push(root);
+    const href = `/staff/calendar?create=1&customer=${FUTURE_QA_APPOINTMENT.customerAppId}`;
+    const links = [...host.querySelectorAll("a")].map((node) => node.getAttribute("href"));
+    expect(links).toContain(href);
+    expect(host.textContent).toContain("＋ 安排預約");
+    const createButtons = [...host.querySelectorAll("button")].filter((node) =>
+      node.textContent?.includes("新增預約"),
+    );
+    expect(createButtons.length).toBeGreaterThan(0);
+    expect(createButtons.every((node) => !node.disabled)).toBe(true);
   });
 });

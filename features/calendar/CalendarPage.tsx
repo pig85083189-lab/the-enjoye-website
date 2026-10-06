@@ -19,6 +19,19 @@ import {
   WeekGrid,
 } from "@/features/calendar/CalendarViews";
 import { useCalendarRemoteAppointments } from "@/features/calendar/use-calendar-remote-read";
+import {
+  treatmentsFromRemoteListState,
+  useTreatmentRemoteList,
+} from "@/features/treatments/use-treatment-remote-read";
+import {
+  transactionsFromRemoteCommerceState,
+  useCommerceRemoteTransactions,
+} from "@/features/transactions/use-commerce-remote-transactions";
+import { completedTransactionIdsByAppointment } from "@/lib/commerce/commerce-remote-identity";
+import {
+  indexTreatmentsByAppointmentId,
+  presentAppointmentStatusFromTreatment,
+} from "@/lib/treatments/treatment-today";
 import { submitCalendarRemoteAppointmentCancel } from "@/features/calendar/use-calendar-remote-cancel";
 import {
   submitCalendarRemoteAppointmentCreate,
@@ -261,18 +274,39 @@ export function CalendarPage({
     endsAt: remoteRange.endsAt,
     enabled: calendarRemoteReadPilot,
   });
+  const remoteTransactions = useCommerceRemoteTransactions({
+    organizationId: organization.id,
+    enabled: commerceRemoteReadPilot,
+  });
+  const paidAppointmentIds = completedTransactionIdsByAppointment(
+    transactionsFromRemoteCommerceState(remoteTransactions),
+  );
   const localAppointments = calendarRemoteReadPilot
     ? []
     : listAppointments({
         organizationId: organization.id,
         locationId,
       });
+  const remoteTreatments = useTreatmentRemoteList(
+    organization.id,
+    treatmentRemoteReadPilot,
+  );
+  const treatmentsByAppointment = indexTreatmentsByAppointmentId(
+    treatmentsFromRemoteListState(remoteTreatments),
+  );
   const appointments = applyRosterStaffDisplayNames(
     calendarRemoteReadPilot && remoteState.status === "data"
       ? remoteState.value
       : localAppointments,
     staffRoster,
-  );
+  ).map((item) => {
+    if (!treatmentRemoteReadPilot) return item;
+    const presented = presentAppointmentStatusFromTreatment(
+      item.status,
+      treatmentsByAppointment.get(item.id)?.status,
+    );
+    return presented === item.status ? item : { ...item, status: presented };
+  });
   const scheduleDay = view === "day" ? anchor : (now ?? anchor);
   const rangeFromYmd = formatYmd(rangeFrom);
   const rangeToYmd = formatYmd(rangeTo);
@@ -710,6 +744,7 @@ export function CalendarPage({
             treatmentRemoteReadPilot={treatmentRemoteReadPilot}
             commerceRemoteReadPilot={commerceRemoteReadPilot}
             allowCheckout={canCheckout(membership)}
+            paidAppointmentIds={paidAppointmentIds}
             onClose={() => setSelectedId(null)}
             onEdit={() => {
               if (calendarRemoteReadPilot) return;
@@ -783,6 +818,7 @@ export function CalendarPage({
             treatmentRemoteReadPilot={treatmentRemoteReadPilot}
             commerceRemoteReadPilot={commerceRemoteReadPilot}
             allowCheckout={canCheckout(membership)}
+            paidAppointmentIds={paidAppointmentIds}
             onClose={() => setSelectedId(null)}
             onEdit={() => {
               if (calendarRemoteReadPilot) return;
@@ -957,7 +993,7 @@ function AppointmentEditor({
   actorId?: string;
   remoteCreate?: {
     customers: Array<{ id: string; name: string; phone: string }>;
-    services: Array<{ id: string; name: string; durationMinutes: number }>;
+    services: Array<{ id: string; name: string; durationMinutes: number; priceMinor?: number }>;
     staff: Array<{ id: string; name: string; locationIds?: string[]; role?: string }>;
   };
   onClose: () => void;
@@ -1281,6 +1317,7 @@ function AppointmentEditor({
               {services.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} · {s.durationMinutes}分
+                  {typeof s.priceMinor === "number" ? ` · NT$${s.priceMinor}` : ""}
                 </option>
               ))}
             </select>

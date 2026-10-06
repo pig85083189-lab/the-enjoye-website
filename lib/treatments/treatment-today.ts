@@ -28,6 +28,20 @@ export function todayBucketFromTreatment(
   return "waiting";
 }
 
+/**
+ * Presentation overlay for the existing Appointment + Treatment pair.
+ * Does not persist or invent a second Appointment status.
+ */
+export function presentAppointmentStatusFromTreatment(
+  appointmentStatus: CanonicalAppointmentStatus,
+  treatmentStatus?: TreatmentStatus | null,
+): CanonicalAppointmentStatus {
+  if (isMutedAppointmentStatus(appointmentStatus)) return appointmentStatus;
+  if (treatmentStatus === "completed") return "COMPLETED";
+  if (treatmentStatus === "draft") return "IN_SERVICE";
+  return appointmentStatus;
+}
+
 export function indexTreatmentsByAppointmentId(
   treatments: readonly TreatmentDraft[],
 ): Map<string, TreatmentDraft> {

@@ -35,17 +35,50 @@ describe("Phase 1C-1 real service create flow", () => {
     );
   });
 
-  it("refuses seed catalog names even when the caller wants a new id", async () => {
+  it("allows official Enjoye names on a generated svc-* id", async () => {
+    const { db, remote } = createMemoryRemotePersistence();
+    seedTwoOrgs(db);
+    const created = await createServiceRecord(
+      {
+        organizationId: ORG_A,
+        name: "性感美胸 SPA",
+        durationMinutes: 100,
+        priceMinor: 3200,
+        serviceType: "BREAST",
+        createdByStaffId: STAFF_A,
+      },
+      remote,
+    );
+    expect(isGeneratedServiceAppId(created.id)).toBe(true);
+    expect(created.id).not.toBe("svc-breast");
+    expect(created.name).toBe("性感美胸 SPA");
+    expect(created.priceMinor).toBe(3200);
+  });
+
+  it("refuses QA / Lumiere names even when the caller wants a new id", async () => {
     const { db, remote } = createMemoryRemotePersistence();
     seedTwoOrgs(db);
     await expect(
       createServiceRecord(
         {
           organizationId: ORG_A,
-          name: "性感美胸 SPA",
+          name: "Remote QA Bust Care",
           durationMinutes: 100,
           priceMinor: 3200,
           serviceType: "BREAST",
+          createdByStaffId: STAFF_A,
+        },
+        remote,
+      ),
+    ).rejects.toThrow(REMOTE_DEMO_SERVICE_MESSAGE);
+    await expect(
+      createServiceRecord(
+        {
+          organizationId: ORG_A,
+          name: "光感臉部保養",
+          durationMinutes: 90,
+          priceMinor: 3000,
+          serviceType: "FACIAL",
           createdByStaffId: STAFF_A,
         },
         remote,

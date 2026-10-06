@@ -21,6 +21,8 @@ import {
 import {
   customerCreateAppointmentHref,
   deriveCustomerTimeline,
+  resolveCustomer360Appointments,
+  resolveCustomer360Transactions,
   deriveFrequentServices,
   deriveLastVisitLabel,
   derivePackageFinancialCards,
@@ -51,6 +53,7 @@ import {
   getCustomerStoredValueBalance,
   listStoredValueLedger,
 } from "@/lib/stored-value/store";
+import type { Transaction } from "@/lib/commerce/domain";
 import type { ScheduleAppointment } from "@/lib/appointments/domain";
 import { getMembership } from "@/lib/tenant/organization-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
@@ -58,7 +61,7 @@ import {
   pickRemoteAppointmentForCustomer,
   treatmentWorkspaceEntryHref,
 } from "@/lib/treatments/treatment-identity";
-import type { Customer } from "@/types";
+import type { Customer, Service } from "@/types";
 import type { TreatmentDraft } from "@/types/treatment";
 
 export type Customer360Snapshot = {
@@ -77,6 +80,7 @@ export type Customer360Snapshot = {
   packagePreview: PackageFinancialView[];
   svBalance: number;
   recentTx: RecentTransactionView[];
+  commerceRemoteRead: boolean;
 };
 
 export function useCustomer360Snapshot(
@@ -84,6 +88,8 @@ export function useCustomer360Snapshot(
   options?: {
     remoteAppointments?: ScheduleAppointment[] | null;
     remoteTreatments?: TreatmentDraft[] | null;
+    remoteCatalog?: Service[] | null;
+    remoteTransactions?: Transaction[] | null;
   },
 ): Customer360Snapshot {
   const { organization } = useOrganization();
@@ -105,6 +111,8 @@ export function useCustomer360Snapshot(
 
   const remoteAppointments = options?.remoteAppointments;
   const remoteTreatments = options?.remoteTreatments;
+  const remoteCatalog = options?.remoteCatalog;
+  const remoteTransactions = options?.remoteTransactions;
 
   return useMemo(() => {
     void appointmentRev;
@@ -119,25 +127,57 @@ export function useCustomer360Snapshot(
             organizationId,
             customerId,
           });
-    const appointments = listAppointments({ organizationId, customerId });
+    const appointments = resolveCustomer360Appointments(
+      remoteAppointments,
+      remoteAppointments != null
+        ? []
+        : listAppointments({ organizationId, customerId }),
+    );
     const followUps = listFollowUpTasksForCustomer(organizationId, customerId);
     const consultations = localConsultationRepository.listByCustomer({
       organizationId,
       customerId,
     });
-    const transactions = listTransactions(organizationId, { customerId });
-    const packages = listCustomerPackages(organizationId, { customerId });
-    const packageLedger = listPackageLedger(organizationId, { customerId });
-    const svLedger = listStoredValueLedger(organizationId, { customerId });
-    const svBalance = getCustomerStoredValueBalance(organizationId, customerId);
-    const catalog = getServicesForOrganization(organizationId);
+    const transactions = resolveCustomer360Transactions(
+      remoteTransactions,
+      remoteTransactions != null
+        ? []
+        : listTransactions(organizationId, { customerId }),
+    );
+    const packages =
+      remoteTransactions != null
+        ? []
+        : listCustomerPackages(organizationId, { customerId });
+    const packageLedger =
+      remoteTransactions != null
+        ? []
+        : listPackageLedger(organizationId, { customerId });
+    const svLedger =
+      remoteTransactions != null ? [] : listStoredValueLedger(organizationId, { customerId });
+    const svBalance =
+      remoteTransactions != null
+        ? 0
+        : getCustomerStoredValueBalance(organizationId, customerId);
+    const catalog =
+      remoteCatalog != null
+        ? remoteCatalog
+        : getServicesForOrganization(organizationId);
+    const completedTreatmentAppointmentIds = new Set(
+      treatments
+        .filter((item) => !item.status || item.status === "completed")
+        .map((item) => item.appointmentId)
+        .filter((id): id is string => Boolean(id)),
+    );
     const staffNameById: Record<string, string> = {};
     for (const treatment of treatments) {
       const name = getMembership(organizationId, treatment.staffId)?.displayName;
       if (name) staffNameById[treatment.staffId] = name;
     }
-    if (customer.primaryStaffId && customer.primaryStaffName) {
-      staffNameById[customer.primaryStaffId] = customer.primaryStaffName;
+    if (customer.primaryStaffId) {
+      const rosterName =
+        customer.primaryStaffName ??
+        getMembership(organizationId, customer.primaryStaffId)?.displayName;
+      if (rosterName) staffNameById[customer.primaryStaffId] = rosterName;
     }
 
     const completedTreatments = treatments.filter(
@@ -173,12 +213,15 @@ export function useCustomer360Snapshot(
       getPackageUsableBalance,
     );
     const hints: AppointmentHint[] = appointments.map((item) => ({
+      id: item.id,
       customerId: item.customerId,
       status: item.status,
       serviceId: item.serviceId,
       serviceName: item.serviceName,
       durationMinutes: item.durationMinutes,
       startAt: item.startAt,
+      endAt: item.endAt,
+      staffName: item.staffName,
     }));
     const now = new Date();
     const apt =
@@ -193,7 +236,12 @@ export function useCustomer360Snapshot(
     return {
       treatmentHref,
       createHref: customerCreateAppointmentHref(customerId),
-      nextAppointment: deriveNextAppointment({ customer, appointments: hints, now }),
+      nextAppointment: deriveNextAppointment({
+        customer,
+        appointments: hints,
+        now,
+        completedTreatmentAppointmentIds,
+      }),
       lastVisitLabel: deriveLastVisitLabel({ customer, appointments, treatments }),
       visitCount: customer.totalVisits,
       primaryServiceName: derivePrimaryServiceName(frequent, customer),
@@ -209,6 +257,7 @@ export function useCustomer360Snapshot(
       packagePreview: previewPackages(packageCards),
       svBalance,
       recentTx: deriveRecentTransactions(transactions),
+      commerceRemoteRead: remoteTransactions != null,
     };
   }, [
     customer,
@@ -218,5 +267,7 @@ export function useCustomer360Snapshot(
     followUpRev,
     remoteAppointments,
     remoteTreatments,
+    remoteCatalog,
+    remoteTransactions,
   ]);
 }

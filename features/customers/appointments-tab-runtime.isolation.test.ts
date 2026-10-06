@@ -194,8 +194,11 @@ describe("Phase 1C-5C server/client appointment pilot boundary", () => {
       "utf8",
     );
     expect(page).toMatch(/appointment-remote-read-flag/);
+    expect(page).toMatch(/appointment-remote-write-flag/);
     expect(page).not.toMatch(/appointment-remote-read-pilot/);
+    expect(page).not.toMatch(/appointment-remote-write-pilot/);
     expect(page).toMatch(/isAppointmentRemoteReadPilotEnabled/);
+    expect(page).toMatch(/isAppointmentRemoteWritePilotEnabled/);
     expect(flag).not.toMatch(/AppointmentRemoteAdapter|AuthenticatedAppointmentReadStore|loadAuthenticatedIdentityCatalog|createBrowserClient/);
     expect(flag).not.toMatch(/from ["']@\/lib\/persistence\//);
   });

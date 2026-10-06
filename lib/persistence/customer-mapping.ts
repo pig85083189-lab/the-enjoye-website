@@ -52,16 +52,47 @@ export function emptyToNull(value: string | undefined | null): string | null {
   return trimmed ? trimmed : null;
 }
 
+export const CUSTOMER_BIRTHDAY_MESSAGE = "請以 YYYY/MM/DD 填寫生日";
+
+export class CustomerBirthdayError extends Error {
+  constructor(message = CUSTOMER_BIRTHDAY_MESSAGE) {
+    super(message);
+    this.name = "CustomerBirthdayError";
+  }
+}
+
+function padDatePart(value: string): string {
+  return value.padStart(2, "0");
+}
+
+function isoDateIfValid(year: string, month: string, day: string): string | null {
+  const y = Number(year);
+  const m = Number(month);
+  const d = Number(day);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+  if (y < 1900 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  if (utc.getUTCFullYear() !== y || utc.getUTCMonth() !== m - 1 || utc.getUTCDate() !== d) {
+    return null;
+  }
+  return `${year}-${padDatePart(month)}-${padDatePart(day)}`;
+}
+
+/**
+ * Accept empty, YYYY-MM-DD, YYYY/M/D, YYYY.M.D, and YYYY年M月D日.
+ * Reject two-digit years and impossible calendar dates before INSERT.
+ */
 export function birthdayToRemoteDate(birthday: string | undefined | null): string | null {
   const raw = emptyToNull(birthday);
   if (!raw) return null;
-  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (iso) return raw;
-  const slash = raw.match(/^(\d{4})[/](\d{1,2})[/](\d{1,2})$/);
-  if (!slash) {
-    throw new Error(`Invalid birthday ${JSON.stringify(birthday)}`);
+  const match = raw.match(
+    /^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/,
+  );
+  const iso = match ? isoDateIfValid(match[1]!, match[2]!, match[3]!) : null;
+  if (!iso) {
+    throw new CustomerBirthdayError();
   }
-  return `${slash[1]}-${slash[2]!.padStart(2, "0")}-${slash[3]!.padStart(2, "0")}`;
+  return iso;
 }
 
 export function birthdayFromRemoteDate(value: string | null): string {

@@ -148,7 +148,9 @@ export function CheckoutPageClient({
   const treatmentIdParam = searchParams.get("treatment");
   const packageIdParam = searchParams.get("package");
 
-  const [filter, setFilter] = useState<CheckoutListFilter>("pending");
+  const [filter, setFilter] = useState<CheckoutListFilter>(() =>
+    appointmentIdParam ? "all" : "pending",
+  );
   const [dateFilter, setDateFilter] = useState<CheckoutDateFilter>(() =>
     appointmentIdParam || commerceRemoteReadPilot ? "all" : "today",
   );
@@ -761,6 +763,32 @@ function CheckoutWorkspacePanel({
   onClose: () => void;
   onCompleted: (txId: string) => void;
 }) {
+  const settledTransaction =
+    item.transaction ??
+    (remoteDraftState.status === "data" ? remoteDraftState.transaction : null);
+  const settled =
+    item.paid ||
+    item.kind === "transaction" ||
+    settledTransaction?.status === "COMPLETED";
+  if (remoteRead && settled) {
+    return (
+      <CheckoutPanel
+        key={item.id}
+        item={item}
+        customer={customer}
+        organizationId={organizationId}
+        staffId={staffId}
+        treatmentId={treatmentId}
+        preselectedPackageId={preselectedPackageId}
+        commerceRemoteRead
+        commerceRemoteWrite={remoteWrite}
+        remoteDraft={remoteDraftState.status === "data" ? remoteDraftState.draft : item.draft}
+        remoteTransaction={settledTransaction}
+        onClose={onClose}
+        onCompleted={onCompleted}
+      />
+    );
+  }
   if (remoteRead && remoteWrite && remoteDraftState.status === "data") {
     return (
       <CheckoutPanel
@@ -780,7 +808,7 @@ function CheckoutWorkspacePanel({
       />
     );
   }
-  if (remoteRead && remoteCandidate) {
+  if (remoteRead && remoteCandidate && !item.paid) {
     return (
       <CommerceIdentityPanel
         key={item.id}

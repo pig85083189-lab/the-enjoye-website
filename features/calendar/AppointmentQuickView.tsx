@@ -39,6 +39,7 @@ import {
   lastServiceSummary,
 } from "@/lib/today/briefing";
 import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
+import { presentAppointmentStatusFromTreatment } from "@/lib/treatments/treatment-today";
 import { useTreatmentRemoteByAppointment } from "@/features/treatments/use-treatment-remote-read";
 import type { TreatmentDraft } from "@/types/treatment";
 import {
@@ -67,6 +68,7 @@ interface AppointmentQuickViewProps {
   treatmentRemoteReadPilot?: boolean;
   commerceRemoteReadPilot?: boolean;
   allowCheckout?: boolean;
+  paidAppointmentIds?: ReadonlyMap<string, string>;
   onClose: () => void;
   onEdit: () => void;
   onRequestCancel: () => void;
@@ -82,6 +84,7 @@ export function AppointmentQuickView({
   treatmentRemoteReadPilot = false,
   commerceRemoteReadPilot = false,
   allowCheckout,
+  paidAppointmentIds,
   onClose,
   onEdit,
   onRequestCancel,
@@ -108,6 +111,7 @@ export function AppointmentQuickView({
     remoteTreatment,
     commerceRemoteRead: commerceRemoteReadPilot,
     allowCheckout,
+    paidAppointmentIds,
   });
   const showRemoteCheckout = primary.kind === "checkout";
   const attention = collectAttentionNotes(
@@ -151,7 +155,13 @@ export function AppointmentQuickView({
     {
       icon: CircleCheck,
       label: "狀態",
-      value: STATUS_LABEL[item.status],
+      value:
+        STATUS_LABEL[
+          presentAppointmentStatusFromTreatment(
+            item.status,
+            remoteTreatment?.status,
+          )
+        ],
     },
   ];
 
@@ -339,19 +349,10 @@ export function AppointmentQuickView({
               行事曆遠端讀取試點為唯讀
             </p>
           ) : null}
-          {showRemoteCheckout ? (
-            <Link
-              href={primary.href}
-              className={cn(
-                "inline-flex h-[50px] min-h-[50px] w-full items-center justify-center gap-1.5 rounded-full text-[15px] font-medium text-white transition-colors",
-                CALENDAR_ROSE_FILL,
-                CALENDAR_ROSE_HOVER,
-              )}
-            >
-              <Play className="h-3.5 w-3.5 fill-current" aria-hidden />
-              {primary.label}
-            </Link>
-          ) : actions.canTransition && primary.kind !== "none" ? (
+          {showRemoteCheckout ||
+          primary.kind === "start_treatment" ||
+          primary.kind === "continue_treatment" ||
+          primary.kind === "view_record" ? (
             <Link
               href={primary.href}
               className={cn(
@@ -360,7 +361,11 @@ export function AppointmentQuickView({
                 CALENDAR_ROSE_HOVER,
               )}
               onClick={() => {
-                if (primary.kind === "start_treatment" && item.status === "ARRIVED") {
+                if (
+                  actions.canTransition &&
+                  primary.kind === "start_treatment" &&
+                  item.status === "ARRIVED"
+                ) {
                   try {
                     onTransition("IN_SERVICE");
                   } catch {

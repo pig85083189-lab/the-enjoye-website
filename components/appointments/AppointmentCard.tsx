@@ -16,7 +16,10 @@ import {
   getTreatmentDraftRevision,
   subscribeTreatmentDrafts,
 } from "@/lib/treatment-draft";
-import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
+import {
+  resolveTodayPrimaryAction,
+  shouldShowTodayPrimaryAction,
+} from "@/lib/today/today-actions";
 import type { Appointment } from "@/types";
 import type { TreatmentDraft } from "@/types/treatment";
 import { cn, formatReminderTag, MEMBERSHIP_LABEL } from "@/lib/utils";
@@ -30,6 +33,7 @@ interface AppointmentCardProps {
   remoteTreatment?: TreatmentDraft | null;
   commerceRemoteRead?: boolean;
   allowCheckout?: boolean;
+  paidAppointmentIds?: ReadonlyMap<string, string>;
 }
 
 const membershipTone = {
@@ -46,6 +50,7 @@ export function AppointmentCard({
   remoteTreatment = null,
   commerceRemoteRead = false,
   allowCheckout,
+  paidAppointmentIds,
 }: AppointmentCardProps) {
   useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
   useSyncExternalStore(
@@ -64,8 +69,9 @@ export function AppointmentCard({
     remoteTreatment,
     commerceRemoteRead,
     allowCheckout,
+    paidAppointmentIds,
   });
-  const hidePrimary = readOnly && primary.kind !== "checkout";
+  const hidePrimary = !shouldShowTodayPrimaryAction(primary.kind, readOnly);
   const customerHref = `/staff/customers/${appointment.customerId}`;
 
   return (

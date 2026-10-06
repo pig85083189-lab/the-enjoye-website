@@ -104,6 +104,24 @@ export function isDemoServiceName(name: string | undefined): boolean {
   return SEED_SERVICE_NAMES.has(name.trim());
 }
 
+const OFFICIAL_ENJOYE_SERVICE_NAMES = new Set<string>(
+  mockServices.map((item) => item.name),
+);
+
+/**
+ * Names that must never be written remotely.
+ * Official Enjoye operational names may be created with a generated svc-* id.
+ * Seed IDs stay blocked separately. QA / demo / Preview / Lumiere names stay blocked.
+ */
+export function isBlockedRemoteServiceName(name: string | undefined): boolean {
+  if (!name) return false;
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  if (OFFICIAL_ENJOYE_SERVICE_NAMES.has(trimmed)) return false;
+  if (SEED_SERVICE_NAMES.has(trimmed)) return true;
+  return /QA|demo|Preview|mock/i.test(trimmed);
+}
+
 export function assertNotDemoResiduePayload(payload: unknown): void {
   if (!payload || typeof payload !== "object") return;
   const row = payload as Record<string, unknown>;
@@ -138,7 +156,7 @@ export function assertRemoteAppointmentAllowed(appointment: {
 }
 
 export function assertRemoteServiceAllowed(service: { id: string; name?: string }): void {
-  if (isDemoServiceId(service.id) || isDemoServiceName(service.name)) {
+  if (isDemoServiceId(service.id) || isBlockedRemoteServiceName(service.name)) {
     throw new Error(REMOTE_DEMO_SERVICE_MESSAGE);
   }
 }

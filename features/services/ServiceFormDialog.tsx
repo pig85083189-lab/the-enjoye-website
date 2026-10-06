@@ -10,12 +10,15 @@ import {
   type ServiceCatalogDraft,
   type ServiceCatalogStep,
 } from "@/lib/services/service-catalog-derived";
+import { submitServiceRemoteCreate } from "@/features/services/use-service-remote-write";
+import { serviceWriteUserMessage } from "@/lib/services/service-write-ui-error";
 import { createService, updateService } from "@/lib/services/store";
 import { cn } from "@/lib/utils";
 
 interface ServiceFormDialogProps {
   open: boolean;
   mode: "create" | "edit";
+  remoteWritePilot?: boolean;
   organizationId: string;
   staffId: string;
   serviceId?: string;
@@ -34,6 +37,7 @@ const labelClass = "mb-1.5 block text-sm font-medium text-text";
 export function ServiceFormDialog({
   open,
   mode,
+  remoteWritePilot = false,
   organizationId,
   staffId,
   serviceId,
@@ -104,7 +108,7 @@ export function ServiceFormDialog({
     setStep(2);
   }
 
-  function submit() {
+  async function submit() {
     const parsed = parseServiceCatalogDraft(draft);
     if (!parsed.ok) {
       setError(parsed.error);
@@ -114,6 +118,23 @@ export function ServiceFormDialog({
     setBusy(true);
     setError("");
     try {
+      if (remoteWritePilot) {
+        if (mode === "edit") {
+          throw new Error("目前僅能新增服務");
+        }
+        const created = await submitServiceRemoteCreate({
+          organizationId,
+          name: parsed.value.name,
+          category: parsed.value.category || undefined,
+          durationMinutes: parsed.value.durationMinutes,
+          priceMinor: parsed.value.priceMinor,
+          isActive: parsed.value.isActive,
+          createdByStaffId: staffId,
+        });
+        onSaved(created.id);
+        onClose();
+        return;
+      }
       if (mode === "edit" && serviceId) {
         updateService(
           organizationId,
@@ -141,7 +162,7 @@ export function ServiceFormDialog({
       }
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "儲存失敗");
+      setError(remoteWritePilot ? serviceWriteUserMessage(err) : err instanceof Error ? err.message : "儲存失敗");
     } finally {
       setBusy(false);
     }

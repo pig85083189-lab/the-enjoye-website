@@ -65,7 +65,13 @@ export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps)
         <ServiceFocusCard snapshot={snapshot} treatmentHref={snapshot.treatmentHref} />
       </div>
 
-      <div className="order-3 min-[768px]:hidden">
+      {snapshot.nextAppointment ? (
+        <div className="order-3 min-[768px]:order-2">
+          <UpcomingAppointmentCard next={snapshot.nextAppointment} />
+        </div>
+      ) : null}
+
+      <div className="order-4 min-[768px]:hidden">
         <Card padding="md" className="space-y-2">
           <p className="text-[13px] font-medium text-secondary-text">快速操作</p>
           <Link href={snapshot.treatmentHref} className="block">
@@ -89,11 +95,11 @@ export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps)
         </Card>
       </div>
 
-      <div className="order-6 max-[767px]:hidden min-[768px]:order-2">
+      <div className="order-6 max-[767px]:hidden min-[768px]:order-3">
         <FrequentServicesCard snapshot={snapshot} />
       </div>
 
-      <div className="order-4 min-[768px]:order-3">
+      <div className="order-5 min-[768px]:order-4">
         <TimelineCard
           items={timeline}
           total={snapshot.timeline.length}
@@ -102,15 +108,15 @@ export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps)
         />
       </div>
 
-      <div className="order-5 min-[768px]:order-4">
+      <div className="order-6 min-[768px]:order-5">
         <FinancialSummary snapshot={snapshot} onOpenTab={onOpenTab} />
       </div>
 
-      <div className="order-7 max-[767px]:hidden min-[768px]:order-5">
+      <div className="order-7 max-[767px]:hidden min-[768px]:order-6">
         <PreferencesCard prefs={prefs} hasPrefs={hasPrefs} />
       </div>
 
-      <details className="order-6 rounded-2xl border border-border bg-surface min-[768px]:hidden">
+      <details className="order-7 rounded-2xl border border-border bg-surface min-[768px]:hidden">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-4 text-sm font-medium text-text [&::-webkit-details-marker]:hidden">
           其他資訊
           <span className="text-xs font-normal text-secondary-text">展開</span>
@@ -170,6 +176,25 @@ function PrefRow({ label, value }: { label: string; value: string }) {
       <dt className="text-xs text-secondary-text">{label}</dt>
       <dd className="mt-0.5 text-[14px] text-text">{value}</dd>
     </div>
+  );
+}
+
+function UpcomingAppointmentCard({
+  next,
+}: {
+  next: NonNullable<Customer360Snapshot["nextAppointment"]>;
+}) {
+  return (
+    <Card padding="md" data-customer-next-appointment>
+      <h3 className="text-[15px] font-semibold text-text">下次預約</h3>
+      <p className="mt-2 text-[14px] font-medium text-text">
+        {next.serviceName ?? "預約"}
+      </p>
+      <p className="mt-0.5 text-sm text-secondary-text">
+        {next.dateLabel} {next.timeLabel}
+        {next.staffName ? ` · ${next.staffName}` : ""}
+      </p>
+    </Card>
   );
 }
 
@@ -410,7 +435,10 @@ function FinancialSummary({
           </div>
         ) : (
           <div className="mt-2">
-            <p className="text-sm text-secondary-text">尚無套票</p>
+            <p className="text-sm text-secondary-text">
+              {snapshot.commerceRemoteRead ? "套票尚未開放" : "尚無套票"}
+            </p>
+            {snapshot.commerceRemoteRead ? null : (
             <button
               type="button"
               onClick={() => onOpenTab("wallet", "packages")}
@@ -418,6 +446,7 @@ function FinancialSummary({
             >
               查看套票
             </button>
+            )}
           </div>
         )}
       </Card>
@@ -437,7 +466,11 @@ function FinancialSummary({
           {formatTwd(snapshot.svBalance)}
         </p>
         <p className="mt-0.5 text-xs text-secondary-text">
-          {snapshot.svBalance === 0 ? "目前沒有可用儲值" : "可用餘額"}
+          {snapshot.commerceRemoteRead
+            ? "儲值尚未開放"
+            : snapshot.svBalance === 0
+              ? "目前沒有可用儲值"
+              : "可用餘額"}
         </p>
       </Card>
 
@@ -453,7 +486,10 @@ function FinancialSummary({
           </button>
         </div>
         {snapshot.recentTx.length > 0 ? (
-          <ul className="mt-2 space-y-1.5">
+          <ul
+            className="mt-2 space-y-1.5"
+            data-recent-tx-source={snapshot.commerceRemoteRead ? "remote-pilot" : "local"}
+          >
             {snapshot.recentTx.map((tx) => (
               <li key={tx.id} className="flex items-baseline justify-between gap-2 text-sm">
                 <div className="min-w-0">
@@ -467,7 +503,13 @@ function FinancialSummary({
             ))}
           </ul>
         ) : (
-          <p className="mt-2 text-sm text-secondary-text">尚無交易</p>
+          <p
+            className="mt-2 text-sm text-secondary-text"
+            data-recent-tx-source={snapshot.commerceRemoteRead ? "remote-pilot" : "local"}
+            data-recent-tx-state="empty"
+          >
+            尚無交易
+          </p>
         )}
       </Card>
     </div>

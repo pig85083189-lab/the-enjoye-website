@@ -11,11 +11,13 @@ import {
   getCommerceRevision,
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
+import type { Transaction } from "@/lib/commerce/domain";
 import { formatTwd, parseMoneyInput } from "@/lib/commerce/money";
 import { listTransactions } from "@/lib/commerce/transaction-store";
 import {
   deriveRecentTransactions,
   PACKAGE_STATUS_LABEL,
+  resolveCustomer360Transactions,
 } from "@/lib/customers/customer-360";
 import {
   PACKAGE_LEDGER_TYPE_LABEL,
@@ -43,23 +45,44 @@ interface WalletTabProps {
   customerId: string;
   section?: "packages" | "stored-value";
   onOpenTransactions?: () => void;
+  commerceRemoteRead?: boolean;
+  remoteTransactions?: Transaction[] | null;
 }
 
-export function WalletTab({ customerId, section, onOpenTransactions }: WalletTabProps) {
+export function WalletTab({
+  customerId,
+  section,
+  onOpenTransactions,
+  commerceRemoteRead = false,
+  remoteTransactions = null,
+}: WalletTabProps) {
   const router = useRouter();
   const { organization, currentLocation, locations, membership } = useOrganization();
   const revision = useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
   void revision;
   const staffId = membership?.userId ?? "staff-001";
   const locationId = currentLocation?.id ?? locations[0]?.id ?? "";
-  const canAdjust = membership?.role === "OWNER" || membership?.role === "MANAGER";
+  const canAdjust =
+    !commerceRemoteRead &&
+    (membership?.role === "OWNER" || membership?.role === "MANAGER");
 
-  const svBalance = getCustomerStoredValueBalance(organization.id, customerId);
-  const packages = listCustomerPackages(organization.id, { customerId });
-  const definitions = listPackageDefinitions(organization.id, { activeOnly: true });
-  const svLedger = listStoredValueLedger(organization.id, { customerId });
+  const svBalance = commerceRemoteRead
+    ? 0
+    : getCustomerStoredValueBalance(organization.id, customerId);
+  const packages = commerceRemoteRead
+    ? []
+    : listCustomerPackages(organization.id, { customerId });
+  const definitions = commerceRemoteRead
+    ? []
+    : listPackageDefinitions(organization.id, { activeOnly: true });
+  const svLedger = commerceRemoteRead
+    ? []
+    : listStoredValueLedger(organization.id, { customerId });
   const recentTx = deriveRecentTransactions(
-    listTransactions(organization.id, { customerId }),
+    resolveCustomer360Transactions(
+      commerceRemoteRead ? (remoteTransactions ?? []) : null,
+      listTransactions(organization.id, { customerId }),
+    ),
   );
   const recentLedger = [...svLedger].reverse().slice(0, 3);
 
@@ -78,6 +101,7 @@ export function WalletTab({ customerId, section, onOpenTransactions }: WalletTab
   }, [section]);
 
   function startPackagePurchase(definitionId: string) {
+    if (commerceRemoteRead) return;
     setError("");
     try {
       const draft = createEmptyCheckoutDraft(organization.id, {
@@ -98,6 +122,7 @@ export function WalletTab({ customerId, section, onOpenTransactions }: WalletTab
   }
 
   function startTopUp() {
+    if (commerceRemoteRead) return;
     setError("");
     const amount = parseMoneyInput(topUp);
     if (amount == null || amount <= 0) {
@@ -129,7 +154,11 @@ export function WalletTab({ customerId, section, onOpenTransactions }: WalletTab
     : [];
 
   return (
-    <div className="space-y-5">
+    <div
+      className="space-y-5"
+      data-customer-wallet-source={commerceRemoteRead ? "remote-pilot" : "local"}
+      data-customer-wallet-mode={commerceRemoteRead ? "readonly" : "local-write"}
+    >
       {error ? (
         <p className="text-sm text-[#B07A4A]" role="alert">
           {error}
@@ -161,12 +190,16 @@ export function WalletTab({ customerId, section, onOpenTransactions }: WalletTab
       <Card padding="md" className="space-y-3" id="customer-wallet-packages">
         <div className="flex items-baseline justify-between gap-2">
           <h3 className="text-[15px] font-semibold text-text">套票</h3>
-          <Link
-            href="/staff/packages"
-            className="text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-          >
-            查看套票
-          </Link>
+          {commerceRemoteRead ? (
+            <span className="text-xs text-secondary-text">尚未開放</span>
+          ) : (
+            <Link
+              href="/staff/packages"
+              className="text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              查看套票
+            </Link>
+          )}
         </div>
         {packages.length === 0 ? (
           <p className="text-sm text-secondary-text">尚無套票</p>
@@ -196,7 +229,9 @@ export function WalletTab({ customerId, section, onOpenTransactions }: WalletTab
             })}
           </ul>
         )}
-        {definitions.length > 0 ? (
+        {commerceRemoteRead ? (
+          <p className="text-sm text-secondary-text">套票尚未開放</p>
+        ) : definitions.length > 0 ? (
           <details className="rounded-2xl border border-border/80 bg-[#FBF4F3]/40 px-3">
             <summary className="flex min-h-11 cursor-pointer list-none items-center text-sm text-secondary-text [&::-webkit-details-marker]:hidden">
               購買套票
@@ -341,6 +376,9 @@ export function WalletTab({ customerId, section, onOpenTransactions }: WalletTab
           </div>
         ) : null}
 
+        {commerceRemoteRead ? (
+          <p className="text-sm text-secondary-text">儲值尚未開放</p>
+        ) : (
         <div className="flex flex-wrap items-end gap-2">
           <label className="text-xs text-secondary-text">
             金額
@@ -356,6 +394,7 @@ export function WalletTab({ customerId, section, onOpenTransactions }: WalletTab
             ＋ 新增儲值
           </Button>
         </div>
+        )}
 
         {canAdjust ? (
           <details className="rounded-2xl border border-dashed border-border px-3">

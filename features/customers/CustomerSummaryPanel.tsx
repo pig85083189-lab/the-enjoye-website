@@ -20,6 +20,7 @@ interface CustomerSummaryPanelProps {
   onAddFollowUp: () => void;
   onOpenNotes: () => void;
   readOnly?: boolean;
+  allowCreateAppointment?: boolean;
 }
 
 export function CustomerSummaryPanel({
@@ -29,7 +30,9 @@ export function CustomerSummaryPanel({
   onAddFollowUp,
   onOpenNotes,
   readOnly = false,
+  allowCreateAppointment,
 }: CustomerSummaryPanelProps) {
+  const canCreateAppointment = allowCreateAppointment ?? !readOnly;
   const [moreOpen, setMoreOpen] = useState(false);
   const next = snapshot.nextAppointment;
 
@@ -57,7 +60,7 @@ export function CustomerSummaryPanel({
               {next ? `${next.dateLabel} ${next.timeLabel}` : "尚未安排"}
             </dd>
           </div>
-          {!next ? (
+          {!next && canCreateAppointment ? (
             <Link
               href={snapshot.createHref}
               className="mt-1 inline-flex min-h-9 items-center text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
@@ -102,16 +105,16 @@ export function CustomerSummaryPanel({
         >
           開始療程紀錄
         </Button>
-        {readOnly ? (
-          <Button fullWidth variant="secondary" className="min-h-11" disabled>
-            新增預約
-          </Button>
-        ) : (
+        {canCreateAppointment ? (
           <Link href={snapshot.createHref} className="block">
             <Button fullWidth variant="secondary" className="min-h-11">
               新增預約
             </Button>
           </Link>
+        ) : (
+          <Button fullWidth variant="secondary" className="min-h-11" disabled>
+            新增預約
+          </Button>
         )}
         <Button
           fullWidth

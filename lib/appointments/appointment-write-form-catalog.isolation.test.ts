@@ -144,6 +144,8 @@ function validTables(overrides?: Partial<Record<string, Row[]>>): Record<string,
         app_id: "svc-muqm5pht-nqlpr3",
         name: "Remote QA Service",
         duration_minutes: 100,
+        price_minor: 3200,
+        is_active: true,
       },
     ],
     ...overrides,
@@ -229,6 +231,64 @@ describe("Phase 1C-6C appointment write customer catalog", () => {
     );
     expect(remoteMap).toMatch(/phone: c\.phone/);
     expect(remoteMap).not.toMatch(/localCustomerRepository/);
+  });
+});
+
+describe("Phase 1C Service catalog options on Appointment create", () => {
+  it("loads canonical svc-* identity, duration, and price_minor", async () => {
+    const catalog = await loadAppointmentWriteFormCatalog(ownerClient());
+    expect(catalog.services).toEqual([
+      {
+        id: "svc-muqm5pht-nqlpr3",
+        name: "Remote QA Service",
+        durationMinutes: 100,
+        priceMinor: 3200,
+      },
+    ]);
+  });
+
+  it("skips priceless and inactive services instead of inventing a default price", async () => {
+    const catalog = await loadAppointmentWriteFormCatalog(
+      ownerClient({
+        services: [
+          {
+            id: "bd4c1822-5375-48b6-a4f4-dd231da10ef2",
+            organization_id: ORG_UUID,
+            app_id: "svc-muqm5pht-nqlpr3",
+            name: "Priceless Service",
+            duration_minutes: 100,
+            price_minor: null,
+            is_active: true,
+          },
+          {
+            id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            organization_id: ORG_UUID,
+            app_id: "svc-inactive-000001",
+            name: "Inactive Service",
+            duration_minutes: 90,
+            price_minor: 2800,
+            is_active: false,
+          },
+          {
+            id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            organization_id: ORG_UUID,
+            app_id: "svc-official-000001",
+            name: "正式曲線 SPA",
+            duration_minutes: 100,
+            price_minor: 3500,
+            is_active: true,
+          },
+        ],
+      }),
+    );
+    expect(catalog.services).toEqual([
+      {
+        id: "svc-official-000001",
+        name: "正式曲線 SPA",
+        durationMinutes: 100,
+        priceMinor: 3500,
+      },
+    ]);
   });
 });
 

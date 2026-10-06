@@ -65,14 +65,6 @@ function assertOrganizationBoundary(
   identity.mapper.resolveOrganizationDbId(organizationId);
 }
 
-function assertLocationBoundary(
-  identity: LoadedAuthenticatedIdentity,
-  locationId: string | undefined,
-): void {
-  if (!locationId) return;
-  identity.mapper.resolveLocationDbId(identity.organizationAppId, locationId);
-}
-
 export async function createAuthenticatedCustomerWritePersistence(
   client: CustomerWriteClient,
 ): Promise<AuthenticatedCustomerWritePersistence> {
@@ -97,7 +89,8 @@ export async function runAuthenticatedCustomerWriteCreate(
   }
   const persistence = await createAuthenticatedCustomerWritePersistence(client);
   assertOrganizationBoundary(persistence.identity, input.organizationId);
-  assertLocationBoundary(persistence.identity, input.locationId);
+  // Customer is organization-owned. UI seed locations (including loc-enjoye-gongyi)
+  // must not be required or written. locationId is ignored when present.
   persistence.identity.mapper.requireOperationalStaffId(
     persistence.identity.organizationAppId,
     input.primaryStaffId,

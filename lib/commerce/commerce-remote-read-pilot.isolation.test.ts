@@ -443,6 +443,7 @@ describe("Phase 1C-6H.1 commerce remote read pilot", () => {
       "app/staff/(app)/today/page.tsx",
       "app/staff/(app)/calendar/page.tsx",
       "app/staff/(app)/treatments/new/page.tsx",
+      "app/staff/(app)/customers/[id]/page.tsx",
     ]) {
       const source = read(file);
       expect(source).toMatch(/isCommerceRemoteReadPilotEnabled/);

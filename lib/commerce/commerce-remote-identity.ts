@@ -120,6 +120,36 @@ export function buildCommerceCheckoutHref(input: {
   return `/staff/checkout?${params.toString()}`;
 }
 
+export function buildCommerceTransactionHref(transactionId: string): string {
+  return `/staff/transactions?id=${transactionId}`;
+}
+
+/** COMPLETED Transaction only. Appointment stored status is not paid truth. */
+export function completedTransactionIdsByAppointment(
+  transactions: ReadonlyArray<{
+    id: string;
+    status: string;
+    appointmentId?: string | null;
+  }>,
+): ReadonlyMap<string, string> {
+  const map = new Map<string, string>();
+  for (const tx of transactions) {
+    if (tx.status !== "COMPLETED") continue;
+    const appointmentId = tx.appointmentId?.trim();
+    if (!appointmentId) continue;
+    map.set(appointmentId, tx.id);
+  }
+  return map;
+}
+
+export function isAppointmentSettledByTransaction(
+  paidAppointmentIds: ReadonlyMap<string, string> | undefined,
+  appointmentId: string | null | undefined,
+): boolean {
+  if (!paidAppointmentIds || !appointmentId) return false;
+  return paidAppointmentIds.has(appointmentId);
+}
+
 export function toCreateRemoteCheckoutDraftInput(input: {
   identity: CommerceCheckoutIdentity;
   createdByStaffId: string;

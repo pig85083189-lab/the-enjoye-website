@@ -367,6 +367,8 @@ describe("Service Catalog isolation Q–T", () => {
     expect(store).not.toMatch(/types\/database/);
     expect(page).not.toMatch(/lib\/persistence/);
     expect(form).not.toMatch(/lib\/persistence/);
+    expect(page).toMatch(/useServiceRemoteList|remoteReadPilot/);
+    expect(form).toMatch(/submitServiceRemoteCreate|createService/);
     expect(store).not.toMatch(/remainingSessions/);
     expect(SERVICE_CATALOG_HAS_PERSISTED_KPI).toBe(false);
     expect(SERVICE_CATALOG_HAS_LOCATION_RESTRICTION).toBe(false);

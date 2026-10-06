@@ -208,6 +208,48 @@ describe("next appointment + last service", () => {
     });
   });
 
+  it("7c. UTC offset appointment is compared as an instant and labeled in Taipei", () => {
+    const customerYu = customer({
+      id: "cust-muvb8x0p-887ltc",
+      name: "喻茗楷",
+    });
+    const productionUtc = {
+      customerId: "cust-muvb8x0p-887ltc",
+      status: "BOOKED",
+      serviceName: "美波澎潤upupSPA",
+      staffName: "測試帳號",
+      startAt: "2026-10-06T04:00:00+00:00",
+      endAt: "2026-10-06T05:00:00+00:00",
+    };
+    expect(
+      deriveNextAppointment({
+        customer: customerYu,
+        appointments: [productionUtc],
+        now: new Date("2026-10-06T08:00:00+08:00"),
+      }),
+    ).toEqual({
+      dateLabel: "2026/10/06",
+      timeLabel: "12:00",
+      serviceName: "美波澎潤upupSPA",
+      staffName: "測試帳號",
+      startsAt: "2026-10-06T04:00:00+00:00",
+    });
+    expect(
+      deriveNextAppointment({
+        customer: customerYu,
+        appointments: [productionUtc],
+        now: new Date("2026-10-06T12:05:00+08:00"),
+      })?.timeLabel,
+    ).toBe("12:00");
+    expect(
+      deriveNextAppointment({
+        customer: customerYu,
+        appointments: [productionUtc],
+        now: new Date("2026-10-06T13:01:00+08:00"),
+      }),
+    ).toBeNull();
+  });
+
   it("7b. stale nextAppointmentAt in the past is ignored", () => {
     expect(
       deriveNextAppointment({

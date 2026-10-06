@@ -56,8 +56,18 @@ describe("Phase 1C-1 service remote adapter", () => {
       remote.services.upsert(ORG_A, realService({ id: "svc-breast", name: "自訂名稱" }), STAFF_A),
     ).rejects.toThrow(REMOTE_DEMO_SERVICE_MESSAGE);
     await expect(
-      remote.services.upsert(ORG_A, realService({ name: "性感美胸 SPA" }), STAFF_A),
+      remote.services.upsert(ORG_A, realService({ name: "Remote QA Bust Care" }), STAFF_A),
     ).rejects.toThrow(REMOTE_DEMO_SERVICE_MESSAGE);
+    const official = await remote.services.create(ORG_A, {
+      name: "性感美胸 SPA",
+      durationMinutes: 100,
+      priceMinor: 3200,
+      createdByStaffId: STAFF_A,
+      serviceType: "BREAST",
+    });
+    expect(isGeneratedServiceAppId(official.id)).toBe(true);
+    expect(official.name).toBe("性感美胸 SPA");
+    expect(official.priceMinor).toBe(3200);
     await expect(
       remote.services.upsert(ORG_A, realService({ id: "mock-svc-1" }), STAFF_A),
     ).rejects.toThrow(REMOTE_DEMO_SERVICE_MESSAGE);

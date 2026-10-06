@@ -12,6 +12,10 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ServiceFormDialog } from "@/features/services/ServiceFormDialog";
 import { ServiceQuickView } from "@/features/services/ServiceQuickView";
+import {
+  servicesFromRemoteListState,
+  useServiceRemoteList,
+} from "@/features/services/use-service-remote-read";
 import { listAppointments } from "@/lib/appointments/store";
 import {
   getCommerceRevision,
@@ -20,6 +24,7 @@ import {
 import { formatTwd } from "@/lib/commerce/money";
 import { listTransactions } from "@/lib/commerce/transaction-store";
 import { listPackageDefinitions } from "@/lib/packages/store";
+import { resolveServiceCatalogMutationSurface } from "@/lib/services/service-write-surface";
 import {
   SERVICE_CATALOG_FILTER_OPTIONS,
   SERVICE_CATALOG_WORKSPACE_GAP_PX,
@@ -62,7 +67,13 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
   event.preventDefault();
 }
 
-export function ServiceCatalogPageClient() {
+export function ServiceCatalogPageClient({
+  remoteReadPilot = false,
+  remoteWritePilot = false,
+}: {
+  remoteReadPilot?: boolean;
+  remoteWritePilot?: boolean;
+}) {
   const { organization, membership } = useOrganization();
   const isClient = useIsClient();
   const commerceRev = useSyncExternalStore(
@@ -73,6 +84,12 @@ export function ServiceCatalogPageClient() {
 
   const staffId = membership?.userId ?? "";
   const canManage = canManageServices(membership?.role);
+  const mutation = resolveServiceCatalogMutationSurface({
+    canManage,
+    remoteReadPilot,
+    remoteWritePilot,
+  });
+  const remote = useServiceRemoteList(organization.id, remoteReadPilot);
 
   const [filters, setFilters] = useState<{
     status: ServiceCatalogListFilter;
@@ -90,9 +107,10 @@ export function ServiceCatalogPageClient() {
 
   const services = useMemo(() => {
     void commerceRev;
+    if (remoteReadPilot) return servicesFromRemoteListState(remote);
     if (!isClient) return [];
     return getServicesForOrganization(organization.id);
-  }, [commerceRev, isClient, organization.id]);
+  }, [commerceRev, isClient, organization.id, remote, remoteReadPilot]);
 
   const rows = useMemo(() => buildServiceCatalogRows(services), [services]);
   const categories = useMemo(() => listServiceCatalogCategories(rows), [rows]);
@@ -185,20 +203,21 @@ export function ServiceCatalogPageClient() {
   }
 
   function openCreate() {
+    if (!mutation.create) return;
     setFormMode("create");
     setFormOpen(true);
     setActionError("");
   }
 
   function openEdit() {
-    if (!selectedRow || !canManage) return;
+    if (!selectedRow || !mutation.edit) return;
     setFormMode("edit");
     setFormOpen(true);
     setActionError("");
   }
 
   function setActive(isActive: boolean) {
-    if (!canManage || !selectedServiceId || !staffId) return;
+    if (!mutation.toggleActive || !selectedServiceId || !staffId) return;
     try {
       if (isActive) reactivateService(organization.id, selectedServiceId, staffId);
       else deactivateService(organization.id, selectedServiceId, staffId);
@@ -208,8 +227,10 @@ export function ServiceCatalogPageClient() {
     }
   }
 
-  const emptyAll = isClient && rows.length === 0;
-  const emptyFiltered = isClient && rows.length > 0 && visible.length === 0;
+  const remoteReady = !remoteReadPilot || remote.status === "data" || remote.status === "empty";
+  const catalogReady = remoteReadPilot ? remoteReady : isClient;
+  const emptyAll = catalogReady && rows.length === 0;
+  const emptyFiltered = catalogReady && rows.length > 0 && visible.length === 0;
   const emptyCopy = serviceCatalogEmptyCopy({
     hasAny: rows.length > 0,
     filter: filters.status,
@@ -238,7 +259,7 @@ export function ServiceCatalogPageClient() {
             管理可預約、可銷售與套票適用的服務項目
           </p>
         </div>
-        {canManage ? (
+        {mutation.create ? (
           <div className="hidden shrink-0 min-[720px]:block">
             <Button
               data-service-catalog-add
@@ -253,17 +274,17 @@ export function ServiceCatalogPageClient() {
       </header>
 
       <section className="mb-4 grid grid-cols-2 gap-2 min-[1200px]:grid-cols-4 min-[1200px]:gap-3">
-        <SummaryCard label="全部服務" value={isClient ? summary.total : "—"} accent="primary" />
+        <SummaryCard label="全部服務" value={catalogReady ? summary.total : "—"} accent="primary" />
         <SummaryCard
           label="販售中"
-          value={isClient ? summary.active : "—"}
+          value={catalogReady ? summary.active : "—"}
           accent="success"
         />
         <SummaryCard
           label="可加入套票"
-          value={isClient ? summary.packageEligible : "—"}
+          value={catalogReady ? summary.packageEligible : "—"}
         />
-        <SummaryCard label="已停售" value={isClient ? summary.inactive : "—"} />
+        <SummaryCard label="已停售" value={catalogReady ? summary.inactive : "—"} />
       </section>
 
       <div
@@ -339,7 +360,13 @@ export function ServiceCatalogPageClient() {
             </p>
           ) : null}
 
-          {!isClient ? (
+          {remote.status === "error" ? (
+            <p role="alert" className="mb-3 text-[13px] text-[#C49A9A]">
+              {remote.message}
+            </p>
+          ) : null}
+
+          {!catalogReady ? (
             <div className="space-y-3">
               {Array.from({ length: 4 }).map((_, index) => (
                 <div
@@ -352,7 +379,7 @@ export function ServiceCatalogPageClient() {
             <Card padding="lg" className="text-center">
               <p className="text-[15px] font-medium text-text">{emptyCopy.title}</p>
               <p className="mt-1 text-sm text-secondary-text">{emptyCopy.body}</p>
-              {emptyAll && canManage ? (
+              {emptyAll && mutation.create ? (
                 <div className="mt-4 flex justify-center">
                   <Button className="h-10 min-h-10 rounded-full px-4" onClick={openCreate}>
                     <Plus className="h-4 w-4" aria-hidden />
@@ -413,7 +440,7 @@ export function ServiceCatalogPageClient() {
               key={selectedRow.serviceId}
               row={selectedRow}
               related={related}
-              canManage={canManage}
+              canManage={mutation.edit}
               onClose={closeQuickView}
               onEdit={openEdit}
               onDeactivate={() => setActive(false)}
@@ -429,7 +456,7 @@ export function ServiceCatalogPageClient() {
             key={selectedRow.serviceId}
             row={selectedRow}
             related={related}
-            canManage={canManage}
+            canManage={mutation.edit}
             onClose={closeQuickView}
             onEdit={openEdit}
             onDeactivate={() => setActive(false)}
@@ -438,7 +465,7 @@ export function ServiceCatalogPageClient() {
         </div>
       ) : null}
 
-      {canManage && !showQuickView ? (
+      {mutation.create && !showQuickView ? (
         <div
           data-service-catalog-add-mobile-wrap
           className="fixed inset-x-4 z-30 min-[720px]:hidden bottom-[calc(3.5rem+0.75rem+env(safe-area-inset-bottom))]"
@@ -459,6 +486,7 @@ export function ServiceCatalogPageClient() {
           key={`${formMode}-${selectedRow?.serviceId ?? "new"}`}
           open={formOpen}
           mode={formMode}
+          remoteWritePilot={remoteWritePilot}
           organizationId={organization.id}
           staffId={staffId}
           serviceId={formMode === "edit" ? selectedRow?.serviceId : undefined}

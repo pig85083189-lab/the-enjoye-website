@@ -40,6 +40,7 @@ export type AppointmentWriteFormOption = {
 
 export type AppointmentWriteServiceOption = AppointmentWriteFormOption & {
   durationMinutes: number;
+  priceMinor: number;
 };
 
 export type AppointmentWriteStaffOption = AppointmentWriteFormOption & {
@@ -120,7 +121,7 @@ export async function loadAppointmentWriteFormCatalog(
     await readNamedRows(
       client
         .from("services")
-        .select("app_id, organization_id, name, duration_minutes")
+        .select("app_id, organization_id, name, duration_minutes, price_minor, is_active")
         .eq("organization_id", identity.organizationDbId),
     )
   ).flatMap((row) => {
@@ -128,10 +129,20 @@ export async function loadAppointmentWriteFormCatalog(
     const name = asName(row.name);
     const durationMinutes =
       typeof row.duration_minutes === "number" ? row.duration_minutes : Number(row.duration_minutes);
+    const priceMinor =
+      typeof row.price_minor === "number"
+        ? row.price_minor
+        : typeof row.price_minor === "string"
+          ? Number(row.price_minor)
+          : Number.NaN;
     if (!id || !name || !Number.isInteger(durationMinutes) || durationMinutes <= 0) {
       return [];
     }
-    return [{ id, name, durationMinutes }];
+    if (row.is_active === false) return [];
+    if (!Number.isInteger(priceMinor) || priceMinor < 0) {
+      return [];
+    }
+    return [{ id, name, durationMinutes, priceMinor }];
   });
   const membershipRows = (
     await readNamedRows(

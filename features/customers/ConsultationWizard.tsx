@@ -241,7 +241,7 @@ function ConsultationWizardInner({
   remoteWritePilot = false,
 }: ConsultationWizardProps) {
   const router = useRouter();
-  const { organization, membership, currentLocation } = useOrganization();
+  const { organization, membership } = useOrganization();
   const draftKey = mode === "new" ? "new" : (customerId ?? "new");
   const staffFallback = {
     id: membership?.userId ?? "staff-001",
@@ -322,7 +322,6 @@ function ConsultationWizardInner({
     const created = await submitCustomerRemoteCreate({
       id: remoteCustomerId,
       organizationId: organization.id,
-      locationId: currentLocation?.id,
       name: form.name,
       phone: form.phone,
       birthday: form.birthday || undefined,

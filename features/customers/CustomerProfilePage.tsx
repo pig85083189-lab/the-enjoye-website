@@ -23,11 +23,23 @@ import { useCustomer360Snapshot } from "./use-customer-360";
 import { useCustomerRemoteAppointments } from "@/features/customers/use-appointment-remote-read";
 import { useCustomerRemoteDetail } from "@/features/customers/use-customer-remote-read";
 import {
+  isCommerceRemoteTransactionListReady,
+  transactionsFromRemoteCommerceState,
+  useCommerceRemoteTransactions,
+} from "@/features/transactions/use-commerce-remote-transactions";
+import { filterCommerceTransactionsByCustomerId } from "@/lib/customers/customer-360";
+import {
+  servicesFromRemoteListState,
+  useServiceRemoteList,
+} from "@/features/services/use-service-remote-read";
+import {
   treatmentsFromRemoteListState,
   useTreatmentRemoteListByCustomer,
 } from "@/features/treatments/use-treatment-remote-read";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
+import { applyRosterStaffDisplayNames } from "@/lib/staff-auth/roster-display-name";
+import { getMembership, listMemberships } from "@/lib/tenant/organization-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import {
   customerConsultationNewHref,
@@ -36,6 +48,7 @@ import {
   type Customer360TabId,
   type Customer360WalletSection,
 } from "@/lib/customers/customer-360";
+import { resolveCustomer360AppointmentCreateSurface } from "@/lib/customers/customer-360-appointment-create-surface";
 import type { Customer } from "@/types";
 
 function isWalletSection(value: string | null): value is Customer360WalletSection {
@@ -46,14 +59,20 @@ interface CustomerProfilePageProps {
   customerId: string;
   remoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
+  appointmentRemoteWritePilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
+  serviceRemoteReadPilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
 }
 
 export function CustomerProfilePage({
   customerId,
   remoteReadPilot = false,
   appointmentRemoteReadPilot = false,
+  appointmentRemoteWritePilot = false,
   treatmentRemoteReadPilot = false,
+  serviceRemoteReadPilot = false,
+  commerceRemoteReadPilot = false,
 }: CustomerProfilePageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -170,7 +189,10 @@ export function CustomerProfilePage({
     <Customer360Workspace
       remoteReadPilot={remoteReadPilot}
       appointmentRemoteReadPilot={appointmentRemoteReadPilot}
+      appointmentRemoteWritePilot={appointmentRemoteWritePilot}
       treatmentRemoteReadPilot={treatmentRemoteReadPilot}
+      serviceRemoteReadPilot={serviceRemoteReadPilot}
+      commerceRemoteReadPilot={commerceRemoteReadPilot}
       customer={customer}
       tab={tab}
       walletSection={walletSection}
@@ -197,7 +219,10 @@ export function CustomerProfilePage({
 function Customer360Workspace({
   remoteReadPilot = false,
   appointmentRemoteReadPilot = false,
+  appointmentRemoteWritePilot = false,
   treatmentRemoteReadPilot = false,
+  serviceRemoteReadPilot = false,
+  commerceRemoteReadPilot = false,
   customer,
   tab,
   walletSection,
@@ -211,7 +236,10 @@ function Customer360Workspace({
 }: {
   remoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
+  appointmentRemoteWritePilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
+  serviceRemoteReadPilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
   customer: Customer;
   tab: Customer360TabId;
   walletSection?: Customer360WalletSection;
@@ -235,25 +263,95 @@ function Customer360Workspace({
     customer.id,
     treatmentRemoteReadPilot,
   );
-  const snapshot = useCustomer360Snapshot(customer, {
+  const remoteCatalog = useServiceRemoteList(
+    organization.id,
+    serviceRemoteReadPilot,
+  );
+  const remoteCommerce = useCommerceRemoteTransactions({
+    organizationId: organization.id,
+    enabled: commerceRemoteReadPilot,
+  });
+  const commerceTxReady =
+    !commerceRemoteReadPilot || isCommerceRemoteTransactionListReady(remoteCommerce);
+  const remoteTransactions = commerceRemoteReadPilot
+    ? filterCommerceTransactionsByCustomerId(
+        transactionsFromRemoteCommerceState(remoteCommerce),
+        customer.id,
+      )
+    : null;
+  const customerForView = {
+    ...customer,
+    primaryStaffName:
+      customer.primaryStaffName ??
+      (customer.primaryStaffId
+        ? getMembership(organization.id, customer.primaryStaffId)?.displayName
+        : undefined),
+  };
+  const snapshot = useCustomer360Snapshot(customerForView, {
     remoteAppointments: appointmentRemoteReadPilot
-      ? remoteAppointments.status === "data"
-        ? remoteAppointments.value
-        : []
+      ? applyRosterStaffDisplayNames(
+          remoteAppointments.status === "data" ? remoteAppointments.value : [],
+          listMemberships(organization.id),
+        )
       : null,
     remoteTreatments: treatmentRemoteReadPilot
       ? treatmentsFromRemoteListState(remoteTreatments)
       : null,
+    remoteCatalog: serviceRemoteReadPilot
+      ? servicesFromRemoteListState(remoteCatalog)
+      : null,
+    remoteTransactions,
+  });
+  const createSurface = resolveCustomer360AppointmentCreateSurface({
+    customerId: customer.id,
+    customerRemoteReadPilot: remoteReadPilot,
+    appointmentRemoteReadPilot,
+    appointmentRemoteWritePilot,
   });
   const next = snapshot.nextAppointment;
   const initials = customer.name.slice(0, 1);
   const visitLabel =
     snapshot.visitCount > 0 ? `第 ${snapshot.visitCount} 次來店` : "尚未到店";
 
+  if (commerceRemoteReadPilot && !commerceTxReady && remoteCommerce.status !== "error") {
+    return (
+      <div
+        className="space-y-3"
+        data-commerce-tx-source="remote-pilot"
+        data-commerce-tx-state="loading"
+      >
+        <div className="h-10 w-40 animate-pulse rounded-2xl bg-primary-light/50" />
+        <div className="h-32 animate-pulse rounded-2xl bg-primary-light/40" />
+      </div>
+    );
+  }
+
+  if (commerceRemoteReadPilot && remoteCommerce.status === "error") {
+    return (
+      <Card
+        padding="lg"
+        className="text-center"
+        data-commerce-tx-source="remote-pilot"
+        data-commerce-tx-state="error"
+      >
+        <p className="text-[15px] font-medium text-text">無法載入交易紀錄</p>
+        <p className="mt-2 text-sm text-secondary-text">請稍後再試。</p>
+      </Card>
+    );
+  }
+
   return (
     <div
       className="mx-auto w-full min-w-0 max-w-[1180px] space-y-4 overflow-x-hidden pb-16 min-[768px]:pb-0"
       data-customer-read-source={remoteReadPilot ? "remote-pilot" : "local"}
+      data-commerce-tx-source={commerceRemoteReadPilot ? "remote-pilot" : "local"}
+      data-commerce-tx-state={
+        commerceRemoteReadPilot
+          ? remoteTransactions && remoteTransactions.length > 0
+            ? "data"
+            : "empty"
+          : "local"
+      }
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
@@ -295,7 +393,7 @@ function Customer360Workspace({
               <span className="mx-1.5 text-border">·</span>
               {visitLabel}
               <span className="mx-1.5 text-border">·</span>
-              負責美容師 {customer.primaryStaffName ?? "尚未指定"}
+              負責美容師 {customerForView.primaryStaffName ?? "尚未指定"}
             </p>
             <p className="mt-0.5 hidden truncate text-sm text-secondary-text min-[768px]:block">
               最近到店 {snapshot.lastVisitLabel ?? "—"}
@@ -308,14 +406,14 @@ function Customer360Workspace({
               ) : (
                 <>
                   尚未安排
-                  {remoteReadPilot ? null : (
+                  {createSurface.href ? (
                     <Link
-                      href={snapshot.createHref}
+                      href={createSurface.href}
                       className="ml-2 font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                     >
                       ＋ 安排預約
                     </Link>
-                  )}
+                  ) : null}
                 </>
               )}
             </p>
@@ -330,16 +428,16 @@ function Customer360Workspace({
             >
               開始療程紀錄
             </Button>
-            {remoteReadPilot || appointmentRemoteReadPilot ? (
-              <Button variant="secondary" className="min-h-11" disabled>
-                新增預約
-              </Button>
-            ) : (
-              <Link href={snapshot.createHref}>
+            {createSurface.href ? (
+              <Link href={createSurface.href}>
                 <Button variant="secondary" className="min-h-11">
                   新增預約
                 </Button>
               </Link>
+            ) : (
+              <Button variant="secondary" className="min-h-11" disabled>
+                新增預約
+              </Button>
             )}
             {remoteReadPilot ? (
               <Button variant="outline" className="min-h-11" disabled>
@@ -381,7 +479,7 @@ function Customer360Workspace({
             onNotes={() => onSelectTab("notes")}
             onFollowUp={() => onSelectTab("follow-ups")}
             includeEdit={!remoteReadPilot}
-            createHref={remoteReadPilot || appointmentRemoteReadPilot ? undefined : snapshot.createHref}
+            createHref={createSurface.href ?? undefined}
             readOnly={remoteReadPilot}
           />
         </div>
@@ -394,12 +492,13 @@ function Customer360Workspace({
         </summary>
         <div className="mt-3">
             <CustomerSummaryPanel
-            customer={customer}
+            customer={customerForView}
             snapshot={snapshot}
             onStartTreatment={() => router.push(snapshot.treatmentHref)}
             onAddFollowUp={() => onSelectTab("follow-ups")}
             onOpenNotes={() => onSelectTab("notes")}
             readOnly={remoteReadPilot}
+            allowCreateAppointment={Boolean(createSurface.href)}
           />
         </div>
       </details>
@@ -417,7 +516,7 @@ function Customer360Workspace({
             aria-labelledby={`customer-tab-${tab === "wallet" || tab === "transactions" ? "financial" : tab}`}
           >
             {tab === "overview" ? (
-              <OverviewTab customer={customer} snapshot={snapshot} onOpenTab={onSelectTab} />
+              <OverviewTab customer={customerForView} snapshot={snapshot} onOpenTab={onSelectTab} />
             ) : null}
             {tab === "consultation" ? <ConsultationsTab customerId={customer.id} /> : null}
             {tab === "treatments" ? (
@@ -425,6 +524,11 @@ function Customer360Workspace({
                 customerId={customer.id}
                 treatmentHref={snapshot.treatmentHref}
                 treatmentRemoteReadPilot={treatmentRemoteReadPilot}
+                catalog={
+                  serviceRemoteReadPilot
+                    ? servicesFromRemoteListState(remoteCatalog)
+                    : null
+                }
               />
             ) : null}
             {tab === "follow-ups" ? (
@@ -434,7 +538,7 @@ function Customer360Workspace({
             {tab === "appointments" ? (
               <AppointmentsTab
                 customerId={customer.id}
-                createHref={appointmentRemoteReadPilot ? undefined : snapshot.createHref}
+                createHref={createSurface.href ?? undefined}
                 remoteReadPilot={appointmentRemoteReadPilot}
               />
             ) : null}
@@ -443,9 +547,17 @@ function Customer360Workspace({
                 customerId={customer.id}
                 section={walletSection}
                 onOpenTransactions={() => onSelectTab("transactions")}
+                commerceRemoteRead={commerceRemoteReadPilot}
+                remoteTransactions={remoteTransactions}
               />
             ) : null}
-            {tab === "transactions" ? <TransactionsTab customerId={customer.id} /> : null}
+            {tab === "transactions" ? (
+              <TransactionsTab
+                customerId={customer.id}
+                commerceRemoteRead={commerceRemoteReadPilot}
+                remoteTransactions={remoteTransactions}
+              />
+            ) : null}
             {tab === "notes" ? <NotesTab customerId={customer.id} /> : null}
           </div>
         </div>
@@ -453,12 +565,13 @@ function Customer360Workspace({
         <aside className="hidden min-[1200px]:block">
           <div className="sticky top-6">
             <CustomerSummaryPanel
-              customer={customer}
+              customer={customerForView}
               snapshot={snapshot}
               onStartTreatment={() => router.push(snapshot.treatmentHref)}
               onAddFollowUp={() => onSelectTab("follow-ups")}
               onOpenNotes={() => onSelectTab("notes")}
               readOnly={remoteReadPilot}
+              allowCreateAppointment={Boolean(createSurface.href)}
             />
           </div>
         </aside>
@@ -549,7 +662,7 @@ function HeaderMore({
           role="menu"
           className="absolute right-0 z-30 mt-1 w-48 rounded-2xl border border-border bg-surface p-1 shadow-[0_8px_24px_rgba(48,43,43,0.08)]"
         >
-          {includeEdit && createHref && !readOnly ? (
+          {createHref ? (
             <Link
               href={createHref}
               role="menuitem"

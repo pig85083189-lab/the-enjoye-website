@@ -24,7 +24,13 @@ import {
   useTreatmentRemoteList,
 } from "@/features/treatments/use-treatment-remote-read";
 import {
+  transactionsFromRemoteCommerceState,
+  useCommerceRemoteTransactions,
+} from "@/features/transactions/use-commerce-remote-transactions";
+import { completedTransactionIdsByAppointment } from "@/lib/commerce/commerce-remote-identity";
+import {
   indexTreatmentsByAppointmentId,
+  presentAppointmentStatusFromTreatment,
   todayBucketFromTreatment,
 } from "@/lib/treatments/treatment-today";
 import { getCustomerById } from "@/data";
@@ -86,6 +92,13 @@ export function TodayDashboard({
   const treatmentsByAppointment = indexTreatmentsByAppointmentId(
     treatmentsFromRemoteListState(remoteTreatments),
   );
+  const remoteTransactions = useCommerceRemoteTransactions({
+    organizationId: organization.id,
+    enabled: commerceRemoteReadPilot,
+  });
+  const paidAppointmentIds = completedTransactionIdsByAppointment(
+    transactionsFromRemoteCommerceState(remoteTransactions),
+  );
   const schedule = applyRosterStaffDisplayNames(
     todayRemoteReadPilot && remoteState.status === "data"
       ? remoteState.value
@@ -109,9 +122,17 @@ export function TodayDashboard({
     activeSchedule.map((item) => [item.id, item.status] as const),
   );
 
-  const liveAppointments = activeSchedule.map((item) =>
-    scheduleAppointmentToTodayView(item, todayRemoteReadPilot),
-  );
+  const liveAppointments = activeSchedule.map((item) => {
+    const view = scheduleAppointmentToTodayView(item, todayRemoteReadPilot);
+    if (!treatmentRemoteReadPilot) return view;
+    const presented = presentAppointmentStatusFromTreatment(
+      item.status,
+      treatmentsByAppointment.get(item.id)?.status,
+    );
+    if (presented === "COMPLETED") return { ...view, status: "completed" as const };
+    if (presented === "IN_SERVICE") return { ...view, status: "in_progress" as const };
+    return view;
+  });
   const stats = {
     total: activeSchedule.length,
     pending: activeSchedule.filter(
@@ -251,6 +272,7 @@ export function TodayDashboard({
             }
             commerceRemoteRead={commerceRemoteReadPilot}
             allowCheckout={checkoutAllowed}
+            paidAppointmentIds={paidAppointmentIds}
           />
         </section>
       ) : (
@@ -348,6 +370,7 @@ export function TodayDashboard({
                     }
                     commerceRemoteRead={commerceRemoteReadPilot}
                     allowCheckout={checkoutAllowed}
+                    paidAppointmentIds={paidAppointmentIds}
                   />
                 </div>
               );
@@ -386,6 +409,7 @@ export function TodayDashboard({
               }
               commerceRemoteRead={commerceRemoteReadPilot}
               allowCheckout={checkoutAllowed}
+              paidAppointmentIds={paidAppointmentIds}
             />
           ) : (
             <NextCustomerEmpty sticky />
