@@ -33,6 +33,7 @@ import {
   type PaymentMethod,
 } from "@/lib/commerce/domain";
 import { formatTwd, parseMoneyInput } from "@/lib/commerce/money";
+import { checkoutConfirmCtaLabel } from "@/lib/commerce/transaction-tender-presentation";
 import {
   CHECKOUT_PANEL_WIDTH_PX,
   canConfirmCheckoutPayment,
@@ -55,11 +56,12 @@ import { getCustomerStoredValueBalance } from "@/lib/stored-value/store";
 import { MEMBERSHIP_LABEL, cn } from "@/lib/utils";
 import type { Customer } from "@/types";
 
-type PanelTab = "consume" | "wallet" | "notes";
+type PanelTab = "consume" | "package" | "stored" | "notes";
 
 const TABS: Array<{ id: PanelTab; label: string }> = [
   { id: "consume", label: "本次消費" },
-  { id: "wallet", label: "套票 / 儲值" },
+  { id: "package", label: "套票" },
+  { id: "stored", label: "儲值" },
   { id: "notes", label: "客戶備註" },
 ];
 
@@ -945,7 +947,7 @@ export function CheckoutPanel({
                         </label>
                         {commerceRemoteWrite ? (
                           <p className="text-[12px] text-secondary-text">
-                            儲值與套票目前尚未開放
+                            儲值金付款尚未開放
                           </p>
                         ) : (
                         <label className="flex items-center justify-between gap-2 text-[12px] text-secondary-text">
@@ -1009,52 +1011,52 @@ export function CheckoutPanel({
               </div>
             ) : null}
 
-            {tab === "wallet" ? (
-              <div className="space-y-3">
-                {commerceRemoteWrite ? (
-                  <div className="rounded-xl border border-border px-3 py-2.5">
-                    <p className="text-[13px] text-secondary-text">
-                      此付款方式目前尚未開放
-                    </p>
-                  </div>
-                ) : null}
+            {tab === "package" ? (
+              <div className="space-y-3" data-checkout-package-section>
                 <div className="rounded-xl border border-border px-3 py-2.5">
-                  <p className="text-[12px] text-secondary-text">儲值餘額</p>
-                  <p className="mt-1 text-[20px] font-semibold tabular-nums text-text">
-                    {formatTwd(svBalance)}
-                  </p>
+                  <p className="text-[13px] font-medium text-text">套票核銷</p>
                   <p className="mt-1 text-[12px] text-secondary-text">
-                    僅顯示目前帳戶真實餘額；沒有帳戶時為 NT$0。
+                    可使用下方套票折抵本次服務
                   </p>
                 </div>
-                <div className="rounded-xl border border-border px-3 py-2.5">
-                  <p className="text-[12px] text-secondary-text">可使用套票</p>
-                  {usablePackages.length === 0 ? (
-                    <p className="mt-2 text-[13px] text-secondary-text">
+                {usablePackages.length === 0 ? (
+                  <div className="rounded-xl border border-border px-3 py-2.5">
+                    <p className="text-[13px] text-secondary-text">
                       目前沒有可用於本次服務的套票。
                     </p>
-                  ) : (
-                    <ul className="mt-2 space-y-2">
-                      {usablePackages.map((pkg) => {
-                        const selected =
-                          liveDraft?.packageRedemption?.customerPackageId === pkg.id;
-                        return (
-                          <li
-                            key={pkg.id}
-                            className="flex items-center justify-between gap-2"
-                          >
+                  </div>
+                ) : (
+                  <ul className="space-y-2">
+                    {usablePackages.map((pkg) => {
+                      const selected =
+                        liveDraft?.packageRedemption?.customerPackageId === pkg.id;
+                      return (
+                        <li
+                          key={pkg.id}
+                          className="rounded-xl border border-border px-3 py-2.5"
+                        >
+                          <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <p className="text-[13px] font-medium text-text">
                                 {pkg.nameSnapshot}
                               </p>
-                              <p className="text-[12px] text-secondary-text">
-                                剩餘 {pkg.usableBalance} 堂
-                              </p>
+                              {selected && redemptionSummary ? (
+                                <div className="mt-1 space-y-0.5 text-[12px] text-secondary-text">
+                                  <p>本次使用 {redemptionSummary.sessionsUsed} 堂</p>
+                                  <p>結帳前剩餘 {redemptionSummary.currentRemaining} 堂</p>
+                                  <p>結帳後剩餘 {redemptionSummary.remainingAfterSettle} 堂</p>
+                                </div>
+                              ) : (
+                                <p className="mt-1 text-[12px] text-secondary-text">
+                                  剩餘 {pkg.usableBalance} 堂
+                                </p>
+                              )}
                             </div>
                             {!readOnly && liveDraft && primaryService?.referenceId ? (
                               <Button
                                 variant={selected ? "primary" : "secondary"}
                                 className="h-9 min-h-9 rounded-xl px-3 text-[12px]"
+                                data-package-redemption-toggle={pkg.id}
                                 onClick={() =>
                                   run(() => {
                                     if (selected) {
@@ -1076,11 +1078,56 @@ export function CheckoutPanel({
                                 {selected ? "取消核銷" : "使用 1 堂"}
                               </Button>
                             ) : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {liveDraft?.packageRedemption && redemptionSummary ? (
+                  <dl
+                    className="space-y-1.5 rounded-xl border border-border px-3 py-2.5 text-[13px]"
+                    data-checkout-package-summary
+                  >
+                    <div className="flex justify-between">
+                      <dt className="text-secondary-text">服務金額</dt>
+                      <dd className="tabular-nums text-text">
+                        {redemptionSummary.originalPriceLabel}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt className="text-secondary-text">套票折抵</dt>
+                      <dd className="tabular-nums text-text">
+                        −{formatTwd(redemptionSummary.packageDiscountMinor)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between border-t border-border pt-1.5">
+                      <dt className="font-medium text-text">本次應收</dt>
+                      <dd
+                        data-checkout-due
+                        className="font-semibold tabular-nums text-[#C56B70]"
+                      >
+                        {redemptionSummary.dueLabel}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : null}
+              </div>
+            ) : null}
+
+            {tab === "stored" ? (
+              <div className="space-y-3" data-checkout-stored-value-section>
+                <div className="rounded-xl border border-border px-3 py-2.5">
+                  <p className="text-[12px] text-secondary-text">儲值金</p>
+                  <p className="mt-1 text-[20px] font-semibold tabular-nums text-text">
+                    {formatTwd(svBalance)}
+                  </p>
+                  <p
+                    className="mt-1 text-[12px] text-secondary-text"
+                    data-stored-value-closed
+                  >
+                    尚未開放儲值金付款
+                  </p>
                 </div>
               </div>
             ) : null}
@@ -1149,11 +1196,10 @@ export function CheckoutPanel({
                 });
               }}
             >
-              {liveDraft?.packageRedemption
-                ? total === 0
-                  ? "完成結帳"
-                  : `完成結帳 ${formatTwd(total)}`
-                : `確認收款 ${formatTwd(total)}`}
+              {checkoutConfirmCtaLabel({
+                packageRedemption: liveDraft?.packageRedemption,
+                dueMinor: total,
+              })}
             </button>
           )}
         </div>

@@ -154,6 +154,10 @@ describe("empty / summary derived rules", () => {
       todayTransactionCount: 0,
       monthExternalInflowMinor: 0,
       voidedCount: 0,
+      todayPackageSessions: 0,
+      todayPackageRedeemedMinor: 0,
+      todayStoredValueMinor: 0,
+      storedValueWriteOpen: false,
     });
     const breakdown = countTodayPaymentBreakdown([], NOW);
     expect(breakdown.external.every((row) => row.amountMinor === 0 && row.count === 0)).toBe(
@@ -538,9 +542,17 @@ describe("revenue / cash-in semantics", () => {
     expect(packageRedemptionMinor(redeemed)).toBe(3200);
     expect(TRANSACTIONS_PACKAGE_IS_PAYMENT_METHOD).toBe(false);
     expect(paymentBadgeLabel(redeemed.payments)).toBe("無需付款");
-    const summary = countTransactionSummary(rows([redeemed]), NOW);
+    const built = rows([redeemed], {
+      packageCatalog: [{ id: "cp-1", nameSnapshot: "性感美胸10堂" }],
+    });
+    expect(built[0].paymentBadge).toBe("套票 · 性感美胸10堂 · 1堂");
+    expect(built[0].serviceValueMinor).toBe(3200);
+    expect(built[0].collectedMinor).toBe(0);
+    const summary = countTransactionSummary(built, NOW);
     expect(summary.todayExternalInflowMinor).toBe(0);
     expect(summary.todayTransactionCount).toBe(1);
+    expect(summary.todayPackageSessions).toBe(1);
+    expect(summary.todayPackageRedeemedMinor).toBe(3200);
     const breakdown = countTodayPaymentBreakdown(rows([redeemed]), NOW);
     expect(
       breakdown.nonCash.find((row) => row.method === "PACKAGE_REDEMPTION")?.amountMinor,

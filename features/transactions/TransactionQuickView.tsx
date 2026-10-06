@@ -155,28 +155,53 @@ export function TransactionQuickView({
                     </p>
                   </div>
                   <p className="shrink-0 text-[14px] font-medium tabular-nums text-text">
-                    {formatTwd(line.lineTotalMinor)}
+                    {formatTwd(line.lineSubtotalMinor)}
                   </p>
                 </div>
               ))}
             </section>
 
+            {model.tender.packageRedemption ? (
+              <section className="mt-4 space-y-1.5" data-transactions-tender>
+                <p className="text-[12px] font-medium tracking-wide text-secondary-text">
+                  付款 / 抵用明細
+                </p>
+                <div className="rounded-xl border border-border px-3 py-2.5 text-[13px]">
+                  <p className="font-medium text-text">
+                    {model.tender.packageRedemption.packageName ?? "套票"}
+                  </p>
+                  <p className="mt-0.5 text-[12px] text-secondary-text">
+                    使用 {model.tender.packageRedemption.sessions} 堂
+                  </p>
+                  <div className="mt-2 flex justify-between">
+                    <span className="text-secondary-text">抵用價值</span>
+                    <span className="tabular-nums">
+                      {formatTwd(model.tender.packageRedemption.redeemedValueMinor)}
+                    </span>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
             <section className="mt-4 space-y-1.5 border-t border-border pt-3 text-[13px]">
-              {model.subtotalMinor !== model.totalMinor ||
-              model.promotionDiscountMinor > 0 ||
-              model.packageRedemptionMinor > 0 ? (
-                <TotalsRow label="小計" value={model.subtotalMinor} muted />
-              ) : null}
+              <TotalsRow label="服務金額" value={model.serviceValueMinor} />
               {model.promotionDiscountMinor > 0 ? (
                 <TotalsRow label="優惠" value={-model.promotionDiscountMinor} muted />
               ) : null}
-              {model.packageRedemptionMinor > 0 ? (
-                <TotalsRow label="套票折抵" value={-model.packageRedemptionMinor} muted />
+              {model.tender.packageRedemption ? (
+                <TotalsRow
+                  label="套票抵用"
+                  value={-model.tender.packageRedemption.redeemedValueMinor}
+                  muted
+                />
+              ) : null}
+              {model.storedValueTenderMinor > 0 ? (
+                <TotalsRow label="儲值金" value={-model.storedValueTenderMinor} muted />
               ) : null}
               <div className="flex items-baseline justify-between pt-1">
-                <span className="text-[13px] font-semibold text-text">交易總額</span>
+                <span className="text-[13px] font-semibold text-text">本次實收</span>
                 <span className="text-[22px] font-semibold tabular-nums tracking-tight text-[#C56B70]">
-                  {formatTwd(model.totalMinor)}
+                  {formatTwd(model.collectedMinor)}
                 </span>
               </div>
             </section>

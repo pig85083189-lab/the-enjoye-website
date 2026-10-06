@@ -556,6 +556,10 @@ function Customer360Workspace({
                 customerId={customer.id}
                 commerceRemoteRead={commerceRemoteReadPilot}
                 remoteTransactions={remoteTransactions}
+                packageCatalog={snapshot.packageCards.map((pkg) => ({
+                  id: pkg.customerPackageId,
+                  nameSnapshot: pkg.name,
+                }))}
               />
             ) : null}
             {tab === "notes" ? <NotesTab customerId={customer.id} /> : null}

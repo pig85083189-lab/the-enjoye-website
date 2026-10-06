@@ -494,10 +494,14 @@ function FinancialSummary({
               <li key={tx.id} className="flex items-baseline justify-between gap-2 text-sm">
                 <div className="min-w-0">
                   <p className="truncate text-[13px] text-text">{tx.itemSummary}</p>
+                  <p className="text-xs text-secondary-text">{tx.tenderLabel}</p>
                   <p className="text-xs text-secondary-text">{tx.dateLabel}</p>
                 </div>
-                <p className="shrink-0 text-[13px] tabular-nums text-text">
-                  {formatTwd(tx.totalMinor)}
+                <p className="shrink-0 text-right text-[13px] tabular-nums text-text">
+                  <span className="block">{formatTwd(tx.serviceValueMinor)}</span>
+                  <span className="block text-xs text-secondary-text">
+                    實收 {formatTwd(tx.collectedMinor)}
+                  </span>
                 </p>
               </li>
             ))}
