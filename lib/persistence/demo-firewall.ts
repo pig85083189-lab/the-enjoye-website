@@ -169,6 +169,17 @@ export function isGeneratedServiceAppId(id: string): boolean {
   return /^svc-[a-z0-9]+-[a-z0-9]+$/i.test(id) && !isDemoServiceId(id);
 }
 
+export function isGeneratedPackageDefinitionAppId(id: string): boolean {
+  return /^pkgdef-[a-z0-9]+-[a-z0-9]+$/i.test(id);
+}
+
+export function isBlockedRemotePackageName(name: string | undefined): boolean {
+  if (!name) return false;
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  return /QA|demo|Preview|mock/i.test(trimmed);
+}
+
 export function isGeneratedAppointmentAppId(id: string): boolean {
   return /^apt-[a-z0-9]+-[a-z0-9]+$/i.test(id) && !isDemoAppointmentId(id);
 }

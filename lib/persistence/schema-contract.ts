@@ -55,6 +55,14 @@ export const STRATEGY_B_RLS_MIGRATION_FILE =
 export const COMMERCE_TABLE_WRITE_HARDENING_MIGRATION_FILE =
   "supabase/migrations/20261006130000_commerce_table_write_hardening.sql";
 
+/** Phase 1C-6H.3A Package purchase OPEN draft hydrate. */
+export const PACKAGE_PURCHASE_CHECKOUT_HYDRATE_MIGRATION_FILE =
+  "supabase/migrations/20261006140000_package_purchase_checkout_hydrate.sql";
+
+/** Phase 1C-6H.3B Package fulfillment + redemption. */
+export const PACKAGE_FULFILLMENT_MIGRATION_FILE =
+  "supabase/migrations/20261006150000_package_fulfillment_and_redemption.sql";
+
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [
   "remaining_sessions",

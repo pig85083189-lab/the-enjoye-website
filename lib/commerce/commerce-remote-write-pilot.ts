@@ -9,7 +9,7 @@
  * Commerce remote-write pilot is on. No service role. No local + remote dual write.
  */
 
-import type { CheckoutDiscount, PaymentDraft } from "./domain";
+import type { CheckoutDiscount, PackageRedemptionSelection, PaymentDraft } from "./domain";
 import { canCheckout, type CapabilityActor } from "@/lib/staff-auth/operational-capabilities";
 import {
   loadAuthenticatedIdentityCatalog,
@@ -109,6 +109,31 @@ export async function runAuthenticatedCommerceHydrate(
   }
 }
 
+export async function runAuthenticatedCommerceHydrateFromPackage(
+  client: CommerceWriteClient,
+  input: {
+    customerId: string;
+    packageId: string;
+    locationId: string;
+  },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    const bundle = await persistence.commerce.hydrateFromPackage({
+      customerAppId: input.customerId,
+      packageDefinitionAppId: input.packageId,
+      locationAppId: input.locationId,
+    });
+    const customer = await persistence.commerce.getCustomerDisplay(input.customerId);
+    return { ...bundle, customer };
+  } catch (error) {
+    mapWriteError(error);
+  }
+}
+
 export async function runAuthenticatedCommerceSaveDraft(
   client: CommerceWriteClient,
   input: {
@@ -116,6 +141,7 @@ export async function runAuthenticatedCommerceSaveDraft(
     expectedUpdatedAt: string;
     payments: PaymentDraft[];
     discounts: CheckoutDiscount[];
+    packageRedemption?: PackageRedemptionSelection | null;
   },
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
 ) {
@@ -128,7 +154,23 @@ export async function runAuthenticatedCommerceSaveDraft(
       expectedUpdatedAt: input.expectedUpdatedAt,
       payments: input.payments,
       discounts: input.discounts,
+      packageRedemption: input.packageRedemption,
     });
+  } catch (error) {
+    mapWriteError(error);
+  }
+}
+
+export async function runAuthenticatedCommerceRepairPackageFulfillment(
+  client: CommerceWriteClient,
+  transactionAppId: string,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    return await persistence.commerce.repairPackageFulfillment(transactionAppId);
   } catch (error) {
     mapWriteError(error);
   }

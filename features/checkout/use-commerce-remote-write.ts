@@ -5,12 +5,19 @@ import { COMMERCE_REMOTE_READ_PILOT_ENV } from "@/lib/commerce/commerce-remote-r
 import { COMMERCE_REMOTE_WRITE_PILOT_ENV } from "@/lib/commerce/commerce-remote-write-flag";
 import {
   runAuthenticatedCommerceHydrate,
+  runAuthenticatedCommerceHydrateFromPackage,
   runAuthenticatedCommerceSaveDraft,
   runAuthenticatedCommerceSettle,
   type CommerceWriteClient,
 } from "@/lib/commerce/commerce-remote-write-pilot";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
-import type { CheckoutDiscount, CheckoutDraft, PaymentDraft, Transaction } from "@/lib/commerce/domain";
+import type {
+  CheckoutDiscount,
+  CheckoutDraft,
+  PackageRedemptionSelection,
+  PaymentDraft,
+  Transaction,
+} from "@/lib/commerce/domain";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 
 export function commerceWritePilotEnv(): NodeJS.Dict<string> {
@@ -88,11 +95,81 @@ export function useCommerceRemoteDraft(input: {
   return result.state;
 }
 
+export type CommerceRemotePackageDraftState =
+  | { status: "off" }
+  | { status: "idle" }
+  | { status: "loading" }
+  | {
+      status: "data";
+      draft: CheckoutDraft;
+      transaction: Transaction | null;
+      customer: { id: string; name: string; phone: string } | null;
+    }
+  | { status: "error"; message: string };
+
+export function useCommerceRemotePackageDraft(input: {
+  customerId: string | null;
+  packageId: string | null;
+  locationId: string | null;
+  enabled: boolean;
+}): CommerceRemotePackageDraftState {
+  const requestKey = `${input.customerId ?? ""}:${input.packageId ?? ""}:${input.locationId ?? ""}`;
+  const [result, setResult] = useState<{
+    key: string;
+    state: Exclude<CommerceRemotePackageDraftState, { status: "off" } | { status: "loading" }>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!input.enabled || !input.customerId || !input.packageId || !input.locationId) {
+      return undefined;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const bundle = await runAuthenticatedCommerceHydrateFromPackage(
+          requireClient(),
+          {
+            customerId: input.customerId!,
+            packageId: input.packageId!,
+            locationId: input.locationId!,
+          },
+          commerceWritePilotEnv(),
+        );
+        if (cancelled) return;
+        setResult({
+          key: requestKey,
+          state: {
+            status: "data",
+            draft: bundle.draft,
+            transaction: bundle.transaction,
+            customer: bundle.customer ?? null,
+          },
+        });
+      } catch (error: unknown) {
+        if (cancelled) return;
+        setResult({
+          key: requestKey,
+          state: { status: "error", message: toCommerceUserMessage(error) },
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [input.enabled, input.customerId, input.packageId, input.locationId, requestKey]);
+
+  if (!input.enabled) return { status: "off" };
+  if (!input.customerId || !input.packageId || !input.locationId) return { status: "idle" };
+  if (!result || result.key !== requestKey) return { status: "loading" };
+  return result.state;
+}
+
 export async function submitCommerceRemoteSaveDraft(input: {
   draftId: string;
   expectedUpdatedAt: string;
   payments: PaymentDraft[];
   discounts: CheckoutDiscount[];
+  packageRedemption?: PackageRedemptionSelection | null;
 }) {
   return runAuthenticatedCommerceSaveDraft(requireClient(), input, commerceWritePilotEnv());
 }

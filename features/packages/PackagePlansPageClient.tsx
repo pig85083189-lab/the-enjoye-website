@@ -14,6 +14,16 @@ import { Card } from "@/components/ui/Card";
 import { PackagePlanEditorDialog } from "@/features/packages/PackagePlanEditorDialog";
 import { PackagePlanQuickView } from "@/features/packages/PackagePlanQuickView";
 import {
+  rowsFromPackageRemoteState,
+  usePackageRemoteCustomerPackages,
+  usePackageRemoteDefinitions,
+  usePackageRemoteLedger,
+} from "@/features/packages/use-package-remote-read";
+import {
+  servicesFromRemoteListState,
+  useServiceRemoteList,
+} from "@/features/services/use-service-remote-read";
+import {
   getCommerceRevision,
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
@@ -36,6 +46,7 @@ import {
   type PackagePlanListFilter,
   type PackagePlanWorkspaceRow,
 } from "@/lib/packages/package-plans-derived";
+import { resolvePackagePlanMutationSurface } from "@/lib/packages/package-write-surface";
 import {
   getPackageDefinition,
   listCustomerPackages,
@@ -69,7 +80,13 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
   event.preventDefault();
 }
 
-export function PackagePlansPageClient() {
+export function PackagePlansPageClient({
+  packageRemoteReadPilot = false,
+  packageRemoteWritePilot = false,
+}: {
+  packageRemoteReadPilot?: boolean;
+  packageRemoteWritePilot?: boolean;
+}) {
   const { organization, currentLocation, locations, membership } = useOrganization();
   const isClient = useIsClient();
   const commerceRev = useSyncExternalStore(
@@ -80,10 +97,27 @@ export function PackagePlansPageClient() {
 
   const staffId = membership?.userId ?? "";
   const canManage = canManagePackagePlans(membership?.role);
+  const mutation = resolvePackagePlanMutationSurface({
+    canManage,
+    remoteReadPilot: packageRemoteReadPilot,
+    remoteWritePilot: packageRemoteWritePilot,
+  });
+  const remoteDefinitions = usePackageRemoteDefinitions(
+    organization.id,
+    packageRemoteReadPilot,
+    { activeOnly: false },
+  );
+  const remoteCustomerPackages = usePackageRemoteCustomerPackages(
+    organization.id,
+    packageRemoteReadPilot,
+  );
+  const remoteLedger = usePackageRemoteLedger(organization.id, packageRemoteReadPilot);
+  const remoteServices = useServiceRemoteList(organization.id, packageRemoteReadPilot);
   const services = useMemo(() => {
     void commerceRev;
+    if (packageRemoteReadPilot) return servicesFromRemoteListState(remoteServices);
     return getServicesForOrganization(organization.id);
-  }, [commerceRev, organization.id]);
+  }, [commerceRev, organization.id, packageRemoteReadPilot, remoteServices]);
   const serviceOptions = useMemo(
     () =>
       services.map((service) => ({
@@ -108,21 +142,36 @@ export function PackagePlansPageClient() {
 
   const definitions = useMemo(() => {
     void commerceRev;
+    if (packageRemoteReadPilot) return rowsFromPackageRemoteState(remoteDefinitions);
     if (!isClient) return [];
     return listPackageDefinitions(organization.id);
-  }, [commerceRev, isClient, organization.id]);
+  }, [
+    commerceRev,
+    isClient,
+    organization.id,
+    packageRemoteReadPilot,
+    remoteDefinitions,
+  ]);
 
   const customerPackages = useMemo(() => {
     void commerceRev;
+    if (packageRemoteReadPilot) return rowsFromPackageRemoteState(remoteCustomerPackages);
     if (!isClient) return [];
     return listCustomerPackages(organization.id);
-  }, [commerceRev, isClient, organization.id]);
+  }, [
+    commerceRev,
+    isClient,
+    organization.id,
+    packageRemoteReadPilot,
+    remoteCustomerPackages,
+  ]);
 
   const ledger = useMemo(() => {
     void commerceRev;
+    if (packageRemoteReadPilot) return rowsFromPackageRemoteState(remoteLedger);
     if (!isClient) return [];
     return listPackageLedger(organization.id);
-  }, [commerceRev, isClient, organization.id]);
+  }, [commerceRev, isClient, organization.id, packageRemoteReadPilot, remoteLedger]);
 
   const rows = useMemo(
     () =>
@@ -153,8 +202,15 @@ export function PackagePlansPageClient() {
   const showQuickView = shouldRenderPackagePlanQuickView(selectedRow);
   const editingDefinition =
     editorMode === "edit" && selectedPlanId
-      ? getPackageDefinition(organization.id, selectedPlanId)
+      ? packageRemoteReadPilot
+        ? definitions.find((row) => row.id === selectedPlanId)
+        : getPackageDefinition(organization.id, selectedPlanId)
       : undefined;
+  const catalogReady = packageRemoteReadPilot
+    ? remoteDefinitions.status === "data" ||
+      remoteDefinitions.status === "empty" ||
+      remoteDefinitions.status === "error"
+    : isClient;
 
   function selectPlan(id: string) {
     setSelectedPlanId(id);
@@ -198,21 +254,30 @@ export function PackagePlansPageClient() {
   }
 
   function openCreate() {
-    if (!canManage) return;
+    if (!mutation.create) {
+      if (mutation.reason) setActionError(mutation.reason);
+      return;
+    }
     setEditorMode("create");
     setEditorOpen(true);
     setActionError("");
   }
 
   function openEdit() {
-    if (!canManage || !selectedPlanId) return;
+    if (!mutation.edit || !selectedPlanId) {
+      if (mutation.reason) setActionError(mutation.reason);
+      return;
+    }
     setEditorMode("edit");
     setEditorOpen(true);
     setActionError("");
   }
 
   function setActive(isActive: boolean) {
-    if (!canManage || !selectedPlanId || !staffId) return;
+    if (!mutation.toggleActive || !selectedPlanId || !staffId) {
+      if (mutation.reason) setActionError(mutation.reason);
+      return;
+    }
     try {
       updatePackageDefinition(
         organization.id,
@@ -226,8 +291,8 @@ export function PackagePlansPageClient() {
     }
   }
 
-  const emptyAll = isClient && rows.length === 0;
-  const emptyFiltered = isClient && rows.length > 0 && visible.length === 0;
+  const emptyAll = catalogReady && rows.length === 0;
+  const emptyFiltered = catalogReady && rows.length > 0 && visible.length === 0;
   const emptyCopy = packagePlanEmptyCopy({
     hasAny: rows.length > 0,
     filter,
@@ -259,7 +324,7 @@ export function PackagePlansPageClient() {
           >
             客戶套票
           </Link>
-          {canManage ? (
+          {mutation.create ? (
             <div className="hidden min-[720px]:block">
               <Button
                 data-package-plan-add
@@ -275,16 +340,16 @@ export function PackagePlansPageClient() {
       </header>
 
       <section className="mb-4 grid grid-cols-2 gap-2 min-[1200px]:grid-cols-4 min-[1200px]:gap-3">
-        <SummaryCard label="全部方案" value={isClient ? summary.total : "—"} accent="primary" />
+        <SummaryCard label="全部方案" value={catalogReady ? summary.total : "—"} accent="primary" />
         <SummaryCard
           label="販售中"
-          value={isClient ? summary.active : "—"}
+          value={catalogReady ? summary.active : "—"}
           accent="success"
         />
-        <SummaryCard label="已停售" value={isClient ? summary.inactive : "—"} />
+        <SummaryCard label="已停售" value={catalogReady ? summary.inactive : "—"} />
         <SummaryCard
           label="組合套票"
-          value={isClient ? summary.combination : "—"}
+          value={catalogReady ? summary.combination : "—"}
           accent="warning"
         />
       </section>
@@ -338,7 +403,13 @@ export function PackagePlansPageClient() {
             </p>
           ) : null}
 
-          {!isClient ? (
+          {packageRemoteReadPilot && remoteDefinitions.status === "error" ? (
+            <p className="mb-3 text-sm text-[#B07A4A]" role="alert">
+              {remoteDefinitions.message}
+            </p>
+          ) : null}
+
+          {!catalogReady ? (
             <ListSkeleton />
           ) : emptyAll || emptyFiltered ? (
             <Card padding="lg" className="text-center">
@@ -347,7 +418,7 @@ export function PackagePlansPageClient() {
               ) : null}
               <p className="mt-3 text-[15px] font-medium text-text">{emptyCopy.title}</p>
               <p className="mt-1 text-sm text-secondary-text">{emptyCopy.body}</p>
-              {emptyAll && canManage ? (
+              {emptyAll && mutation.create ? (
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                   <Button
                     data-package-plan-add
@@ -400,6 +471,8 @@ export function PackagePlansPageClient() {
               key={selectedRow.definitionId}
               row={selectedRow}
               canManage={canManage}
+              canEdit={mutation.edit}
+              canToggleActive={mutation.toggleActive}
               onClose={closeQuickView}
               onEdit={openEdit}
               onDeactivate={() => setActive(false)}
@@ -415,6 +488,8 @@ export function PackagePlansPageClient() {
             key={selectedRow.definitionId}
             row={selectedRow}
             canManage={canManage}
+            canEdit={mutation.edit}
+            canToggleActive={mutation.toggleActive}
             onClose={closeQuickView}
             onEdit={openEdit}
             onDeactivate={() => setActive(false)}
@@ -423,7 +498,7 @@ export function PackagePlansPageClient() {
         </div>
       ) : null}
 
-      {canManage ? (
+      {mutation.create ? (
         <div className="sticky bottom-20 z-20 mt-4 min-[720px]:hidden">
           <Button
             data-package-plan-add-mobile
@@ -441,6 +516,7 @@ export function PackagePlansPageClient() {
           key={editorMode === "edit" ? (selectedPlanId ?? "edit") : "new"}
           open={editorOpen}
           mode={editorMode}
+          remoteWritePilot={packageRemoteWritePilot}
           organizationId={organization.id}
           staffId={staffId}
           currentLocationName={currentLocation?.name ?? locations[0]?.name ?? ""}

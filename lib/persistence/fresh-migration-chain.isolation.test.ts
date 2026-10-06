@@ -6,6 +6,7 @@ import {
   AUDIT_LOGS_ACTOR_BRIDGE_MIGRATION_FILE,
   COMMERCE_REMOTE_SETTLEMENT_MIGRATION_FILE,
   COMMERCE_TABLE_WRITE_HARDENING_MIGRATION_FILE,
+  PACKAGE_PURCHASE_CHECKOUT_HYDRATE_MIGRATION_FILE,
   ENUM_ADAPT_MIGRATION_FILE,
   FOUNDATION_MIGRATION_FILE,
   IDENTITY_MIGRATION_FILE,
@@ -33,6 +34,7 @@ const EXPECTED_CHAIN = [
   "20261005120000_commerce_remote_settlement.sql",
   "20261006120000_strategy_b_rls_qualification.sql",
   "20261006130000_commerce_table_write_hardening.sql",
+  "20261006140000_package_purchase_checkout_hydrate.sql",
 ] as const;
 
 function read(rel: string): string {
@@ -95,6 +97,10 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
     expect(
       COMMERCE_TABLE_WRITE_HARDENING_MIGRATION_FILE >
         COMMERCE_REMOTE_SETTLEMENT_MIGRATION_FILE,
+    ).toBe(true);
+    expect(
+      PACKAGE_PURCHASE_CHECKOUT_HYDRATE_MIGRATION_FILE >
+        COMMERCE_TABLE_WRITE_HARDENING_MIGRATION_FILE,
     ).toBe(true);
     const strategyB = read(STRATEGY_B_RLS_MIGRATION_FILE);
     expect(strategyB).toMatch(/m\.user_id = audit_logs\.actor_id/);

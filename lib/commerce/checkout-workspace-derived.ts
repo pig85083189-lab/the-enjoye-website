@@ -330,6 +330,47 @@ export function buildRemoteCommerceWorkspaceItems(input: {
   );
 }
 
+export function toRemotePackageCheckoutItem(input: {
+  draft: CheckoutDraft;
+  transaction?: Transaction | null;
+  customer?: { id: string; name: string; phone?: string } | null;
+  staffName?: string;
+}): CheckoutWorkspaceItem {
+  const paid = Boolean(input.transaction && input.transaction.status === "COMPLETED");
+  const primary =
+    input.draft.items.find((item) => item.type === "PACKAGE_PURCHASE") ??
+    input.draft.items[0];
+  const customerName = input.customer?.name?.trim() || "客戶";
+  const staffName = input.staffName?.trim() || "";
+  return {
+    id: checkoutRowId("draft", input.draft.id),
+    kind: "draft",
+    appointmentId: "",
+    treatmentId: input.draft.treatmentId,
+    draftId: input.draft.id,
+    transactionId: input.transaction?.id ?? "",
+    customerId: input.draft.customerId,
+    customerName,
+    customerPhone: input.customer?.phone ?? "",
+    customerInitials: initialsFrom(customerName),
+    membership: null,
+    serviceName: primary?.nameSnapshot || "套票購買",
+    serviceCategory: "PACKAGE_PURCHASE",
+    durationMinutes: primary?.sessionCountSnapshot ?? null,
+    staffName,
+    staffInitials: initialsFrom(staffName),
+    startAt: input.draft.createdAt,
+    amountMinor: input.transaction?.total ?? input.draft.total,
+    paid,
+    status: paid
+      ? { kind: "paid", title: "已結帳" }
+      : { kind: "pending", title: "待結帳" },
+    appointment: null,
+    draft: input.draft,
+    transaction: input.transaction ?? null,
+  };
+}
+
 export function attachRemoteCommerceDraft(
   item: CheckoutWorkspaceItem,
   draft: CheckoutDraft | null,

@@ -63,6 +63,7 @@ interface CustomerProfilePageProps {
   treatmentRemoteReadPilot?: boolean;
   serviceRemoteReadPilot?: boolean;
   commerceRemoteReadPilot?: boolean;
+  packageRemoteReadPilot?: boolean;
 }
 
 export function CustomerProfilePage({
@@ -73,6 +74,7 @@ export function CustomerProfilePage({
   treatmentRemoteReadPilot = false,
   serviceRemoteReadPilot = false,
   commerceRemoteReadPilot = false,
+  packageRemoteReadPilot = false,
 }: CustomerProfilePageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -193,6 +195,7 @@ export function CustomerProfilePage({
       treatmentRemoteReadPilot={treatmentRemoteReadPilot}
       serviceRemoteReadPilot={serviceRemoteReadPilot}
       commerceRemoteReadPilot={commerceRemoteReadPilot}
+      packageRemoteReadPilot={packageRemoteReadPilot}
       customer={customer}
       tab={tab}
       walletSection={walletSection}
@@ -223,6 +226,7 @@ function Customer360Workspace({
   treatmentRemoteReadPilot = false,
   serviceRemoteReadPilot = false,
   commerceRemoteReadPilot = false,
+  packageRemoteReadPilot = false,
   customer,
   tab,
   walletSection,
@@ -240,6 +244,7 @@ function Customer360Workspace({
   treatmentRemoteReadPilot?: boolean;
   serviceRemoteReadPilot?: boolean;
   commerceRemoteReadPilot?: boolean;
+  packageRemoteReadPilot?: boolean;
   customer: Customer;
   tab: Customer360TabId;
   walletSection?: Customer360WalletSection;
@@ -548,6 +553,7 @@ function Customer360Workspace({
                 section={walletSection}
                 onOpenTransactions={() => onSelectTab("transactions")}
                 commerceRemoteRead={commerceRemoteReadPilot}
+                packageRemoteRead={packageRemoteReadPilot}
                 remoteTransactions={remoteTransactions}
               />
             ) : null}

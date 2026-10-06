@@ -2,6 +2,7 @@ import type {
   CheckoutDiscount,
   CheckoutDraft,
   CheckoutItem,
+  PackageRedemptionSelection,
   PaymentDraft,
   Transaction,
   TransactionDiscountSnapshot,
@@ -51,6 +52,17 @@ export function checkoutDiscountFromRemoteJson(
   };
 }
 
+export function packageRedemptionFromRemoteJson(
+  value: unknown,
+): PackageRedemptionSelection | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as Record<string, unknown>;
+  const customerPackageId = asOptionalString(row.customerPackageId);
+  const serviceId = asOptionalString(row.serviceId);
+  if (!customerPackageId || !serviceId) return undefined;
+  return { customerPackageId, serviceId, sessions: 1 };
+}
+
 export function checkoutPaymentFromRemoteJson(row: Record<string, unknown>): PaymentDraft {
   return {
     id: asString(row.id),
@@ -82,6 +94,7 @@ export function checkoutDraftFromRemoteJson(row: Record<string, unknown>): Check
           checkoutPaymentFromRemoteJson(item as Record<string, unknown>),
         )
       : [],
+    packageRedemption: packageRedemptionFromRemoteJson(row.packageRedemption),
     subtotal: asNumber(row.subtotal),
     discountTotal: asNumber(row.discountTotal),
     total: asNumber(row.total),
@@ -141,6 +154,7 @@ export function transactionFromRemoteJson(row: Record<string, unknown>): Transac
           paidAt: asString(item.paidAt),
         }))
       : [],
+    packageRedemption: packageRedemptionFromRemoteJson(row.packageRedemption),
     subtotal: asNumber(row.subtotal),
     discountTotal: asNumber(row.discountTotal),
     total: asNumber(row.total),

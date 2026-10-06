@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 interface PackagePlanQuickViewProps {
   row: PackagePlanWorkspaceRow;
   canManage: boolean;
+  canEdit?: boolean;
+  canToggleActive?: boolean;
   onClose: () => void;
   onEdit: () => void;
   onDeactivate: () => void;
@@ -24,6 +26,8 @@ interface PackagePlanQuickViewProps {
 export function PackagePlanQuickView({
   row,
   canManage,
+  canEdit = canManage,
+  canToggleActive = canManage,
   onClose,
   onEdit,
   onDeactivate,
@@ -143,17 +147,19 @@ export function PackagePlanQuickView({
             </section>
           </div>
 
-          {canManage ? (
+          {canManage && (canEdit || canToggleActive) ? (
             <div className="flex shrink-0 gap-2 border-t border-border px-5 py-3">
-              <Button
-                data-package-plan-edit
-                variant="outline"
-                className="h-11 min-h-11 flex-1 rounded-2xl text-[14px]"
-                onClick={onEdit}
-              >
-                編輯方案
-              </Button>
-              {row.isActive ? (
+              {canEdit ? (
+                <Button
+                  data-package-plan-edit
+                  variant="outline"
+                  className="h-11 min-h-11 flex-1 rounded-2xl text-[14px]"
+                  onClick={onEdit}
+                >
+                  編輯方案
+                </Button>
+              ) : null}
+              {canToggleActive && row.isActive ? (
                 <Button
                   data-package-plan-deactivate
                   variant="outline"
@@ -162,7 +168,8 @@ export function PackagePlanQuickView({
                 >
                   停售方案
                 </Button>
-              ) : (
+              ) : null}
+              {canToggleActive && !row.isActive ? (
                 <Button
                   data-package-plan-reactivate
                   className="h-11 min-h-11 flex-1 rounded-2xl text-[14px]"
@@ -170,7 +177,7 @@ export function PackagePlanQuickView({
                 >
                   重新上架
                 </Button>
-              )}
+              ) : null}
             </div>
           ) : null}
         </div>

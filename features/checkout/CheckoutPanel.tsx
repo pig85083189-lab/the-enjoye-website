@@ -45,6 +45,12 @@ import {
   type CheckoutWorkspaceItem,
 } from "@/lib/commerce/checkout-workspace-derived";
 import { getServicesForOrganization } from "@/data/mock-services";
+import {
+  rowsFromPackageRemoteState,
+  usePackageRemoteCustomerPackages,
+  usePackageRemoteLedger,
+} from "@/features/packages/use-package-remote-read";
+import { listUsablePackagesForServiceFromRows } from "@/lib/packages/package-eligibility";
 import { listUsablePackagesForService } from "@/lib/packages/store";
 import { applyPostTreatmentCheckoutIntent } from "@/lib/core-ops/post-treatment-checkout";
 import { buildPackageRedemptionSummary } from "@/lib/core-ops/post-treatment-derived";
@@ -74,6 +80,7 @@ interface CheckoutPanelProps {
   onCompleted?: (transactionId: string) => void;
   commerceRemoteRead?: boolean;
   commerceRemoteWrite?: boolean;
+  packageRemoteRead?: boolean;
   remoteDraft?: CheckoutDraft | null;
   remoteTransaction?: Transaction | null;
 }
@@ -89,6 +96,7 @@ export function CheckoutPanel({
   onCompleted,
   commerceRemoteRead = false,
   commerceRemoteWrite = false,
+  packageRemoteRead = false,
   remoteDraft = null,
   remoteTransaction = null,
 }: CheckoutPanelProps) {
@@ -200,14 +208,34 @@ export function CheckoutPanel({
       : getCustomerStoredValueBalance(organizationId, item.customerId);
   const primaryService =
     liveDraft?.items.find((row) => row.type === "SERVICE") ?? null;
+  const remoteCustomerId = liveDraft?.customerId ?? item.customerId ?? "";
+  const remotePackagesState = usePackageRemoteCustomerPackages(
+    organizationId,
+    Boolean(packageRemoteRead && remoteCustomerId),
+    remoteCustomerId || undefined,
+  );
+  const remoteLedgerState = usePackageRemoteLedger(
+    organizationId,
+    Boolean(packageRemoteRead && remoteCustomerId),
+    remoteCustomerId || undefined,
+  );
+  const remoteUsablePackages = listUsablePackagesForServiceFromRows(
+    rowsFromPackageRemoteState(remotePackagesState),
+    rowsFromPackageRemoteState(remoteLedgerState),
+    primaryService?.referenceId ?? "",
+  );
   const usablePackages =
-    commerceRemoteWrite || readOnly || !primaryService?.referenceId
-      ? []
-      : listUsablePackagesForService(
-          organizationId,
-          liveDraft!.customerId,
-          primaryService.referenceId,
-        );
+    commerceRemoteWrite
+      ? packageRemoteRead && primaryService?.referenceId
+        ? remoteUsablePackages
+        : []
+      : readOnly || !primaryService?.referenceId
+        ? []
+        : listUsablePackagesForService(
+            organizationId,
+            liveDraft!.customerId,
+            primaryService.referenceId,
+          );
   const selectedUsable = usablePackages.find(
     (pkg) => pkg.id === liveDraft?.packageRedemption?.customerPackageId,
   );
@@ -272,6 +300,7 @@ export function CheckoutPanel({
         amount: payment.amount,
       })),
       discounts: liveDraft.discounts,
+      packageRedemption: liveDraft.packageRedemption ?? null,
     });
     setEditedRemoteDraft(next.draft);
   }
@@ -285,6 +314,21 @@ export function CheckoutPanel({
       expectedUpdatedAt: liveDraft.updatedAt,
       payments: liveDraft.payments,
       discounts,
+      packageRedemption: liveDraft.packageRedemption ?? null,
+    });
+    setEditedRemoteDraft(next.draft);
+  }
+
+  async function persistRemotePackageRedemption(
+    selection: CheckoutDraft["packageRedemption"] | null,
+  ) {
+    if (!liveDraft) return;
+    const next = await submitCommerceRemoteSaveDraft({
+      draftId: liveDraft.id,
+      expectedUpdatedAt: liveDraft.updatedAt,
+      payments: selection ? [] : liveDraft.payments,
+      discounts: liveDraft.discounts,
+      packageRedemption: selection,
     });
     setEditedRemoteDraft(next.draft);
   }
@@ -451,6 +495,19 @@ export function CheckoutPanel({
           <div className="px-5 pb-4">
             {tab === "consume" ? (
               <div className="space-y-3">
+                {lineItems.some((row) => row.type === "PACKAGE_PURCHASE") ? (
+                  <div
+                    data-checkout-item-kind="PACKAGE_PURCHASE"
+                    className="rounded-xl border border-[#E4D4C8] bg-[#FBF4F3] px-3 py-2"
+                  >
+                    <p className="text-[12px] font-semibold tracking-[0.04em] text-[#C56B70]">
+                      PACKAGE PURCHASE
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-secondary-text">
+                      套票購買 · 尚未付款 · 尚未建立客戶套票
+                    </p>
+                  </div>
+                ) : null}
                 {lineItems.length === 0 && item.kind === "appointment" ? (
                   <div className="rounded-xl border border-border/80 bg-[#FBF8F6] px-3 py-2.5">
                     <div className="flex items-start justify-between gap-2">
@@ -485,11 +542,16 @@ export function CheckoutPanel({
                               {row.nameSnapshot}
                             </p>
                             <p className="mt-0.5 text-[12px] text-[#6E6666]">
-                              {CHECKOUT_ITEM_TYPE_LABEL[row.type] ?? row.type}
+                              {row.type === "PACKAGE_PURCHASE"
+                                ? "套票購買 · PACKAGE PURCHASE"
+                                : (CHECKOUT_ITEM_TYPE_LABEL[row.type] ?? row.type)}
+                              {row.type === "PACKAGE_PURCHASE" && row.sessionCountSnapshot
+                                ? ` · ${row.sessionCountSnapshot} 堂`
+                                : null}
                               {row.type === "SERVICE" && item.durationMinutes
                                 ? ` · ${item.durationMinutes} 分鐘`
                                 : null}
-                              {item.staffName && row.type === "SERVICE"
+                              {item.staffName && (row.type === "SERVICE" || row.type === "PACKAGE_PURCHASE")
                                 ? ` · ${item.staffName}`
                                 : null}
                               {` · ×${row.quantity}`}
@@ -1055,23 +1117,31 @@ export function CheckoutPanel({
                               <Button
                                 variant={selected ? "primary" : "secondary"}
                                 className="h-9 min-h-9 rounded-xl px-3 text-[12px]"
-                                onClick={() =>
-                                  run(() => {
-                                    if (selected) {
-                                      setPackageRedemption(
-                                        organizationId,
-                                        liveDraft.id,
-                                        null,
-                                      );
-                                    } else {
-                                      setPackageRedemption(organizationId, liveDraft.id, {
+                                data-package-redemption-toggle={pkg.id}
+                                onClick={() => {
+                                  const selection = selected
+                                    ? null
+                                    : {
                                         customerPackageId: pkg.id,
                                         serviceId: primaryService.referenceId!,
-                                        sessions: 1,
-                                      });
-                                    }
-                                  })
-                                }
+                                        sessions: 1 as const,
+                                      };
+                                  if (commerceRemoteWrite) {
+                                    void persistRemotePackageRedemption(selection).then(
+                                      () => setError(""),
+                                      (err: unknown) =>
+                                        setError(toCommerceUserMessage(err)),
+                                    );
+                                    return;
+                                  }
+                                  run(() =>
+                                    setPackageRedemption(
+                                      organizationId,
+                                      liveDraft.id,
+                                      selection,
+                                    ),
+                                  );
+                                }}
                               >
                                 {selected ? "取消核銷" : "使用 1 堂"}
                               </Button>

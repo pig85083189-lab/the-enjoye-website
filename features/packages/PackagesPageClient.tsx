@@ -20,6 +20,13 @@ import {
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
 import { getServicesForOrganization } from "@/data/mock-services";
+import { useCustomerRemoteList } from "@/features/customers/use-customer-remote-read";
+import {
+  rowsFromPackageRemoteState,
+  usePackageRemoteCustomerPackages,
+  usePackageRemoteDefinitions,
+  usePackageRemoteLedger,
+} from "@/features/packages/use-package-remote-read";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
 import {
@@ -83,7 +90,15 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
   event.preventDefault();
 }
 
-export function PackagesPageClient() {
+export function PackagesPageClient({
+  customerRemoteReadPilot = false,
+  packageRemoteReadPilot = false,
+  commerceRemoteWritePilot = false,
+}: {
+  customerRemoteReadPilot?: boolean;
+  packageRemoteReadPilot?: boolean;
+  commerceRemoteWritePilot?: boolean;
+}) {
   const { organization, currentLocation, locations, membership } = useOrganization();
   const isClient = useIsClient();
   const commerceRev = useSyncExternalStore(
@@ -112,28 +127,55 @@ export function PackagesPageClient() {
   const [sellCustomerId, setSellCustomerId] = useState<string | null>(null);
   const [now] = useState(() => new Date());
 
-  const customers = useCrmJson(
-    () => localCustomerRepository.list({ organizationId: organization.id }),
+  const localCustomers = useCrmJson(
+    () =>
+      customerRemoteReadPilot
+        ? ([] as Customer[])
+        : localCustomerRepository.list({ organizationId: organization.id }),
     [] as Customer[],
   );
+  const remoteCustomers = useCustomerRemoteList(organization.id, customerRemoteReadPilot);
+  const customers =
+    customerRemoteReadPilot && remoteCustomers.status === "data"
+      ? remoteCustomers.value
+      : localCustomers;
+
+  const remoteDefinitions = usePackageRemoteDefinitions(
+    organization.id,
+    packageRemoteReadPilot,
+  );
+  const remoteCustomerPackages = usePackageRemoteCustomerPackages(
+    organization.id,
+    packageRemoteReadPilot,
+  );
+  const remoteLedger = usePackageRemoteLedger(organization.id, packageRemoteReadPilot);
 
   const ledger = useMemo(() => {
     void commerceRev;
+    if (packageRemoteReadPilot) return rowsFromPackageRemoteState(remoteLedger);
     if (!isClient) return [];
     return listPackageLedger(organization.id);
-  }, [commerceRev, isClient, organization.id]);
+  }, [commerceRev, isClient, organization.id, packageRemoteReadPilot, remoteLedger]);
 
   const customerPackages = useMemo(() => {
     void commerceRev;
+    if (packageRemoteReadPilot) return rowsFromPackageRemoteState(remoteCustomerPackages);
     if (!isClient) return [];
     return listCustomerPackages(organization.id);
-  }, [commerceRev, isClient, organization.id]);
+  }, [
+    commerceRev,
+    isClient,
+    organization.id,
+    packageRemoteReadPilot,
+    remoteCustomerPackages,
+  ]);
 
   const definitions = useMemo(() => {
     void commerceRev;
+    if (packageRemoteReadPilot) return rowsFromPackageRemoteState(remoteDefinitions);
     if (!isClient) return [];
     return listPackageDefinitions(organization.id, { activeOnly: true });
-  }, [commerceRev, isClient, organization.id]);
+  }, [commerceRev, isClient, organization.id, packageRemoteReadPilot, remoteDefinitions]);
 
   const rows = useMemo(() => {
     if (!isClient) return [];
@@ -476,6 +518,9 @@ export function PackagesPageClient() {
           definitions={definitions}
           serviceNames={serviceNames}
           initialCustomerId={sellCustomerId}
+          remoteCheckout={
+            customerRemoteReadPilot && packageRemoteReadPilot && commerceRemoteWritePilot
+          }
           onClose={() => {
             setSellOpen(false);
             setSellCustomerId(null);
