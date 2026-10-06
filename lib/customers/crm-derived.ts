@@ -4,6 +4,10 @@
  */
 import type { Customer, CustomerAlert, CustomerTag } from "@/types";
 import { CUSTOMER_SOURCE_LABEL, type CustomerSource } from "@/types/customer";
+import {
+  parseAppointmentTimestamptz,
+  utcIsoToTaipeiLocal,
+} from "@/lib/persistence/appointment-time";
 
 export const CUSTOMER_QUICK_VIEW_WIDTH_PX = 325;
 /** Desktop list + inline Quick View. Tablet/mobile use sheet + cards. */
@@ -34,6 +38,7 @@ export type AppointmentHint = {
   serviceName: string;
   durationMinutes?: number;
   startAt: string;
+  staffName?: string;
 };
 
 export type ServiceCatalogHint = {
@@ -57,6 +62,7 @@ export type NextAppointmentView = {
   dateLabel: string;
   timeLabel: string;
   serviceName?: string;
+  staffName?: string;
   startsAt: string;
 } | null;
 
@@ -82,6 +88,54 @@ const UPCOMING_STATUSES = new Set([
 ]);
 const INTEREST_TAG_IDS = new Set(["facial", "breast", "body"]);
 const MEMBERSHIP_TAG_IDS = new Set(["vip", "new", "regular"]);
+
+function hasExplicitTimezone(value: string): boolean {
+  return /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(value.trim());
+}
+
+/**
+ * Instant parse for appointment starts. ISO strings with Z / offset use the
+ * real timestamp; wall-clock CRM strings stay on parseCustomerDate.
+ */
+export function parseAppointmentStartInstant(
+  value: string | null | undefined,
+): Date | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (hasExplicitTimezone(trimmed)) {
+    try {
+      return parseAppointmentTimestamptz(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  return parseCustomerDate(trimmed);
+}
+
+/** Taipei labels for zoned ISO; wall-clock CRM strings keep local formatting. */
+export function formatAppointmentStartLabel(
+  startAt: string,
+): { dateLabel: string; timeLabel: string } | null {
+  if (hasExplicitTimezone(startAt)) {
+    try {
+      const taipei = utcIsoToTaipeiLocal(startAt);
+      const [year, month, day] = taipei.dateYmd.split("-");
+      return {
+        dateLabel: `${year}/${month}/${day}`,
+        timeLabel: taipei.hm,
+      };
+    } catch {
+      return null;
+    }
+  }
+  const parsed = parseCustomerDate(startAt);
+  if (!parsed) return null;
+  return {
+    dateLabel: formatSlashDate(parsed),
+    timeLabel: formatHmLabel(parsed),
+  };
+}
 
 export function parseCustomerDate(
   value: string | null | undefined,
@@ -292,33 +346,37 @@ export function deriveNextAppointment(input: {
 }): NextAppointmentView {
   const { customer, appointments = [], now } = input;
   const upcoming = appointments
-    .filter(
-      (item) =>
-        item.customerId === customer.id &&
-        isUpcomingStatus(item.status) &&
-        parseCustomerDate(item.startAt) !== null &&
-        (parseCustomerDate(item.startAt)?.getTime() ?? 0) >= now.getTime(),
-    )
+    .filter((item) => {
+      if (item.customerId !== customer.id || !isUpcomingStatus(item.status)) {
+        return false;
+      }
+      const start = parseAppointmentStartInstant(item.startAt);
+      return start !== null && start.getTime() >= now.getTime();
+    })
     .sort((a, b) => a.startAt.localeCompare(b.startAt));
   const next = upcoming[0];
   if (next) {
-    const start = parseCustomerDate(next.startAt);
-    if (!start) return null;
+    const labels = formatAppointmentStartLabel(next.startAt);
+    if (!labels) return null;
     return {
-      dateLabel: formatSlashDate(start),
-      timeLabel: formatHmLabel(start),
+      dateLabel: labels.dateLabel,
+      timeLabel: labels.timeLabel,
       serviceName: next.serviceName,
       startsAt: next.startAt,
+      ...(next.staffName ? { staffName: next.staffName } : {}),
     };
   }
 
-  const fallback = parseCustomerDate(customer.nextAppointmentAt ?? undefined);
-  if (fallback && fallback.getTime() >= now.getTime()) {
+  const fallbackRaw = customer.nextAppointmentAt ?? undefined;
+  const fallback = parseAppointmentStartInstant(fallbackRaw);
+  if (fallback && fallback.getTime() >= now.getTime() && fallbackRaw) {
+    const labels = formatAppointmentStartLabel(fallbackRaw);
+    if (!labels) return null;
     return {
-      dateLabel: formatSlashDate(fallback),
-      timeLabel: formatHmLabel(fallback),
+      dateLabel: labels.dateLabel,
+      timeLabel: labels.timeLabel,
       serviceName: undefined,
-      startsAt: customer.nextAppointmentAt ?? fallback.toISOString(),
+      startsAt: fallbackRaw,
     };
   }
   return null;

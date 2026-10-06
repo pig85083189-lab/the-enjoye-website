@@ -28,6 +28,8 @@ import {
 } from "@/features/treatments/use-treatment-remote-read";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
+import { applyRosterStaffDisplayNames } from "@/lib/staff-auth/roster-display-name";
+import { getMembership, listMemberships } from "@/lib/tenant/organization-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import {
   customerConsultationNewHref,
@@ -241,11 +243,20 @@ function Customer360Workspace({
     customer.id,
     treatmentRemoteReadPilot,
   );
-  const snapshot = useCustomer360Snapshot(customer, {
+  const customerForView = {
+    ...customer,
+    primaryStaffName:
+      customer.primaryStaffName ??
+      (customer.primaryStaffId
+        ? getMembership(organization.id, customer.primaryStaffId)?.displayName
+        : undefined),
+  };
+  const snapshot = useCustomer360Snapshot(customerForView, {
     remoteAppointments: appointmentRemoteReadPilot
-      ? remoteAppointments.status === "data"
-        ? remoteAppointments.value
-        : []
+      ? applyRosterStaffDisplayNames(
+          remoteAppointments.status === "data" ? remoteAppointments.value : [],
+          listMemberships(organization.id),
+        )
       : null,
     remoteTreatments: treatmentRemoteReadPilot
       ? treatmentsFromRemoteListState(remoteTreatments)
@@ -307,7 +318,7 @@ function Customer360Workspace({
               <span className="mx-1.5 text-border">·</span>
               {visitLabel}
               <span className="mx-1.5 text-border">·</span>
-              負責美容師 {customer.primaryStaffName ?? "尚未指定"}
+              負責美容師 {customerForView.primaryStaffName ?? "尚未指定"}
             </p>
             <p className="mt-0.5 hidden truncate text-sm text-secondary-text min-[768px]:block">
               最近到店 {snapshot.lastVisitLabel ?? "—"}
@@ -406,7 +417,7 @@ function Customer360Workspace({
         </summary>
         <div className="mt-3">
             <CustomerSummaryPanel
-            customer={customer}
+            customer={customerForView}
             snapshot={snapshot}
             onStartTreatment={() => router.push(snapshot.treatmentHref)}
             onAddFollowUp={() => onSelectTab("follow-ups")}
@@ -430,7 +441,7 @@ function Customer360Workspace({
             aria-labelledby={`customer-tab-${tab === "wallet" || tab === "transactions" ? "financial" : tab}`}
           >
             {tab === "overview" ? (
-              <OverviewTab customer={customer} snapshot={snapshot} onOpenTab={onSelectTab} />
+              <OverviewTab customer={customerForView} snapshot={snapshot} onOpenTab={onSelectTab} />
             ) : null}
             {tab === "consultation" ? <ConsultationsTab customerId={customer.id} /> : null}
             {tab === "treatments" ? (
@@ -466,7 +477,7 @@ function Customer360Workspace({
         <aside className="hidden min-[1200px]:block">
           <div className="sticky top-6">
             <CustomerSummaryPanel
-              customer={customer}
+              customer={customerForView}
               snapshot={snapshot}
               onStartTreatment={() => router.push(snapshot.treatmentHref)}
               onAddFollowUp={() => onSelectTab("follow-ups")}

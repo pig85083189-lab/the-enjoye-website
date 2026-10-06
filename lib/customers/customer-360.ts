@@ -81,6 +81,14 @@ export function isCustomerProfileWorkbenchPath(pathname: string): boolean {
   return /^\/staff\/customers\/(?!new$)[^/]+$/.test(pathname);
 }
 
+/** Remote rows win when the pilot handed an array (including empty). Null keeps local. */
+export function resolveCustomer360Appointments(
+  remoteAppointments: ScheduleAppointment[] | null | undefined,
+  localAppointments: ScheduleAppointment[],
+): ScheduleAppointment[] {
+  return remoteAppointments != null ? remoteAppointments : localAppointments;
+}
+
 export function customerCreateAppointmentHref(customerId: string): string {
   return `/staff/calendar?create=1&customer=${customerId}`;
 }

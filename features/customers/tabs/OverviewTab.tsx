@@ -65,7 +65,13 @@ export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps)
         <ServiceFocusCard snapshot={snapshot} treatmentHref={snapshot.treatmentHref} />
       </div>
 
-      <div className="order-3 min-[768px]:hidden">
+      {snapshot.nextAppointment ? (
+        <div className="order-3 min-[768px]:order-2">
+          <UpcomingAppointmentCard next={snapshot.nextAppointment} />
+        </div>
+      ) : null}
+
+      <div className="order-4 min-[768px]:hidden">
         <Card padding="md" className="space-y-2">
           <p className="text-[13px] font-medium text-secondary-text">快速操作</p>
           <Link href={snapshot.treatmentHref} className="block">
@@ -89,11 +95,11 @@ export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps)
         </Card>
       </div>
 
-      <div className="order-6 max-[767px]:hidden min-[768px]:order-2">
+      <div className="order-6 max-[767px]:hidden min-[768px]:order-3">
         <FrequentServicesCard snapshot={snapshot} />
       </div>
 
-      <div className="order-4 min-[768px]:order-3">
+      <div className="order-5 min-[768px]:order-4">
         <TimelineCard
           items={timeline}
           total={snapshot.timeline.length}
@@ -102,15 +108,15 @@ export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps)
         />
       </div>
 
-      <div className="order-5 min-[768px]:order-4">
+      <div className="order-6 min-[768px]:order-5">
         <FinancialSummary snapshot={snapshot} onOpenTab={onOpenTab} />
       </div>
 
-      <div className="order-7 max-[767px]:hidden min-[768px]:order-5">
+      <div className="order-7 max-[767px]:hidden min-[768px]:order-6">
         <PreferencesCard prefs={prefs} hasPrefs={hasPrefs} />
       </div>
 
-      <details className="order-6 rounded-2xl border border-border bg-surface min-[768px]:hidden">
+      <details className="order-7 rounded-2xl border border-border bg-surface min-[768px]:hidden">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-4 text-sm font-medium text-text [&::-webkit-details-marker]:hidden">
           其他資訊
           <span className="text-xs font-normal text-secondary-text">展開</span>
@@ -170,6 +176,25 @@ function PrefRow({ label, value }: { label: string; value: string }) {
       <dt className="text-xs text-secondary-text">{label}</dt>
       <dd className="mt-0.5 text-[14px] text-text">{value}</dd>
     </div>
+  );
+}
+
+function UpcomingAppointmentCard({
+  next,
+}: {
+  next: NonNullable<Customer360Snapshot["nextAppointment"]>;
+}) {
+  return (
+    <Card padding="md" data-customer-next-appointment>
+      <h3 className="text-[15px] font-semibold text-text">下次預約</h3>
+      <p className="mt-2 text-[14px] font-medium text-text">
+        {next.serviceName ?? "預約"}
+      </p>
+      <p className="mt-0.5 text-sm text-secondary-text">
+        {next.dateLabel} {next.timeLabel}
+        {next.staffName ? ` · ${next.staffName}` : ""}
+      </p>
+    </Card>
   );
 }
 

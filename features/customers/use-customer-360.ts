@@ -21,6 +21,7 @@ import {
 import {
   customerCreateAppointmentHref,
   deriveCustomerTimeline,
+  resolveCustomer360Appointments,
   deriveFrequentServices,
   deriveLastVisitLabel,
   derivePackageFinancialCards,
@@ -119,7 +120,12 @@ export function useCustomer360Snapshot(
             organizationId,
             customerId,
           });
-    const appointments = listAppointments({ organizationId, customerId });
+    const appointments = resolveCustomer360Appointments(
+      remoteAppointments,
+      remoteAppointments != null
+        ? []
+        : listAppointments({ organizationId, customerId }),
+    );
     const followUps = listFollowUpTasksForCustomer(organizationId, customerId);
     const consultations = localConsultationRepository.listByCustomer({
       organizationId,
@@ -136,8 +142,11 @@ export function useCustomer360Snapshot(
       const name = getMembership(organizationId, treatment.staffId)?.displayName;
       if (name) staffNameById[treatment.staffId] = name;
     }
-    if (customer.primaryStaffId && customer.primaryStaffName) {
-      staffNameById[customer.primaryStaffId] = customer.primaryStaffName;
+    if (customer.primaryStaffId) {
+      const rosterName =
+        customer.primaryStaffName ??
+        getMembership(organizationId, customer.primaryStaffId)?.displayName;
+      if (rosterName) staffNameById[customer.primaryStaffId] = rosterName;
     }
 
     const completedTreatments = treatments.filter(
@@ -179,6 +188,7 @@ export function useCustomer360Snapshot(
       serviceName: item.serviceName,
       durationMinutes: item.durationMinutes,
       startAt: item.startAt,
+      staffName: item.staffName,
     }));
     const now = new Date();
     const apt =

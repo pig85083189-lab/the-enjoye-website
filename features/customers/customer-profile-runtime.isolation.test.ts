@@ -55,6 +55,7 @@ function liveRemoteCustomerShape(): Customer {
     trackingFocus: [],
     alerts: [],
     tags: [],
+    primaryStaffId: "staff-001",
     joinedAt: "2026/10/02",
     createdAt: "2026-10-02T04:30:00.000Z",
     updatedAt: "2026-10-02T04:30:00.000Z",
@@ -154,6 +155,21 @@ describe("Phase 1C-5C Customer Profile runtime", () => {
     roots.push(root);
     expect(host.textContent).toContain("Remote QA Customer");
     expect(host.textContent).not.toContain("This page couldn’t load");
+  });
+
+  it("shows the remote BOOKED appointment on Overview next-appointment summary", () => {
+    search.current = "";
+    const { host, root } = renderProfile();
+    roots.push(root);
+    expect(host.textContent).toContain("下次預約");
+    expect(host.textContent).toContain("2026/10/09");
+    expect(host.textContent).toContain("10:00");
+    expect(host.textContent).toContain("Remote QA Bust Care");
+    expect(host.textContent).toContain("測試帳號");
+    expect(host.textContent).not.toContain("尚未安排");
+    expect(host.querySelector("[data-customer-next-appointment]")?.textContent).toContain(
+      "Remote QA Bust Care",
+    );
   });
 
   it("renders the appointments tab inside Customer Profile without throwing", () => {
