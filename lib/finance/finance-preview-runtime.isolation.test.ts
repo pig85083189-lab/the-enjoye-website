@@ -19,6 +19,9 @@ describe("finance preview runtime boundary", () => {
     const workspace = read("features/finance/FinanceWorkspace.tsx");
     expect(workspace).toMatch(/data-finance-source=\{financeRemoteReadPilot \? "remote-pilot" : "off"\}/);
     expect(workspace).toMatch(/data-expense-ledger/);
+    expect(workspace).toMatch(/data-finance-location/);
+    expect(workspace).toMatch(/data-finance-range-start/);
+    expect(workspace).toMatch(/data-finance-tx-count/);
     expect(workspace).toMatch(/EXPENSE_LEDGER_UNAVAILABLE_MESSAGE/);
     expect(workspace).toMatch(/EXPENSE_DELTA_PENDING_MESSAGE/);
     expect(workspace).not.toMatch(/visual-fixture/);
@@ -29,6 +32,7 @@ describe("finance preview runtime boundary", () => {
       /EXPENSE_LEDGER_UNAVAILABLE_MESSAGE/,
     );
     expect(read("features/finance/FinanceExpensesPageClient.tsx")).toMatch(/disabled=\{formDisabled\}/);
+    expect(read("features/finance/FinanceExpensesPageClient.tsx")).toMatch(/aria-disabled=\{formDisabled\}/);
     expect(read("features/finance/FinanceExpensesPageClient.tsx")).not.toMatch(/localStorage/);
   });
 

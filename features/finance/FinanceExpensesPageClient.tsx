@@ -156,7 +156,13 @@ function ExpensesBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
         <Button type="button" variant="outline" className="flex-1" onClick={() => setSheetOpen(false)}>
           取消
         </Button>
-        <Button type="submit" className="flex-1" disabled={formDisabled}>
+        <Button
+          type="submit"
+          className="flex-1"
+          variant={formDisabled ? "outline" : "primary"}
+          disabled={formDisabled}
+          aria-disabled={formDisabled}
+        >
           儲存
         </Button>
       </div>

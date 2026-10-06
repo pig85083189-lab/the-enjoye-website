@@ -125,6 +125,10 @@ export function FinanceWorkspace({
       data-finance-workspace
       data-finance-source={financeRemoteReadPilot ? "remote-pilot" : "off"}
       data-expense-ledger={expenseAvailability}
+      data-finance-location={currentLocation?.id ?? ""}
+      data-finance-range-start={range.startYmd}
+      data-finance-range-end={range.endYmd}
+      data-finance-tx-count={scoped.metrics.length}
     >
       <PageHeader
         title={title}
