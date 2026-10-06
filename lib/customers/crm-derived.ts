@@ -38,6 +38,7 @@ export type AppointmentHint = {
   serviceName: string;
   durationMinutes?: number;
   startAt: string;
+  endAt?: string;
   staffName?: string;
 };
 
@@ -350,8 +351,8 @@ export function deriveNextAppointment(input: {
       if (item.customerId !== customer.id || !isUpcomingStatus(item.status)) {
         return false;
       }
-      const start = parseAppointmentStartInstant(item.startAt);
-      return start !== null && start.getTime() >= now.getTime();
+      const activeUntil = parseAppointmentStartInstant(item.endAt ?? item.startAt);
+      return activeUntil !== null && activeUntil.getTime() >= now.getTime();
     })
     .sort((a, b) => a.startAt.localeCompare(b.startAt));
   const next = upcoming[0];

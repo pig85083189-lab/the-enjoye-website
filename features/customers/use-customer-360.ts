@@ -188,6 +188,7 @@ export function useCustomer360Snapshot(
       serviceName: item.serviceName,
       durationMinutes: item.durationMinutes,
       startAt: item.startAt,
+      endAt: item.endAt,
       staffName: item.staffName,
     }));
     const now = new Date();

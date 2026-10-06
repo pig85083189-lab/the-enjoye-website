@@ -219,6 +219,7 @@ describe("next appointment + last service", () => {
       serviceName: "美波澎潤upupSPA",
       staffName: "測試帳號",
       startAt: "2026-10-06T04:00:00+00:00",
+      endAt: "2026-10-06T05:00:00+00:00",
     };
     expect(
       deriveNextAppointment({
@@ -237,7 +238,14 @@ describe("next appointment + last service", () => {
       deriveNextAppointment({
         customer: customerYu,
         appointments: [productionUtc],
-        now: new Date("2026-10-06T13:00:00+08:00"),
+        now: new Date("2026-10-06T12:05:00+08:00"),
+      })?.timeLabel,
+    ).toBe("12:00");
+    expect(
+      deriveNextAppointment({
+        customer: customerYu,
+        appointments: [productionUtc],
+        now: new Date("2026-10-06T13:01:00+08:00"),
       }),
     ).toBeNull();
   });

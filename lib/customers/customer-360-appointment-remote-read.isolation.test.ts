@@ -78,7 +78,7 @@ describe("Customer 360 Appointment remote-read source", () => {
     const next = deriveNextAppointment({
       customer: customer(),
       appointments: [remoteBooked()],
-      now: new Date("2026-10-06T08:00:00+08:00"),
+      now: new Date("2026-10-06T12:05:00+08:00"),
     });
     expect(next).toMatchObject({
       dateLabel: "2026/10/06",
