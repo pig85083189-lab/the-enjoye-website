@@ -501,6 +501,57 @@ describe("financial presentation uses ledger truth", () => {
     const rows = deriveRecentTransactions(txs);
     expect(rows.map((row) => row.id)).toEqual(["tx-4", "tx-3", "tx-1"]);
     expect(rows).toHaveLength(3);
+    expect(rows[0]?.tenderLabel).toBe("無需付款");
+    expect(rows[0]?.serviceValueMinor).toBe(400);
+    expect(rows[0]?.collectedMinor).toBe(0);
+  });
+
+  it("recent package redemption uses the shared tender presenter", () => {
+    const rows = deriveRecentTransactions(
+      [
+        {
+          id: "tx-pkg",
+          organizationId: ORG,
+          locationId: "loc-enjoye-main",
+          customerId: "c-1",
+          transactionNumber: "TX-20261006-0003",
+          status: "COMPLETED",
+          items: [
+            {
+              id: "i",
+              type: "SERVICE",
+              referenceId: "svc-muw54el4-7omtyn",
+              nameSnapshot: "美波澎潤upupSPA",
+              unitPrice: 1800,
+              quantity: 1,
+              lineSubtotal: 1800,
+              discountAmount: 1800,
+              lineTotal: 0,
+            },
+          ],
+          discounts: [],
+          payments: [],
+          packageRedemption: {
+            customerPackageId: "cpkg-1",
+            serviceId: "svc-muw54el4-7omtyn",
+            sessions: 1,
+          },
+          subtotal: 1800,
+          discountTotal: 1800,
+          total: 0,
+          currency: "TWD",
+          createdByStaffId: "staff-001",
+          completedAt: "2026-10-06T08:56:00.000Z",
+        } as Transaction,
+      ],
+      3,
+      [{ id: "cpkg-1", nameSnapshot: "性感美胸10堂" }],
+    );
+    expect(rows[0]?.itemSummary).toBe("美波澎潤upupSPA");
+    expect(rows[0]?.tenderLabel).toBe("套票 · 性感美胸10堂 · 1堂");
+    expect(rows[0]?.serviceValueMinor).toBe(1800);
+    expect(rows[0]?.collectedMinor).toBe(0);
+    expect(rows[0]?.totalMinor).toBe(0);
   });
 
   it("primary service name uses frequent history then lastServiceName", () => {

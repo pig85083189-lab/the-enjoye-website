@@ -14,6 +14,13 @@ import {
   type TransactionPaymentSnapshot,
   type TransactionStatus,
 } from "@/lib/commerce/domain";
+import {
+  countDailyEntitlementSummary,
+  presentTransactionTender,
+  type DailyEntitlementSummary,
+  type PackageNameHint,
+  type TransactionTenderPresentation,
+} from "@/lib/commerce/transaction-tender-presentation";
 import { CHECKOUT_ITEM_TYPE_LABEL } from "@/lib/products/domain";
 import type { Customer } from "@/types";
 
@@ -123,6 +130,9 @@ export interface TransactionWorkspaceRow {
   paymentBadge: string;
   mixedPayment: boolean;
   paymentMethods: PaymentMethod[];
+  tender: TransactionTenderPresentation;
+  serviceValueMinor: number;
+  collectedMinor: number;
   totalMinor: number;
   subtotalMinor: number;
   discountTotalMinor: number;
@@ -139,6 +149,10 @@ export interface TransactionWorkspaceSummary {
   todayTransactionCount: number;
   monthExternalInflowMinor: number;
   voidedCount: number;
+  todayPackageSessions: number;
+  todayPackageRedeemedMinor: number;
+  todayStoredValueMinor: number;
+  storedValueWriteOpen: false;
 }
 
 export interface TransactionPaymentBreakdownRow {
@@ -193,6 +207,9 @@ export interface TransactionQuickViewModel {
   storedValueTenderMinor: number;
   totalMinor: number;
   externalInflowMinor: number;
+  serviceValueMinor: number;
+  collectedMinor: number;
+  tender: TransactionTenderPresentation;
   payments: TransactionPaymentView[];
   mixedPayment: boolean;
   cashierName: string;
@@ -259,6 +276,13 @@ export function paymentBadgeLabel(payments: TransactionPaymentSnapshot[]): strin
   if (methods.length === 0) return "無需付款";
   if (methods.length > 1) return "混合付款";
   return PAYMENT_METHOD_LABEL[methods[0]];
+}
+
+export function transactionTenderBadge(
+  transaction: Transaction,
+  catalog?: PackageNameHint[],
+): string {
+  return presentTransactionTender(transaction, catalog).tenderBadge;
 }
 
 export function externalInflowMinor(transaction: Transaction): number {
@@ -388,6 +412,7 @@ export function buildTransactionWorkspaceRows(input: {
   staff?: TransactionStaffHint[];
   appointments?: TransactionAppointmentHint[];
   catalog?: TransactionCatalogHint[];
+  packageCatalog?: PackageNameHint[];
 }): TransactionWorkspaceRow[] {
   const customersById = new Map(
     input.customers
@@ -415,6 +440,7 @@ export function buildTransactionWorkspaceRows(input: {
       const beauticianName = appointment?.staffName?.trim() || "";
       const summary = summarizeLineItems(transaction.items);
       const methods = uniquePaymentMethods(transaction.payments);
+      const tender = presentTransactionTender(transaction, input.packageCatalog);
       return {
         transactionId: transaction.id,
         transactionNumber: transaction.transactionNumber,
@@ -441,9 +467,12 @@ export function buildTransactionWorkspaceRows(input: {
         beauticianInitials: initialsFrom(beauticianName),
         lineSummary: summary.label,
         extraItemCount: summary.extraCount,
-        paymentBadge: paymentBadgeLabel(transaction.payments),
-        mixedPayment: isMixedPayment(transaction.payments),
+        paymentBadge: tender.tenderBadge,
+        mixedPayment: isMixedPayment(transaction.payments) || tender.tenderKind === "MIXED",
         paymentMethods: methods,
+        tender,
+        serviceValueMinor: tender.serviceValueMinor,
+        collectedMinor: tender.collectedMinor,
         totalMinor: transaction.total,
         subtotalMinor: transaction.subtotal,
         discountTotalMinor: transaction.discountTotal,
@@ -516,12 +545,41 @@ export function countTransactionSummary(
     }
   }
 
+  const entitlement = countDailyEntitlementSummary(
+    rows.map((row) => ({
+      completedAt: row.completedAt,
+      status: row.status.kind,
+      tender: row.tender,
+    })),
+    now,
+    (completedAt, when) => matchesTransactionDateFilter(completedAt, "today", when),
+  );
+
   return {
     todayExternalInflowMinor,
     todayTransactionCount,
     monthExternalInflowMinor,
     voidedCount,
+    todayPackageSessions: entitlement.packageSessions,
+    todayPackageRedeemedMinor: entitlement.packageRedeemedMinor,
+    todayStoredValueMinor: entitlement.storedValueMinor,
+    storedValueWriteOpen: false,
   };
+}
+
+export function countTodayEntitlementSummary(
+  rows: TransactionWorkspaceRow[],
+  now: Date,
+): DailyEntitlementSummary {
+  return countDailyEntitlementSummary(
+    rows.map((row) => ({
+      completedAt: row.completedAt,
+      status: row.status.kind,
+      tender: row.tender,
+    })),
+    now,
+    (completedAt, when) => matchesTransactionDateFilter(completedAt, "today", when),
+  );
 }
 
 export function countTodayPaymentBreakdown(
@@ -554,9 +612,9 @@ export function countTodayPaymentBreakdown(
         counted.add(payment.method);
       }
     }
-    if (row.packageRedemptionMinor > 0) {
-      packageAmount += row.packageRedemptionMinor;
-      packageCount += 1;
+    if (row.tender.packageRedemption) {
+      packageAmount += row.tender.packageRedemption.redeemedValueMinor;
+      packageCount += row.tender.packageRedemption.sessions;
     }
   }
 
@@ -654,6 +712,9 @@ export function mapTransactionQuickView(
     storedValueTenderMinor: row.storedValueTenderMinor,
     totalMinor: row.totalMinor,
     externalInflowMinor: row.externalInflowMinor,
+    serviceValueMinor: row.serviceValueMinor,
+    collectedMinor: row.collectedMinor,
+    tender: row.tender,
     payments: mapTransactionPayments(tx),
     mixedPayment: row.mixedPayment,
     cashierName: row.cashierName,

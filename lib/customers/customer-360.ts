@@ -20,6 +20,10 @@ import {
   type StoredValueLedgerEntry,
 } from "@/lib/stored-value/domain";
 import type { Transaction } from "@/lib/commerce/domain";
+import {
+  presentTransactionTender,
+  type PackageNameHint,
+} from "@/lib/commerce/transaction-tender-presentation";
 import { resolveCanonicalServiceDisplayName } from "@/lib/treatments/treatment-display";
 import type { Customer, Service } from "@/types";
 import type { CustomerConsultation } from "@/types/customer";
@@ -193,6 +197,9 @@ export type RecentTransactionView = {
   dateLabel: string;
   itemSummary: string;
   totalMinor: number;
+  serviceValueMinor: number;
+  collectedMinor: number;
+  tenderLabel: string;
 };
 
 export type UsableBalanceFn = (
@@ -521,17 +528,24 @@ export function derivePackageFinancialCards(
 export function deriveRecentTransactions(
   transactions: Transaction[],
   limit = CUSTOMER_360_TX_LIMIT,
+  packageCatalog?: PackageNameHint[],
 ): RecentTransactionView[] {
   return transactions
     .filter((tx) => tx.status === "COMPLETED")
     .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
     .slice(0, limit)
-    .map((tx) => ({
-      id: tx.id,
-      dateLabel: dateParts(tx.completedAt).dateLabel,
-      itemSummary: tx.items[0]?.nameSnapshot ?? tx.transactionNumber,
-      totalMinor: tx.total,
-    }));
+    .map((tx) => {
+      const tender = presentTransactionTender(tx, packageCatalog);
+      return {
+        id: tx.id,
+        dateLabel: dateParts(tx.completedAt).dateLabel,
+        itemSummary: tx.items[0]?.nameSnapshot ?? tx.transactionNumber,
+        totalMinor: tx.total,
+        serviceValueMinor: tender.serviceValueMinor,
+        collectedMinor: tender.collectedMinor,
+        tenderLabel: tender.tenderBadge,
+      };
+    });
 }
 
 export function deriveLastVisitLabel(input: {

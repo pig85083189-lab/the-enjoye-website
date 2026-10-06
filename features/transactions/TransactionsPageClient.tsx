@@ -23,6 +23,7 @@ import {
 } from "@/lib/commerce/checkout-store";
 import { formatTwd } from "@/lib/commerce/money";
 import { listTransactions } from "@/lib/commerce/transaction-store";
+import { listCustomerPackages } from "@/lib/packages/store";
 import {
   TRANSACTIONS_WORKSPACE_GAP_PX,
   TRANSACTION_DATE_FILTER_OPTIONS,
@@ -187,6 +188,16 @@ function TransactionsInner({
     });
   }, [organization.id, transactions]);
 
+  const packageCatalog = useMemo(() => {
+    void commerceRev;
+    return commerceRemoteReadPilot
+      ? []
+      : listCustomerPackages(organization.id).map((pkg) => ({
+          id: pkg.id,
+          nameSnapshot: pkg.nameSnapshot,
+        }));
+  }, [commerceRemoteReadPilot, organization.id, commerceRev]);
+
   const rows = useMemo(
     () =>
       buildTransactionWorkspaceRows({
@@ -204,6 +215,7 @@ function TransactionsInner({
         staff,
         appointments,
         catalog,
+        packageCatalog,
       }),
     [
       appointments,
@@ -212,6 +224,7 @@ function TransactionsInner({
       customers,
       locations,
       organization.id,
+      packageCatalog,
       remoteCustomers,
       staff,
       transactions,
@@ -385,13 +398,25 @@ function TransactionsInner({
           }))}
         />
         <BreakdownRow
-          title="非現金抵用"
-          items={breakdown.nonCash.map((row) => ({
-            key: String(row.method),
-            label: row.label,
-            amountMinor: isClient ? row.amountMinor : 0,
-            count: isClient ? row.count : 0,
-          }))}
+          title="今日權益抵用"
+          items={[
+            {
+              key: "PACKAGE_REDEMPTION",
+              label: isClient
+                ? `套票 ${summary.todayPackageSessions} 堂`
+                : "套票",
+              amountMinor: isClient ? summary.todayPackageRedeemedMinor : 0,
+              count: isClient ? summary.todayPackageSessions : 0,
+              unit: "堂",
+            },
+            {
+              key: "STORED_VALUE",
+              label: summary.storedValueWriteOpen ? "儲值" : "儲值 尚未開放",
+              amountMinor: 0,
+              count: 0,
+              unit: "筆",
+            },
+          ]}
         />
       </section>
 
@@ -509,13 +534,14 @@ function TransactionsInner({
                 data-transactions-list
                 className="hidden overflow-hidden rounded-2xl border border-border bg-surface min-[1200px]:block"
               >
-                <div className="grid grid-cols-[64px_minmax(150px,1.2fr)_minmax(130px,1.1fr)_88px_72px_96px_64px_24px] bg-[#FAF7F5]/80 px-4 py-2 text-[11px] text-secondary-text">
+                <div className="grid grid-cols-[64px_minmax(140px,1.1fr)_minmax(120px,1fr)_minmax(120px,1.1fr)_72px_88px_72px_64px_24px] bg-[#FAF7F5]/80 px-4 py-2 text-[11px] text-secondary-text">
                   <span>時間</span>
                   <span>客戶</span>
                   <span>內容</span>
-                  <span>付款方式</span>
+                  <span>付款 / 抵用</span>
                   <span>經手人</span>
-                  <span>金額</span>
+                  <span>服務金額</span>
+                  <span>實收</span>
                   <span>狀態</span>
                   <span className="sr-only">開啟</span>
                 </div>
@@ -636,7 +662,13 @@ function BreakdownRow({
   items,
 }: {
   title: string;
-  items: Array<{ key: string; label: string; amountMinor: number; count: number }>;
+  items: Array<{
+    key: string;
+    label: string;
+    amountMinor: number;
+    count: number;
+    unit?: string;
+  }>;
 }) {
   return (
     <div className="flex min-w-0 items-baseline gap-3">
@@ -659,7 +691,7 @@ function BreakdownRow({
                 {formatTwd(item.amountMinor)}
               </span>
               <span className="ml-1 text-[11px] text-secondary-text/80">
-                {item.count} 筆
+                {item.unit === "堂" ? `${item.count} 堂` : `${item.count} 筆`}
               </span>
             </p>
           );
@@ -693,7 +725,7 @@ function DesktopRow({
       data-transaction-id={row.transactionId}
       aria-pressed={selected}
       className={cn(
-        "relative grid min-h-[74px] cursor-pointer grid-cols-[64px_minmax(150px,1.2fr)_minmax(130px,1.1fr)_88px_72px_96px_64px_24px] items-center border-b border-[#EFE8E4]/80 px-4 last:border-b-0",
+        "relative grid min-h-[74px] cursor-pointer grid-cols-[64px_minmax(140px,1.1fr)_minmax(120px,1fr)_minmax(120px,1.1fr)_72px_88px_72px_64px_24px] items-center border-b border-[#EFE8E4]/80 px-4 last:border-b-0",
         "hover:bg-[#F7F2F0]",
         selected && "bg-[#FBF4F3]",
       )}
@@ -753,8 +785,13 @@ function DesktopRow({
         {handlerName || ""}
       </div>
       <div className="pointer-events-none relative z-0 pr-2">
-        <p className="text-[15px] font-semibold tabular-nums text-text">
-          {formatTwd(row.totalMinor)}
+        <p className="text-[14px] font-semibold tabular-nums text-text">
+          {formatTwd(row.serviceValueMinor)}
+        </p>
+      </div>
+      <div className="pointer-events-none relative z-0 pr-2">
+        <p className="text-[14px] font-semibold tabular-nums text-text">
+          {formatTwd(row.collectedMinor)}
         </p>
       </div>
       <div className="pointer-events-none relative z-0 pr-1">
@@ -806,8 +843,11 @@ function MobileCard({
         <p className="min-w-0 truncate text-[14px] font-semibold text-text">
           {row.customerName}
         </p>
-        <p className="shrink-0 text-[14px] font-semibold tabular-nums text-text">
-          {formatTwd(row.totalMinor)}
+        <p className="shrink-0 text-right text-[13px] tabular-nums text-text">
+          <span className="block font-semibold">{formatTwd(row.serviceValueMinor)}</span>
+          <span className="block text-[12px] text-secondary-text">
+            實收 {formatTwd(row.collectedMinor)}
+          </span>
         </p>
       </div>
       <p className="mt-0.5 truncate text-[13px] text-text">{row.lineSummary}</p>

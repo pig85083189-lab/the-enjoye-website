@@ -7,9 +7,13 @@ import {
   getCommerceRevision,
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
-import { PAYMENT_METHOD_LABEL, TRANSACTION_STATUS_LABEL } from "@/lib/commerce/domain";
+import { TRANSACTION_STATUS_LABEL } from "@/lib/commerce/domain";
 import type { Transaction } from "@/lib/commerce/domain";
 import { formatTwd } from "@/lib/commerce/money";
+import {
+  presentTransactionTender,
+  type PackageNameHint,
+} from "@/lib/commerce/transaction-tender-presentation";
 import { listTransactions } from "@/lib/commerce/transaction-store";
 import { utcIsoToTaipeiLocal } from "@/lib/persistence/appointment-time";
 import { resolveCustomer360Transactions } from "@/lib/customers/customer-360";
@@ -25,12 +29,14 @@ interface TransactionsTabProps {
   customerId: string;
   commerceRemoteRead?: boolean;
   remoteTransactions?: Transaction[] | null;
+  packageCatalog?: PackageNameHint[];
 }
 
 export function TransactionsTab({
   customerId,
   commerceRemoteRead = false,
   remoteTransactions = null,
+  packageCatalog,
 }: TransactionsTabProps) {
   const { organization } = useOrganization();
   const revision = useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
@@ -68,10 +74,7 @@ export function TransactionsTab({
       data-customer-transactions-state="data"
     >
       {rows.map((tx) => {
-        const methods = tx.payments
-          .map((p) => PAYMENT_METHOD_LABEL[p.method])
-          .filter(Boolean)
-          .join("、");
+        const tender = presentTransactionTender(tx, packageCatalog);
         const itemSummary = tx.items[0]?.nameSnapshot;
         return (
           <li key={tx.id}>
@@ -81,13 +84,18 @@ export function TransactionsTab({
             >
               <div className="flex justify-between gap-2">
                 <p className="font-medium text-text">{tx.transactionNumber}</p>
-                <p className="tabular-nums font-medium">{formatTwd(tx.total)}</p>
+                <p className="text-right tabular-nums">
+                  <span className="block font-medium">{formatTwd(tender.serviceValueMinor)}</span>
+                  <span className="block text-xs text-secondary-text">
+                    實收 {formatTwd(tender.collectedMinor)}
+                  </span>
+                </p>
               </div>
               {itemSummary ? (
                 <p className="mt-1 truncate text-sm text-text">{itemSummary}</p>
               ) : null}
               <p className="mt-1 text-sm text-secondary-text">
-                {methods || "無付款列"} ·{" "}
+                {tender.tenderBadge} ·{" "}
                 <span className="font-medium text-text">
                   {TRANSACTION_STATUS_LABEL[tx.status]}
                 </span>

@@ -83,6 +83,8 @@ export function WalletTab({
       commerceRemoteRead ? (remoteTransactions ?? []) : null,
       listTransactions(organization.id, { customerId }),
     ),
+    undefined,
+    packages.map((pkg) => ({ id: pkg.id, nameSnapshot: pkg.nameSnapshot })),
   );
   const recentLedger = [...svLedger].reverse().slice(0, 3);
 
@@ -180,7 +182,7 @@ export function WalletTab({
             <div>
               <dt className="text-xs text-secondary-text">最近一筆</dt>
               <dd className="mt-0.5 text-[15px] tabular-nums text-text">
-                {formatTwd(recentTx[0].totalMinor)}
+                {formatTwd(recentTx[0].collectedMinor)}
               </dd>
             </div>
           ) : null}
@@ -477,10 +479,14 @@ export function WalletTab({
               <li key={tx.id} className="flex items-baseline justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate text-[14px] text-text">{tx.itemSummary}</p>
+                  <p className="text-xs text-secondary-text">{tx.tenderLabel}</p>
                   <p className="text-xs text-secondary-text">{tx.dateLabel}</p>
                 </div>
-                <p className="shrink-0 text-[14px] tabular-nums text-text">
-                  {formatTwd(tx.totalMinor)}
+                <p className="shrink-0 text-right text-[14px] tabular-nums text-text">
+                  <span className="block">{formatTwd(tx.serviceValueMinor)}</span>
+                  <span className="block text-xs text-secondary-text">
+                    實收 {formatTwd(tx.collectedMinor)}
+                  </span>
                 </p>
               </li>
             ))}

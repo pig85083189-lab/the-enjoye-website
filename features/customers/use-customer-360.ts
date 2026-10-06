@@ -256,7 +256,14 @@ export function useCustomer360Snapshot(
       packageCards,
       packagePreview: previewPackages(packageCards),
       svBalance,
-      recentTx: deriveRecentTransactions(transactions),
+      recentTx: deriveRecentTransactions(
+        transactions,
+        undefined,
+        packageCards.map((pkg) => ({
+          id: pkg.customerPackageId,
+          nameSnapshot: pkg.name,
+        })),
+      ),
       commerceRemoteRead: remoteTransactions != null,
     };
   }, [

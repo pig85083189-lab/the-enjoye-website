@@ -153,7 +153,7 @@ describe("Customer 360 Commerce remote-read", () => {
     expect(txTab).toMatch(/commerceRemoteRead/);
     expect(txTab).toMatch(/transactionNumber/);
     expect(txTab).toMatch(/nameSnapshot/);
-    expect(txTab).toMatch(/PAYMENT_METHOD_LABEL/);
+    expect(txTab).toMatch(/presentTransactionTender/);
     expect(txTab).toMatch(/TRANSACTION_STATUS_LABEL/);
     expect(wallet).toMatch(/commerceRemoteRead/);
     expect(wallet).toMatch(/套票尚未開放/);
