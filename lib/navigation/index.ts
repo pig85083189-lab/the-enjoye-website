@@ -18,9 +18,11 @@ export {
   getMobilePrimaryNavCount,
   getMoreHubItems,
   groupNavigationItems,
+  clusterGroupItems,
   resolveActiveNavId,
   isNavItemActive,
   isNavItemVisibleForRole,
   normalizeStaffRole,
   shouldUseLeaveGuard,
 } from "./resolve";
+export type { NavigationCluster } from "./resolve";

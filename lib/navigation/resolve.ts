@@ -59,7 +59,43 @@ export function getMoreHubItems(
   role: StaffRole | string | undefined | null,
 ): NavigationItem[] {
   const primaryIds = new Set(getMobilePrimaryItems(role).map((i) => i.id));
-  return getVisibleNavigationItems(role).filter((item) => !primaryIds.has(item.id));
+  return getVisibleNavigationItems(role).filter((item) => {
+    if (primaryIds.has(item.id)) return false;
+    if (item.cluster && !item.moreHubPrimary) return false;
+    return true;
+  });
+}
+
+export type NavigationCluster = {
+  id: string;
+  label: string;
+  items: NavigationItem[];
+};
+
+export function clusterGroupItems(
+  items: NavigationItem[],
+): Array<{ kind: "item"; item: NavigationItem } | { kind: "cluster"; cluster: NavigationCluster }> {
+  const seen = new Set<string>();
+  const out: Array<
+    { kind: "item"; item: NavigationItem } | { kind: "cluster"; cluster: NavigationCluster }
+  > = [];
+  for (const item of items) {
+    if (!item.cluster) {
+      out.push({ kind: "item", item });
+      continue;
+    }
+    if (seen.has(item.cluster)) continue;
+    seen.add(item.cluster);
+    out.push({
+      kind: "cluster",
+      cluster: {
+        id: item.cluster,
+        label: item.clusterLabel ?? item.cluster,
+        items: items.filter((row) => row.cluster === item.cluster),
+      },
+    });
+  }
+  return out;
 }
 
 export function groupNavigationItems(
