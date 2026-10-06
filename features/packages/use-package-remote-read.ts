@@ -6,6 +6,10 @@ import {
   listRemotePilotPackageDefinitions,
   listRemotePilotPackageLedger,
 } from "@/lib/packages/package-remote-read-pilot";
+import {
+  getPackageRemoteWriteRevision,
+  subscribePackageRemoteWriteRefresh,
+} from "@/lib/packages/package-write-refresh";
 import type { CustomerPackage, PackageDefinition, PackageLedgerEntry } from "@/lib/packages/domain";
 import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-identity-catalog";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
@@ -28,10 +32,20 @@ function usePackageRemoteQuery<T>(
   requestKey: string,
   load: (client: IdentitySupabaseClient) => Promise<T[]>,
 ): PackageRemoteReadState<T[]> {
+  const [revision, setRevision] = useState(getPackageRemoteWriteRevision);
+  const revisionKey = `${requestKey}:${revision}`;
   const [result, setResult] = useState<{
     key: string;
     state: Settled<T[]>;
   } | null>(null);
+
+  useEffect(
+    () =>
+      subscribePackageRemoteWriteRefresh(() => {
+        setRevision(getPackageRemoteWriteRevision());
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -45,7 +59,7 @@ function usePackageRemoteQuery<T>(
         const rows = await load(client);
         if (cancelled) return;
         setResult({
-          key: requestKey,
+          key: revisionKey,
           state:
             rows.length === 0
               ? { status: "empty" }
@@ -54,7 +68,7 @@ function usePackageRemoteQuery<T>(
       } catch (error: unknown) {
         if (cancelled) return;
         setResult({
-          key: requestKey,
+          key: revisionKey,
           state: { status: "error", message: errorMessage(error) },
         });
       }
@@ -64,19 +78,24 @@ function usePackageRemoteQuery<T>(
     };
     // requestKey encodes the query identity; load closes over the same values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, requestKey]);
+  }, [enabled, revisionKey]);
 
   if (!enabled) return { status: "off" };
-  if (!result || result.key !== requestKey) return { status: "loading" };
+  if (!result || result.key !== revisionKey) return { status: "loading" };
   return result.state;
 }
 
 export function usePackageRemoteDefinitions(
   organizationId: string,
   enabled: boolean,
+  opts?: { activeOnly?: boolean },
 ): PackageRemoteReadState<PackageDefinition[]> {
-  return usePackageRemoteQuery(enabled, `definitions:${organizationId}`, (client) =>
-    listRemotePilotPackageDefinitions(organizationId, client, { activeOnly: true }),
+  const activeOnly = opts?.activeOnly !== false;
+  return usePackageRemoteQuery(
+    enabled,
+    `definitions:${organizationId}:${activeOnly ? "active" : "all"}`,
+    (client) =>
+      listRemotePilotPackageDefinitions(organizationId, client, { activeOnly }),
   );
 }
 

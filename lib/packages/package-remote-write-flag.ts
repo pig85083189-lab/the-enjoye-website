@@ -5,8 +5,8 @@
  * Production default is off. Write requires the Package remote-read foundation.
  * Independent of BEAUTY_OS_PERSISTENCE / BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
  *
- * This flag is reserved for catalog create / entitlement / redemption.
- * Phase 1C-6H.3A does not turn it on and does not create Customer Packages.
+ * Opens Package Definition CREATE only.
+ * Does not open Customer Package fulfillment, redemption, or ledger writes.
  */
 
 import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";

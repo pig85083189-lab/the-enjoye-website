@@ -28,6 +28,7 @@ import {
 import {
   rowsFromPackageRemoteState,
   usePackageRemoteCustomerPackages,
+  usePackageRemoteDefinitions,
   usePackageRemoteLedger,
 } from "@/features/packages/use-package-remote-read";
 import {
@@ -82,6 +83,7 @@ export function WalletTab({
     customerId,
   );
   const remoteLedger = usePackageRemoteLedger(organization.id, packageRemoteRead, customerId);
+  const remoteDefinitions = usePackageRemoteDefinitions(organization.id, packageRemoteRead);
   const svBalance = commerceRemoteRead
     ? 0
     : getCustomerStoredValueBalance(organization.id, customerId);
@@ -90,9 +92,11 @@ export function WalletTab({
     : commerceRemoteRead
       ? []
       : listCustomerPackages(organization.id, { customerId });
-  const definitions = commerceRemoteRead
-    ? []
-    : listPackageDefinitions(organization.id, { activeOnly: true });
+  const definitions = packageRemoteRead
+    ? rowsFromPackageRemoteState(remoteDefinitions)
+    : commerceRemoteRead
+      ? []
+      : listPackageDefinitions(organization.id, { activeOnly: true });
   const svLedger = commerceRemoteRead
     ? []
     : listStoredValueLedger(organization.id, { customerId });

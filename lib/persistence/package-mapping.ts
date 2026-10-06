@@ -134,6 +134,19 @@ export function dbPackageDefinitionFromUnknown(
   };
 }
 
+export function remotePackageDefinitionPayload(
+  row: DbPackageDefinition,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const column of REMOTE_PACKAGE_DEFINITION_COLUMNS) {
+    payload[column] = row[column];
+  }
+  if ("remainingSessions" in payload || "remaining_sessions" in payload) {
+    throw new Error("package remote payload leaked unsupported columns");
+  }
+  return payload;
+}
+
 export function packageDefinitionFromRemoteRow(
   organizationAppId: string,
   row: DbPackageDefinition,

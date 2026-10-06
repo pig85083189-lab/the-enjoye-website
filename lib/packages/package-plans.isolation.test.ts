@@ -587,10 +587,13 @@ describe("package plan source contract T", () => {
     expect(derived).not.toMatch(/createCustomerPackageFromPurchase/);
     expect(derived).toMatch(/PackageDefinition/);
     expect(page).toMatch(/listPackageDefinitions/);
+    expect(page).toMatch(/usePackageRemoteDefinitions/);
+    expect(page).toMatch(/packageRemoteReadPilot/);
     expect(page).toMatch(/createPackageDefinition|PackagePlanEditorDialog/);
     expect(page).not.toMatch(/localStorage\.setItem/);
     expect(page).not.toMatch(/createCustomerPackageFromPurchase/);
     expect(editor).toMatch(/createPackageDefinition/);
+    expect(editor).toMatch(/submitPackageRemoteCreate/);
     expect(editor).toMatch(/updatePackageDefinition/);
     expect(editor).not.toMatch(/localStorage\.setItem/);
     expect(editor).not.toMatch(/createCustomerPackageFromPurchase/);

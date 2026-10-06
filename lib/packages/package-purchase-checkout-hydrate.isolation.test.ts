@@ -172,9 +172,18 @@ describe("Phase 1C-6H.3A package purchase checkout hydrate", () => {
     expect(panel).toMatch(/sessionCountSnapshot/);
     expect(wallet).toMatch(/packageRemoteRead/);
     expect(wallet).toMatch(/usePackageRemoteCustomerPackages/);
+    expect(wallet).toMatch(/usePackageRemoteDefinitions/);
     expect(wallet).not.toMatch(/hydrate_checkout_from_package/);
     expect(read("app/staff/(app)/packages/page.tsx")).toMatch(/isPackageRemoteReadPilotEnabled/);
     expect(read("app/staff/(app)/packages/page.tsx")).not.toMatch(/package-remote-read-pilot/);
+    expect(read("app/staff/(app)/packages/plans/page.tsx")).toMatch(/isPackageRemoteReadPilotEnabled/);
+    expect(read("app/staff/(app)/packages/plans/page.tsx")).toMatch(/isPackageRemoteWritePilotEnabled/);
+    expect(read("app/staff/(app)/packages/plans/page.tsx")).not.toMatch(
+      /package-remote-read-pilot|package-remote-write-pilot/,
+    );
+    expect(read("features/packages/PackagePlansPageClient.tsx")).toMatch(
+      /usePackageRemoteDefinitions/,
+    );
     expect(read("lib/packages/package-remote-read-flag.ts")).toMatch(
       /Does not enable BEAUTY_OS_PERSISTENCE/,
     );
