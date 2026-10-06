@@ -23,6 +23,7 @@ import { useCustomer360Snapshot } from "./use-customer-360";
 import { useCustomerRemoteAppointments } from "@/features/customers/use-appointment-remote-read";
 import { useCustomerRemoteDetail } from "@/features/customers/use-customer-remote-read";
 import {
+  isCommerceRemoteTransactionListReady,
   transactionsFromRemoteCommerceState,
   useCommerceRemoteTransactions,
 } from "@/features/transactions/use-commerce-remote-transactions";
@@ -270,6 +271,8 @@ function Customer360Workspace({
     organizationId: organization.id,
     enabled: commerceRemoteReadPilot,
   });
+  const commerceTxReady =
+    !commerceRemoteReadPilot || isCommerceRemoteTransactionListReady(remoteCommerce);
   const remoteTransactions = commerceRemoteReadPilot
     ? filterCommerceTransactionsByCustomerId(
         transactionsFromRemoteCommerceState(remoteCommerce),
@@ -310,11 +313,45 @@ function Customer360Workspace({
   const visitLabel =
     snapshot.visitCount > 0 ? `第 ${snapshot.visitCount} 次來店` : "尚未到店";
 
+  if (commerceRemoteReadPilot && !commerceTxReady && remoteCommerce.status !== "error") {
+    return (
+      <div
+        className="space-y-3"
+        data-commerce-tx-source="remote-pilot"
+        data-commerce-tx-state="loading"
+      >
+        <div className="h-10 w-40 animate-pulse rounded-2xl bg-primary-light/50" />
+        <div className="h-32 animate-pulse rounded-2xl bg-primary-light/40" />
+      </div>
+    );
+  }
+
+  if (commerceRemoteReadPilot && remoteCommerce.status === "error") {
+    return (
+      <Card
+        padding="lg"
+        className="text-center"
+        data-commerce-tx-source="remote-pilot"
+        data-commerce-tx-state="error"
+      >
+        <p className="text-[15px] font-medium text-text">無法載入交易紀錄</p>
+        <p className="mt-2 text-sm text-secondary-text">請稍後再試。</p>
+      </Card>
+    );
+  }
+
   return (
     <div
       className="mx-auto w-full min-w-0 max-w-[1180px] space-y-4 overflow-x-hidden pb-16 min-[768px]:pb-0"
       data-customer-read-source={remoteReadPilot ? "remote-pilot" : "local"}
       data-commerce-tx-source={commerceRemoteReadPilot ? "remote-pilot" : "local"}
+      data-commerce-tx-state={
+        commerceRemoteReadPilot
+          ? remoteTransactions && remoteTransactions.length > 0
+            ? "data"
+            : "empty"
+          : "local"
+      }
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link

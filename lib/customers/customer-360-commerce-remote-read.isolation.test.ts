@@ -144,7 +144,10 @@ describe("Customer 360 Commerce remote-read", () => {
     expect(page).not.toMatch(/BEAUTY_OS_COMMERCE_REMOTE_WRITE_PILOT/);
     expect(profile).toMatch(/useCommerceRemoteTransactions/);
     expect(profile).toMatch(/filterCommerceTransactionsByCustomerId/);
+    expect(profile).toMatch(/isCommerceRemoteTransactionListReady/);
+    expect(profile).toMatch(/data-commerce-tx-state/);
     expect(profile).toMatch(/remoteTransactions/);
+    expect(txTab).toMatch(/commerceRemoteRead \? null : \(/);
     expect(hook).toMatch(/resolveCustomer360Transactions/);
     expect(hook).toMatch(/remoteTransactions != null/);
     expect(txTab).toMatch(/commerceRemoteRead/);

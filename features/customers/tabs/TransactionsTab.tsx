@@ -49,12 +49,14 @@ export function TransactionsTab({
         data-customer-transactions-state="empty"
       >
         <p className="text-[15px] font-medium text-text">尚無交易</p>
-        <Link
-          href="/staff/checkout"
-          className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary"
-        >
-          前往結帳
-        </Link>
+        {commerceRemoteRead ? null : (
+          <Link
+            href="/staff/checkout"
+            className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary"
+          >
+            前往結帳
+          </Link>
+        )}
       </Card>
     );
   }

@@ -36,6 +36,7 @@ import {
   resolveTreatmentQuickViewSettledHref,
 } from "@/lib/treatments/treatment-workspace-derived";
 import { utcIsoToTaipeiLocal } from "@/lib/persistence/appointment-time";
+import { isCommerceRemoteTransactionListReady } from "@/features/transactions/use-commerce-remote-transactions";
 import { createEmptyDraft } from "@/lib/treatment-draft";
 import type { Appointment, Customer } from "@/types";
 import type { TreatmentDraft } from "@/types/treatment";
@@ -315,6 +316,27 @@ describe("Phase 1C-6H.2P6D settlement consistency", () => {
   });
 
   it("6. Customer 360 remote transaction visibility", () => {
+    const hook = read("features/transactions/use-commerce-remote-transactions.ts");
+    const profile = read("features/customers/CustomerProfilePage.tsx");
+    const txTab = read("features/customers/tabs/TransactionsTab.tsx");
+    expect(hook).toMatch(/isCommerceRemoteTransactionListReady/);
+    expect(hook).toMatch(/state\.status === "data" \|\| state\.status === "empty"/);
+    expect(isCommerceRemoteTransactionListReady({ status: "loading" })).toBe(false);
+    expect(isCommerceRemoteTransactionListReady({ status: "off" })).toBe(false);
+    expect(isCommerceRemoteTransactionListReady({ status: "error", message: "x" })).toBe(
+      false,
+    );
+    expect(isCommerceRemoteTransactionListReady({ status: "empty" })).toBe(true);
+    expect(
+      isCommerceRemoteTransactionListReady({
+        status: "data",
+        transactions: [],
+        customers: [],
+      }),
+    ).toBe(true);
+    expect(profile).toMatch(/isCommerceRemoteTransactionListReady/);
+    expect(profile).toMatch(/data-commerce-tx-state/);
+    expect(txTab).toMatch(/commerceRemoteRead \? null : \(/);
     const rows = filterCommerceTransactionsByCustomerId(
       [tx(), tx({ id: "tx-other", customerId: "cust-other", transactionNumber: "TX-X" })],
       CUST,
@@ -387,6 +409,8 @@ describe("Phase 1C-6H.2P6D settlement consistency", () => {
       "features/calendar/CalendarPage.tsx",
       "features/treatments/TreatmentQuickView.tsx",
       "features/checkout/CheckoutPageClient.tsx",
+      "features/customers/CustomerProfilePage.tsx",
+      "features/customers/tabs/TransactionsTab.tsx",
     ];
     for (const file of files) {
       const source = read(file);

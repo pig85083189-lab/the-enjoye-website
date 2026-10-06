@@ -31,6 +31,13 @@ export function transactionsFromRemoteCommerceState(
   return state.status === "data" ? state.transactions : [];
 }
 
+/** Ready only after remote list resolved. Loading/error must not look like empty. */
+export function isCommerceRemoteTransactionListReady(
+  state: CommerceRemoteTransactionState,
+): boolean {
+  return state.status === "data" || state.status === "empty";
+}
+
 export function useCommerceRemoteTransactions(input: {
   organizationId: string;
   enabled: boolean;
