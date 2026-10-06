@@ -36,6 +36,7 @@ import {
   type Customer360TabId,
   type Customer360WalletSection,
 } from "@/lib/customers/customer-360";
+import { resolveCustomer360AppointmentCreateSurface } from "@/lib/customers/customer-360-appointment-create-surface";
 import type { Customer } from "@/types";
 
 function isWalletSection(value: string | null): value is Customer360WalletSection {
@@ -46,6 +47,7 @@ interface CustomerProfilePageProps {
   customerId: string;
   remoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
+  appointmentRemoteWritePilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
 }
 
@@ -53,6 +55,7 @@ export function CustomerProfilePage({
   customerId,
   remoteReadPilot = false,
   appointmentRemoteReadPilot = false,
+  appointmentRemoteWritePilot = false,
   treatmentRemoteReadPilot = false,
 }: CustomerProfilePageProps) {
   const router = useRouter();
@@ -170,6 +173,7 @@ export function CustomerProfilePage({
     <Customer360Workspace
       remoteReadPilot={remoteReadPilot}
       appointmentRemoteReadPilot={appointmentRemoteReadPilot}
+      appointmentRemoteWritePilot={appointmentRemoteWritePilot}
       treatmentRemoteReadPilot={treatmentRemoteReadPilot}
       customer={customer}
       tab={tab}
@@ -197,6 +201,7 @@ export function CustomerProfilePage({
 function Customer360Workspace({
   remoteReadPilot = false,
   appointmentRemoteReadPilot = false,
+  appointmentRemoteWritePilot = false,
   treatmentRemoteReadPilot = false,
   customer,
   tab,
@@ -211,6 +216,7 @@ function Customer360Workspace({
 }: {
   remoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
+  appointmentRemoteWritePilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
   customer: Customer;
   tab: Customer360TabId;
@@ -244,6 +250,12 @@ function Customer360Workspace({
     remoteTreatments: treatmentRemoteReadPilot
       ? treatmentsFromRemoteListState(remoteTreatments)
       : null,
+  });
+  const createSurface = resolveCustomer360AppointmentCreateSurface({
+    customerId: customer.id,
+    customerRemoteReadPilot: remoteReadPilot,
+    appointmentRemoteReadPilot,
+    appointmentRemoteWritePilot,
   });
   const next = snapshot.nextAppointment;
   const initials = customer.name.slice(0, 1);
@@ -308,14 +320,14 @@ function Customer360Workspace({
               ) : (
                 <>
                   尚未安排
-                  {remoteReadPilot ? null : (
+                  {createSurface.href ? (
                     <Link
-                      href={snapshot.createHref}
+                      href={createSurface.href}
                       className="ml-2 font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                     >
                       ＋ 安排預約
                     </Link>
-                  )}
+                  ) : null}
                 </>
               )}
             </p>
@@ -330,16 +342,16 @@ function Customer360Workspace({
             >
               開始療程紀錄
             </Button>
-            {remoteReadPilot || appointmentRemoteReadPilot ? (
-              <Button variant="secondary" className="min-h-11" disabled>
-                新增預約
-              </Button>
-            ) : (
-              <Link href={snapshot.createHref}>
+            {createSurface.href ? (
+              <Link href={createSurface.href}>
                 <Button variant="secondary" className="min-h-11">
                   新增預約
                 </Button>
               </Link>
+            ) : (
+              <Button variant="secondary" className="min-h-11" disabled>
+                新增預約
+              </Button>
             )}
             {remoteReadPilot ? (
               <Button variant="outline" className="min-h-11" disabled>
@@ -381,7 +393,7 @@ function Customer360Workspace({
             onNotes={() => onSelectTab("notes")}
             onFollowUp={() => onSelectTab("follow-ups")}
             includeEdit={!remoteReadPilot}
-            createHref={remoteReadPilot || appointmentRemoteReadPilot ? undefined : snapshot.createHref}
+            createHref={createSurface.href ?? undefined}
             readOnly={remoteReadPilot}
           />
         </div>
@@ -400,6 +412,7 @@ function Customer360Workspace({
             onAddFollowUp={() => onSelectTab("follow-ups")}
             onOpenNotes={() => onSelectTab("notes")}
             readOnly={remoteReadPilot}
+            allowCreateAppointment={Boolean(createSurface.href)}
           />
         </div>
       </details>
@@ -434,7 +447,7 @@ function Customer360Workspace({
             {tab === "appointments" ? (
               <AppointmentsTab
                 customerId={customer.id}
-                createHref={appointmentRemoteReadPilot ? undefined : snapshot.createHref}
+                createHref={createSurface.href ?? undefined}
                 remoteReadPilot={appointmentRemoteReadPilot}
               />
             ) : null}
@@ -459,6 +472,7 @@ function Customer360Workspace({
               onAddFollowUp={() => onSelectTab("follow-ups")}
               onOpenNotes={() => onSelectTab("notes")}
               readOnly={remoteReadPilot}
+              allowCreateAppointment={Boolean(createSurface.href)}
             />
           </div>
         </aside>
@@ -549,7 +563,7 @@ function HeaderMore({
           role="menu"
           className="absolute right-0 z-30 mt-1 w-48 rounded-2xl border border-border bg-surface p-1 shadow-[0_8px_24px_rgba(48,43,43,0.08)]"
         >
-          {includeEdit && createHref && !readOnly ? (
+          {createHref ? (
             <Link
               href={createHref}
               role="menuitem"

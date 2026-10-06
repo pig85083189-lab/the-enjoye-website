@@ -104,7 +104,7 @@ vi.mock("@/features/customers/use-appointment-remote-read", () => ({
   useCustomerRemoteAppointments: () => remoteAppointments.current,
 }));
 
-function renderProfile(): { host: HTMLDivElement; root: Root } {
+function renderProfile(writePilot = false): { host: HTMLDivElement; root: Root } {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -114,6 +114,7 @@ function renderProfile(): { host: HTMLDivElement; root: Root } {
         customerId: FUTURE_QA_APPOINTMENT.customerAppId,
         remoteReadPilot: true,
         appointmentRemoteReadPilot: true,
+        appointmentRemoteWritePilot: writePilot,
       }),
     );
   });
@@ -163,5 +164,21 @@ describe("Phase 1C-5C Customer Profile runtime", () => {
     expect(host.textContent).toContain("2026/10/09");
     expect(host.textContent).toContain("已預約");
     expect(host.textContent).not.toContain("This page couldn’t load");
+  });
+
+  it("re-enables Customer 360 create links onto the Calendar create flow when WRITE is on", () => {
+    search.current = "";
+    remoteAppointments.current = { status: "data", value: [] };
+    const { host, root } = renderProfile(true);
+    roots.push(root);
+    const href = `/staff/calendar?create=1&customer=${FUTURE_QA_APPOINTMENT.customerAppId}`;
+    const links = [...host.querySelectorAll("a")].map((node) => node.getAttribute("href"));
+    expect(links).toContain(href);
+    expect(host.textContent).toContain("＋ 安排預約");
+    const createButtons = [...host.querySelectorAll("button")].filter((node) =>
+      node.textContent?.includes("新增預約"),
+    );
+    expect(createButtons.length).toBeGreaterThan(0);
+    expect(createButtons.every((node) => !node.disabled)).toBe(true);
   });
 });
