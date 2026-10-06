@@ -22,6 +22,7 @@ import {
   customerCreateAppointmentHref,
   deriveCustomerTimeline,
   resolveCustomer360Appointments,
+  resolveCustomer360Transactions,
   deriveFrequentServices,
   deriveLastVisitLabel,
   derivePackageFinancialCards,
@@ -52,6 +53,7 @@ import {
   getCustomerStoredValueBalance,
   listStoredValueLedger,
 } from "@/lib/stored-value/store";
+import type { Transaction } from "@/lib/commerce/domain";
 import type { ScheduleAppointment } from "@/lib/appointments/domain";
 import { getMembership } from "@/lib/tenant/organization-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
@@ -78,6 +80,7 @@ export type Customer360Snapshot = {
   packagePreview: PackageFinancialView[];
   svBalance: number;
   recentTx: RecentTransactionView[];
+  commerceRemoteRead: boolean;
 };
 
 export function useCustomer360Snapshot(
@@ -86,6 +89,7 @@ export function useCustomer360Snapshot(
     remoteAppointments?: ScheduleAppointment[] | null;
     remoteTreatments?: TreatmentDraft[] | null;
     remoteCatalog?: Service[] | null;
+    remoteTransactions?: Transaction[] | null;
   },
 ): Customer360Snapshot {
   const { organization } = useOrganization();
@@ -108,6 +112,7 @@ export function useCustomer360Snapshot(
   const remoteAppointments = options?.remoteAppointments;
   const remoteTreatments = options?.remoteTreatments;
   const remoteCatalog = options?.remoteCatalog;
+  const remoteTransactions = options?.remoteTransactions;
 
   return useMemo(() => {
     void appointmentRev;
@@ -133,11 +138,26 @@ export function useCustomer360Snapshot(
       organizationId,
       customerId,
     });
-    const transactions = listTransactions(organizationId, { customerId });
-    const packages = listCustomerPackages(organizationId, { customerId });
-    const packageLedger = listPackageLedger(organizationId, { customerId });
-    const svLedger = listStoredValueLedger(organizationId, { customerId });
-    const svBalance = getCustomerStoredValueBalance(organizationId, customerId);
+    const transactions = resolveCustomer360Transactions(
+      remoteTransactions,
+      remoteTransactions != null
+        ? []
+        : listTransactions(organizationId, { customerId }),
+    );
+    const packages =
+      remoteTransactions != null
+        ? []
+        : listCustomerPackages(organizationId, { customerId });
+    const packageLedger =
+      remoteTransactions != null
+        ? []
+        : listPackageLedger(organizationId, { customerId });
+    const svLedger =
+      remoteTransactions != null ? [] : listStoredValueLedger(organizationId, { customerId });
+    const svBalance =
+      remoteTransactions != null
+        ? 0
+        : getCustomerStoredValueBalance(organizationId, customerId);
     const catalog =
       remoteCatalog != null
         ? remoteCatalog
@@ -237,6 +257,7 @@ export function useCustomer360Snapshot(
       packagePreview: previewPackages(packageCards),
       svBalance,
       recentTx: deriveRecentTransactions(transactions),
+      commerceRemoteRead: remoteTransactions != null,
     };
   }, [
     customer,
@@ -247,5 +268,6 @@ export function useCustomer360Snapshot(
     remoteAppointments,
     remoteTreatments,
     remoteCatalog,
+    remoteTransactions,
   ]);
 }

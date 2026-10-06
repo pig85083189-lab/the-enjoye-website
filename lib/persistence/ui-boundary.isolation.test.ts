@@ -536,6 +536,7 @@ describe("Phase 1C-6H.1 commerce remote identity UI boundary", () => {
   it("cuts Commerce remote read only at Checkout / Today / Complete", () => {
     const checkoutPage = readFileSync(path.join(ROOT, "app/staff/(app)/checkout/page.tsx"), "utf8");
     const todayPage = readFileSync(path.join(ROOT, "app/staff/(app)/today/page.tsx"), "utf8");
+    const customerPage = readFileSync(path.join(ROOT, "app/staff/(app)/customers/[id]/page.tsx"), "utf8");
     const flag = readFileSync(path.join(ROOT, "lib/commerce/commerce-remote-read-flag.ts"), "utf8");
     expect(checkoutPage).toMatch(/isCommerceRemoteReadPilotEnabled/);
     expect(checkoutPage).toMatch(/commerce-remote-read-flag/);
@@ -543,6 +544,8 @@ describe("Phase 1C-6H.1 commerce remote identity UI boundary", () => {
     expect(checkoutPage).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
     expect(todayPage).toMatch(/isCommerceRemoteReadPilotEnabled/);
     expect(todayPage).not.toMatch(/commerce-remote-read-pilot/);
+    expect(customerPage).toMatch(/isCommerceRemoteReadPilotEnabled/);
+    expect(customerPage).not.toMatch(/commerce-remote-read-pilot/);
     expect(flag).not.toMatch(/AppointmentRemoteAdapter|TreatmentRemoteAdapter|IdentitySupabaseClient/);
     const checkout = readFileSync(path.join(ROOT, "features/checkout/CheckoutPageClient.tsx"), "utf8");
     expect(checkout).toMatch(/useCommerceRemoteCheckoutCandidates/);

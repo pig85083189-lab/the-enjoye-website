@@ -553,6 +553,7 @@ describe("Customer 360 source contracts", () => {
     expect(hook).toMatch(/getPackageUsableBalance/);
     expect(hook).toMatch(/getCustomerStoredValueBalance/);
     expect(hook).toMatch(/listTransactions/);
+    expect(hook).toMatch(/resolveCustomer360Transactions/);
     expect(hook).toMatch(/listCustomerPackages/);
     expect(hook).not.toMatch(/customer\.packages/);
     expect(overview).not.toMatch(/localStorage\.(get|set)Item/);
@@ -562,6 +563,7 @@ describe("Customer 360 source contracts", () => {
     expect(wallet).toMatch(/getPackageUsableBalance/);
     expect(wallet).toMatch(/getCustomerStoredValueBalance/);
     expect(wallet).toMatch(/listTransactions/);
+    expect(wallet).toMatch(/commerceRemoteRead/);
     expect(shell).toMatch(/isCustomerProfileWorkbenchPath/);
     expect(shell).toMatch(/w-\[254px\]/);
     expect(shell).toMatch(/w-\[232px\]/);

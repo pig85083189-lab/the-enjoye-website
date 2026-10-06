@@ -25,6 +25,12 @@ export type CommerceRemoteTransactionState =
   | { status: "empty" }
   | { status: "error"; message: string };
 
+export function transactionsFromRemoteCommerceState(
+  state: CommerceRemoteTransactionState,
+): Transaction[] {
+  return state.status === "data" ? state.transactions : [];
+}
+
 export function useCommerceRemoteTransactions(input: {
   organizationId: string;
   enabled: boolean;

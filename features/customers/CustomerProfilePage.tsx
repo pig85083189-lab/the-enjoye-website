@@ -23,6 +23,11 @@ import { useCustomer360Snapshot } from "./use-customer-360";
 import { useCustomerRemoteAppointments } from "@/features/customers/use-appointment-remote-read";
 import { useCustomerRemoteDetail } from "@/features/customers/use-customer-remote-read";
 import {
+  transactionsFromRemoteCommerceState,
+  useCommerceRemoteTransactions,
+} from "@/features/transactions/use-commerce-remote-transactions";
+import { filterCommerceTransactionsByCustomerId } from "@/lib/customers/customer-360";
+import {
   servicesFromRemoteListState,
   useServiceRemoteList,
 } from "@/features/services/use-service-remote-read";
@@ -56,6 +61,7 @@ interface CustomerProfilePageProps {
   appointmentRemoteWritePilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
   serviceRemoteReadPilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
 }
 
 export function CustomerProfilePage({
@@ -65,6 +71,7 @@ export function CustomerProfilePage({
   appointmentRemoteWritePilot = false,
   treatmentRemoteReadPilot = false,
   serviceRemoteReadPilot = false,
+  commerceRemoteReadPilot = false,
 }: CustomerProfilePageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -184,6 +191,7 @@ export function CustomerProfilePage({
       appointmentRemoteWritePilot={appointmentRemoteWritePilot}
       treatmentRemoteReadPilot={treatmentRemoteReadPilot}
       serviceRemoteReadPilot={serviceRemoteReadPilot}
+      commerceRemoteReadPilot={commerceRemoteReadPilot}
       customer={customer}
       tab={tab}
       walletSection={walletSection}
@@ -213,6 +221,7 @@ function Customer360Workspace({
   appointmentRemoteWritePilot = false,
   treatmentRemoteReadPilot = false,
   serviceRemoteReadPilot = false,
+  commerceRemoteReadPilot = false,
   customer,
   tab,
   walletSection,
@@ -229,6 +238,7 @@ function Customer360Workspace({
   appointmentRemoteWritePilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
   serviceRemoteReadPilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
   customer: Customer;
   tab: Customer360TabId;
   walletSection?: Customer360WalletSection;
@@ -256,6 +266,16 @@ function Customer360Workspace({
     organization.id,
     serviceRemoteReadPilot,
   );
+  const remoteCommerce = useCommerceRemoteTransactions({
+    organizationId: organization.id,
+    enabled: commerceRemoteReadPilot,
+  });
+  const remoteTransactions = commerceRemoteReadPilot
+    ? filterCommerceTransactionsByCustomerId(
+        transactionsFromRemoteCommerceState(remoteCommerce),
+        customer.id,
+      )
+    : null;
   const customerForView = {
     ...customer,
     primaryStaffName:
@@ -277,6 +297,7 @@ function Customer360Workspace({
     remoteCatalog: serviceRemoteReadPilot
       ? servicesFromRemoteListState(remoteCatalog)
       : null,
+    remoteTransactions,
   });
   const createSurface = resolveCustomer360AppointmentCreateSurface({
     customerId: customer.id,
@@ -293,6 +314,7 @@ function Customer360Workspace({
     <div
       className="mx-auto w-full min-w-0 max-w-[1180px] space-y-4 overflow-x-hidden pb-16 min-[768px]:pb-0"
       data-customer-read-source={remoteReadPilot ? "remote-pilot" : "local"}
+      data-commerce-tx-source={commerceRemoteReadPilot ? "remote-pilot" : "local"}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
@@ -488,9 +510,17 @@ function Customer360Workspace({
                 customerId={customer.id}
                 section={walletSection}
                 onOpenTransactions={() => onSelectTab("transactions")}
+                commerceRemoteRead={commerceRemoteReadPilot}
+                remoteTransactions={remoteTransactions}
               />
             ) : null}
-            {tab === "transactions" ? <TransactionsTab customerId={customer.id} /> : null}
+            {tab === "transactions" ? (
+              <TransactionsTab
+                customerId={customer.id}
+                commerceRemoteRead={commerceRemoteReadPilot}
+                remoteTransactions={remoteTransactions}
+              />
+            ) : null}
             {tab === "notes" ? <NotesTab customerId={customer.id} /> : null}
           </div>
         </div>

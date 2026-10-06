@@ -8,24 +8,40 @@ import {
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
 import { PAYMENT_METHOD_LABEL, TRANSACTION_STATUS_LABEL } from "@/lib/commerce/domain";
+import type { Transaction } from "@/lib/commerce/domain";
 import { formatTwd } from "@/lib/commerce/money";
 import { listTransactions } from "@/lib/commerce/transaction-store";
 import { formatHm, formatYmd } from "@/lib/appointments/domain";
+import { resolveCustomer360Transactions } from "@/lib/customers/customer-360";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 interface TransactionsTabProps {
   customerId: string;
+  commerceRemoteRead?: boolean;
+  remoteTransactions?: Transaction[] | null;
 }
 
-export function TransactionsTab({ customerId }: TransactionsTabProps) {
+export function TransactionsTab({
+  customerId,
+  commerceRemoteRead = false,
+  remoteTransactions = null,
+}: TransactionsTabProps) {
   const { organization } = useOrganization();
   const revision = useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
   void revision;
-  const rows = listTransactions(organization.id, { customerId });
+  const rows = resolveCustomer360Transactions(
+    commerceRemoteRead ? (remoteTransactions ?? []) : null,
+    listTransactions(organization.id, { customerId }),
+  );
 
   if (rows.length === 0) {
     return (
-      <Card padding="lg" className="text-center">
+      <Card
+        padding="lg"
+        className="text-center"
+        data-customer-transactions-source={commerceRemoteRead ? "remote-pilot" : "local"}
+        data-customer-transactions-state="empty"
+      >
         <p className="text-[15px] font-medium text-text">尚無交易</p>
         <Link
           href="/staff/checkout"
@@ -38,9 +54,17 @@ export function TransactionsTab({ customerId }: TransactionsTabProps) {
   }
 
   return (
-    <ul className="space-y-2">
+    <ul
+      className="space-y-2"
+      data-customer-transactions-source={commerceRemoteRead ? "remote-pilot" : "local"}
+      data-customer-transactions-state="data"
+    >
       {rows.map((tx) => {
-        const methods = tx.payments.map((p) => PAYMENT_METHOD_LABEL[p.method]).join("、");
+        const methods = tx.payments
+          .map((p) => PAYMENT_METHOD_LABEL[p.method])
+          .filter(Boolean)
+          .join("、");
+        const itemSummary = tx.items[0]?.nameSnapshot;
         return (
           <li key={tx.id}>
             <Link
@@ -51,6 +75,9 @@ export function TransactionsTab({ customerId }: TransactionsTabProps) {
                 <p className="font-medium text-text">{tx.transactionNumber}</p>
                 <p className="tabular-nums font-medium">{formatTwd(tx.total)}</p>
               </div>
+              {itemSummary ? (
+                <p className="mt-1 truncate text-sm text-text">{itemSummary}</p>
+              ) : null}
               <p className="mt-1 text-sm text-secondary-text">
                 {methods || "無付款列"} ·{" "}
                 <span className="font-medium text-text">

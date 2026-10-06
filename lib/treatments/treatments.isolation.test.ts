@@ -19,6 +19,7 @@ import {
   resolveSelectedTreatment,
   shouldRenderTreatmentQuickView,
   shouldResetTreatmentSelection,
+  resolveTreatmentQuickViewCheckoutHref,
   shouldShowCheckoutCta,
   treatmentListPresentation,
   treatmentServiceTint,
@@ -469,6 +470,17 @@ describe("Attention / last treatment / tint / CTA / empty / responsive", () => {
     );
     const done = workspace().find((item) => item.kind === "completed");
     expect(done && deriveTreatmentPrimaryCta(done).kind).toBe("view");
+    if (done?.draft) {
+      expect(resolveTreatmentQuickViewCheckoutHref(done)).toBe(
+        `/staff/checkout?appointment=${done.appointmentId}&treatment=${done.draft.id}`,
+      );
+    }
+    const quick = readFileSync(
+      path.join(process.cwd(), "features/treatments/TreatmentQuickView.tsx"),
+      "utf8",
+    );
+    expect(quick).toMatch(/resolveTreatmentQuickViewCheckoutHref/);
+    expect(quick).not.toMatch(/resolveAppointmentCheckoutNav/);
   });
 
   it("18. empty state next appointment", () => {
@@ -531,7 +543,8 @@ describe("Attention / last treatment / tint / CTA / empty / responsive", () => {
     );
     expect(page).toMatch(/listOpenTreatmentDrafts/);
     expect(page).toMatch(/listCompletedTreatmentsForOrganization/);
-    expect(qv).toMatch(/resolveAppointmentCheckoutNav/);
+    expect(qv).toMatch(/resolveTreatmentQuickViewCheckoutHref/);
+    expect(qv).not.toMatch(/resolveAppointmentCheckoutNav/);
     expect(page).not.toMatch(/createContext\(\s*\{[^}]*treatments/);
     expect(qv).not.toMatch(/localStorage/);
   });

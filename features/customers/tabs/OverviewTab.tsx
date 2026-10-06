@@ -435,7 +435,10 @@ function FinancialSummary({
           </div>
         ) : (
           <div className="mt-2">
-            <p className="text-sm text-secondary-text">尚無套票</p>
+            <p className="text-sm text-secondary-text">
+              {snapshot.commerceRemoteRead ? "套票尚未開放" : "尚無套票"}
+            </p>
+            {snapshot.commerceRemoteRead ? null : (
             <button
               type="button"
               onClick={() => onOpenTab("wallet", "packages")}
@@ -443,6 +446,7 @@ function FinancialSummary({
             >
               查看套票
             </button>
+            )}
           </div>
         )}
       </Card>
@@ -462,7 +466,11 @@ function FinancialSummary({
           {formatTwd(snapshot.svBalance)}
         </p>
         <p className="mt-0.5 text-xs text-secondary-text">
-          {snapshot.svBalance === 0 ? "目前沒有可用儲值" : "可用餘額"}
+          {snapshot.commerceRemoteRead
+            ? "儲值尚未開放"
+            : snapshot.svBalance === 0
+              ? "目前沒有可用儲值"
+              : "可用餘額"}
         </p>
       </Card>
 
@@ -478,7 +486,10 @@ function FinancialSummary({
           </button>
         </div>
         {snapshot.recentTx.length > 0 ? (
-          <ul className="mt-2 space-y-1.5">
+          <ul
+            className="mt-2 space-y-1.5"
+            data-recent-tx-source={snapshot.commerceRemoteRead ? "remote-pilot" : "local"}
+          >
             {snapshot.recentTx.map((tx) => (
               <li key={tx.id} className="flex items-baseline justify-between gap-2 text-sm">
                 <div className="min-w-0">
@@ -492,7 +503,13 @@ function FinancialSummary({
             ))}
           </ul>
         ) : (
-          <p className="mt-2 text-sm text-secondary-text">尚無交易</p>
+          <p
+            className="mt-2 text-sm text-secondary-text"
+            data-recent-tx-source={snapshot.commerceRemoteRead ? "remote-pilot" : "local"}
+            data-recent-tx-state="empty"
+          >
+            尚無交易
+          </p>
         )}
       </Card>
     </div>

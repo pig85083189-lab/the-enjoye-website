@@ -90,6 +90,23 @@ export function resolveCustomer360Appointments(
   return remoteAppointments != null ? remoteAppointments : localAppointments;
 }
 
+/** Remote rows win when the pilot handed an array (including empty). Null keeps local. */
+export function resolveCustomer360Transactions(
+  remoteTransactions: Transaction[] | null | undefined,
+  localTransactions: Transaction[],
+): Transaction[] {
+  return remoteTransactions != null ? remoteTransactions : localTransactions;
+}
+
+/** Canonical cust-* only. Never match by name or phone. */
+export function filterCommerceTransactionsByCustomerId(
+  transactions: Transaction[],
+  customerId: string,
+): Transaction[] {
+  if (!customerId) return [];
+  return transactions.filter((tx) => tx.customerId === customerId);
+}
+
 export function customerCreateAppointmentHref(customerId: string): string {
   return `/staff/calendar?create=1&customer=${customerId}`;
 }
