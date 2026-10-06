@@ -730,10 +730,7 @@ export function resolveTreatmentQuickViewCheckoutHref(
   const appointmentId = item.appointmentId.trim();
   const treatmentId = item.draft?.id?.trim() ?? "";
   if (!appointmentId || !treatmentId) return null;
-  const completed =
-    item.kind === "completed" ||
-    item.draft?.status === "completed" ||
-    item.draft?.status === "COMPLETED";
+  const completed = item.kind === "completed" || item.draft?.status === "completed";
   if (!completed) return null;
   return buildCommerceCheckoutHref({ appointmentId, treatmentId });
 }
