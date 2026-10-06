@@ -121,9 +121,11 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
 export function CheckoutPageClient({
   commerceRemoteReadPilot = false,
   commerceRemoteWritePilot = false,
+  packageRemoteReadPilot = false,
 }: {
   commerceRemoteReadPilot?: boolean;
   commerceRemoteWritePilot?: boolean;
+  packageRemoteReadPilot?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -683,6 +685,7 @@ export function CheckoutPageClient({
               preselectedPackageId={packagePurchaseFlow ? null : packageIdParam}
               remoteRead={commerceRemoteReadPilot}
               remoteWrite={remoteWriteEnabled}
+              packageRemoteRead={packageRemoteReadPilot}
               remoteCandidate={packagePurchaseFlow ? null : selectedRemoteCandidate}
               remoteDraftState={panelRemoteDraftState}
               locationName={
@@ -709,6 +712,7 @@ export function CheckoutPageClient({
             preselectedPackageId={packagePurchaseFlow ? null : packageIdParam}
             remoteRead={commerceRemoteReadPilot}
             remoteWrite={remoteWriteEnabled}
+            packageRemoteRead={packageRemoteReadPilot}
             remoteCandidate={packagePurchaseFlow ? null : selectedRemoteCandidate}
             remoteDraftState={panelRemoteDraftState}
             locationName={
@@ -803,6 +807,7 @@ function CheckoutWorkspacePanel({
   preselectedPackageId,
   remoteRead,
   remoteWrite,
+  packageRemoteRead = false,
   remoteCandidate,
   remoteDraftState,
   locationName,
@@ -817,6 +822,7 @@ function CheckoutWorkspacePanel({
   preselectedPackageId?: string | null;
   remoteRead: boolean;
   remoteWrite: boolean;
+  packageRemoteRead?: boolean;
   remoteCandidate: CommerceCheckoutCandidate | null;
   remoteDraftState: CommerceRemoteDraftState;
   locationName?: string;
@@ -842,6 +848,7 @@ function CheckoutWorkspacePanel({
         preselectedPackageId={preselectedPackageId}
         commerceRemoteRead
         commerceRemoteWrite={remoteWrite}
+        packageRemoteRead={packageRemoteRead}
         remoteDraft={remoteDraftState.status === "data" ? remoteDraftState.draft : item.draft}
         remoteTransaction={settledTransaction}
         onClose={onClose}
@@ -861,6 +868,7 @@ function CheckoutWorkspacePanel({
         preselectedPackageId={preselectedPackageId}
         commerceRemoteRead
         commerceRemoteWrite
+        packageRemoteRead={packageRemoteRead}
         remoteDraft={
           remoteDraftState.status === "data" ? remoteDraftState.draft : item.draft
         }

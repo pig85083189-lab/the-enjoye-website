@@ -9,7 +9,11 @@ import {
   COMMERCE_SAVE_RPC,
   COMMERCE_SETTLE_RPC,
 } from "@/lib/commerce/commerce-remote-engine";
-import type { CheckoutDiscount, PaymentDraft } from "@/lib/commerce/domain";
+import type {
+  CheckoutDiscount,
+  PackageRedemptionSelection,
+  PaymentDraft,
+} from "@/lib/commerce/domain";
 import { commerceBundleFromRemoteJson, transactionFromRemoteJson } from "./commerce-mapping";
 import type { IdentityQueryBuilder, IdentitySupabaseClient } from "./authenticated-identity-catalog";
 
@@ -73,8 +77,9 @@ export class AuthenticatedCommerceStore {
     expectedUpdatedAt: string;
     payments: PaymentDraft[];
     discounts: CheckoutDiscount[];
+    packageRedemption?: PackageRedemptionSelection | null;
   }) {
-    const result = await this.client.rpc(COMMERCE_SAVE_RPC, {
+    const args: Record<string, unknown> = {
       p_checkout_app_id: input.checkoutAppId,
       p_expected_updated_at: input.expectedUpdatedAt,
       p_payments: input.payments.map((payment) => ({
@@ -91,8 +96,25 @@ export class AuthenticatedCommerceStore {
         label: discount.label ?? null,
         reason: discount.reason ?? null,
       })),
-    });
+    };
+    if (input.packageRedemption !== undefined) {
+      args.p_package_redemption = input.packageRedemption
+        ? {
+            customerPackageId: input.packageRedemption.customerPackageId,
+            serviceId: input.packageRedemption.serviceId,
+            sessions: 1,
+          }
+        : null;
+    }
+    const result = await this.client.rpc(COMMERCE_SAVE_RPC, args);
     return commerceBundleFromRemoteJson(await requireRpc(result, "save checkout"));
+  }
+
+  async repairPackageFulfillment(transactionAppId: string) {
+    const result = await this.client.rpc("repair_package_fulfillment", {
+      p_transaction_app_id: transactionAppId,
+    });
+    return requireRpc(result, "repair package fulfillment");
   }
 
   async settleDraft(input: { checkoutAppId: string; expectedUpdatedAt: string }) {

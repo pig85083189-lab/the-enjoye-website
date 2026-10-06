@@ -11,7 +11,13 @@ import {
   type CommerceWriteClient,
 } from "@/lib/commerce/commerce-remote-write-pilot";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
-import type { CheckoutDiscount, CheckoutDraft, PaymentDraft, Transaction } from "@/lib/commerce/domain";
+import type {
+  CheckoutDiscount,
+  CheckoutDraft,
+  PackageRedemptionSelection,
+  PaymentDraft,
+  Transaction,
+} from "@/lib/commerce/domain";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 
 export function commerceWritePilotEnv(): NodeJS.Dict<string> {
@@ -163,6 +169,7 @@ export async function submitCommerceRemoteSaveDraft(input: {
   expectedUpdatedAt: string;
   payments: PaymentDraft[];
   discounts: CheckoutDiscount[];
+  packageRedemption?: PackageRedemptionSelection | null;
 }) {
   return runAuthenticatedCommerceSaveDraft(requireClient(), input, commerceWritePilotEnv());
 }

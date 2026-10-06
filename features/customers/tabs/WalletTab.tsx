@@ -25,6 +25,7 @@ import {
 import {
   deriveCustomerPackageStatus,
 } from "@/lib/packages/domain";
+import { usedSessionsForCustomerPackage } from "@/lib/packages/package-eligibility";
 import {
   rowsFromPackageRemoteState,
   usePackageRemoteCustomerPackages,
@@ -240,16 +241,22 @@ export function WalletTab({
                       .reduce((sum, entry) => sum + entry.sessionDelta, 0);
                     const status = deriveCustomerPackageStatus(pkg, ledgerBalance);
                     return {
+                      ledgerBalance,
                       usableBalance:
                         status === "ACTIVE" && ledgerBalance > 0 ? ledgerBalance : 0,
                       status,
                     };
                   })()
                 : getPackageUsableBalance(organization.id, pkg.id);
+              const usedSessions = usedSessionsForCustomerPackage(
+                pkg,
+                bal.ledgerBalance,
+              );
               return (
                 <li key={pkg.id}>
                   <button
                     type="button"
+                    data-customer-wallet-package={pkg.id}
                     onClick={() =>
                       setSelectedPkg((id) => (id === pkg.id ? null : pkg.id))
                     }
@@ -257,10 +264,14 @@ export function WalletTab({
                   >
                     <p className="text-[14px] font-medium text-text">{pkg.nameSnapshot}</p>
                     <p className="mt-0.5 text-xs text-secondary-text">
-                      剩餘 {bal.usableBalance} / {pkg.sessionCountSnapshot} 堂
+                      總堂數 {pkg.sessionCountSnapshot} · 剩餘 {bal.usableBalance} 堂 · 已使用{" "}
+                      {usedSessions} 堂
                       {pkg.expiresAt ? ` · 至 ${formatYmd(new Date(pkg.expiresAt))}` : ""}
                       <span className="mx-1 text-border">·</span>
                       {PACKAGE_STATUS_LABEL[bal.status] ?? bal.status}
+                    </p>
+                    <p className="mt-0.5 text-xs text-secondary-text">
+                      購買 {formatYmd(new Date(pkg.purchasedAt))}
                     </p>
                   </button>
                 </li>

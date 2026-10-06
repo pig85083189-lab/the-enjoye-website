@@ -29,6 +29,7 @@ export const COMMERCE_HYDRATE_RPC = "hydrate_checkout_from_treatment";
 export const COMMERCE_PACKAGE_HYDRATE_RPC = "hydrate_checkout_from_package";
 export const COMMERCE_SAVE_RPC = "save_checkout_draft";
 export const COMMERCE_SETTLE_RPC = "settle_checkout_draft";
+export const COMMERCE_REPAIR_PACKAGE_RPC = "repair_package_fulfillment";
 
 export type CommerceEngineAppointment = {
   appId: string;
@@ -431,6 +432,7 @@ export function saveCheckoutDraft(
     expectedUpdatedAt: string;
     payments: CheckoutDraft["payments"];
     discounts: CheckoutDraft["discounts"];
+    packageRedemption?: CheckoutDraft["packageRedemption"] | null;
   },
 ): CommerceDraftBundle {
   const current = requireDraft(snapshot, input.draftId);
@@ -446,8 +448,27 @@ export function saveCheckoutDraft(
     assertNonNegativeMoney(payment.amount, "payment.amount");
     if (payment.amount === 0) throw new Error("付款金額不可為 0");
   }
+  const packageRedemption =
+    input.packageRedemption === undefined
+      ? current.packageRedemption
+      : input.packageRedemption ?? undefined;
+  const items =
+    input.packageRedemption === undefined
+      ? current.items
+      : current.items.map((item) => {
+          if (item.type !== "SERVICE") return item;
+          if (
+            packageRedemption &&
+            item.referenceId === packageRedemption.serviceId
+          ) {
+            return recomputeItem({ ...item, discountAmount: item.lineSubtotal });
+          }
+          return recomputeItem({ ...item, discountAmount: 0 });
+        });
   const next = assembleCheckoutTotals({
     ...current,
+    items,
+    packageRedemption,
     payments: input.payments.map((payment) => ({
       ...payment,
       id: payment.id || newId("pay"),
@@ -559,6 +580,7 @@ export function settleCheckoutDraft(
       note: payment.note,
       paidAt: completedAt,
     })),
+    packageRedemption: assembled.packageRedemption,
     subtotal: assembled.subtotal,
     discountTotal: assembled.discountTotal,
     total: assembled.total,

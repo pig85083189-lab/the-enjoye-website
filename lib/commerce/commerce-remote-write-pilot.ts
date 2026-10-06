@@ -9,7 +9,7 @@
  * Commerce remote-write pilot is on. No service role. No local + remote dual write.
  */
 
-import type { CheckoutDiscount, PaymentDraft } from "./domain";
+import type { CheckoutDiscount, PackageRedemptionSelection, PaymentDraft } from "./domain";
 import { canCheckout, type CapabilityActor } from "@/lib/staff-auth/operational-capabilities";
 import {
   loadAuthenticatedIdentityCatalog,
@@ -141,6 +141,7 @@ export async function runAuthenticatedCommerceSaveDraft(
     expectedUpdatedAt: string;
     payments: PaymentDraft[];
     discounts: CheckoutDiscount[];
+    packageRedemption?: PackageRedemptionSelection | null;
   },
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
 ) {
@@ -153,7 +154,23 @@ export async function runAuthenticatedCommerceSaveDraft(
       expectedUpdatedAt: input.expectedUpdatedAt,
       payments: input.payments,
       discounts: input.discounts,
+      packageRedemption: input.packageRedemption,
     });
+  } catch (error) {
+    mapWriteError(error);
+  }
+}
+
+export async function runAuthenticatedCommerceRepairPackageFulfillment(
+  client: CommerceWriteClient,
+  transactionAppId: string,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    return await persistence.commerce.repairPackageFulfillment(transactionAppId);
   } catch (error) {
     mapWriteError(error);
   }
