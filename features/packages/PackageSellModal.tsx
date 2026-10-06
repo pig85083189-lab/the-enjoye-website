@@ -30,6 +30,7 @@ interface PackageSellModalProps {
   definitions: PackageDefinition[];
   serviceNames?: Record<string, string>;
   initialCustomerId?: string | null;
+  remoteCheckout?: boolean;
   onClose: () => void;
 }
 
@@ -42,6 +43,7 @@ export function PackageSellModal({
   definitions,
   serviceNames = {},
   initialCustomerId = null,
+  remoteCheckout = false,
   onClose,
 }: PackageSellModalProps) {
   const router = useRouter();
@@ -83,6 +85,14 @@ export function PackageSellModal({
       return;
     }
     try {
+      if (remoteCheckout) {
+        const params = new URLSearchParams({
+          customer: selected.id,
+          package: definition.id,
+        });
+        router.push(`/staff/checkout?${params.toString()}`);
+        return;
+      }
       const draft = createEmptyCheckoutDraft(organizationId, {
         locationId,
         customerId: selected.id,

@@ -26,6 +26,7 @@ import { DEFAULT_CURRENCY, type CheckoutDraft, type Transaction } from "./domain
 import { assertNonNegativeMoney } from "./money";
 
 export const COMMERCE_HYDRATE_RPC = "hydrate_checkout_from_treatment";
+export const COMMERCE_PACKAGE_HYDRATE_RPC = "hydrate_checkout_from_package";
 export const COMMERCE_SAVE_RPC = "save_checkout_draft";
 export const COMMERCE_SETTLE_RPC = "settle_checkout_draft";
 
@@ -60,6 +61,39 @@ export type CommerceEngineService = {
   organizationDbId: string;
   name: string;
   priceMinor: number | null;
+};
+
+export type CommerceEngineCustomer = {
+  appId: string;
+  dbId: string;
+  organizationAppId: string;
+  organizationDbId: string;
+};
+
+export type CommerceEngineLocation = {
+  appId: string;
+  dbId: string;
+  organizationDbId: string;
+};
+
+export type CommerceEnginePackageDefinition = {
+  appId: string;
+  dbId: string;
+  organizationDbId: string;
+  name: string;
+  sessionCount: number;
+  priceMinor: number;
+  isActive: boolean;
+};
+
+export type CommerceEnginePackageSnapshot = {
+  now: Date;
+  actor: CommerceEngineActor;
+  customer: CommerceEngineCustomer;
+  location: CommerceEngineLocation;
+  packageDefinition: CommerceEnginePackageDefinition;
+  drafts: CheckoutDraft[];
+  transactions: Transaction[];
 };
 
 export type CommerceEngineActor = {
@@ -110,7 +144,7 @@ function actorCanAccessLocation(
 }
 
 function assertActorBoundary(
-  snapshot: CommerceEngineSnapshot,
+  snapshot: { actor: CommerceEngineActor },
   organizationDbId: string,
   locationAppId: string,
 ): void {
@@ -302,6 +336,92 @@ export function hydrateCheckoutFromTreatment(
   });
   snapshot.drafts = [draft, ...snapshot.drafts];
   return { draft, transaction: existingCompleted ?? null };
+}
+
+function openUnscheduledDraftForCustomer(
+  snapshot: CommerceEnginePackageSnapshot,
+  customerAppId: string,
+): CheckoutDraft | undefined {
+  return snapshot.drafts.find(
+    (draft) =>
+      draft.customerId === customerAppId &&
+      !draft.appointmentId &&
+      (draft.status === "OPEN" || draft.status === "READY"),
+  );
+}
+
+export function hydrateCheckoutFromPackage(
+  snapshot: CommerceEnginePackageSnapshot,
+): CommerceDraftBundle {
+  assertActorBoundary(
+    snapshot,
+    snapshot.customer.organizationDbId,
+    snapshot.location.appId,
+  );
+  if (snapshot.location.organizationDbId !== snapshot.customer.organizationDbId) {
+    throw new CommerceWritePilotDeniedError();
+  }
+  if (snapshot.packageDefinition.organizationDbId !== snapshot.customer.organizationDbId) {
+    throw new CommerceWritePilotDeniedError();
+  }
+  if (!snapshot.packageDefinition.isActive) {
+    throw new Error("套票方案已停用，無法結帳");
+  }
+  if (!Number.isInteger(snapshot.packageDefinition.sessionCount) || snapshot.packageDefinition.sessionCount < 1) {
+    throw new Error("套票堂數尚未設定，無法結帳");
+  }
+  assertNonNegativeMoney(snapshot.packageDefinition.priceMinor, "package.priceMinor");
+
+  const matching = snapshot.drafts.find(
+    (draft) =>
+      draft.customerId === snapshot.customer.appId &&
+      !draft.appointmentId &&
+      (draft.status === "OPEN" || draft.status === "READY") &&
+      draft.items.some(
+        (item) =>
+          item.type === "PACKAGE_PURCHASE" &&
+          item.referenceId === snapshot.packageDefinition.appId,
+      ),
+  );
+  if (matching) {
+    return { draft: matching, transaction: null };
+  }
+
+  const existingOpen = openUnscheduledDraftForCustomer(snapshot, snapshot.customer.appId);
+  if (existingOpen) {
+    return { draft: existingOpen, transaction: null };
+  }
+
+  const now = snapshot.now.toISOString();
+  const item = recomputeItem({
+    id: newId("cli"),
+    type: "PACKAGE_PURCHASE",
+    referenceId: snapshot.packageDefinition.appId,
+    nameSnapshot: snapshot.packageDefinition.name,
+    unitPrice: snapshot.packageDefinition.priceMinor,
+    quantity: 1,
+    discountAmount: 0,
+    sessionCountSnapshot: snapshot.packageDefinition.sessionCount,
+  });
+  const draft = assembleCheckoutTotals({
+    id: newId("chk"),
+    organizationId: snapshot.customer.organizationAppId,
+    locationId: snapshot.location.appId,
+    customerId: snapshot.customer.appId,
+    items: [item],
+    discounts: [],
+    payments: [],
+    subtotal: item.lineSubtotal,
+    discountTotal: 0,
+    total: item.lineTotal,
+    currency: DEFAULT_CURRENCY,
+    status: "OPEN",
+    createdByStaffId: snapshot.actor.operationalStaffId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  snapshot.drafts = [draft, ...snapshot.drafts];
+  return { draft, transaction: null };
 }
 
 export function saveCheckoutDraft(

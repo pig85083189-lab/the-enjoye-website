@@ -15,6 +15,8 @@ import {
   type PackagePlanStep,
   type PackagePlanValidityMode,
 } from "@/lib/packages/package-plans-derived";
+import { submitPackageRemoteCreate } from "@/features/packages/use-package-remote-write";
+import { packageWriteUserMessage } from "@/lib/packages/package-write-ui-error";
 import {
   createPackageDefinition,
   updatePackageDefinition,
@@ -24,6 +26,7 @@ import { cn } from "@/lib/utils";
 interface PackagePlanEditorDialogProps {
   open: boolean;
   mode: "create" | "edit";
+  remoteWritePilot?: boolean;
   organizationId: string;
   staffId: string;
   currentLocationName: string;
@@ -41,6 +44,7 @@ const FOCUSABLE =
 export function PackagePlanEditorDialog({
   open,
   mode,
+  remoteWritePilot = false,
   organizationId,
   staffId,
   currentLocationName,
@@ -132,7 +136,7 @@ export function PackagePlanEditorDialog({
     setError("");
   }
 
-  function submit() {
+  async function submit() {
     if (!canManage) {
       setError("沒有權限管理套票方案");
       return;
@@ -144,6 +148,24 @@ export function PackagePlanEditorDialog({
     }
     setBusy(true);
     try {
+      if (remoteWritePilot) {
+        if (mode === "edit") {
+          throw new Error("目前僅能新增套票方案");
+        }
+        const created = await submitPackageRemoteCreate({
+          organizationId,
+          name: parsed.value.name,
+          description: parsed.value.description,
+          includedServiceIds: parsed.value.includedServiceIds,
+          sessionCount: parsed.value.sessionCount,
+          priceMinor: parsed.value.priceMinor,
+          validityDays: parsed.value.validityDays ?? undefined,
+          isActive: parsed.value.isActive,
+          createdByStaffId: staffId,
+        });
+        onSaved(created.id);
+        return;
+      }
       if (mode === "edit" && definitionId) {
         const updated = updatePackageDefinition(
           organizationId,
@@ -181,7 +203,7 @@ export function PackagePlanEditorDialog({
       }
       onSaved(created.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "儲存失敗");
+      setError(remoteWritePilot ? packageWriteUserMessage(err) : err instanceof Error ? err.message : "儲存失敗");
     } finally {
       setBusy(false);
     }

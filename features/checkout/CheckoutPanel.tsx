@@ -451,6 +451,19 @@ export function CheckoutPanel({
           <div className="px-5 pb-4">
             {tab === "consume" ? (
               <div className="space-y-3">
+                {lineItems.some((row) => row.type === "PACKAGE_PURCHASE") ? (
+                  <div
+                    data-checkout-item-kind="PACKAGE_PURCHASE"
+                    className="rounded-xl border border-[#E4D4C8] bg-[#FBF4F3] px-3 py-2"
+                  >
+                    <p className="text-[12px] font-semibold tracking-[0.04em] text-[#C56B70]">
+                      PACKAGE PURCHASE
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-secondary-text">
+                      套票購買 · 尚未付款 · 尚未建立客戶套票
+                    </p>
+                  </div>
+                ) : null}
                 {lineItems.length === 0 && item.kind === "appointment" ? (
                   <div className="rounded-xl border border-border/80 bg-[#FBF8F6] px-3 py-2.5">
                     <div className="flex items-start justify-between gap-2">
@@ -485,11 +498,16 @@ export function CheckoutPanel({
                               {row.nameSnapshot}
                             </p>
                             <p className="mt-0.5 text-[12px] text-[#6E6666]">
-                              {CHECKOUT_ITEM_TYPE_LABEL[row.type] ?? row.type}
+                              {row.type === "PACKAGE_PURCHASE"
+                                ? "套票購買 · PACKAGE PURCHASE"
+                                : (CHECKOUT_ITEM_TYPE_LABEL[row.type] ?? row.type)}
+                              {row.type === "PACKAGE_PURCHASE" && row.sessionCountSnapshot
+                                ? ` · ${row.sessionCountSnapshot} 堂`
+                                : null}
                               {row.type === "SERVICE" && item.durationMinutes
                                 ? ` · ${item.durationMinutes} 分鐘`
                                 : null}
-                              {item.staffName && row.type === "SERVICE"
+                              {item.staffName && (row.type === "SERVICE" || row.type === "PACKAGE_PURCHASE")
                                 ? ` · ${item.staffName}`
                                 : null}
                               {` · ×${row.quantity}`}
