@@ -19,15 +19,14 @@ const sql = readFileSync(
 );
 
 describe("finance expense domain + schema", () => {
-  it("creates expenses table with org/location RLS and SELECT-only grants", () => {
+  it("creates expenses table with org/location RLS and SELECT+INSERT grants", () => {
     expect(sql).toMatch(/create table if not exists public\.expenses/);
     expect(sql).toMatch(/organization_id uuid not null/);
     expect(sql).toMatch(/location_id uuid not null/);
     expect(sql).toMatch(/amount_minor integer not null/);
     expect(sql).toMatch(/user_has_org_membership\(expenses\.organization_id\)/);
     expect(sql).toMatch(/user_can_access_location\(expenses\.organization_id, expenses\.location_id\)/);
-    expect(sql).toMatch(/grant select on public\.expenses to authenticated/);
-    expect(sql).not.toMatch(/grant insert on public\.expenses/);
+    expect(sql).toMatch(/grant select, insert on public\.expenses to authenticated/);
     expect(sql).not.toMatch(/grant update on public\.expenses/);
     expect(sql).not.toMatch(/\binsert into public\.expenses\b/i);
     expect(sql).not.toMatch(/create table[\s\S]*transaction_payments/);
@@ -60,7 +59,7 @@ describe("finance expense domain + schema", () => {
         locationId: LOC_ENJOYE_PRIMARY_ID,
         expenseDate: "2026-10-06",
         category: "RENT",
-        name: "房租",
+        name: "店租",
         amountMinor: 23000,
         paymentMethod: "TRANSFER",
         vendor: "房東",
@@ -83,7 +82,7 @@ describe("finance expense domain + schema", () => {
     expect(found[0].categoryLabel).toBe("耗材");
   });
 
-  it("refuses expense writes in V1A", () => {
+  it("refuses expense writes when the WRITE pilot is off", () => {
     expect(() => assertExpenseAmountMinor(0)).toThrow(/positive integer/);
     expect(() => createAuthenticatedExpenseWrite()).toThrow(EXPENSE_REMOTE_WRITE_PILOT_OFF_MESSAGE);
     const store = new AuthenticatedExpenseReadStore({

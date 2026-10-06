@@ -58,7 +58,7 @@ describe("finance remote READ canary", () => {
     expect(ledger.expenses).toEqual([]);
   });
 
-  it("keeps Expense CREATE and Stored Value WRITE closed", () => {
+  it("keeps Expense WRITE flag-gated and Stored Value WRITE closed", () => {
     expect(isFinanceRemoteReadPilotEnabled({ BEAUTY_OS_FINANCE_REMOTE_READ_PILOT: "1" })).toBe(true);
     expect(isExpenseRemoteWritePilotEnabled({ BEAUTY_OS_FINANCE_REMOTE_READ_PILOT: "1" })).toBe(false);
     expect(() => createAuthenticatedExpenseWrite()).toThrow();

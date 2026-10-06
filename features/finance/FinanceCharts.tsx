@@ -23,12 +23,15 @@ function colorFor(key: string, index: number): string {
     SUPPLIES: "#8A7E76",
     MARKETING: "#A98B8E",
     UTILITIES: "#7A8B9A",
-    PRODUCT_INVENTORY: "#C4B08A",
+    PRODUCTS: "#C4B08A",
     SERVICE: "#C9797D",
     PACKAGE_SALE: "#C4A06A",
     PRODUCT: "#8A7E76",
     OTHER: "#C9C0B8",
-    MISC: "#C9C0B8",
+    MAINTENANCE: "#8A7E76",
+    FEES: "#A98B8E",
+    EQUIPMENT: "#7A8B9A",
+    TAX: "#C4A06A",
   };
   return named[key] ?? SLICE_COLORS[index % SLICE_COLORS.length];
 }

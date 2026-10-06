@@ -51,6 +51,9 @@ function buildFixtureContext(): FinanceWorkspaceContext {
       { id: "cust-fx-2", name: "喻茗楷", phone: "0980929616" },
     ],
     remoteStatus: "data",
+    canCreateExpense: false,
+    staffNameById: { "staff-001": "怡蓁" },
+    refreshFinance: () => undefined,
   };
 }
 

@@ -55,7 +55,7 @@ export const STRATEGY_B_RLS_MIGRATION_FILE =
 export const COMMERCE_TABLE_WRITE_HARDENING_MIGRATION_FILE =
   "supabase/migrations/20261006130000_commerce_table_write_hardening.sql";
 
-/** Finance V1A Expense foundation. Draft only — do not Production apply in this PR. */
+/** Finance V1B Expense foundation. Additive draft — Preview apply only; do not Production apply in this PR. */
 export const FINANCE_EXPENSE_FOUNDATION_MIGRATION_FILE =
   "supabase/migrations/20261007120000_finance_expense_foundation.sql";
 

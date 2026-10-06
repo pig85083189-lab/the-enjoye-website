@@ -33,6 +33,7 @@ describe("finance preview runtime boundary", () => {
     );
     expect(read("features/finance/FinanceExpensesPageClient.tsx")).toMatch(/disabled=\{formDisabled\}/);
     expect(read("features/finance/FinanceExpensesPageClient.tsx")).toMatch(/aria-disabled=\{formDisabled\}/);
+    expect(read("features/finance/FinanceExpensesPageClient.tsx")).toMatch(/ExpenseFormDialog/);
     expect(read("features/finance/FinanceExpensesPageClient.tsx")).not.toMatch(/localStorage/);
   });
 

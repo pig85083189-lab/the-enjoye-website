@@ -21,6 +21,8 @@ export type FinanceExpenseRow = {
   paymentLabel: string;
   vendor: string;
   note: string;
+  createdByStaffId: string;
+  createdByLabel: string;
 };
 
 export function expenseMatchesSearch(expense: Expense, query: string): boolean {
@@ -38,6 +40,7 @@ export function buildFinanceExpenseRows(input: {
   locationId: string;
   range: FinanceDateRange;
   query?: string;
+  staffNameById?: Record<string, string>;
 }): FinanceExpenseRow[] {
   return input.expenses
     .filter(
@@ -60,10 +63,16 @@ export function buildFinanceExpenseRows(input: {
       name: row.name,
       amountMinor: row.amountMinor,
       paymentMethod: row.paymentMethod,
-      paymentLabel: EXPENSE_PAYMENT_METHOD_LABEL[row.paymentMethod],
+      paymentLabel: row.paymentMethod ? EXPENSE_PAYMENT_METHOD_LABEL[row.paymentMethod] : "—",
       vendor: row.vendor,
       note: row.note,
+      createdByStaffId: row.createdByStaffId,
+      createdByLabel: input.staffNameById?.[row.createdByStaffId] || row.createdByStaffId,
     }));
+}
+
+export function isGeneratedExpenseAppId(id: string): boolean {
+  return /^exp-[a-z0-9]+-[a-z0-9]+$/i.test(id);
 }
 
 export function assertExpenseAmountMinor(amountMinor: number): number {

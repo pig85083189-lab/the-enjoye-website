@@ -43,8 +43,11 @@ export function expenseFromRemoteRow(
   const id = asString(row.app_id) || asString(row.id);
   const category = asString(row.category);
   const paymentMethod = asString(row.payment_method);
-  if (!id || !isExpenseCategory(category) || !isExpensePaymentMethod(paymentMethod)) {
+  if (!id || !isExpenseCategory(category)) {
     throw new Error("Remote expense row is missing required columns");
+  }
+  if (paymentMethod && !isExpensePaymentMethod(paymentMethod)) {
+    throw new Error("Remote expense row has an invalid payment method");
   }
   return {
     id,
@@ -55,12 +58,42 @@ export function expenseFromRemoteRow(
     category,
     name: asString(row.name),
     amountMinor: asInt(row.amount_minor),
-    paymentMethod,
+    paymentMethod: paymentMethod && isExpensePaymentMethod(paymentMethod) ? paymentMethod : null,
     vendor: asString(row.vendor),
     note: asString(row.note),
     receiptUrl: asNullableString(row.receipt_url),
     createdByStaffId: asString(row.created_by_staff_id),
     createdAt: asString(row.created_at),
     updatedAt: asString(row.updated_at),
+  };
+}
+
+export type RemoteExpenseInsert = {
+  organization_id: string;
+  location_id: string;
+  app_id: string;
+  expense_date: string;
+  category: string;
+  name: string;
+  amount_minor: number;
+  payment_method: string | null;
+  vendor: string | null;
+  note: string | null;
+  created_by_staff_id: string;
+};
+
+export function remoteExpensePayload(row: RemoteExpenseInsert): Record<string, unknown> {
+  return {
+    organization_id: row.organization_id,
+    location_id: row.location_id,
+    app_id: row.app_id,
+    expense_date: row.expense_date,
+    category: row.category,
+    name: row.name,
+    amount_minor: row.amount_minor,
+    payment_method: row.payment_method,
+    vendor: row.vendor,
+    note: row.note,
+    created_by_staff_id: row.created_by_staff_id,
   };
 }

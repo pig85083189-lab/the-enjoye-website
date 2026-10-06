@@ -36,6 +36,7 @@ describe("finance UI boundary", () => {
     const income = read("features/finance/FinanceIncomePageClient.tsx");
     expect(income).toMatch(/\/staff\/transactions\?id=/);
     expect(income).not.toMatch(/TransactionQuickView/);
+    expect(income).not.toMatch(/新增收入|修改收入|刪除收入/);
     expect(read("features/finance/FinanceWorkspace.tsx")).not.toMatch(/visual-fixture/);
   });
 

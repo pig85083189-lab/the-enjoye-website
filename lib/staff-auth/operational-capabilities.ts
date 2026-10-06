@@ -39,6 +39,8 @@ export const TREATMENT_ACCESS_ROLES = new Set<StaffRole>([
   "RECEPTIONIST",
 ]);
 
+export const EXPENSE_CREATE_ROLES = new Set<StaffRole>(["OWNER", "MANAGER"]);
+
 export type CapabilityActor = {
   role?: StaffRole | string | null;
   isActive?: boolean;
@@ -77,6 +79,10 @@ export function canReadTreatment(actor: CapabilityActor): boolean {
 
 export function canWriteTreatment(actor: CapabilityActor): boolean {
   return hasRole(actor, TREATMENT_ACCESS_ROLES);
+}
+
+export function canCreateExpense(actor: CapabilityActor): boolean {
+  return hasRole(actor, EXPENSE_CREATE_ROLES);
 }
 
 export function resolveCheckoutAccess(input: {

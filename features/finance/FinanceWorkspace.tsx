@@ -33,6 +33,8 @@ import {
   taipeiYmdFromInstant,
 } from "@/lib/finance/period";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
+import { listMemberships } from "@/lib/tenant/organization-store";
+import { canCreateExpense } from "@/lib/staff-auth/operational-capabilities";
 import { cn } from "@/lib/utils";
 import { FinanceDonut, FinanceTrendChart } from "./FinanceCharts";
 import { financeRemoteRows, useFinanceRemote } from "./use-finance-remote";
@@ -71,12 +73,13 @@ export function FinanceWorkspace({
   description: string;
 }) {
   const pathname = usePathname();
-  const { organization, currentLocation } = useOrganization();
+  const { organization, currentLocation, membership } = useOrganization();
   const nowYmd = taipeiYmdFromInstant(new Date());
   const [kind, setKind] = useState<FinancePeriodKind>("month");
   const [anchorYmd, setAnchorYmd] = useState(nowYmd);
   const [customStart, setCustomStart] = useState(nowYmd.slice(0, 8) + "01");
   const [customEnd, setCustomEnd] = useState(nowYmd);
+  const [refreshEpoch, setRefreshEpoch] = useState(0);
   const range = useMemo(
     () =>
       resolveFinancePeriod(kind, anchorYmd, {
@@ -97,6 +100,7 @@ export function FinanceWorkspace({
     organizationId: organization.id,
     locationId: currentLocation?.id ?? "",
     enabled: financeRemoteReadPilot && Boolean(currentLocation?.id),
+    refreshEpoch,
   });
   const rows = financeRemoteRows(remote);
   const expenseAvailability = rows.expenseAvailability;
@@ -118,6 +122,20 @@ export function FinanceWorkspace({
   const previousTotals = sumFinanceTotals(previous.metrics, previous.expenses);
   const trend = buildFinanceTrend(range, scoped.metrics, scoped.expenses);
   const expenseSlices = buildExpenseCategorySlices(scoped.expenses);
+  const staffNameById = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const row of listMemberships(organization.id)) {
+      names[row.userId] = row.displayName;
+    }
+    return names;
+  }, [organization.id]);
+  const canCreate =
+    expenseRemoteWritePilot &&
+    expenseAvailability === "ready" &&
+    canCreateExpense({
+      role: membership?.role,
+      isActive: membership?.isActive,
+    });
 
   return (
     <div
@@ -271,6 +289,9 @@ export function FinanceWorkspace({
         transactions: rows.transactions,
         customers: rows.customers,
         remoteStatus: remote.status,
+        canCreateExpense: canCreate,
+        staffNameById,
+        refreshFinance: () => setRefreshEpoch((value) => value + 1),
       })}
     </div>
   );
@@ -292,6 +313,9 @@ export type FinanceWorkspaceContext = {
   transactions: ReturnType<typeof financeRemoteRows>["transactions"];
   customers: ReturnType<typeof financeRemoteRows>["customers"];
   remoteStatus: string;
+  canCreateExpense: boolean;
+  staffNameById: Record<string, string>;
+  refreshFinance: () => void;
 };
 
 export function FinanceKpiCard({

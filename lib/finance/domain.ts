@@ -26,57 +26,61 @@ export const FINANCE_INCOME_KIND_LABEL: Record<FinanceIncomeKind, string> = {
 };
 
 export type ExpenseCategory =
-  | "SUPPLIES"
-  | "PRODUCT_INVENTORY"
-  | "SALARY"
   | "RENT"
   | "UTILITIES"
+  | "SUPPLIES"
+  | "PRODUCTS"
+  | "SALARY"
   | "MARKETING"
   | "EQUIPMENT"
-  | "TRAINING"
-  | "SOFTWARE"
+  | "MAINTENANCE"
+  | "FEES"
   | "TAX"
-  | "MISC"
   | "OTHER";
 
 export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
-  SUPPLIES: "耗材",
-  PRODUCT_INVENTORY: "商品進貨",
-  SALARY: "薪資",
-  RENT: "房租",
+  RENT: "店租",
   UTILITIES: "水電",
-  MARKETING: "廣告行銷",
+  SUPPLIES: "耗材",
+  PRODUCTS: "產品進貨",
+  SALARY: "薪資",
+  MARKETING: "行銷廣告",
   EQUIPMENT: "設備",
-  TRAINING: "教育訓練",
-  SOFTWARE: "軟體",
-  TAX: "稅費",
-  MISC: "雜項",
+  MAINTENANCE: "維修",
+  FEES: "手續費",
+  TAX: "稅務",
   OTHER: "其他",
 };
 
 export const EXPENSE_CATEGORY_ORDER: ExpenseCategory[] = [
-  "SALARY",
   "RENT",
-  "SUPPLIES",
-  "MARKETING",
   "UTILITIES",
-  "PRODUCT_INVENTORY",
+  "SUPPLIES",
+  "PRODUCTS",
+  "SALARY",
+  "MARKETING",
   "EQUIPMENT",
-  "TRAINING",
-  "SOFTWARE",
+  "MAINTENANCE",
+  "FEES",
   "TAX",
-  "MISC",
   "OTHER",
 ];
 
-export type ExpensePaymentMethod = "CASH" | "CARD" | "TRANSFER" | "OTHER";
+export type ExpensePaymentMethod = "CASH" | "TRANSFER" | "CARD" | "OTHER";
 
 export const EXPENSE_PAYMENT_METHOD_LABEL: Record<ExpensePaymentMethod, string> = {
   CASH: "現金",
-  CARD: "信用卡",
   TRANSFER: "轉帳",
+  CARD: "刷卡",
   OTHER: "其他",
 };
+
+export const EXPENSE_PAYMENT_METHOD_ORDER: ExpensePaymentMethod[] = [
+  "CASH",
+  "TRANSFER",
+  "CARD",
+  "OTHER",
+];
 
 export type FinanceDateRange = {
   startYmd: string;
@@ -92,7 +96,7 @@ export type Expense = {
   category: ExpenseCategory;
   name: string;
   amountMinor: number;
-  paymentMethod: ExpensePaymentMethod;
+  paymentMethod: ExpensePaymentMethod | null;
   vendor: string;
   note: string;
   receiptUrl: string | null;

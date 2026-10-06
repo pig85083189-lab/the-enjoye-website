@@ -35,6 +35,7 @@ export function useFinanceRemote(input: {
   organizationId: string;
   locationId: string;
   enabled: boolean;
+  refreshEpoch?: number;
 }): FinanceRemoteState {
   const [result, setResult] = useState<{
     key: string;
@@ -87,7 +88,7 @@ export function useFinanceRemote(input: {
     return () => {
       cancelled = true;
     };
-  }, [input.enabled, input.organizationId, input.locationId]);
+  }, [input.enabled, input.organizationId, input.locationId, input.refreshEpoch]);
 
   if (!input.enabled) return { status: "off" };
   if (!result || result.key !== `${input.organizationId}:${input.locationId}`) {
