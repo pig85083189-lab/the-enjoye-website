@@ -5,6 +5,7 @@ import { COMMERCE_REMOTE_READ_PILOT_ENV } from "@/lib/commerce/commerce-remote-r
 import { COMMERCE_REMOTE_WRITE_PILOT_ENV } from "@/lib/commerce/commerce-remote-write-flag";
 import {
   runAuthenticatedCommerceHydrate,
+  runAuthenticatedCommerceHydrateFromPackage,
   runAuthenticatedCommerceSaveDraft,
   runAuthenticatedCommerceSettle,
   type CommerceWriteClient,
@@ -84,6 +85,75 @@ export function useCommerceRemoteDraft(input: {
 
   if (!input.enabled) return { status: "off" };
   if (!input.appointmentId || !input.treatmentId) return { status: "idle" };
+  if (!result || result.key !== requestKey) return { status: "loading" };
+  return result.state;
+}
+
+export type CommerceRemotePackageDraftState =
+  | { status: "off" }
+  | { status: "idle" }
+  | { status: "loading" }
+  | {
+      status: "data";
+      draft: CheckoutDraft;
+      transaction: Transaction | null;
+      customer: { id: string; name: string; phone: string } | null;
+    }
+  | { status: "error"; message: string };
+
+export function useCommerceRemotePackageDraft(input: {
+  customerId: string | null;
+  packageId: string | null;
+  locationId: string | null;
+  enabled: boolean;
+}): CommerceRemotePackageDraftState {
+  const requestKey = `${input.customerId ?? ""}:${input.packageId ?? ""}:${input.locationId ?? ""}`;
+  const [result, setResult] = useState<{
+    key: string;
+    state: Exclude<CommerceRemotePackageDraftState, { status: "off" } | { status: "loading" }>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!input.enabled || !input.customerId || !input.packageId || !input.locationId) {
+      return undefined;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const bundle = await runAuthenticatedCommerceHydrateFromPackage(
+          requireClient(),
+          {
+            customerId: input.customerId!,
+            packageId: input.packageId!,
+            locationId: input.locationId!,
+          },
+          commerceWritePilotEnv(),
+        );
+        if (cancelled) return;
+        setResult({
+          key: requestKey,
+          state: {
+            status: "data",
+            draft: bundle.draft,
+            transaction: bundle.transaction,
+            customer: bundle.customer ?? null,
+          },
+        });
+      } catch (error: unknown) {
+        if (cancelled) return;
+        setResult({
+          key: requestKey,
+          state: { status: "error", message: toCommerceUserMessage(error) },
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [input.enabled, input.customerId, input.packageId, input.locationId, requestKey]);
+
+  if (!input.enabled) return { status: "off" };
+  if (!input.customerId || !input.packageId || !input.locationId) return { status: "idle" };
   if (!result || result.key !== requestKey) return { status: "loading" };
   return result.state;
 }

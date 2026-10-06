@@ -23,6 +23,14 @@ import {
   PACKAGE_LEDGER_TYPE_LABEL,
 } from "@/lib/packages/domain";
 import {
+  deriveCustomerPackageStatus,
+} from "@/lib/packages/domain";
+import {
+  rowsFromPackageRemoteState,
+  usePackageRemoteCustomerPackages,
+  usePackageRemoteLedger,
+} from "@/features/packages/use-package-remote-read";
+import {
   adjustPackageSessions,
   getPackageUsableBalance,
   listCustomerPackages,
@@ -46,6 +54,7 @@ interface WalletTabProps {
   section?: "packages" | "stored-value";
   onOpenTransactions?: () => void;
   commerceRemoteRead?: boolean;
+  packageRemoteRead?: boolean;
   remoteTransactions?: Transaction[] | null;
 }
 
@@ -54,6 +63,7 @@ export function WalletTab({
   section,
   onOpenTransactions,
   commerceRemoteRead = false,
+  packageRemoteRead = false,
   remoteTransactions = null,
 }: WalletTabProps) {
   const router = useRouter();
@@ -66,18 +76,27 @@ export function WalletTab({
     !commerceRemoteRead &&
     (membership?.role === "OWNER" || membership?.role === "MANAGER");
 
+  const remotePackages = usePackageRemoteCustomerPackages(
+    organization.id,
+    packageRemoteRead,
+    customerId,
+  );
+  const remoteLedger = usePackageRemoteLedger(organization.id, packageRemoteRead, customerId);
   const svBalance = commerceRemoteRead
     ? 0
     : getCustomerStoredValueBalance(organization.id, customerId);
-  const packages = commerceRemoteRead
-    ? []
-    : listCustomerPackages(organization.id, { customerId });
+  const packages = packageRemoteRead
+    ? rowsFromPackageRemoteState(remotePackages)
+    : commerceRemoteRead
+      ? []
+      : listCustomerPackages(organization.id, { customerId });
   const definitions = commerceRemoteRead
     ? []
     : listPackageDefinitions(organization.id, { activeOnly: true });
   const svLedger = commerceRemoteRead
     ? []
     : listStoredValueLedger(organization.id, { customerId });
+  const remoteLedgerRows = rowsFromPackageRemoteState(remoteLedger);
   const recentTx = deriveRecentTransactions(
     resolveCustomer360Transactions(
       commerceRemoteRead ? (remoteTransactions ?? []) : null,
@@ -156,8 +175,12 @@ export function WalletTab({
   return (
     <div
       className="space-y-5"
-      data-customer-wallet-source={commerceRemoteRead ? "remote-pilot" : "local"}
-      data-customer-wallet-mode={commerceRemoteRead ? "readonly" : "local-write"}
+      data-customer-wallet-source={
+        packageRemoteRead ? "package-remote-pilot" : commerceRemoteRead ? "remote-pilot" : "local"
+      }
+      data-customer-wallet-mode={
+        commerceRemoteRead || packageRemoteRead ? "readonly" : "local-write"
+      }
     >
       {error ? (
         <p className="text-sm text-[#B07A4A]" role="alert">
@@ -190,7 +213,7 @@ export function WalletTab({
       <Card padding="md" className="space-y-3" id="customer-wallet-packages">
         <div className="flex items-baseline justify-between gap-2">
           <h3 className="text-[15px] font-semibold text-text">套票</h3>
-          {commerceRemoteRead ? (
+          {commerceRemoteRead && !packageRemoteRead ? (
             <span className="text-xs text-secondary-text">尚未開放</span>
           ) : (
             <Link
@@ -206,7 +229,19 @@ export function WalletTab({
         ) : (
           <ul className="space-y-2">
             {packages.map((pkg) => {
-              const bal = getPackageUsableBalance(organization.id, pkg.id);
+              const bal = packageRemoteRead
+                ? (() => {
+                    const ledgerBalance = remoteLedgerRows
+                      .filter((entry) => entry.customerPackageId === pkg.id)
+                      .reduce((sum, entry) => sum + entry.sessionDelta, 0);
+                    const status = deriveCustomerPackageStatus(pkg, ledgerBalance);
+                    return {
+                      usableBalance:
+                        status === "ACTIVE" && ledgerBalance > 0 ? ledgerBalance : 0,
+                      status,
+                    };
+                  })()
+                : getPackageUsableBalance(organization.id, pkg.id);
               return (
                 <li key={pkg.id}>
                   <button
@@ -229,8 +264,12 @@ export function WalletTab({
             })}
           </ul>
         )}
-        {commerceRemoteRead ? (
+        {commerceRemoteRead && !packageRemoteRead ? (
           <p className="text-sm text-secondary-text">套票尚未開放</p>
+        ) : packageRemoteRead ? (
+          <p className="text-xs text-secondary-text">
+            正式套票讀取自遠端帳本。購買請至套票管理，尚未付款不會建立堂數。
+          </p>
         ) : definitions.length > 0 ? (
           <details className="rounded-2xl border border-border/80 bg-[#FBF4F3]/40 px-3">
             <summary className="flex min-h-11 cursor-pointer list-none items-center text-sm text-secondary-text [&::-webkit-details-marker]:hidden">

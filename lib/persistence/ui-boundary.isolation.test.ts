@@ -594,3 +594,30 @@ describe("Phase 1C-6H.2 commerce remote write UI boundary", () => {
     expect(panel).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
   });
 });
+
+describe("Phase 1C-6H.3A package remote read UI boundary", () => {
+  it("keeps RSC pages on Package READ flag files", () => {
+    const packagesPage = readFileSync(path.join(ROOT, "app/staff/(app)/packages/page.tsx"), "utf8");
+    const customerPage = readFileSync(
+      path.join(ROOT, "app/staff/(app)/customers/[id]/page.tsx"),
+      "utf8",
+    );
+    const readFlag = readFileSync(
+      path.join(ROOT, "lib/packages/package-remote-read-flag.ts"),
+      "utf8",
+    );
+    const writeFlag = readFileSync(
+      path.join(ROOT, "lib/packages/package-remote-write-flag.ts"),
+      "utf8",
+    );
+    expect(packagesPage).toMatch(/isPackageRemoteReadPilotEnabled/);
+    expect(packagesPage).toMatch(/package-remote-read-flag/);
+    expect(packagesPage).not.toMatch(/package-remote-read-pilot|AuthenticatedPackageReadStore/);
+    expect(packagesPage).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
+    expect(customerPage).toMatch(/isPackageRemoteReadPilotEnabled/);
+    expect(customerPage).not.toMatch(/package-remote-read-pilot/);
+    expect(readFlag).not.toMatch(/IdentitySupabaseClient|AuthenticatedPackageReadStore/);
+    expect(writeFlag).toMatch(/isPackageRemoteReadPilotEnabled/);
+    expect(writeFlag).not.toMatch(/createPurchasedPackage|hydrate_checkout_from_package/);
+  });
+});

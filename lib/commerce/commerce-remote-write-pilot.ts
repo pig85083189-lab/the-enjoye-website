@@ -109,6 +109,31 @@ export async function runAuthenticatedCommerceHydrate(
   }
 }
 
+export async function runAuthenticatedCommerceHydrateFromPackage(
+  client: CommerceWriteClient,
+  input: {
+    customerId: string;
+    packageId: string;
+    locationId: string;
+  },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    const bundle = await persistence.commerce.hydrateFromPackage({
+      customerAppId: input.customerId,
+      packageDefinitionAppId: input.packageId,
+      locationAppId: input.locationId,
+    });
+    const customer = await persistence.commerce.getCustomerDisplay(input.customerId);
+    return { ...bundle, customer };
+  } catch (error) {
+    mapWriteError(error);
+  }
+}
+
 export async function runAuthenticatedCommerceSaveDraft(
   client: CommerceWriteClient,
   input: {
