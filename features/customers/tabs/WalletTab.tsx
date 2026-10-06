@@ -186,6 +186,10 @@ export function WalletTab({
       data-customer-wallet-mode={
         commerceRemoteRead || packageRemoteRead ? "readonly" : "local-write"
       }
+      data-customer-wallet-packages-status={
+        packageRemoteRead ? remotePackages.status : "local"
+      }
+      data-customer-wallet-packages-count={packages.length}
     >
       {error ? (
         <p className="text-sm text-[#B07A4A]" role="alert">
@@ -229,7 +233,13 @@ export function WalletTab({
             </Link>
           )}
         </div>
-        {packages.length === 0 ? (
+        {packageRemoteRead && remotePackages.status === "loading" ? (
+          <p className="text-sm text-secondary-text">載入套票中…</p>
+        ) : packageRemoteRead && remotePackages.status === "error" ? (
+          <p className="text-sm text-[#B07A4A]" role="alert">
+            {remotePackages.message}
+          </p>
+        ) : packages.length === 0 ? (
           <p className="text-sm text-secondary-text">尚無套票</p>
         ) : (
           <ul className="space-y-2">

@@ -133,6 +133,8 @@ describe("Phase 1C-6H.3B package fulfillment + redemption", () => {
     expect(wallet).toMatch(/usedSessionsForCustomerPackage/);
     expect(wallet).toMatch(/總堂數/);
     expect(wallet).toMatch(/已使用/);
+    expect(wallet).toMatch(/載入套票中/);
+    expect(wallet).toMatch(/data-customer-wallet-packages-status/);
     expect(panel).toMatch(/listUsablePackagesForServiceFromRows/);
     expect(panel).toMatch(/packageRemoteRead/);
     expect(panel).toMatch(/persistRemotePackageRedemption/);
