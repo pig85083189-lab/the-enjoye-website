@@ -19,6 +19,14 @@ import {
   WeekGrid,
 } from "@/features/calendar/CalendarViews";
 import { useCalendarRemoteAppointments } from "@/features/calendar/use-calendar-remote-read";
+import {
+  treatmentsFromRemoteListState,
+  useTreatmentRemoteList,
+} from "@/features/treatments/use-treatment-remote-read";
+import {
+  indexTreatmentsByAppointmentId,
+  presentAppointmentStatusFromTreatment,
+} from "@/lib/treatments/treatment-today";
 import { submitCalendarRemoteAppointmentCancel } from "@/features/calendar/use-calendar-remote-cancel";
 import {
   submitCalendarRemoteAppointmentCreate,
@@ -267,12 +275,26 @@ export function CalendarPage({
         organizationId: organization.id,
         locationId,
       });
+  const remoteTreatments = useTreatmentRemoteList(
+    organization.id,
+    treatmentRemoteReadPilot,
+  );
+  const treatmentsByAppointment = indexTreatmentsByAppointmentId(
+    treatmentsFromRemoteListState(remoteTreatments),
+  );
   const appointments = applyRosterStaffDisplayNames(
     calendarRemoteReadPilot && remoteState.status === "data"
       ? remoteState.value
       : localAppointments,
     staffRoster,
-  );
+  ).map((item) => {
+    if (!treatmentRemoteReadPilot) return item;
+    const presented = presentAppointmentStatusFromTreatment(
+      item.status,
+      treatmentsByAppointment.get(item.id)?.status,
+    );
+    return presented === item.status ? item : { ...item, status: presented };
+  });
   const scheduleDay = view === "day" ? anchor : (now ?? anchor);
   const rangeFromYmd = formatYmd(rangeFrom);
   const rangeToYmd = formatYmd(rangeTo);

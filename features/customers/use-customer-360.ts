@@ -59,7 +59,7 @@ import {
   pickRemoteAppointmentForCustomer,
   treatmentWorkspaceEntryHref,
 } from "@/lib/treatments/treatment-identity";
-import type { Customer } from "@/types";
+import type { Customer, Service } from "@/types";
 import type { TreatmentDraft } from "@/types/treatment";
 
 export type Customer360Snapshot = {
@@ -85,6 +85,7 @@ export function useCustomer360Snapshot(
   options?: {
     remoteAppointments?: ScheduleAppointment[] | null;
     remoteTreatments?: TreatmentDraft[] | null;
+    remoteCatalog?: Service[] | null;
   },
 ): Customer360Snapshot {
   const { organization } = useOrganization();
@@ -106,6 +107,7 @@ export function useCustomer360Snapshot(
 
   const remoteAppointments = options?.remoteAppointments;
   const remoteTreatments = options?.remoteTreatments;
+  const remoteCatalog = options?.remoteCatalog;
 
   return useMemo(() => {
     void appointmentRev;
@@ -136,7 +138,16 @@ export function useCustomer360Snapshot(
     const packageLedger = listPackageLedger(organizationId, { customerId });
     const svLedger = listStoredValueLedger(organizationId, { customerId });
     const svBalance = getCustomerStoredValueBalance(organizationId, customerId);
-    const catalog = getServicesForOrganization(organizationId);
+    const catalog =
+      remoteCatalog != null
+        ? remoteCatalog
+        : getServicesForOrganization(organizationId);
+    const completedTreatmentAppointmentIds = new Set(
+      treatments
+        .filter((item) => !item.status || item.status === "completed")
+        .map((item) => item.appointmentId)
+        .filter((id): id is string => Boolean(id)),
+    );
     const staffNameById: Record<string, string> = {};
     for (const treatment of treatments) {
       const name = getMembership(organizationId, treatment.staffId)?.displayName;
@@ -182,6 +193,7 @@ export function useCustomer360Snapshot(
       getPackageUsableBalance,
     );
     const hints: AppointmentHint[] = appointments.map((item) => ({
+      id: item.id,
       customerId: item.customerId,
       status: item.status,
       serviceId: item.serviceId,
@@ -204,7 +216,12 @@ export function useCustomer360Snapshot(
     return {
       treatmentHref,
       createHref: customerCreateAppointmentHref(customerId),
-      nextAppointment: deriveNextAppointment({ customer, appointments: hints, now }),
+      nextAppointment: deriveNextAppointment({
+        customer,
+        appointments: hints,
+        now,
+        completedTreatmentAppointmentIds,
+      }),
       lastVisitLabel: deriveLastVisitLabel({ customer, appointments, treatments }),
       visitCount: customer.totalVisits,
       primaryServiceName: derivePrimaryServiceName(frequent, customer),
@@ -229,5 +246,6 @@ export function useCustomer360Snapshot(
     followUpRev,
     remoteAppointments,
     remoteTreatments,
+    remoteCatalog,
   ]);
 }

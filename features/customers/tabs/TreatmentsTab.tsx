@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { getServiceById } from "@/data/mock-services";
+import type { Service } from "@/types";
 import {
   treatmentsFromRemoteListState,
   useTreatmentRemoteListByCustomer,
@@ -26,12 +27,14 @@ interface TreatmentsTabProps {
   customerId: string;
   treatmentHref?: string;
   treatmentRemoteReadPilot?: boolean;
+  catalog?: Service[] | null;
 }
 
 export function TreatmentsTab({
   customerId,
   treatmentHref,
   treatmentRemoteReadPilot = false,
+  catalog,
 }: TreatmentsTabProps) {
   const { organization } = useOrganization();
   const remote = useTreatmentRemoteListByCustomer(
@@ -94,6 +97,7 @@ export function TreatmentsTab({
           key={t.id}
           treatment={t}
           organizationId={organization.id}
+          catalog={catalog}
         />
       ))}
     </div>
@@ -103,11 +107,15 @@ export function TreatmentsTab({
 function TreatmentHistoryCard({
   treatment: t,
   organizationId,
+  catalog,
 }: {
   treatment: TreatmentDraft;
   organizationId: string;
+  catalog?: Service[] | null;
 }) {
-  const service = getServiceById(t.serviceId, organizationId);
+  const service =
+    catalog?.find((item) => item.id === t.serviceId) ??
+    getServiceById(t.serviceId, organizationId);
   const serviceName = resolveCanonicalServiceDisplayName({
     serviceId: t.serviceId,
     catalogName: service?.name,

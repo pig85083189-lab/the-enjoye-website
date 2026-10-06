@@ -4,6 +4,7 @@ import { CustomerProfilePage } from "@/features/customers/CustomerProfilePage";
 import { isAppointmentRemoteReadPilotEnabled } from "@/lib/appointments/appointment-remote-read-flag";
 import { isAppointmentRemoteWritePilotEnabled } from "@/lib/appointments/appointment-remote-write-flag";
 import { isCustomerRemoteReadPilotEnabled } from "@/lib/customers/customer-remote-read-flag";
+import { isServiceRemoteReadPilotEnabled } from "@/lib/services/service-remote-read-flag";
 import { isTreatmentRemoteReadPilotEnabled } from "@/lib/treatments/treatment-remote-read-flag";
 
 export default async function CustomerPage({
@@ -28,6 +29,7 @@ export default async function CustomerPage({
         appointmentRemoteReadPilot={isAppointmentRemoteReadPilotEnabled()}
         appointmentRemoteWritePilot={isAppointmentRemoteWritePilotEnabled()}
         treatmentRemoteReadPilot={isTreatmentRemoteReadPilotEnabled()}
+        serviceRemoteReadPilot={isServiceRemoteReadPilotEnabled()}
       />
     </Suspense>
   );

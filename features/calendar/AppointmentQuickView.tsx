@@ -39,6 +39,7 @@ import {
   lastServiceSummary,
 } from "@/lib/today/briefing";
 import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
+import { presentAppointmentStatusFromTreatment } from "@/lib/treatments/treatment-today";
 import { useTreatmentRemoteByAppointment } from "@/features/treatments/use-treatment-remote-read";
 import type { TreatmentDraft } from "@/types/treatment";
 import {
@@ -151,7 +152,13 @@ export function AppointmentQuickView({
     {
       icon: CircleCheck,
       label: "狀態",
-      value: STATUS_LABEL[item.status],
+      value:
+        STATUS_LABEL[
+          presentAppointmentStatusFromTreatment(
+            item.status,
+            remoteTreatment?.status,
+          )
+        ],
     },
   ];
 

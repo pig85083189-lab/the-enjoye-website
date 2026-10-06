@@ -25,6 +25,7 @@ import {
 } from "@/features/treatments/use-treatment-remote-read";
 import {
   indexTreatmentsByAppointmentId,
+  presentAppointmentStatusFromTreatment,
   todayBucketFromTreatment,
 } from "@/lib/treatments/treatment-today";
 import { getCustomerById } from "@/data";
@@ -109,9 +110,17 @@ export function TodayDashboard({
     activeSchedule.map((item) => [item.id, item.status] as const),
   );
 
-  const liveAppointments = activeSchedule.map((item) =>
-    scheduleAppointmentToTodayView(item, todayRemoteReadPilot),
-  );
+  const liveAppointments = activeSchedule.map((item) => {
+    const view = scheduleAppointmentToTodayView(item, todayRemoteReadPilot);
+    if (!treatmentRemoteReadPilot) return view;
+    const presented = presentAppointmentStatusFromTreatment(
+      item.status,
+      treatmentsByAppointment.get(item.id)?.status,
+    );
+    if (presented === "COMPLETED") return { ...view, status: "completed" as const };
+    if (presented === "IN_SERVICE") return { ...view, status: "in_progress" as const };
+    return view;
+  });
   const stats = {
     total: activeSchedule.length,
     pending: activeSchedule.filter(

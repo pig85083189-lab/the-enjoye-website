@@ -35,6 +35,7 @@ import {
 import {
   isMutedAppointmentStatus,
   shouldCreateTreatmentForAppointment,
+  presentAppointmentStatusFromTreatment,
   todayBucketFromTreatment,
 } from "@/lib/treatments/treatment-today";
 import { resolveTodayPrimaryAction } from "@/lib/today/today-actions";
@@ -271,6 +272,12 @@ describe("Phase 1C-6G.1 live Treatment remote wiring", () => {
     expect(todayBucketFromTreatment("IN_SERVICE", "draft")).toBe("active");
     expect(todayBucketFromTreatment("BOOKED", "completed")).toBe("done");
     expect(todayBucketFromTreatment("COMPLETED", "completed")).toBe("done");
+    expect(presentAppointmentStatusFromTreatment("BOOKED", "completed")).toBe(
+      "COMPLETED",
+    );
+    expect(presentAppointmentStatusFromTreatment("BOOKED", "draft")).toBe(
+      "IN_SERVICE",
+    );
     expect(resolveTodayPrimaryAction(appointment, "BOOKED", {
       treatmentRemoteRead: true,
       remoteTreatment: null,

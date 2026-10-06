@@ -32,6 +32,7 @@ export const RELATIONSHIP_STATUS_LABEL: Record<
 };
 
 export type AppointmentHint = {
+  id?: string;
   customerId: string;
   status: string;
   serviceId?: string;
@@ -294,6 +295,13 @@ function matchCatalogService(
   );
 }
 
+function toIdSet(
+  ids?: ReadonlySet<string> | readonly string[],
+): ReadonlySet<string> {
+  if (!ids) return new Set();
+  return ids instanceof Set ? ids : new Set(ids);
+}
+
 function isCompletedStatus(status: string): boolean {
   return COMPLETED_STATUSES.has(status);
 }
@@ -344,10 +352,15 @@ export function deriveNextAppointment(input: {
   customer: Customer;
   appointments?: AppointmentHint[];
   now: Date;
+  completedTreatmentAppointmentIds?: ReadonlySet<string> | readonly string[];
 }): NextAppointmentView {
   const { customer, appointments = [], now } = input;
+  const completedIds = toIdSet(input.completedTreatmentAppointmentIds);
   const upcoming = appointments
     .filter((item) => {
+      if (item.id && completedIds.has(item.id)) {
+        return false;
+      }
       if (item.customerId !== customer.id || !isUpcomingStatus(item.status)) {
         return false;
       }
