@@ -11,9 +11,15 @@ import { PAYMENT_METHOD_LABEL, TRANSACTION_STATUS_LABEL } from "@/lib/commerce/d
 import type { Transaction } from "@/lib/commerce/domain";
 import { formatTwd } from "@/lib/commerce/money";
 import { listTransactions } from "@/lib/commerce/transaction-store";
-import { formatHm, formatYmd } from "@/lib/appointments/domain";
+import { utcIsoToTaipeiLocal } from "@/lib/persistence/appointment-time";
 import { resolveCustomer360Transactions } from "@/lib/customers/customer-360";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
+
+function formatCompletedAtTaipei(iso: string): string {
+  const { dateYmd, hm } = utcIsoToTaipeiLocal(iso);
+  const [year, month, day] = dateYmd.split("-");
+  return `${year}/${month}/${day} ${hm}`;
+}
 
 interface TransactionsTabProps {
   customerId: string;
@@ -85,7 +91,7 @@ export function TransactionsTab({
                 </span>
               </p>
               <p className="text-xs text-secondary-text">
-                {formatYmd(new Date(tx.completedAt))} {formatHm(new Date(tx.completedAt))}
+                {formatCompletedAtTaipei(tx.completedAt)}
               </p>
             </Link>
           </li>

@@ -35,6 +35,7 @@ import {
   resolveTreatmentQuickViewCheckoutHref,
   resolveTreatmentQuickViewSettledHref,
 } from "@/lib/treatments/treatment-workspace-derived";
+import { utcIsoToTaipeiLocal } from "@/lib/persistence/appointment-time";
 import { createEmptyDraft } from "@/lib/treatment-draft";
 import type { Appointment, Customer } from "@/types";
 import type { TreatmentDraft } from "@/types/treatment";
@@ -400,6 +401,15 @@ describe("Phase 1C-6H.2P6D settlement consistency", () => {
     expect(read("features/checkout/CheckoutPageClient.tsx")).toMatch(
       /appointmentIdParam \? "all" : "pending"/,
     );
+    expect(read("features/checkout/CheckoutPageClient.tsx")).toMatch(
+      /settledTransaction/,
+    );
+    expect(read("features/checkout/CheckoutPageClient.tsx")).toMatch(
+      /item\.paid \|\|/,
+    );
+    expect(read("features/customers/tabs/TransactionsTab.tsx")).toMatch(
+      /utcIsoToTaipeiLocal/,
+    );
   });
 
   it("paid workspace item is not pending and remaps the checkout URL", () => {
@@ -417,5 +427,12 @@ describe("Phase 1C-6H.2P6D settlement consistency", () => {
     expect(remapCheckoutSelection(items, `appointment:${APT}`)).toBe(
       items[0]?.id,
     );
+  });
+
+  it("Customer 360 transaction time is Taipei wall clock", () => {
+    expect(utcIsoToTaipeiLocal("2026-10-06T06:06:32.416555+00:00")).toEqual({
+      dateYmd: "2026-10-06",
+      hm: "14:06",
+    });
   });
 });
