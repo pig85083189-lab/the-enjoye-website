@@ -150,7 +150,18 @@ describe("Phase 1C-4 service remote foundation UI boundary", () => {
     for (const file of surfaces) {
       const source = readFileSync(path.join(ROOT, file), "utf8");
       expect(source).not.toMatch(/AuthenticatedServiceTableStore|ServiceRemoteAdapter|createServiceRecord/);
+      expect(source).not.toMatch(/use-service-remote-write|runAuthenticatedServiceWriteCreate/);
     }
+  });
+
+  it("keeps Service RSC on flag files only", () => {
+    const source = readFileSync(path.join(ROOT, "app/staff/(app)/services/page.tsx"), "utf8");
+    expect(source).toMatch(/isServiceRemoteReadPilotEnabled/);
+    expect(source).toMatch(/isServiceRemoteWritePilotEnabled/);
+    expect(source).not.toMatch(
+      /service-remote-write-pilot|AuthenticatedServiceWriteStore|runAuthenticatedServiceWriteCreate/,
+    );
+    expect(source).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
   });
 });
 

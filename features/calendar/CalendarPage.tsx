@@ -957,7 +957,7 @@ function AppointmentEditor({
   actorId?: string;
   remoteCreate?: {
     customers: Array<{ id: string; name: string; phone: string }>;
-    services: Array<{ id: string; name: string; durationMinutes: number }>;
+    services: Array<{ id: string; name: string; durationMinutes: number; priceMinor?: number }>;
     staff: Array<{ id: string; name: string; locationIds?: string[]; role?: string }>;
   };
   onClose: () => void;
@@ -1281,6 +1281,7 @@ function AppointmentEditor({
               {services.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} · {s.durationMinutes}分
+                  {typeof s.priceMinor === "number" ? ` · NT$${s.priceMinor}` : ""}
                 </option>
               ))}
             </select>

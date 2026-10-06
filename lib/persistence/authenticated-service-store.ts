@@ -1,7 +1,8 @@
 /**
- * Authenticated PostgREST service store.
- * Explicit QA / remote adapter path only — live Service UI stays local.
- * Never uses a service-role client. Insert is insert-only (no upsert).
+ * Authenticated PostgREST service store (list + insert + update).
+ * Live Service Catalog uses the read/write pilots instead of this store
+ * when BEAUTY_OS_SERVICE_REMOTE_* flags are on. Insert is insert-only.
+ * Never uses a service-role client.
  */
 
 import { REMOTE_SERVICE_COLUMNS, remoteServicePayload } from "./service-mapping";

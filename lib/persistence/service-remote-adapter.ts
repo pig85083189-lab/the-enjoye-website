@@ -55,6 +55,7 @@ export class ServiceRemoteAdapter {
 
   async create(organizationId: string, input: CreateServiceInput): Promise<Service> {
     this.mapper.requireOperationalStaffId(organizationId, input.createdByStaffId);
+    const priceMinor = assertNonNegativeMoney(input.priceMinor, "priceMinor");
     const service: Service = {
       id: newId("svc"),
       organizationId,
@@ -62,10 +63,34 @@ export class ServiceRemoteAdapter {
       durationMinutes: assertDuration(input.durationMinutes),
       category: input.category?.trim() ?? "",
       serviceType: input.serviceType ?? "GENERIC",
-      priceMinor: assertNonNegativeMoney(input.priceMinor, "priceMinor"),
+      priceMinor,
       isActive: input.isActive !== false,
     };
-    return this.upsert(organizationId, service, input.createdByStaffId);
+    assertRemoteServiceAllowed(service);
+    const orgDbId = this.mapper.resolveOrganizationDbId(organizationId);
+    const existing = await this.store.getServiceByAppId(orgDbId, service.id);
+    if (existing) {
+      throw new Error("Service already exists; insert-only (no upsert)");
+    }
+    const stamp = this.now().toISOString();
+    const row: DbService = {
+      id: crypto.randomUUID(),
+      organization_id: orgDbId,
+      app_id: service.id,
+      name: service.name,
+      service_type: toRemoteServiceType(service.serviceType),
+      duration_minutes: service.durationMinutes,
+      price_minor: priceMinor,
+      currency: "TWD",
+      category: service.category?.trim() || null,
+      is_active: service.isActive !== false,
+      created_at: stamp,
+      updated_at: stamp,
+    };
+    remoteServicePayload(row);
+    await this.store.insertService(row);
+    this.mapper.rememberService(orgDbId, row.app_id, row.id);
+    return serviceFromRemoteRow(organizationId, row);
   }
 
   async upsert(organizationId: string, service: Service, actorStaffId: string): Promise<Service> {

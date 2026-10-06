@@ -10,6 +10,8 @@ import { CUSTOMER_REMOTE_READ_PILOT_ENV, isCustomerRemoteReadPilotEnabled } from
 import { CUSTOMER_REMOTE_WRITE_PILOT_ENV, isCustomerRemoteWritePilotEnabled } from "@/lib/customers/customer-remote-write-flag";
 import { TREATMENT_REMOTE_READ_PILOT_ENV, isTreatmentRemoteReadPilotEnabled } from "@/lib/treatments/treatment-remote-read-flag";
 import { TREATMENT_REMOTE_WRITE_PILOT_ENV, isTreatmentRemoteWritePilotEnabled } from "@/lib/treatments/treatment-remote-write-flag";
+import { SERVICE_REMOTE_READ_PILOT_ENV, isServiceRemoteReadPilotEnabled } from "@/lib/services/service-remote-read-flag";
+import { SERVICE_REMOTE_WRITE_PILOT_ENV, isServiceRemoteWritePilotEnabled } from "@/lib/services/service-remote-write-flag";
 import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 
 const PREVIEW_VERIFIED = {
@@ -31,6 +33,8 @@ describe("Phase 1C-6H.2P explicit remote-pilot enablement", () => {
       expect(isTreatmentRemoteReadPilotEnabled(target)).toBe(false);
       expect(isCommerceRemoteReadPilotEnabled(target)).toBe(false);
       expect(isCommerceRemoteWritePilotEnabled(target)).toBe(false);
+      expect(isServiceRemoteReadPilotEnabled(target)).toBe(false);
+      expect(isServiceRemoteWritePilotEnabled(target)).toBe(false);
     }
   });
 
@@ -83,6 +87,11 @@ describe("Phase 1C-6H.2P explicit remote-pilot enablement", () => {
         [APPOINTMENT_REMOTE_WRITE_PILOT_ENV]: "1",
       }),
     ).toBe(false);
+    expect(
+      isServiceRemoteWritePilotEnabled({
+        [SERVICE_REMOTE_WRITE_PILOT_ENV]: "1",
+      }),
+    ).toBe(false);
   });
 
   it("keeps Appointment WRITE/MUTATE calendar dependency", () => {
@@ -120,6 +129,8 @@ describe("Phase 1C-6H.2P explicit remote-pilot enablement", () => {
     expect(isCustomerRemoteWritePilotEnabled(PREVIEW_VERIFIED)).toBe(false);
     expect(isAppointmentRemoteWritePilotEnabled(PREVIEW_VERIFIED)).toBe(false);
     expect(isTreatmentRemoteWritePilotEnabled(PREVIEW_VERIFIED)).toBe(false);
+    expect(isServiceRemoteReadPilotEnabled(PREVIEW_VERIFIED)).toBe(false);
+    expect(isServiceRemoteWritePilotEnabled(PREVIEW_VERIFIED)).toBe(false);
     expect(
       isTodayRemoteReadPilotEnabled({
         ...PREVIEW_VERIFIED,

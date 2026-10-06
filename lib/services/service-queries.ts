@@ -6,7 +6,7 @@
 import { assertNonNegativeMoney } from "@/lib/commerce/money";
 import {
   assertRemoteServiceAllowed,
-  isDemoServiceName,
+  isBlockedRemoteServiceName,
   isGeneratedServiceAppId,
   REMOTE_DEMO_SERVICE_MESSAGE,
 } from "@/lib/persistence/demo-firewall";
@@ -62,7 +62,7 @@ export function toCreateServiceInput(input: RealServiceCreateInput): CreateServi
     throw new Error("durationMinutes must be an integer > 0");
   }
   assertNonNegativeMoney(input.priceMinor, "priceMinor");
-  if (isDemoServiceName(name)) {
+  if (isBlockedRemoteServiceName(name)) {
     throw new Error(REMOTE_DEMO_SERVICE_MESSAGE);
   }
   return {
