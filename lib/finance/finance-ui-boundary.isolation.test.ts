@@ -36,6 +36,25 @@ describe("finance UI boundary", () => {
     const income = read("features/finance/FinanceIncomePageClient.tsx");
     expect(income).toMatch(/\/staff\/transactions\?id=/);
     expect(income).not.toMatch(/TransactionQuickView/);
+    expect(read("features/finance/FinanceWorkspace.tsx")).not.toMatch(/visual-fixture/);
+  });
+
+  it("visual fixture stays on DEMO_SEED preview, not StaffShell finance pages", () => {
+    for (const rel of FINANCE_UI) {
+      expect(read(rel)).not.toMatch(/visual-fixture/);
+    }
+    for (const rel of [
+      "app/staff/(app)/finance/page.tsx",
+      "app/staff/(app)/finance/income/page.tsx",
+      "app/staff/(app)/finance/expenses/page.tsx",
+      "app/staff/(app)/finance/reports/page.tsx",
+    ]) {
+      expect(read(rel)).not.toMatch(/visual-fixture|FinanceVisualPreview/);
+    }
+    const preview = read("app/dev/finance-ui-preview/page.tsx");
+    expect(preview).toMatch(/isDemoSeedEnabled/);
+    expect(preview).toMatch(/notFound/);
+    expect(read("features/finance/FinanceVisualPreview.tsx")).toMatch(/visual-fixture/);
   });
 
   it("does not open Stored Value WRITE, Appointment MUTATE, or Staff CREATE", () => {
