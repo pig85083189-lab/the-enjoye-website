@@ -24,6 +24,11 @@ import {
   useTreatmentRemoteList,
 } from "@/features/treatments/use-treatment-remote-read";
 import {
+  transactionsFromRemoteCommerceState,
+  useCommerceRemoteTransactions,
+} from "@/features/transactions/use-commerce-remote-transactions";
+import { completedTransactionIdsByAppointment } from "@/lib/commerce/commerce-remote-identity";
+import {
   indexTreatmentsByAppointmentId,
   presentAppointmentStatusFromTreatment,
   todayBucketFromTreatment,
@@ -86,6 +91,13 @@ export function TodayDashboard({
   );
   const treatmentsByAppointment = indexTreatmentsByAppointmentId(
     treatmentsFromRemoteListState(remoteTreatments),
+  );
+  const remoteTransactions = useCommerceRemoteTransactions({
+    organizationId: organization.id,
+    enabled: commerceRemoteReadPilot,
+  });
+  const paidAppointmentIds = completedTransactionIdsByAppointment(
+    transactionsFromRemoteCommerceState(remoteTransactions),
   );
   const schedule = applyRosterStaffDisplayNames(
     todayRemoteReadPilot && remoteState.status === "data"
@@ -260,6 +272,7 @@ export function TodayDashboard({
             }
             commerceRemoteRead={commerceRemoteReadPilot}
             allowCheckout={checkoutAllowed}
+            paidAppointmentIds={paidAppointmentIds}
           />
         </section>
       ) : (
@@ -357,6 +370,7 @@ export function TodayDashboard({
                     }
                     commerceRemoteRead={commerceRemoteReadPilot}
                     allowCheckout={checkoutAllowed}
+                    paidAppointmentIds={paidAppointmentIds}
                   />
                 </div>
               );
@@ -395,6 +409,7 @@ export function TodayDashboard({
               }
               commerceRemoteRead={commerceRemoteReadPilot}
               allowCheckout={checkoutAllowed}
+              paidAppointmentIds={paidAppointmentIds}
             />
           ) : (
             <NextCustomerEmpty sticky />

@@ -148,7 +148,9 @@ export function CheckoutPageClient({
   const treatmentIdParam = searchParams.get("treatment");
   const packageIdParam = searchParams.get("package");
 
-  const [filter, setFilter] = useState<CheckoutListFilter>("pending");
+  const [filter, setFilter] = useState<CheckoutListFilter>(() =>
+    appointmentIdParam ? "all" : "pending",
+  );
   const [dateFilter, setDateFilter] = useState<CheckoutDateFilter>(() =>
     appointmentIdParam || commerceRemoteReadPilot ? "all" : "today",
   );

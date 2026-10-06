@@ -40,6 +40,7 @@ interface NextCustomerPanelProps {
   remoteTreatment?: TreatmentDraft | null;
   commerceRemoteRead?: boolean;
   allowCheckout?: boolean;
+  paidAppointmentIds?: ReadonlyMap<string, string>;
 }
 
 const membershipTone = {
@@ -90,6 +91,7 @@ export function NextCustomerPanel({
   remoteTreatment = null,
   commerceRemoteRead = false,
   allowCheckout,
+  paidAppointmentIds,
 }: NextCustomerPanelProps) {
   useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
   useSyncExternalStore(
@@ -114,6 +116,7 @@ export function NextCustomerPanel({
     remoteTreatment,
     commerceRemoteRead,
     allowCheckout,
+    paidAppointmentIds,
   });
   const hidePrimary = !shouldShowTodayPrimaryAction(primary.kind, readOnly);
   const customerHref = `/staff/customers/${appointment.customerId}`;

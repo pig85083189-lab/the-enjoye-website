@@ -366,5 +366,16 @@ describe("Phase 1C-6H.1 commerce remote identity", () => {
       href: "/staff/treatments/trt-muqident-yyyyyy",
       label: "查看紀錄",
     });
+    expect(
+      resolveTodayPrimaryAction(todayAppointment(), "COMPLETED", {
+        commerceRemoteRead: true,
+        remoteTreatment: completed,
+        paidAppointmentIds: new Map([["apt-muqrindw-yt0l5z", "tx-20baa730d5c747"]]),
+      }),
+    ).toEqual({
+      kind: "view_record",
+      href: "/staff/transactions?id=tx-20baa730d5c747",
+      label: "已結帳",
+    });
   });
 });

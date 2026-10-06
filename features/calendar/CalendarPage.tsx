@@ -24,6 +24,11 @@ import {
   useTreatmentRemoteList,
 } from "@/features/treatments/use-treatment-remote-read";
 import {
+  transactionsFromRemoteCommerceState,
+  useCommerceRemoteTransactions,
+} from "@/features/transactions/use-commerce-remote-transactions";
+import { completedTransactionIdsByAppointment } from "@/lib/commerce/commerce-remote-identity";
+import {
   indexTreatmentsByAppointmentId,
   presentAppointmentStatusFromTreatment,
 } from "@/lib/treatments/treatment-today";
@@ -269,6 +274,13 @@ export function CalendarPage({
     endsAt: remoteRange.endsAt,
     enabled: calendarRemoteReadPilot,
   });
+  const remoteTransactions = useCommerceRemoteTransactions({
+    organizationId: organization.id,
+    enabled: commerceRemoteReadPilot,
+  });
+  const paidAppointmentIds = completedTransactionIdsByAppointment(
+    transactionsFromRemoteCommerceState(remoteTransactions),
+  );
   const localAppointments = calendarRemoteReadPilot
     ? []
     : listAppointments({
@@ -732,6 +744,7 @@ export function CalendarPage({
             treatmentRemoteReadPilot={treatmentRemoteReadPilot}
             commerceRemoteReadPilot={commerceRemoteReadPilot}
             allowCheckout={canCheckout(membership)}
+            paidAppointmentIds={paidAppointmentIds}
             onClose={() => setSelectedId(null)}
             onEdit={() => {
               if (calendarRemoteReadPilot) return;
@@ -805,6 +818,7 @@ export function CalendarPage({
             treatmentRemoteReadPilot={treatmentRemoteReadPilot}
             commerceRemoteReadPilot={commerceRemoteReadPilot}
             allowCheckout={canCheckout(membership)}
+            paidAppointmentIds={paidAppointmentIds}
             onClose={() => setSelectedId(null)}
             onEdit={() => {
               if (calendarRemoteReadPilot) return;

@@ -20,6 +20,7 @@ import {
   formatAppointmentRange,
   recordSectionHref,
   resolveTreatmentQuickViewCheckoutHref,
+  resolveTreatmentQuickViewSettledHref,
   visitCountLabel,
   type TreatmentCatalogHint,
   type TreatmentWorkspaceItem,
@@ -44,6 +45,7 @@ interface TreatmentQuickViewProps {
   catalog: TreatmentCatalogHint[];
   completedTreatments: TreatmentDraft[];
   organizationId: string;
+  paidAppointmentIds?: ReadonlyMap<string, string>;
   onClose: () => void;
 }
 
@@ -53,6 +55,7 @@ export function TreatmentQuickView({
   catalog,
   completedTreatments,
   organizationId: _organizationId,
+  paidAppointmentIds,
   onClose,
 }: TreatmentQuickViewProps) {
   void _organizationId;
@@ -87,7 +90,10 @@ export function TreatmentQuickView({
     ),
   });
   const primary = deriveTreatmentPrimaryCta(item);
-  const checkoutHref = resolveTreatmentQuickViewCheckoutHref(item);
+  const checkoutHref = resolveTreatmentQuickViewCheckoutHref(item, {
+    paidAppointmentIds,
+  });
+  const settledHref = resolveTreatmentQuickViewSettledHref(item, paidAppointmentIds);
   const profileHref = item.customerId
     ? `/staff/customers/${item.customerId}`
     : "";
@@ -375,7 +381,20 @@ export function TreatmentQuickView({
                 </Button>
               </Link>
             ) : null}
-            {checkoutHref ? (
+            {settledHref ? (
+              <Link
+                href={settledHref}
+                data-treatment-settled-href={settledHref}
+                className="block"
+              >
+                <Button
+                  variant="ghost"
+                  className="h-9 min-h-9 w-full rounded-full text-[13px] font-normal text-secondary-text hover:text-text"
+                >
+                  已結帳
+                </Button>
+              </Link>
+            ) : checkoutHref ? (
               <Link
                 href={checkoutHref}
                 data-treatment-checkout-href={checkoutHref}

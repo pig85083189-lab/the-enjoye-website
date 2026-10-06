@@ -117,6 +117,16 @@ describe("Customer 360 Commerce remote-read", () => {
         draft: null,
       }),
     ).toBeNull();
+    expect(
+      resolveTreatmentQuickViewCheckoutHref(
+        {
+          kind: "completed",
+          appointmentId: APT,
+          draft,
+        },
+        { paidAppointmentIds: new Map([[APT, "tx-20baa730d5c747"]]) },
+      ),
+    ).toBeNull();
   });
 
   it("wires Customer 360 onto commerce_list_transactions and locks Wallet writes", () => {

@@ -49,6 +49,11 @@ import {
   useTreatmentRemoteList,
 } from "@/features/treatments/use-treatment-remote-read";
 import {
+  transactionsFromRemoteCommerceState,
+  useCommerceRemoteTransactions,
+} from "@/features/transactions/use-commerce-remote-transactions";
+import { completedTransactionIdsByAppointment } from "@/lib/commerce/commerce-remote-identity";
+import {
   getTreatmentDraftRevision,
   listOpenTreatmentDrafts,
   subscribeTreatmentDrafts,
@@ -114,12 +119,21 @@ export function TreatmentsListPageClient({
   customerRemoteReadPilot = false,
   appointmentRemoteReadPilot = false,
   treatmentRemoteReadPilot = false,
+  commerceRemoteReadPilot = false,
 }: {
   customerRemoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
+  commerceRemoteReadPilot?: boolean;
 }) {
   const { organization, currentLocation } = useOrganization();
+  const remoteTransactions = useCommerceRemoteTransactions({
+    organizationId: organization.id,
+    enabled: commerceRemoteReadPilot,
+  });
+  const paidAppointmentIds = completedTransactionIdsByAppointment(
+    transactionsFromRemoteCommerceState(remoteTransactions),
+  );
   const isClient = useIsClient();
   const draftRev = useSyncExternalStore(
     subscribeTreatmentDrafts,
@@ -524,6 +538,7 @@ export function TreatmentsListPageClient({
               catalog={catalog}
               completedTreatments={completedTreatments}
               organizationId={organization.id}
+              paidAppointmentIds={paidAppointmentIds}
               onClose={closeQuickView}
             />
           </div>
@@ -539,6 +554,7 @@ export function TreatmentsListPageClient({
             catalog={catalog}
             completedTreatments={completedTreatments}
             organizationId={organization.id}
+            paidAppointmentIds={paidAppointmentIds}
             onClose={closeQuickView}
           />
         </div>

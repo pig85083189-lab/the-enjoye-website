@@ -68,6 +68,7 @@ interface AppointmentQuickViewProps {
   treatmentRemoteReadPilot?: boolean;
   commerceRemoteReadPilot?: boolean;
   allowCheckout?: boolean;
+  paidAppointmentIds?: ReadonlyMap<string, string>;
   onClose: () => void;
   onEdit: () => void;
   onRequestCancel: () => void;
@@ -83,6 +84,7 @@ export function AppointmentQuickView({
   treatmentRemoteReadPilot = false,
   commerceRemoteReadPilot = false,
   allowCheckout,
+  paidAppointmentIds,
   onClose,
   onEdit,
   onRequestCancel,
@@ -109,6 +111,7 @@ export function AppointmentQuickView({
     remoteTreatment,
     commerceRemoteRead: commerceRemoteReadPilot,
     allowCheckout,
+    paidAppointmentIds,
   });
   const showRemoteCheckout = primary.kind === "checkout";
   const attention = collectAttentionNotes(

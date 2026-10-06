@@ -33,6 +33,7 @@ interface AppointmentCardProps {
   remoteTreatment?: TreatmentDraft | null;
   commerceRemoteRead?: boolean;
   allowCheckout?: boolean;
+  paidAppointmentIds?: ReadonlyMap<string, string>;
 }
 
 const membershipTone = {
@@ -49,6 +50,7 @@ export function AppointmentCard({
   remoteTreatment = null,
   commerceRemoteRead = false,
   allowCheckout,
+  paidAppointmentIds,
 }: AppointmentCardProps) {
   useSyncExternalStore(subscribeCommerce, getCommerceRevision, () => "");
   useSyncExternalStore(
@@ -67,6 +69,7 @@ export function AppointmentCard({
     remoteTreatment,
     commerceRemoteRead,
     allowCheckout,
+    paidAppointmentIds,
   });
   const hidePrimary = !shouldShowTodayPrimaryAction(primary.kind, readOnly);
   const customerHref = `/staff/customers/${appointment.customerId}`;
