@@ -233,11 +233,17 @@ export function WalletTab({
             </Link>
           )}
         </div>
-        {packageRemoteRead && remotePackages.status === "loading" ? (
+        {packageRemoteRead &&
+        (remotePackages.status === "loading" || remoteLedger.status === "loading") ? (
           <p className="text-sm text-secondary-text">載入套票中…</p>
-        ) : packageRemoteRead && remotePackages.status === "error" ? (
+        ) : packageRemoteRead &&
+          (remotePackages.status === "error" || remoteLedger.status === "error") ? (
           <p className="text-sm text-[#B07A4A]" role="alert">
-            {remotePackages.message}
+            {remotePackages.status === "error"
+              ? remotePackages.message
+              : remoteLedger.status === "error"
+                ? remoteLedger.message
+                : "套票讀取失敗"}
           </p>
         ) : packages.length === 0 ? (
           <p className="text-sm text-secondary-text">尚無套票</p>

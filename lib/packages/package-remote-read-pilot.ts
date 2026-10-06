@@ -105,9 +105,23 @@ export async function listRemotePilotPackageLedger(
   opts?: { customerId?: string },
 ): Promise<PackageLedgerEntry[]> {
   const persistence = await createAuthenticatedPackageReadPersistence(client);
-  const customerDbId = opts?.customerId
-    ? persistence.identity.mapper.resolveCustomerDbId(organizationId, opts.customerId)
-    : undefined;
+  let customerDbId: string | undefined;
+  if (opts?.customerId) {
+    try {
+      customerDbId = persistence.identity.mapper.resolveCustomerDbId(
+        organizationId,
+        opts.customerId,
+      );
+    } catch {
+      const result = await client
+        .from("customers")
+        .select("id, app_id")
+        .eq("app_id", opts.customerId);
+      const row = result.data?.[0] as { id?: string } | undefined;
+      customerDbId = row?.id;
+      if (!customerDbId) throw new Error("找不到客戶套票");
+    }
+  }
   const [rows, packages] = await Promise.all([
     persistence.packages.listPackageLedger(persistence.identity.organizationDbId, {
       customerDbId,
