@@ -20,8 +20,8 @@ import {
   loadAuthenticatedIdentityCatalog,
   type IdentitySupabaseClient,
 } from "@/lib/persistence/authenticated-identity-catalog";
-import { AuthenticatedExpenseReadStore } from "./authenticated-expense-store";
-import type { Expense, FinanceCustomerHint } from "./domain";
+import { AuthenticatedExpenseReadStore, isExpenseSchemaUnavailableError } from "./authenticated-expense-store";
+import type { Expense, ExpenseRemoteAvailability, FinanceCustomerHint } from "./domain";
 import { isFinanceRemoteReadPilotEnabled } from "./finance-remote-read-flag";
 
 export {
@@ -35,8 +35,32 @@ export const FINANCE_REMOTE_READ_PILOT_OFF_MESSAGE =
 export type FinanceRemoteSnapshot = {
   transactions: Transaction[];
   expenses: Expense[];
+  expenseAvailability: ExpenseRemoteAvailability;
   customers: FinanceCustomerHint[];
 };
+
+export async function readExpenseLedger(input: {
+  store: Pick<AuthenticatedExpenseReadStore, "listExpenses">;
+  organizationDbId: string;
+  locationDbId: string;
+  organizationAppId: string;
+  locationAppId: string;
+}): Promise<{ expenses: Expense[]; availability: ExpenseRemoteAvailability }> {
+  try {
+    const expenses = await input.store.listExpenses({
+      organizationDbId: input.organizationDbId,
+      locationDbId: input.locationDbId,
+      organizationAppId: input.organizationAppId,
+      locationAppId: input.locationAppId,
+    });
+    return { expenses, availability: "ready" };
+  } catch (error) {
+    if (isExpenseSchemaUnavailableError(error)) {
+      return { expenses: [], availability: "unavailable" };
+    }
+    throw error;
+  }
+}
 
 function requirePilot(env: NodeJS.Dict<string>): void {
   if (!isFinanceRemoteReadPilotEnabled(env)) {
@@ -57,8 +81,9 @@ export async function listRemoteFinanceSnapshot(
 
   const expenseStore = new AuthenticatedExpenseReadStore(client);
   const customerStore = new AuthenticatedCustomerReadStore(client);
-  const [expenses, dbCustomers] = await Promise.all([
-    expenseStore.listExpenses({
+  const [expenseLedger, dbCustomers] = await Promise.all([
+    readExpenseLedger({
+      store: expenseStore,
       organizationDbId,
       locationDbId,
       organizationAppId: organizationId,
@@ -66,6 +91,8 @@ export async function listRemoteFinanceSnapshot(
     }),
     customerStore.listCustomers(organizationDbId),
   ]);
+  const expenses = expenseLedger.expenses;
+  const expenseAvailability = expenseLedger.availability;
   const customers: FinanceCustomerHint[] = dbCustomers.map((row) => ({
     id: row.app_id,
     name: row.full_name,
@@ -73,12 +100,12 @@ export async function listRemoteFinanceSnapshot(
   }));
 
   if (typeof client.rpc !== "function") {
-    return { transactions: [], expenses, customers };
+    return { transactions: [], expenses, expenseAvailability, customers };
   }
   const commerce = new AuthenticatedCommerceStore(client as CommerceSupabaseClient);
   const listed = await commerce.listTransactions();
   const transactions = listed.filter(
     (row) => row.organizationId === organizationId && row.locationId === locationId,
   );
-  return { transactions, expenses, customers };
+  return { transactions, expenses, expenseAvailability, customers };
 }

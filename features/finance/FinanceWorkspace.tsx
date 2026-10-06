@@ -10,7 +10,10 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { formatTwd } from "@/lib/commerce/money";
 import {
   EXPENSE_CATEGORY_LABEL,
+  EXPENSE_DELTA_PENDING_MESSAGE,
+  EXPENSE_LEDGER_UNAVAILABLE_MESSAGE,
   type Expense,
+  type ExpenseRemoteAvailability,
   type FinancePeriodKind,
 } from "@/lib/finance/domain";
 import {
@@ -96,6 +99,7 @@ export function FinanceWorkspace({
     enabled: financeRemoteReadPilot && Boolean(currentLocation?.id),
   });
   const rows = financeRemoteRows(remote);
+  const expenseAvailability = rows.expenseAvailability;
   const scoped = filterCompletedInScope({
     transactions: rows.transactions,
     expenses: rows.expenses,
@@ -116,7 +120,12 @@ export function FinanceWorkspace({
   const expenseSlices = buildExpenseCategorySlices(scoped.expenses);
 
   return (
-    <div className="space-y-5" data-finance-workspace>
+    <div
+      className="space-y-5 overflow-x-hidden"
+      data-finance-workspace
+      data-finance-source={financeRemoteReadPilot ? "remote-pilot" : "off"}
+      data-expense-ledger={expenseAvailability}
+    >
       <PageHeader
         title={title}
         description={description}
@@ -254,6 +263,7 @@ export function FinanceWorkspace({
         expenseSlices,
         scopedExpenses: scoped.expenses,
         allExpenses: rows.expenses,
+        expenseAvailability,
         transactions: rows.transactions,
         customers: rows.customers,
         remoteStatus: remote.status,
@@ -274,6 +284,7 @@ export type FinanceWorkspaceContext = {
   expenseSlices: ReturnType<typeof buildExpenseCategorySlices>;
   scopedExpenses: Expense[];
   allExpenses: Expense[];
+  expenseAvailability: ExpenseRemoteAvailability;
   transactions: ReturnType<typeof financeRemoteRows>["transactions"];
   customers: ReturnType<typeof financeRemoteRows>["customers"];
   remoteStatus: string;
@@ -286,6 +297,7 @@ export function FinanceKpiCard({
   comparison,
   primary = false,
   tone,
+  pendingLabel,
 }: {
   label: string;
   value: string;
@@ -293,23 +305,29 @@ export function FinanceKpiCard({
   comparison?: FinanceComparison;
   primary?: boolean;
   tone?: "expense" | "delta";
+  pendingLabel?: string;
 }) {
   return (
-    <Card padding="md" className="min-w-0">
+    <Card padding="md" className="flex h-full min-h-[108px] min-w-0 flex-col">
       <p className="text-[12px] text-secondary-text">{label}</p>
       <p
         className={cn(
-          "mt-1 truncate text-[22px] font-semibold tabular-nums tracking-tight",
-          primary && "text-primary",
-          tone === "expense" && "text-[#B15B5B]",
-          tone === "delta" && "text-[#5C7F66]",
-          !primary && !tone && "text-text",
+          "mt-2 min-h-[28px] font-semibold tabular-nums tracking-tight",
+          pendingLabel
+            ? "text-[15px] leading-6 text-secondary-text"
+            : "truncate text-[22px] leading-7",
+          !pendingLabel && primary && "text-primary",
+          !pendingLabel && tone === "expense" && "text-[#B15B5B]",
+          !pendingLabel && tone === "delta" && "text-[#5C7F66]",
+          !pendingLabel && !primary && !tone && "text-text",
         )}
       >
-        {value}
+        {pendingLabel ?? value}
       </p>
-      {hint ? <p className="mt-1 text-[12px] text-secondary-text">{hint}</p> : null}
-      {comparison && comparison.kind !== "hidden" ? (
+      {hint && !pendingLabel ? (
+        <p className="mt-1 text-[12px] text-secondary-text">{hint}</p>
+      ) : null}
+      {comparison && comparison.kind !== "hidden" && !pendingLabel ? (
         <p className={cn("mt-1 text-[12px]", comparisonClass(comparison.kind))}>
           {comparison.label}
           {comparison.kind !== "flat" ? " 相較上期" : ""}
@@ -322,6 +340,7 @@ export function FinanceKpiCard({
 export function FinanceDashboardBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
   const collectedShare = (part: number) =>
     shareOf(part, ctx.totals.collectedRevenueMinor);
+  const expenseUnavailable = ctx.expenseAvailability === "unavailable";
   return (
     <>
       <section
@@ -358,20 +377,30 @@ export function FinanceDashboardBody({ ctx }: { ctx: FinanceWorkspaceContext }) 
           tone="expense"
           label="支出總額"
           value={formatTwd(ctx.totals.expenseMinor)}
-          comparison={compareMinor(ctx.totals.expenseMinor, ctx.previousTotals.expenseMinor)}
+          pendingLabel={expenseUnavailable ? EXPENSE_LEDGER_UNAVAILABLE_MESSAGE : undefined}
+          comparison={
+            expenseUnavailable
+              ? undefined
+              : compareMinor(ctx.totals.expenseMinor, ctx.previousTotals.expenseMinor)
+          }
         />
         <FinanceKpiCard
           tone="delta"
           label="營運收支差額"
           value={formatTwd(ctx.totals.operatingCashDeltaMinor)}
-          comparison={compareMinor(
-            ctx.totals.operatingCashDeltaMinor,
-            ctx.previousTotals.operatingCashDeltaMinor,
-          )}
+          pendingLabel={expenseUnavailable ? EXPENSE_DELTA_PENDING_MESSAGE : undefined}
+          comparison={
+            expenseUnavailable
+              ? undefined
+              : compareMinor(
+                  ctx.totals.operatingCashDeltaMinor,
+                  ctx.previousTotals.operatingCashDeltaMinor,
+                )
+          }
         />
       </section>
       <div className="grid grid-cols-1 gap-4 min-[1024px]:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <Card padding="md">
+        <Card padding="md" className="flex min-h-[280px] flex-col">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="text-base font-semibold text-text">收支趨勢</h2>
             <div className="flex gap-3 text-[12px] text-secondary-text">
@@ -379,34 +408,51 @@ export function FinanceDashboardBody({ ctx }: { ctx: FinanceWorkspaceContext }) 
                 <span className="h-2 w-2 rounded-full bg-primary" />
                 實收收入
               </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-[#B8AEA6]" />
-                支出
-              </span>
+              {expenseUnavailable ? null : (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#B8AEA6]" />
+                  支出
+                </span>
+              )}
             </div>
           </div>
           <FinanceTrendChart
             points={ctx.trend}
-            summary={`實收 ${formatTwd(ctx.totals.collectedRevenueMinor)}，支出 ${formatTwd(ctx.totals.expenseMinor)}`}
+            includeExpense={!expenseUnavailable}
+            summary={`實收 ${formatTwd(ctx.totals.collectedRevenueMinor)}${
+              expenseUnavailable
+                ? `，${EXPENSE_LEDGER_UNAVAILABLE_MESSAGE}`
+                : `，支出 ${formatTwd(ctx.totals.expenseMinor)}`
+            }`}
           />
         </Card>
-        <Card padding="md">
+        <Card padding="md" className="flex min-h-[280px] flex-col">
           <h2 className="mb-3 text-base font-semibold text-text">支出分類</h2>
-          <FinanceDonut
-            total={ctx.totals.expenseMinor}
-            totalLabel="支出總額"
-            rows={ctx.expenseSlices.map((row) => ({
-              key: row.category,
-              label: EXPENSE_CATEGORY_LABEL[row.category],
-              amountMinor: row.amountMinor,
-              share: row.share,
-            }))}
-          />
+          {expenseUnavailable ? (
+            <p className="flex flex-1 items-center justify-center py-10 text-center text-sm text-secondary-text">
+              {EXPENSE_LEDGER_UNAVAILABLE_MESSAGE}
+            </p>
+          ) : (
+            <FinanceDonut
+              total={ctx.totals.expenseMinor}
+              totalLabel="支出總額"
+              rows={ctx.expenseSlices.map((row) => ({
+                key: row.category,
+                label: EXPENSE_CATEGORY_LABEL[row.category],
+                amountMinor: row.amountMinor,
+                share: row.share,
+              }))}
+            />
+          )}
         </Card>
       </div>
       <Card padding="md" className="min-[1200px]:hidden">
         <h2 className="text-base font-semibold text-text">最近支出</h2>
-        {ctx.scopedExpenses.length === 0 ? (
+        {expenseUnavailable ? (
+          <p className="py-8 text-center text-sm text-secondary-text">
+            {EXPENSE_LEDGER_UNAVAILABLE_MESSAGE}
+          </p>
+        ) : ctx.scopedExpenses.length === 0 ? (
           <p className="py-8 text-center text-sm text-secondary-text">此期間尚無支出</p>
         ) : (
           <ul className="mt-3 divide-y divide-border">

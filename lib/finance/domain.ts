@@ -8,6 +8,12 @@ export const FINANCE_DISPLAY_TIMEZONE = "Asia/Taipei";
 export const FINANCE_STORED_VALUE_WRITE_OPEN = false;
 export const EXPENSE_REMOTE_WRITE_OPEN = false;
 
+/** Expense table / SELECT not available yet. Do not present NT$0 as a real total. */
+export const EXPENSE_LEDGER_UNAVAILABLE_MESSAGE = "支出記帳尚未啟用";
+export const EXPENSE_DELTA_PENDING_MESSAGE = "尚待支出資料";
+
+export type ExpenseRemoteAvailability = "ready" | "unavailable";
+
 export type FinancePeriodKind = "day" | "week" | "month" | "custom";
 
 export type FinanceIncomeKind = "SERVICE" | "PACKAGE_SALE" | "PRODUCT" | "OTHER";

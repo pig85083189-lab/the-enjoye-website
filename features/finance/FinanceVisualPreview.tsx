@@ -44,6 +44,7 @@ function buildFixtureContext(): FinanceWorkspaceContext {
     expenseSlices: buildExpenseCategorySlices(scoped.expenses),
     scopedExpenses: scoped.expenses,
     allExpenses: expenses,
+    expenseAvailability: "ready",
     transactions,
     customers: [
       { id: "cust-fx-1", name: "喻至敬", phone: "0916613196" },

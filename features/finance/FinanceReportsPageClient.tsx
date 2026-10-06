@@ -2,7 +2,12 @@
 
 import { Card } from "@/components/ui/Card";
 import { formatTwd } from "@/lib/commerce/money";
-import { EXPENSE_CATEGORY_LABEL, FINANCE_INCOME_KIND_LABEL } from "@/lib/finance/domain";
+import {
+  EXPENSE_CATEGORY_LABEL,
+  EXPENSE_DELTA_PENDING_MESSAGE,
+  EXPENSE_LEDGER_UNAVAILABLE_MESSAGE,
+  FINANCE_INCOME_KIND_LABEL,
+} from "@/lib/finance/domain";
 import { shareOf } from "@/lib/finance/derived";
 import { type DonutSlice, FinanceDonut } from "./FinanceCharts";
 import {
@@ -25,6 +30,7 @@ function incomeSourceSlices(ctx: FinanceWorkspaceContext): DonutSlice[] {
 }
 
 function ReportsBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
+  const expenseUnavailable = ctx.expenseAvailability === "unavailable";
   return (
     <>
       <section className="grid grid-cols-1 gap-3 min-[720px]:grid-cols-3">
@@ -37,15 +43,17 @@ function ReportsBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
           tone="expense"
           label="支出總額"
           value={formatTwd(ctx.totals.expenseMinor)}
+          pendingLabel={expenseUnavailable ? EXPENSE_LEDGER_UNAVAILABLE_MESSAGE : undefined}
         />
         <FinanceKpiCard
           tone="delta"
           label="營運收支差額"
           value={formatTwd(ctx.totals.operatingCashDeltaMinor)}
+          pendingLabel={expenseUnavailable ? EXPENSE_DELTA_PENDING_MESSAGE : undefined}
         />
       </section>
       <div className="grid grid-cols-1 gap-4 min-[1024px]:grid-cols-2">
-        <Card padding="md">
+        <Card padding="md" className="flex min-h-[280px] flex-col">
           <h2 className="mb-3 text-base font-semibold text-text">收入來源分析</h2>
           <FinanceDonut
             total={ctx.totals.collectedRevenueMinor}
@@ -59,18 +67,24 @@ function ReportsBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
             <li>其他 {formatTwd(ctx.totals.otherCollectedMinor)}</li>
           </ul>
         </Card>
-        <Card padding="md">
+        <Card padding="md" className="flex min-h-[280px] flex-col">
           <h2 className="mb-3 text-base font-semibold text-text">支出分類分析</h2>
-          <FinanceDonut
-            total={ctx.totals.expenseMinor}
-            totalLabel="支出總額"
-            rows={ctx.expenseSlices.map((row) => ({
-              key: row.category,
-              label: EXPENSE_CATEGORY_LABEL[row.category],
-              amountMinor: row.amountMinor,
-              share: row.share,
-            }))}
-          />
+          {expenseUnavailable ? (
+            <p className="flex flex-1 items-center justify-center py-10 text-center text-sm text-secondary-text">
+              {EXPENSE_LEDGER_UNAVAILABLE_MESSAGE}
+            </p>
+          ) : (
+            <FinanceDonut
+              total={ctx.totals.expenseMinor}
+              totalLabel="支出總額"
+              rows={ctx.expenseSlices.map((row) => ({
+                key: row.category,
+                label: EXPENSE_CATEGORY_LABEL[row.category],
+                amountMinor: row.amountMinor,
+                share: row.share,
+              }))}
+            />
+          )}
         </Card>
       </div>
       <section className="grid grid-cols-1 gap-3 min-[720px]:grid-cols-2">

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import type { Transaction } from "@/lib/commerce/domain";
-import type { Expense, FinanceCustomerHint } from "@/lib/finance/domain";
+import type { Expense, ExpenseRemoteAvailability, FinanceCustomerHint } from "@/lib/finance/domain";
 import {
   FINANCE_REMOTE_READ_PILOT_ENV,
   listRemoteFinanceSnapshot,
@@ -25,6 +25,7 @@ export type FinanceRemoteState =
       status: "data";
       transactions: Transaction[];
       expenses: Expense[];
+      expenseAvailability: ExpenseRemoteAvailability;
       customers: FinanceCustomerHint[];
     }
   | { status: "empty" }
@@ -57,7 +58,9 @@ export function useFinanceRemote(input: {
         );
         if (cancelled) return;
         const empty =
-          snapshot.transactions.length === 0 && snapshot.expenses.length === 0;
+          snapshot.transactions.length === 0 &&
+          snapshot.expenseAvailability === "ready" &&
+          snapshot.expenses.length === 0;
         setResult({
           key: `${input.organizationId}:${input.locationId}`,
           state: empty
@@ -66,6 +69,7 @@ export function useFinanceRemote(input: {
                 status: "data",
                 transactions: snapshot.transactions,
                 expenses: snapshot.expenses,
+                expenseAvailability: snapshot.expenseAvailability,
                 customers: snapshot.customers,
               },
         });
@@ -95,14 +99,21 @@ export function useFinanceRemote(input: {
 export function financeRemoteRows(state: FinanceRemoteState): {
   transactions: Transaction[];
   expenses: Expense[];
+  expenseAvailability: ExpenseRemoteAvailability;
   customers: FinanceCustomerHint[];
 } {
   if (state.status === "data") {
     return {
       transactions: state.transactions,
       expenses: state.expenses,
+      expenseAvailability: state.expenseAvailability,
       customers: state.customers,
     };
   }
-  return { transactions: [], expenses: [], customers: [] };
+  return {
+    transactions: [],
+    expenses: [],
+    expenseAvailability: state.status === "empty" ? "ready" : "unavailable",
+    customers: [],
+  };
 }

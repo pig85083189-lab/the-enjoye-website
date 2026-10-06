@@ -17,7 +17,7 @@ function IncomeBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
 
   return (
     <Card padding="none">
-      <div className="hidden min-[1024px]:block">
+      <div className="hidden min-w-0 overflow-x-auto min-[1024px]:block">
         <table className="w-full min-w-0 text-left text-sm">
           <thead>
             <tr className="border-b border-border text-[12px] text-secondary-text">

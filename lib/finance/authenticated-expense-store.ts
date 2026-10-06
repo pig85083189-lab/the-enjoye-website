@@ -20,6 +20,28 @@ export class ExpenseRemoteReadOnlyError extends Error {
   }
 }
 
+export class ExpenseSchemaUnavailableError extends Error {
+  readonly code = "EXPENSE_SCHEMA_UNAVAILABLE";
+  constructor(message = "Expense schema is not available") {
+    super(message);
+    this.name = "ExpenseSchemaUnavailableError";
+  }
+}
+
+export function isExpenseSchemaUnavailableError(error: unknown): boolean {
+  if (error instanceof ExpenseSchemaUnavailableError) return true;
+  const code =
+    typeof error === "object" && error && "code" in error
+      ? String((error as { code?: string }).code ?? "")
+      : "";
+  if (code === "PGRST205" || code === "42P01") return true;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return (
+    /expenses/i.test(message) &&
+    /(does not exist|schema cache|could not find the table)/i.test(message)
+  );
+}
+
 const EXPENSE_SELECT = REMOTE_EXPENSE_COLUMNS.join(", ");
 
 export class AuthenticatedExpenseReadStore {
@@ -49,6 +71,9 @@ export class AuthenticatedExpenseReadStore {
       .eq("organization_id", input.organizationDbId)
       .eq("location_id", input.locationDbId);
     if (result.error) {
+      if (isExpenseSchemaUnavailableError(result.error)) {
+        throw new ExpenseSchemaUnavailableError(result.error.message);
+      }
       throw new Error(result.error.message);
     }
     return (result.data ?? []).map((row) =>

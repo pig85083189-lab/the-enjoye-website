@@ -54,9 +54,11 @@ function smoothPath(points: Array<{ x: number; y: number }>): string {
 export function FinanceTrendChart({
   points,
   summary,
+  includeExpense = true,
 }: {
   points: FinanceTrendPoint[];
   summary: string;
+  includeExpense?: boolean;
 }) {
   const width = 560;
   const height = 220;
@@ -64,7 +66,9 @@ export function FinanceTrendChart({
   const padY = 18;
   const max = Math.max(
     0,
-    ...points.map((point) => Math.max(point.collectedMinor, point.expenseMinor)),
+    ...points.map((point) =>
+      Math.max(point.collectedMinor, includeExpense ? point.expenseMinor : 0),
+    ),
   );
   const innerW = width - padX * 2;
   const innerH = height - padY * 2 - 18;
@@ -102,7 +106,9 @@ export function FinanceTrendChart({
         >
           <path d={area} fill="rgba(201,121,125,0.12)" />
           <path d={collectedLine} fill="none" stroke={COLLECTED} strokeWidth="2.25" />
-          <path d={expenseLine} fill="none" stroke={EXPENSE} strokeWidth="2" />
+          {includeExpense ? (
+            <path d={expenseLine} fill="none" stroke={EXPENSE} strokeWidth="2" />
+          ) : null}
           {points.map((point, index) => {
             const show =
               points.length <= 8 ||
@@ -153,7 +159,7 @@ export function FinanceDonut({
   const summary = rows.map((row) => `${row.label} ${formatTwd(row.amountMinor)}`).join("，");
 
   return (
-    <div className="flex min-w-0 flex-col items-center gap-6 min-[820px]:flex-row min-[820px]:items-center">
+    <div className="flex min-w-0 flex-col items-center gap-6 min-[820px]:flex-row min-[820px]:items-start">
       <div
         role="img"
         aria-label={`${totalLabel} ${formatTwd(total)}。${summary}`}
@@ -173,7 +179,7 @@ export function FinanceDonut({
           <p className="text-[11px] text-secondary-text">{totalLabel}</p>
         </div>
       </div>
-      <ul className="w-full min-w-0 flex-1 space-y-2.5">
+      <ul className="w-full min-w-0 flex-1 space-y-2.5 min-[820px]:pt-3">
         {rows.length === 0 ? (
           <li className="text-sm text-secondary-text">此期間尚無分類資料</li>
         ) : (

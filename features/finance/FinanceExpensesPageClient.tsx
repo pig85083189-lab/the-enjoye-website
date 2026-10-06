@@ -7,6 +7,7 @@ import { formatTwd } from "@/lib/commerce/money";
 import {
   EXPENSE_CATEGORY_LABEL,
   EXPENSE_CATEGORY_ORDER,
+  EXPENSE_LEDGER_UNAVAILABLE_MESSAGE,
   EXPENSE_PAYMENT_METHOD_LABEL,
   type ExpenseCategory,
   type ExpensePaymentMethod,
@@ -51,7 +52,7 @@ function ExpensesBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
     query,
   });
 
-  const formDisabled = !ctx.expenseRemoteWritePilot;
+  const formDisabled = !ctx.expenseRemoteWritePilot || ctx.expenseAvailability === "unavailable";
   const formNode = (
     <form
       className="space-y-3"
@@ -145,7 +146,11 @@ function ExpensesBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
         <input type="file" accept="image/*" disabled className="mt-1 block w-full text-sm" />
       </label>
       {formDisabled ? (
-        <p className="text-sm text-secondary-text">支出寫入尚未開放（Finance V1A）</p>
+        <p className="text-sm text-secondary-text">
+          {ctx.expenseAvailability === "unavailable"
+            ? EXPENSE_LEDGER_UNAVAILABLE_MESSAGE
+            : "支出寫入尚未開放（Finance V1A）"}
+        </p>
       ) : null}
       <div className="flex gap-2">
         <Button type="button" variant="outline" className="flex-1" onClick={() => setSheetOpen(false)}>
@@ -160,6 +165,11 @@ function ExpensesBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
 
   return (
     <>
+      {ctx.expenseAvailability === "unavailable" ? (
+        <Card padding="md">
+          <p className="text-sm text-secondary-text">{EXPENSE_LEDGER_UNAVAILABLE_MESSAGE}</p>
+        </Card>
+      ) : null}
       <div className="grid grid-cols-1 gap-4 min-[1024px]:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)]">
         <Card padding="md" className="hidden min-[1024px]:block">
           {formNode}
@@ -189,7 +199,12 @@ function ExpensesBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
             placeholder="搜尋項目 / 店家 / 備註"
             className="min-h-11 w-full rounded-2xl border border-border bg-surface px-4 text-sm"
           />
-          <Button className="min-[1024px]:hidden" fullWidth onClick={() => setSheetOpen(true)}>
+          <Button
+            className="min-[1024px]:hidden"
+            fullWidth
+            disabled={formDisabled}
+            onClick={() => setSheetOpen(true)}
+          >
             新增支出
           </Button>
           <Card padding="none">
