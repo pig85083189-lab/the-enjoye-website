@@ -8,7 +8,6 @@ import { provisionStaffEmployeeAction } from "@/lib/staff-auth/actions";
 import { submitStaffOperationalCreate } from "@/features/staff/use-staff-remote-write";
 import {
   applyOnboardingHoursPattern,
-  canManageStaff,
   emptyOnboardingDraft,
   formatOnboardingScheduleSummary,
   STAFF_HAS_AUTH_ACCOUNT_CREATE,
@@ -23,6 +22,14 @@ import {
 } from "@/lib/staff/staff-onboarding-derived";
 import { STAFF_REMOTE_CREATE_MIN_PASSWORD_LENGTH } from "@/lib/staff/staff-remote-create-command";
 import { allocateStaffOperationalCreateIds } from "@/lib/staff/staff-remote-write-command";
+import {
+  canSubmitStaffOnboarding,
+  formatStaffCreateFailureUi,
+  isCanonicalStaffCreateSuccess,
+  resolveStaffCreateLocations,
+  resolveStaffOnboardingSubmitPath,
+  sanitizeStaffCreateLocationIds,
+} from "@/lib/staff/staff-create-surface-derived";
 import { isValidStaffEmail } from "@/lib/staff-auth/email";
 import type { Location, StaffMembership, StaffRole } from "@/types/saas";
 import { cn } from "@/lib/utils";
@@ -37,6 +44,7 @@ interface StaffOnboardingDialogProps {
   remoteCreateEnabled?: boolean;
   remoteWriteEnabled?: boolean;
   remoteRosterLocked?: boolean;
+  canonicalLocationIds?: string[];
   onCreated: (result: {
     membership: StaffMembership;
     membershipFull?: StaffMembership;
@@ -59,16 +67,33 @@ export function StaffOnboardingDialog({
   remoteCreateEnabled = false,
   remoteWriteEnabled = false,
   remoteRosterLocked = false,
+  canonicalLocationIds = [],
   onClose,
   onCreated,
 }: StaffOnboardingDialogProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const canManage = canSubmitStaffOnboarding(actorRole);
+  const submitPath = resolveStaffOnboardingSubmitPath({
+    remoteWriteEnabled,
+    remoteCreateEnabled,
+    remoteRosterLocked,
+  });
+  const createLocations = resolveStaffCreateLocations({
+    submitPath,
+    locations,
+    remoteLocationIds: canonicalLocationIds,
+  });
+  const createLocationIds = createLocations.map((location) => location.id);
+  const initialLocationId = createLocationIds.includes(defaultLocationId ?? "")
+    ? defaultLocationId
+    : createLocationIds[0];
   const [step, setStep] = useState<StaffOnboardingStep>(1);
   const [draft, setDraft] = useState<StaffOnboardingDraft>(() =>
-    emptyOnboardingDraft(defaultLocationId),
+    emptyOnboardingDraft(initialLocationId),
   );
   const [error, setError] = useState("");
+  const [diagnostic, setDiagnostic] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -76,13 +101,12 @@ export function StaffOnboardingDialog({
   const [showPassword, setShowPassword] = useState(false);
   const [isActive, setIsActive] = useState(true);
   const createIdsRef = useRef(allocateStaffOperationalCreateIds());
-  const canManage = canManageStaff(actorRole);
+  const formLocked = submitPath === "locked" || submitPath === "forbidden-local";
   const roleOptions = STAFF_REMOTE_CREATABLE_ROLES;
   const steps = remoteCreateEnabled && !remoteWriteEnabled
     ? STAFF_ONBOARDING_STEPS.filter((entry) => entry.id !== 3)
     : STAFF_ONBOARDING_STEPS;
   const lastStep = (remoteCreateEnabled && !remoteWriteEnabled ? 2 : 3) as StaffOnboardingStep;
-  const formLocked = remoteRosterLocked && !remoteWriteEnabled && !remoteCreateEnabled;
 
   useEffect(() => {
     if (!open) return;
@@ -129,10 +153,11 @@ export function StaffOnboardingDialog({
   ) {
     setDraft((prev) => ({ ...prev, [key]: value }));
     setError("");
+    setDiagnostic(null);
   }
 
   function goNext() {
-    const invalid = validateOnboardingStep(step, draft, locations);
+    const invalid = validateOnboardingStep(step, draft, createLocations);
     if (invalid) {
       setError(invalid);
       return;
@@ -169,8 +194,9 @@ export function StaffOnboardingDialog({
       setError("遠端員工建立尚未啟用");
       return;
     }
-    if (remoteWriteEnabled) {
-      const invalid = validateOnboardingStep(3, draft, locations);
+    if (submitPath === "write") {
+      const locationIds = sanitizeStaffCreateLocationIds(draft.locationIds, createLocationIds);
+      const invalid = validateOnboardingStep(3, { ...draft, locationIds }, createLocations);
       if (invalid) {
         setError(invalid);
         return;
@@ -185,10 +211,23 @@ export function StaffOnboardingDialog({
           email: draft.email,
           title: draft.title,
           role: draft.role,
-          locationIds: draft.locationIds,
+          locationIds,
           membershipId: createIdsRef.current.membershipId,
           userId: createIdsRef.current.userId,
         });
+        if (
+          !isCanonicalStaffCreateSuccess({
+            membershipId: result.created.id,
+            userId: result.created.userId,
+            authUserId: result.created.authUserId,
+            locationIds: result.created.locationIds,
+          })
+        ) {
+          const ui = formatStaffCreateFailureUi(new Error("canonical write incomplete"));
+          setError(ui.message);
+          setDiagnostic(ui.diagnostic);
+          return;
+        }
         onCreated({
           membership: result.created,
           membershipFull: result.created,
@@ -198,7 +237,9 @@ export function StaffOnboardingDialog({
           notice: "員工已建立",
         });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "建立失敗");
+        const ui = formatStaffCreateFailureUi(err);
+        setError(ui.message);
+        setDiagnostic(ui.diagnostic);
       } finally {
         setBusy(false);
       }
@@ -308,6 +349,7 @@ export function StaffOnboardingDialog({
         ref={dialogRef}
         data-staff-onboarding
         data-staff-onboarding-step={step}
+        data-staff-onboarding-submit-path={submitPath}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -511,7 +553,7 @@ export function StaffOnboardingDialog({
               <fieldset>
                 <legend className="text-[12px] text-secondary-text">分店 *（可複選）</legend>
                 <div className="mt-2 space-y-1.5">
-                  {locations.map((location) => {
+                  {createLocations.map((location) => {
                     const checked = draft.locationIds.includes(location.id);
                     return (
                       <label
@@ -723,7 +765,7 @@ export function StaffOnboardingDialog({
                   <div className="flex justify-between gap-3">
                     <dt className="text-secondary-text">分店</dt>
                     <dd>
-                      {locations
+                      {createLocations
                         .filter((location) => draft.locationIds.includes(location.id))
                         .map((location) => location.name)
                         .join("、") || "—"}
@@ -739,7 +781,12 @@ export function StaffOnboardingDialog({
           ) : null}
 
           {error ? (
-            <p className="mt-3 text-[13px] text-[#B07A4A]" role="alert">
+            <p
+              className="mt-3 text-[13px] text-[#B07A4A]"
+              role="alert"
+              data-staff-create-error
+              data-staff-create-error-code={diagnostic ?? undefined}
+            >
               {error}
             </p>
           ) : null}

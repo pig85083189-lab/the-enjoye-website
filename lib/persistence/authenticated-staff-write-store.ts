@@ -26,8 +26,14 @@ export type StaffWriteQueryResult<T = unknown> = {
   error: { message: string; code?: string } | null;
 };
 
+export const CREATE_OPERATIONAL_STAFF_RPC = "create_operational_staff";
+
 export interface AuthenticatedStaffWriteClient {
   auth: IdentitySupabaseClient["auth"];
+  rpc(
+    fn: string,
+    args: Record<string, unknown>,
+  ): PromiseLike<StaffWriteQueryResult<Record<string, unknown>>>;
   from(table: string): {
     select(columns: string): IdentityQueryBuilder;
     insert(payload: Record<string, unknown> | Record<string, unknown>[]): {
@@ -93,23 +99,16 @@ export class AuthenticatedStaffWriteStore {
     if (isAuthUuid(input.userId) || isAuthUuid(input.membershipId)) {
       throw new StaffWriteConflictError("Auth UUID 不得作為員工識別");
     }
-    const payload = {
-      id: input.membershipId,
-      user_id: input.userId,
-      auth_user_id: null,
-      organization_id: input.organizationId,
-      role: input.role,
-      display_name: input.displayName,
-      email: input.email,
-      phone: input.phone,
-      title: input.title,
-      is_active: true,
-      created_by_staff_id: input.createdByStaffId,
-    };
-    const inserted = await this.client
-      .from(STAFF_AUTH_MEMBERSHIPS_TABLE)
-      .insert(payload)
-      .select(STAFF_MEMBERSHIP_WRITE_COLUMNS);
+    const inserted = await this.client.rpc(CREATE_OPERATIONAL_STAFF_RPC, {
+      p_membership_id: input.membershipId,
+      p_user_id: input.userId,
+      p_display_name: input.displayName,
+      p_role: input.role,
+      p_location_ids: input.locationIds,
+      p_phone: input.phone,
+      p_email: input.email,
+      p_title: input.title,
+    });
     if (inserted.error) {
       if (isUniqueViolation(inserted.error)) {
         const existing = await this.getMembershipById(input.membershipId);
@@ -117,43 +116,54 @@ export class AuthenticatedStaffWriteStore {
           existing &&
           existing.userId === input.userId &&
           existing.organizationId === input.organizationId &&
-          !existing.authUserId
+          !existing.authUserId &&
+          existing.locationIds.length > 0
         ) {
-          await this.insertLocations(input.membershipId, input.locationIds);
-          return (await this.getMembershipById(input.membershipId)) ?? existing;
+          return existing;
         }
         throw new StaffWriteConflictError("員工識別已存在");
       }
       throw new Error(inserted.error.message);
     }
-    const row = Array.isArray(inserted.data) ? inserted.data[0] : inserted.data;
-    if (!row) {
+    const payload = Array.isArray(inserted.data) ? inserted.data[0] : inserted.data;
+    if (!payload || typeof payload !== "object") {
       throw new Error("insert staff: empty response");
     }
-    await this.insertLocations(input.membershipId, input.locationIds);
     const created = await this.getMembershipById(input.membershipId);
-    if (created) return created;
-    return staffMembershipFromRow(row as StaffAuthMembershipRow, input.locationIds);
+    if (created && created.locationIds.length > 0 && !created.authUserId) {
+      return created;
+    }
+    const locationIds = Array.isArray(payload.location_ids)
+      ? (payload.location_ids as unknown[]).filter((id): id is string => typeof id === "string")
+      : input.locationIds;
+    if (locationIds.length === 0) {
+      throw new Error("insert staff: location assignment missing");
+    }
+    return staffMembershipFromRow(
+      {
+        id: String(payload.id ?? input.membershipId),
+        user_id: String(payload.user_id ?? input.userId),
+        auth_user_id:
+          typeof payload.auth_user_id === "string" ? payload.auth_user_id : null,
+        organization_id: String(payload.organization_id ?? input.organizationId),
+        role: String(payload.role ?? input.role),
+        display_name: String(payload.display_name ?? input.displayName),
+        email: typeof payload.email === "string" ? payload.email : null,
+        phone: typeof payload.phone === "string" ? payload.phone : null,
+        title: typeof payload.title === "string" ? payload.title : null,
+        is_active: payload.is_active !== false,
+        created_at:
+          typeof payload.created_at === "string"
+            ? payload.created_at
+            : new Date().toISOString(),
+        created_by_staff_id: input.createdByStaffId,
+      },
+      locationIds,
+    );
   }
 
   update(): never {
     return refuseStaffWriteMutation("update");
-  }
-
-  private async insertLocations(membershipId: string, locationIds: string[]): Promise<void> {
-    const unique = [...new Set(locationIds.filter(Boolean))];
-    if (unique.length === 0) return;
-    const payload = unique.map((locationId) => ({
-      membership_id: membershipId,
-      location_id: locationId,
-    }));
-    const result = await this.client
-      .from(STAFF_AUTH_MEMBERSHIP_LOCATIONS_TABLE)
-      .insert(payload)
-      .select("membership_id, location_id");
-    if (result.error && !isUniqueViolation(result.error)) {
-      throw new Error(result.error.message);
-    }
   }
 
   private async hydrateLocationIds(rows: StaffAuthMembershipRow[]): Promise<StaffMembership[]> {

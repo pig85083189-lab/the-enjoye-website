@@ -11,7 +11,20 @@ import {
   type IdentityQueryResult,
 } from "@/lib/persistence/authenticated-identity-catalog";
 import { UnmappedIdentityError } from "@/lib/persistence/identity-errors";
-import { STAFF_OPERATIONAL_CREATE_MIGRATION_FILE } from "@/lib/persistence/schema-contract";
+import {
+  STAFF_OPERATIONAL_CREATE_FIX_MIGRATION_FILE,
+  STAFF_OPERATIONAL_CREATE_MIGRATION_FILE,
+} from "@/lib/persistence/schema-contract";
+import { CREATE_OPERATIONAL_STAFF_RPC } from "@/lib/persistence/authenticated-staff-write-store";
+import { AuthenticatedStaffWriteStore } from "@/lib/persistence/authenticated-staff-write-store";
+import {
+  STAFF_CREATE_FAILURE_MESSAGE,
+  formatStaffCreateFailureUi,
+  isCanonicalStaffCreateSuccess,
+  resolveStaffCreateLocations,
+  resolveStaffOnboardingSubmitPath,
+  sanitizeStaffCreateLocationIds,
+} from "@/lib/staff/staff-create-surface-derived";
 import { STAFF_REMOTE_CREATE_PILOT_ENV } from "@/lib/staff/staff-remote-create-flag";
 import { isStaffRemoteCreatePilotEnabled } from "@/lib/staff/staff-remote-create-flag";
 import {
@@ -123,6 +136,7 @@ function fakeClient(input: {
   userId: string | null;
   tables: Record<string, Row[]>;
   insertError?: { message: string; code?: string };
+  locationInsertError?: { message: string; code?: string };
 }): StaffWriteClient {
   return {
     auth: {
@@ -133,56 +147,97 @@ function fakeClient(input: {
         };
       },
     },
+    async rpc(fn: string, args: Record<string, unknown>) {
+      if (fn !== CREATE_OPERATIONAL_STAFF_RPC) {
+        return { data: null, error: { message: `unknown rpc ${fn}` } };
+      }
+      if (input.insertError) {
+        return { data: null, error: input.insertError };
+      }
+      if (input.locationInsertError) {
+        return { data: null, error: input.locationInsertError };
+      }
+      const membershipId = String(args.p_membership_id ?? "");
+      const userId = String(args.p_user_id ?? "");
+      const role = String(args.p_role ?? "");
+      const locationIds = Array.isArray(args.p_location_ids)
+        ? args.p_location_ids.filter((id): id is string => typeof id === "string")
+        : [];
+      const actor = (input.tables.staff_auth_memberships ?? []).find(
+        (row) => row.auth_user_id === input.userId && row.is_active,
+      );
+      if (!actor || !["OWNER", "MANAGER"].includes(String(actor.role))) {
+        return { data: null, error: { message: "not managerial", code: "42501" } };
+      }
+      if (role === "OWNER" || args.p_auth_user_id) {
+        return { data: null, error: { message: "RLS", code: "42501" } };
+      }
+      if (isAuthUuid(userId) || !userId.startsWith("staff-")) {
+        return { data: null, error: { message: "invalid operational staff id", code: "22023" } };
+      }
+      const orgLocations = new Set(
+        (input.tables.locations ?? [])
+          .filter((row) => row.organization_id === ORG_UUID)
+          .map((row) => String(row.app_id)),
+      );
+      const actorLocations = (input.tables.staff_auth_membership_locations ?? [])
+        .filter((row) => row.membership_id === actor.id)
+        .map((row) => String(row.location_id));
+      if (
+        locationIds.length === 0 ||
+        locationIds.some(
+          (id) => !orgLocations.has(id) || (actorLocations.length > 0 && !actorLocations.includes(id)),
+        )
+      ) {
+        return { data: null, error: { message: "invalid location", code: "22023" } };
+      }
+      const existing = (input.tables.staff_auth_memberships ?? []).find(
+        (row) =>
+          row.id === membershipId ||
+          (row.organization_id === ORG_ENJOYE_ID && row.user_id === userId),
+      );
+      if (existing) {
+        if (existing.auth_user_id || existing.user_id !== userId || existing.id !== membershipId) {
+          return { data: null, error: { message: "duplicate key", code: "23505" } };
+        }
+        return { data: { ...existing, location_ids: locationIds }, error: null };
+      }
+      const created = {
+        id: membershipId,
+        user_id: userId,
+        auth_user_id: null,
+        organization_id: ORG_ENJOYE_ID,
+        role,
+        display_name: String(args.p_display_name ?? ""),
+        email: args.p_email ?? null,
+        phone: args.p_phone ?? null,
+        title: args.p_title ?? null,
+        is_active: true,
+        created_at: "2026-10-07T02:00:00.000Z",
+        created_by_staff_id: actor.user_id,
+      };
+      input.tables.staff_auth_memberships = [
+        ...(input.tables.staff_auth_memberships ?? []),
+        created,
+      ];
+      input.tables.staff_auth_membership_locations = [
+        ...(input.tables.staff_auth_membership_locations ?? []),
+        ...locationIds.map((locationId) => ({
+          membership_id: membershipId,
+          location_id: locationId,
+        })),
+      ];
+      return { data: { ...created, location_ids: locationIds }, error: null };
+    },
     from(table: string) {
       return {
         select() {
           return new FakeQuery(input.tables[table] ?? []);
         },
-        insert(payload: Record<string, unknown> | Record<string, unknown>[]) {
+        insert() {
           return {
             select() {
-              if (input.insertError) {
-                return new FakeQuery([], [], input.insertError);
-              }
-              const rows = Array.isArray(payload) ? payload : [payload];
-              for (const next of rows) {
-                if (table === "staff_auth_memberships") {
-                  if (next.auth_user_id != null) {
-                    return new FakeQuery([], [], { message: "RLS", code: "42501" });
-                  }
-                  if (typeof next.user_id === "string" && isAuthUuid(next.user_id)) {
-                    return new FakeQuery([], [], { message: "RLS", code: "42501" });
-                  }
-                  if (next.role === "OWNER") {
-                    return new FakeQuery([], [], { message: "RLS", code: "42501" });
-                  }
-                  const existing = (input.tables[table] ?? []).some(
-                    (row) =>
-                      row.id === next.id ||
-                      (row.organization_id === next.organization_id && row.user_id === next.user_id),
-                  );
-                  if (existing) {
-                    return new FakeQuery([], [], { message: "duplicate key", code: "23505" });
-                  }
-                }
-                if (table === "staff_auth_membership_locations") {
-                  const existing = (input.tables[table] ?? []).some(
-                    (row) =>
-                      row.membership_id === next.membership_id &&
-                      row.location_id === next.location_id,
-                  );
-                  if (existing) {
-                    return new FakeQuery([], [], { message: "duplicate key", code: "23505" });
-                  }
-                }
-                const row = {
-                  ...next,
-                  created_at: "2026-10-07T02:00:00.000Z",
-                  updated_at: "2026-10-07T02:00:00.000Z",
-                };
-                input.tables[table] = [...(input.tables[table] ?? []), row];
-              }
-              return new FakeQuery(rows.map((row) => ({ ...row, created_at: "2026-10-07T02:00:00.000Z" })));
+              return new FakeQuery([], [], { message: "direct insert is closed", code: "42501" });
             },
           };
         },
@@ -268,6 +323,9 @@ describe("staff operational remote write", () => {
       identity.catalog.findStaffByAppId(identity.organizationDbId, "staff-preview1")?.staffAppId,
     ).toBe("staff-preview1");
     expect(identity.authUserId).not.toBe("staff-preview1");
+    expect(identity.catalog.findStaffByAppId(identity.organizationDbId, owner.userId)?.role).toBe(
+      "STAFF",
+    );
 
     const managerTables = validTables({
       staff_auth_memberships: [membership("MANAGER", AUTH_MANAGER, "staff-002")],
@@ -423,6 +481,7 @@ describe("staff operational remote write", () => {
     expect(sql).toMatch(/user_operational_staff_id/);
     expect(sql).toMatch(/grant select, insert on public\.staff_auth_memberships/);
     expect(sql).not.toMatch(/grant update|grant delete|admin\.createUser/);
+    expect(sql).not.toMatch(/create_operational_staff/);
     expect(source("supabase/migrations/20260928112950_staff_auth_memberships.sql")).not.toMatch(
       /staff_auth_memberships_insert_operational/,
     );
@@ -432,5 +491,147 @@ describe("staff operational remote write", () => {
     expect(source("lib/staff/staff-remote-write-flag.ts")).toMatch(
       /Independent of BEAUTY_OS_PERSISTENCE/,
     );
+    const fix = source(STAFF_OPERATIONAL_CREATE_FIX_MIGRATION_FILE);
+    expect(fix).toMatch(/create or replace function public\.create_operational_staff/);
+    expect(fix).toMatch(/security invoker/);
+    expect(fix).toMatch(/auth_user_id stays null/);
+    expect(fix).not.toMatch(/admin\.createUser|inviteUserByEmail|to service_role/);
+    expect(source("lib/persistence/authenticated-staff-write-store.ts")).toMatch(
+      /CREATE_OPERATIONAL_STAFF_RPC/,
+    );
+    expect(source("lib/persistence/authenticated-staff-write-store.ts")).not.toMatch(
+      /insertLocations/,
+    );
+    expect(source("supabase/migrations/20261007140000_staff_operational_create.sql")).not.toMatch(
+      /create_operational_staff/,
+    );
+  });
+
+  it("rolls back membership when location assignment fails and keeps the dialog closed", async () => {
+    const tables = validTables();
+    const store = new AuthenticatedStaffWriteStore(
+      fakeClient({
+        userId: AUTH_OWNER,
+        tables,
+        locationInsertError: { message: "invalid location", code: "22023" },
+      }),
+    );
+    await expect(
+      store.insertOperationalStaff({
+        membershipId: "mem-staff-orphan",
+        userId: "staff-orphan",
+        organizationId: ORG_ENJOYE_ID,
+        role: "STAFF",
+        displayName: "孤兒",
+        email: null,
+        phone: null,
+        title: "美容師",
+        locationIds: [LOC_ENJOYE_PRIMARY_ID],
+        createdByStaffId: "staff-001",
+      }),
+    ).rejects.toThrow(/invalid location/);
+    expect(tables.staff_auth_memberships.map((row) => row.user_id)).toEqual(["staff-001"]);
+    expect(
+      tables.staff_auth_membership_locations.filter((row) => row.membership_id === "mem-staff-orphan"),
+    ).toHaveLength(0);
+  });
+
+  it("does not write a location row when membership insert fails", async () => {
+    const tables = validTables();
+    const store = new AuthenticatedStaffWriteStore(
+      fakeClient({
+        userId: AUTH_OWNER,
+        tables,
+        insertError: { message: "RLS deny", code: "42501" },
+      }),
+    );
+    await expect(
+      store.insertOperationalStaff({
+        membershipId: "mem-staff-fail",
+        userId: "staff-fail",
+        organizationId: ORG_ENJOYE_ID,
+        role: "STAFF",
+        displayName: "失敗",
+        email: null,
+        phone: null,
+        title: null,
+        locationIds: [LOC_ENJOYE_PRIMARY_ID],
+        createdByStaffId: "staff-001",
+      }),
+    ).rejects.toThrow(/RLS deny/);
+    expect(tables.staff_auth_memberships).toHaveLength(1);
+    expect(
+      tables.staff_auth_membership_locations.filter((row) => row.membership_id === "mem-staff-fail"),
+    ).toHaveLength(0);
+  });
+
+  it("keeps the dialog open and hides Production DB details on create failure", () => {
+    expect(resolveStaffOnboardingSubmitPath({
+      remoteWriteEnabled: true,
+      remoteCreateEnabled: false,
+      remoteRosterLocked: true,
+    })).toBe("write");
+    expect(resolveStaffOnboardingSubmitPath({
+      remoteWriteEnabled: false,
+      remoteCreateEnabled: false,
+      remoteRosterLocked: true,
+    })).toBe("locked");
+    const preview = formatStaffCreateFailureUi(new Error("invalid location"), { VERCEL_ENV: "preview" });
+    expect(preview.message).toBe(STAFF_CREATE_FAILURE_MESSAGE);
+    expect(preview.diagnostic).toBe("invalid location");
+    const production = formatStaffCreateFailureUi(new Error("invalid location"), {
+      VERCEL_ENV: "production",
+    });
+    expect(production.message).toBe(STAFF_CREATE_FAILURE_MESSAGE);
+    expect(production.diagnostic).toBeNull();
+    expect(
+      isCanonicalStaffCreateSuccess({
+        membershipId: "mem-staff-preview1",
+        userId: "staff-preview1",
+        authUserId: null,
+        locationIds: [LOC_ENJOYE_PRIMARY_ID],
+      }),
+    ).toBe(true);
+    expect(
+      isCanonicalStaffCreateSuccess({
+        membershipId: "mem-staff-preview1",
+        userId: "staff-preview1",
+        authUserId: AUTH_OWNER,
+        locationIds: [LOC_ENJOYE_PRIMARY_ID],
+      }),
+    ).toBe(false);
+    expect(source("features/staff/StaffOnboardingDialog.tsx")).toMatch(/formatStaffCreateFailureUi/);
+    expect(source("features/staff/StaffOnboardingDialog.tsx")).toMatch(/isCanonicalStaffCreateSuccess/);
+    expect(source("features/staff/StaffOnboardingDialog.tsx")).toMatch(/sanitizeStaffCreateLocationIds/);
+    expect(source("features/staff/StaffOnboardingDialog.tsx")).toMatch(/data-staff-create-error/);
+    expect(source("features/staff/StaffWorkspacePage.tsx")).toMatch(/canonicalLocationIds/);
+    expect(source("features/staff/StaffWorkspacePage.tsx")).toMatch(/data-staff-create-success/);
+  });
+
+  it("drops seed-only locations from the write path so Preview cannot submit 公益店", () => {
+    const seed = [
+      { id: LOC_ENJOYE_PRIMARY_ID, name: "THE ENJOYE 主店" },
+      { id: LOC_ENJOYE_SECONDARY_ID, name: "THE ENJOYE 公益店" },
+    ];
+    expect(
+      resolveStaffCreateLocations({
+        submitPath: "write",
+        locations: seed,
+        remoteLocationIds: [LOC_ENJOYE_PRIMARY_ID],
+      }).map((row) => row.id),
+    ).toEqual([LOC_ENJOYE_PRIMARY_ID]);
+    expect(
+      sanitizeStaffCreateLocationIds(
+        [LOC_ENJOYE_SECONDARY_ID, LOC_ENJOYE_PRIMARY_ID],
+        [LOC_ENJOYE_PRIMARY_ID],
+      ),
+    ).toEqual([LOC_ENJOYE_PRIMARY_ID]);
+    expect(
+      resolveStaffOnboardingSubmitPath({
+        remoteWriteEnabled: false,
+        remoteCreateEnabled: false,
+        remoteRosterLocked: true,
+      }),
+    ).toBe("locked");
   });
 });

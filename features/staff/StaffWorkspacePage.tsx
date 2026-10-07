@@ -736,6 +736,9 @@ export function StaffWorkspacePage({
           remoteCreateEnabled={staffRemoteCreatePilot}
           remoteWriteEnabled={staffRemoteWritePilot}
           remoteRosterLocked={remoteRosterLocked && !staffRemoteCreatePilot && !staffRemoteWritePilot}
+          canonicalLocationIds={[
+            ...new Set(memberships.flatMap((row) => row.locationIds)),
+          ]}
           onClose={() => {
             setOnboardingOpen(false);
             queueMicrotask(() => {

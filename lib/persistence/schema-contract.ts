@@ -67,6 +67,10 @@ export const FINANCE_EXPENSE_WRITE_HARDENING_MIGRATION_FILE =
 export const STAFF_OPERATIONAL_CREATE_MIGRATION_FILE =
   "supabase/migrations/20261007140000_staff_operational_create.sql";
 
+/** Staff CREATE V1 atomic RPC. Additive. Does not rewrite 140000. */
+export const STAFF_OPERATIONAL_CREATE_FIX_MIGRATION_FILE =
+  "supabase/migrations/20261007150000_staff_operational_create_fix.sql";
+
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [
   "remaining_sessions",
