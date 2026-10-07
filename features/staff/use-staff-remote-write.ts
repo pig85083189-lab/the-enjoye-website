@@ -3,9 +3,9 @@
 import {
   listAuthenticatedOrgStaff,
   runAuthenticatedStaffWriteCreate,
-  STAFF_REMOTE_WRITE_PILOT_ENV,
   type StaffWriteClient,
 } from "@/lib/staff/staff-remote-write-pilot";
+import { staffRemoteWriteBrowserEnv } from "@/lib/staff/staff-remote-write-flag";
 import type { StaffOperationalCreateDraft } from "@/lib/staff/staff-remote-write-command";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 
@@ -18,11 +18,11 @@ export async function submitStaffOperationalCreate(input: StaffOperationalCreate
   if (!client) {
     throw new Error("Authenticated Supabase client is unavailable");
   }
-  const env = {
-    ...process.env,
-    [STAFF_REMOTE_WRITE_PILOT_ENV]: "1",
-  };
-  const created = await runAuthenticatedStaffWriteCreate(client, input, env);
+  const created = await runAuthenticatedStaffWriteCreate(
+    client,
+    input,
+    staffRemoteWriteBrowserEnv(),
+  );
   const roster = await listAuthenticatedOrgStaff(client);
   return { created, roster };
 }

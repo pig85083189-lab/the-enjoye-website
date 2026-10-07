@@ -33,7 +33,10 @@ import {
   STAFF_REMOTE_WRITE_PILOT_ENV,
   type StaffWriteClient,
 } from "@/lib/staff/staff-remote-write-pilot";
-import { isStaffRemoteWritePilotEnabled } from "@/lib/staff/staff-remote-write-flag";
+import {
+  isStaffRemoteWritePilotEnabled,
+  staffRemoteWriteBrowserEnv,
+} from "@/lib/staff/staff-remote-write-flag";
 import { STAFF_WRITE_PILOT_OFF_MESSAGE } from "@/lib/staff/staff-write-guard";
 import { canCreateOperationalStaff } from "@/lib/staff-auth/operational-capabilities";
 import { isAuthUuid } from "@/lib/staff-auth/staff-id";
@@ -272,6 +275,12 @@ describe("staff operational remote write", () => {
       isStaffRemoteWritePilotEnabled({ [STAFF_REMOTE_WRITE_PILOT_ENV]: "1" }),
     ).toBe(false);
     expect(isStaffRemoteWritePilotEnabled(WRITE_ON)).toBe(true);
+    expect(
+      isStaffRemoteWritePilotEnabled({
+        [STAFF_REMOTE_WRITE_PILOT_ENV]: "1",
+      }),
+    ).toBe(false);
+    expect(isStaffRemoteWritePilotEnabled(staffRemoteWriteBrowserEnv(WRITE_ON))).toBe(true);
     expect(isStaffRemoteCreatePilotEnabled(WRITE_ON)).toBe(false);
     expect(STAFF_REMOTE_WRITE_PILOT_ENV).toBe("BEAUTY_OS_STAFF_REMOTE_WRITE_PILOT");
     expect(STAFF_REMOTE_CREATE_PILOT_ENV).toBe("BEAUTY_OS_STAFF_REMOTE_CREATE_PILOT");
@@ -467,6 +476,8 @@ describe("staff operational remote write", () => {
       /data-staff-invite|邀請登入<\/button>/,
     );
     expect(source("features/staff/use-staff-remote-write.ts")).toMatch(/createBrowserClientOrNull/);
+    expect(source("features/staff/use-staff-remote-write.ts")).toMatch(/staffRemoteWriteBrowserEnv/);
+    expect(source("features/staff/use-staff-remote-write.ts")).not.toMatch(/\.\.\.process\.env/);
     expect(source("app/staff/(app)/staff/page.tsx")).toMatch(/isStaffRemoteWritePilotEnabled/);
     expect(source("app/staff/(app)/staff/page.tsx")).not.toMatch(/staff-remote-write-pilot/);
     expect(APPOINTMENT_REMOTE_MUTATE_PILOT_ENV).toBe("BEAUTY_OS_APPOINTMENT_REMOTE_MUTATE_PILOT");
