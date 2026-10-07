@@ -6,6 +6,9 @@ import type { StaffRole } from "@/types/saas";
 
 export const STAFF_MANAGE_ROLES = new Set<StaffRole>(["OWNER"]);
 
+/** Operational Staff CREATE (no Auth). Page access follows this set. */
+export const STAFF_OPERATIONAL_CREATE_ROLES = new Set<StaffRole>(["OWNER", "MANAGER"]);
+
 export const APPOINTMENT_CREATE_ROLES = new Set<StaffRole>([
   "OWNER",
   "MANAGER",
@@ -54,6 +57,14 @@ function hasRole(actor: CapabilityActor, roles: ReadonlySet<StaffRole>): boolean
 
 export function canManageStaffCapability(actor: CapabilityActor): boolean {
   return hasRole(actor, STAFF_MANAGE_ROLES);
+}
+
+export function canCreateOperationalStaff(actor: CapabilityActor): boolean {
+  return hasRole(actor, STAFF_OPERATIONAL_CREATE_ROLES);
+}
+
+export function canAccessStaffWorkspace(actor: CapabilityActor): boolean {
+  return canCreateOperationalStaff(actor);
 }
 
 export function canCreateAppointment(actor: CapabilityActor): boolean {

@@ -161,6 +161,8 @@ export interface CreateMembershipInput {
   role: StaffRole;
   locationIds: string[];
   email?: string | null;
+  phone?: string | null;
+  title?: string | null;
   actorStaffId?: string;
 }
 
@@ -196,6 +198,8 @@ export function createMembership(input: CreateMembershipInput): StaffMembership 
     createdAt: new Date().toISOString(),
     authUserId: null,
     email: email ?? null,
+    phone: input.phone?.trim() || null,
+    title: input.title?.trim() || null,
   };
   const overrides = readMembershipOverrides();
   overrides[membership.id] = membership;

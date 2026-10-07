@@ -110,8 +110,10 @@ describe("role-aware visibility", () => {
     expect(ids).toContain("reports");
   });
 
-  it("hides Staff from MANAGER and every non-OWNER role", () => {
-    for (const role of ["MANAGER", "STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
+  it("shows Staff to OWNER and MANAGER and hides it from other roles", () => {
+    expect(getVisibleNavigationItems("OWNER").map((item) => item.id)).toContain("staff");
+    expect(getVisibleNavigationItems("MANAGER").map((item) => item.id)).toContain("staff");
+    for (const role of ["STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
       expect(getVisibleNavigationItems(role).map((item) => item.id)).not.toContain("staff");
     }
   });

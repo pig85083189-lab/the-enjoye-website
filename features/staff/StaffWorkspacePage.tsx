@@ -91,8 +91,10 @@ function todayIndexInWeek(now: Date): number {
 
 export function StaffWorkspacePage({
   staffRemoteCreatePilot = false,
+  staffRemoteWritePilot = false,
 }: {
   staffRemoteCreatePilot?: boolean;
+  staffRemoteWritePilot?: boolean;
 }) {
   const { organization, currentLocation, locations, membership } = useOrganization();
   const isClient = useIsClient();
@@ -278,6 +280,7 @@ export function StaffWorkspacePage({
 
   function handleStaffCreated(result: {
     membership: { userId: string };
+    roster?: unknown;
     scheduleError: string | null;
     remote?: boolean;
     notice?: string;
@@ -288,7 +291,7 @@ export function StaffWorkspacePage({
     setView("staff");
     selectStaff(result.membership.userId);
     if (result.remote) {
-      setNotice(result.notice || "員工帳號已建立");
+      setNotice(result.notice || "員工已建立");
       setError("");
     }
     if (result.scheduleError) {
@@ -731,7 +734,8 @@ export function StaffWorkspacePage({
           actorRole={membership?.role}
           defaultLocationId={locationId}
           remoteCreateEnabled={staffRemoteCreatePilot}
-          remoteRosterLocked={remoteRosterLocked && !staffRemoteCreatePilot}
+          remoteWriteEnabled={staffRemoteWritePilot}
+          remoteRosterLocked={remoteRosterLocked && !staffRemoteCreatePilot && !staffRemoteWritePilot}
           onClose={() => {
             setOnboardingOpen(false);
             queueMicrotask(() => {
@@ -739,7 +743,10 @@ export function StaffWorkspacePage({
             });
           }}
           onCreated={(result) => {
-            if (result.remote && result.membershipFull) {
+            if (result.remote && result.roster?.length) {
+              applyRemoteMembershipsToClient(result.roster);
+              emitOrgChange();
+            } else if (result.remote && result.membershipFull) {
               applyRemoteMembershipsToClient([result.membershipFull]);
               emitOrgChange();
             }
@@ -843,7 +850,7 @@ function DesktopRow({ row, selected, onSelect, onPointerDown, onKeyDown }: RowPr
         <div className="min-w-0">
           <p className="truncate text-[14px] font-semibold text-text">{row.displayName}</p>
           <p className="truncate text-[12px] text-secondary-text">
-            {row.roleLabel} · {row.locationLabel}
+            {[row.title, row.roleLabel, row.locationLabel].filter(Boolean).join(" · ")}
           </p>
         </div>
       </div>
@@ -886,7 +893,7 @@ function MobileCard({ row, selected, onSelect, onPointerDown, onKeyDown }: RowPr
         <div className="min-w-0">
           <p className="truncate text-[14px] font-semibold text-text">{row.displayName}</p>
           <p className="truncate text-[12px] text-[#6E6666]">
-            {row.roleLabel} · {row.locationLabel}
+            {[row.title, row.roleLabel, row.locationLabel].filter(Boolean).join(" · ")}
           </p>
           <p className="mt-1 text-[12px] text-secondary-text">{row.todayHoursLabel}</p>
         </div>

@@ -7,6 +7,7 @@ import {
   resolveStaffManagementAccess,
 } from "@/lib/staff/staff-management-access";
 import { isStaffRemoteCreatePilotEnabled } from "@/lib/staff/staff-remote-create-flag";
+import { isStaffRemoteWritePilotEnabled } from "@/lib/staff/staff-remote-write-flag";
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 
 export default async function StaffPage() {
@@ -25,6 +26,9 @@ export default async function StaffPage() {
   }
 
   return (
-    <StaffWorkspacePage staffRemoteCreatePilot={isStaffRemoteCreatePilotEnabled()} />
+    <StaffWorkspacePage
+      staffRemoteCreatePilot={isStaffRemoteCreatePilotEnabled()}
+      staffRemoteWritePilot={isStaffRemoteWritePilotEnabled()}
+    />
   );
 }

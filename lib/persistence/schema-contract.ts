@@ -63,6 +63,10 @@ export const FINANCE_EXPENSE_FOUNDATION_MIGRATION_FILE =
 export const FINANCE_EXPENSE_WRITE_HARDENING_MIGRATION_FILE =
   "supabase/migrations/20261007130000_finance_expense_write_hardening.sql";
 
+/** Staff CREATE V1 operational INSERT. Additive. Auth provisioning stays closed. */
+export const STAFF_OPERATIONAL_CREATE_MIGRATION_FILE =
+  "supabase/migrations/20261007140000_staff_operational_create.sql";
+
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [
   "remaining_sessions",

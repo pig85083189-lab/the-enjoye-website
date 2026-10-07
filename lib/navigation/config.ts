@@ -231,7 +231,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     status: "ready",
     description: "員工與排班",
     requiredPermissions: ["staff.manage"],
-    roles: ["OWNER"],
+    roles: ["OWNER", "MANAGER"],
   },
   {
     id: "settings",

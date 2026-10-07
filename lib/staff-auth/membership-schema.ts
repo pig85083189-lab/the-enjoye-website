@@ -25,8 +25,11 @@ export type StaffAuthMembershipRow = {
   role: string;
   display_name: string;
   email: string | null;
+  phone?: string | null;
+  title?: string | null;
   is_active: boolean;
   created_at: string;
+  created_by_staff_id?: string | null;
 };
 
 export type StaffAuthMembershipLocationRow = {
@@ -77,6 +80,8 @@ export function staffMembershipFromRow(
     locationIds,
     role: row.role,
     displayName: row.display_name,
+    phone: row.phone ?? null,
+    title: row.title ?? null,
     isActive: row.is_active,
     createdAt: row.created_at,
   };
@@ -98,6 +103,8 @@ export function staffMembershipToRow(
     role: membership.role,
     display_name: membership.displayName,
     email: membership.email ?? null,
+    phone: membership.phone ?? null,
+    title: membership.title ?? null,
     is_active: membership.isActive,
     created_at: membership.createdAt,
   };
