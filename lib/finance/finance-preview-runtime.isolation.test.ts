@@ -31,9 +31,13 @@ describe("finance preview runtime boundary", () => {
     expect(read("features/finance/FinanceExpensesPageClient.tsx")).toMatch(
       /EXPENSE_LEDGER_UNAVAILABLE_MESSAGE/,
     );
+    expect(read("features/finance/FinanceExpensesPageClient.tsx")).toMatch(
+      /EXPENSE_WRITE_CLOSED_MESSAGE/,
+    );
     expect(read("features/finance/FinanceExpensesPageClient.tsx")).toMatch(/disabled=\{formDisabled\}/);
     expect(read("features/finance/FinanceExpensesPageClient.tsx")).toMatch(/aria-disabled=\{formDisabled\}/);
     expect(read("features/finance/FinanceExpensesPageClient.tsx")).toMatch(/ExpenseFormDialog/);
+    expect(read("features/finance/FinanceExpensesPageClient.tsx")).toMatch(/sheetOpen && writeOpen/);
     expect(read("features/finance/FinanceExpensesPageClient.tsx")).not.toMatch(/localStorage/);
   });
 

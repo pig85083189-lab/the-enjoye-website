@@ -100,6 +100,8 @@ describe("expense create surface", () => {
     const page = source("features/finance/FinanceExpensesPageClient.tsx");
     expect(page).toMatch(/ExpenseFormDialog/);
     expect(page).toMatch(/新增支出/);
+    expect(page).toMatch(/支出記帳尚未開放/);
+    expect(page).toMatch(/sheetOpen && writeOpen/);
     expect(page).toMatch(/建立人/);
     expect(page).toMatch(/ctx\.refreshFinance\(\)/);
     expect(page).not.toMatch(/optimistic/);

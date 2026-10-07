@@ -10,6 +10,7 @@ export const EXPENSE_REMOTE_WRITE_OPEN = false;
 
 /** Expense table / SELECT not available yet. Do not present NT$0 as a real total. */
 export const EXPENSE_LEDGER_UNAVAILABLE_MESSAGE = "支出記帳尚未啟用";
+export const EXPENSE_WRITE_CLOSED_MESSAGE = "支出記帳尚未開放";
 export const EXPENSE_DELTA_PENDING_MESSAGE = "尚待支出資料";
 
 export type ExpenseRemoteAvailability = "ready" | "unavailable";

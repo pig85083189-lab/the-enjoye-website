@@ -55,9 +55,13 @@ export const STRATEGY_B_RLS_MIGRATION_FILE =
 export const COMMERCE_TABLE_WRITE_HARDENING_MIGRATION_FILE =
   "supabase/migrations/20261006130000_commerce_table_write_hardening.sql";
 
-/** Finance V1B Expense foundation. Additive draft — Preview apply only; do not Production apply in this PR. */
+/** Finance V1B Expense foundation. Already applied on Preview. Do not rewrite. */
 export const FINANCE_EXPENSE_FOUNDATION_MIGRATION_FILE =
   "supabase/migrations/20261007120000_finance_expense_foundation.sql";
+
+/** Finance V1C Expense WRITE hardening. Revokes INSERT. SELECT remains. */
+export const FINANCE_EXPENSE_WRITE_HARDENING_MIGRATION_FILE =
+  "supabase/migrations/20261007130000_finance_expense_write_hardening.sql";
 
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [

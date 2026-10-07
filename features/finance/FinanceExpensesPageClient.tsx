@@ -4,7 +4,10 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { formatTwd } from "@/lib/commerce/money";
-import { EXPENSE_LEDGER_UNAVAILABLE_MESSAGE } from "@/lib/finance/domain";
+import {
+  EXPENSE_LEDGER_UNAVAILABLE_MESSAGE,
+  EXPENSE_WRITE_CLOSED_MESSAGE,
+} from "@/lib/finance/domain";
 import { buildFinanceExpenseRows } from "@/lib/finance/expense";
 import { addDaysYmd, formatShortYmd, resolveFinancePeriod, taipeiYmdFromInstant } from "@/lib/finance/period";
 import { listMemberships } from "@/lib/tenant/organization-store";
@@ -46,25 +49,36 @@ function ExpensesBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
     staffNameById,
   });
 
-  const formDisabled = !ctx.canCreateExpense;
-  const addButton = (
+  const writeOpen = ctx.expenseRemoteWritePilot && ctx.expenseAvailability === "ready";
+  const formDisabled = !ctx.canCreateExpense || !writeOpen;
+  const addButton = writeOpen ? (
     <Button
       fullWidth
       variant={formDisabled ? "outline" : "primary"}
       disabled={formDisabled}
       aria-disabled={formDisabled}
       data-expense-add
-      onClick={() => setSheetOpen(true)}
+      onClick={() => {
+        if (formDisabled) return;
+        setSheetOpen(true);
+      }}
     >
       新增支出
     </Button>
-  );
+  ) : null;
 
   return (
     <>
       {ctx.expenseAvailability === "unavailable" ? (
         <Card padding="md">
           <p className="text-sm text-secondary-text">{EXPENSE_LEDGER_UNAVAILABLE_MESSAGE}</p>
+        </Card>
+      ) : null}
+      {!ctx.expenseRemoteWritePilot && ctx.expenseAvailability !== "unavailable" ? (
+        <Card padding="md">
+          <p className="text-sm text-secondary-text" data-expense-write-closed>
+            {EXPENSE_WRITE_CLOSED_MESSAGE}
+          </p>
         </Card>
       ) : null}
       <div className="space-y-3">
@@ -156,14 +170,14 @@ function ExpensesBody({ ctx }: { ctx: FinanceWorkspaceContext }) {
           </ul>
         </Card>
       </div>
-      {sheetOpen ? (
+      {sheetOpen && writeOpen ? (
         <ExpenseFormDialog
           open
           organizationId={ctx.organizationId}
           locationId={ctx.locationId}
           defaultDate={nowYmd}
           canCreate={ctx.canCreateExpense}
-          writeEnabled={ctx.expenseRemoteWritePilot && ctx.expenseAvailability === "ready"}
+          writeEnabled={writeOpen}
           onClose={() => setSheetOpen(false)}
           onCreated={() => ctx.refreshFinance()}
         />
@@ -184,7 +198,11 @@ export function FinanceExpensesPageClient({
       financeRemoteReadPilot={financeRemoteReadPilot}
       expenseRemoteWritePilot={expenseRemoteWritePilot}
       title="支出記帳"
-      description="記錄店舖支出。寫入僅限店主與店長。"
+      description={
+        expenseRemoteWritePilot
+          ? "記錄店舖支出。寫入僅限店主與店長。"
+          : "記錄店舖支出。支出記帳尚未開放。"
+      }
     >
       {(ctx) => <ExpensesBody ctx={ctx} />}
     </FinanceWorkspace>
