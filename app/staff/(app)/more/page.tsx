@@ -54,7 +54,9 @@ export default function MorePage() {
                         <Icon className="h-5 w-5" aria-hidden />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-[15px] font-semibold text-text">{item.label}</p>
+                        <p className="text-[15px] font-semibold text-text">
+                          {item.moreHubPrimary && item.clusterLabel ? item.clusterLabel : item.label}
+                        </p>
                         <p className="mt-0.5 text-sm text-secondary-text">
                           {item.description}
                         </p>

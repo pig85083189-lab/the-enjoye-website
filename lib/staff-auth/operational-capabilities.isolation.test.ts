@@ -14,6 +14,7 @@ import {
   canOpenOrder,
   canReadTreatment,
   canWriteTreatment,
+  canCreateExpense,
   resolveCheckoutAccess,
 } from "@/lib/staff-auth/operational-capabilities";
 import {
@@ -93,6 +94,11 @@ describe("Phase 1C-6D.2D operational capabilities", () => {
     expect(canCheckout(undefined)).toBe(false);
     expect(canManageStaffCapability(actor("OWNER"))).toBe(true);
     expect(canManageStaffCapability(actor("MANAGER"))).toBe(false);
+    expect(canCreateExpense(actor("OWNER"))).toBe(true);
+    expect(canCreateExpense(actor("MANAGER"))).toBe(true);
+    expect(canCreateExpense(actor("STAFF"))).toBe(false);
+    expect(canCreateExpense(actor("RECEPTIONIST"))).toBe(false);
+    expect(canCreateExpense(actor("ACCOUNTANT"))).toBe(false);
   });
 
   it("grants Treatment read/write to operational salon roles and denies ACCOUNTANT", () => {

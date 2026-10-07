@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { StaffNavLink } from "@/components/navigation/StaffNavLink";
 import { OrgLocationSwitcher } from "@/components/navigation/OrgLocationSwitcher";
 import {
+  clusterGroupItems,
   getVisibleNavigationItems,
   groupNavigationItems,
 } from "@/lib/navigation";
@@ -72,20 +73,45 @@ export function StaffNavDrawer({ open, onClose }: StaffNavDrawerProps) {
                 </p>
               ) : null}
               <ul className="space-y-1">
-                {items.map((item) => {
-                  const Icon = item.icon;
+                {clusterGroupItems(items).map((entry) => {
+                  if (entry.kind === "item") {
+                    const item = entry.item;
+                    const Icon = item.icon;
+                    return (
+                      <li key={item.id}>
+                        <StaffNavLink
+                          item={item}
+                          onNavigate={onClose}
+                          className="flex min-h-11 items-center gap-3 rounded-2xl px-3 text-[15px] font-medium transition-colors"
+                          activeClassName="bg-primary-light text-primary"
+                          inactiveClassName="text-secondary-text hover:bg-[#FAF7F5] hover:text-text"
+                        >
+                          <Icon className="h-5 w-5" aria-hidden />
+                          {item.label}
+                        </StaffNavLink>
+                      </li>
+                    );
+                  }
                   return (
-                    <li key={item.id}>
-                      <StaffNavLink
-                        item={item}
-                        onNavigate={onClose}
-                        className="flex min-h-11 items-center gap-3 rounded-2xl px-3 text-[15px] font-medium transition-colors"
-                        activeClassName="bg-primary-light text-primary"
-                        inactiveClassName="text-secondary-text hover:bg-[#FAF7F5] hover:text-text"
-                      >
-                        <Icon className="h-5 w-5" aria-hidden />
-                        {item.label}
-                      </StaffNavLink>
+                    <li key={entry.cluster.id} className="space-y-1">
+                      <p className="px-3 pt-1 text-[12px] font-semibold text-secondary-text">
+                        {entry.cluster.label}
+                      </p>
+                      <ul className="space-y-1">
+                        {entry.cluster.items.map((child) => (
+                          <li key={child.id}>
+                            <StaffNavLink
+                              item={child}
+                              onNavigate={onClose}
+                              className="flex min-h-11 items-center rounded-2xl px-3 text-[14px] font-medium transition-colors"
+                              activeClassName="bg-primary-light text-primary"
+                              inactiveClassName="text-secondary-text hover:bg-[#FAF7F5] hover:text-text"
+                            >
+                              {child.label}
+                            </StaffNavLink>
+                          </li>
+                        ))}
+                      </ul>
                     </li>
                   );
                 })}
