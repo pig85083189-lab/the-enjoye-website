@@ -123,6 +123,8 @@ function mergeMembershipSources(
       null,
     isActive: overlay?.isActive ?? remote?.isActive ?? seed?.isActive ?? true,
     email: overlay?.email ?? remote?.email ?? seed?.email ?? identity.email ?? null,
+    phone: overlay?.phone ?? remote?.phone ?? seed?.phone ?? identity.phone ?? null,
+    title: overlay?.title ?? remote?.title ?? seed?.title ?? identity.title ?? null,
   };
   assertOperationalStaffId(merged.userId);
   return applyBootstrapAuthUserId(merged);

@@ -106,6 +106,8 @@ export interface StaffWorkspaceRow {
   initials: string;
   role: StaffRole;
   roleLabel: string;
+  title: string | null;
+  loginBinding: "bound" | "unbound";
   locationIds: string[];
   locationLabel: string;
   isActive: boolean;
@@ -611,6 +613,7 @@ export function buildStaffWorkspace(input: {
     }));
     const workingSegment = todayCell.segments.find((segment) => segment.kind === "working");
     const roleLabel = STAFF_ROLE_LABEL[membership.role];
+    const title = membership.title?.trim() || null;
 
     rows.push({
       staffId: membership.userId,
@@ -620,6 +623,8 @@ export function buildStaffWorkspace(input: {
       initials: staffInitials(membership.displayName),
       role: membership.role,
       roleLabel,
+      title,
+      loginBinding: membership.authUserId ? "bound" : "unbound",
       locationIds: membership.locationIds,
       locationLabel: input.locationName,
       isActive: membership.isActive,
@@ -630,7 +635,7 @@ export function buildStaffWorkspace(input: {
       todayWorkStartHm: workingSegment?.startHm ?? null,
       todayWorkEndHm: workingSegment?.endHm ?? null,
       todayBreaks,
-      searchText: `${membership.displayName} ${membership.role} ${roleLabel}`.toLowerCase(),
+      searchText: `${membership.displayName} ${membership.role} ${roleLabel} ${title ?? ""}`.toLowerCase(),
     });
 
     weekGrid.push({

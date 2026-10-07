@@ -66,6 +66,9 @@ export function createStaffOnboardingFromDraft(
       displayName: draft.displayName,
       role: draft.role,
       locationIds: draft.locationIds,
+      email: draft.email || null,
+      phone: draft.phone || null,
+      title: draft.title || null,
     },
     draft,
   );

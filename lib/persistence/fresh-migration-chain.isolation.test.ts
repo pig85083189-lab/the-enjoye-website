@@ -35,6 +35,8 @@ const EXPECTED_CHAIN = [
   "20261006130000_commerce_table_write_hardening.sql",
   "20261007120000_finance_expense_foundation.sql",
   "20261007130000_finance_expense_write_hardening.sql",
+  "20261007140000_staff_operational_create.sql",
+  "20261007150000_staff_operational_create_fix.sql",
 ] as const;
 
 function read(rel: string): string {

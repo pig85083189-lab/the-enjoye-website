@@ -196,7 +196,7 @@ export function StaffQuickView({
                   {row.displayName}
                 </h2>
                 <p className="mt-0.5 truncate text-[12px] text-secondary-text">
-                  {row.roleLabel} · {row.locationLabel}
+                  {[row.title, row.roleLabel, row.locationLabel].filter(Boolean).join(" · ")}
                 </p>
                 <span
                   className={cn(
@@ -208,6 +208,11 @@ export function StaffQuickView({
                 >
                   {row.employmentLabel}
                 </span>
+                {row.loginBinding === "unbound" ? (
+                  <p className="mt-1.5 text-[12px] text-secondary-text" data-staff-login-binding>
+                    登入權限 · 尚未邀請
+                  </p>
+                ) : null}
               </div>
             </div>
 
