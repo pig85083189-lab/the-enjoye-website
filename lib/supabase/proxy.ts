@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { tryGetSupabaseEnv } from "@/lib/supabase/env";
+import {
+  resolveStaffSessionGate,
+  resolveStaffSessionRedirect,
+} from "@/lib/staff-auth/staff-invite-gate";
 
 const PUBLIC_STAFF_PREFIXES = [
   "/staff/login",
@@ -70,16 +74,54 @@ export async function updateSession(request: NextRequest) {
     return redirect;
   }
 
-  if (pathname === "/staff/login" && user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/staff/today";
-    url.search = "";
-    const redirect = NextResponse.redirect(url);
-    supabaseResponse.cookies.getAll().forEach((cookie) => {
-      redirect.cookies.set(cookie.name, cookie.value);
-    });
-    return redirect;
+  if (user) {
+    const gate = await resolveProxyStaffSessionGate(supabase, user.id);
+    const nextPath = resolveStaffSessionRedirect({ pathname, gate });
+    if (nextPath) {
+      const url = request.nextUrl.clone();
+      url.pathname = nextPath;
+      url.search = "";
+      const redirect = NextResponse.redirect(url);
+      supabaseResponse.cookies.getAll().forEach((cookie) => {
+        redirect.cookies.set(cookie.name, cookie.value);
+      });
+      return redirect;
+    }
   }
 
   return supabaseResponse;
+}
+
+async function resolveProxyStaffSessionGate(
+  supabase: ReturnType<typeof createServerClient>,
+  authUserId: string,
+) {
+  const memberships = await supabase
+    .from("staff_auth_memberships")
+    .select("id, is_active")
+    .eq("auth_user_id", authUserId)
+    .eq("is_active", true)
+    .limit(1);
+  const boundActiveMembership = Boolean(memberships.data && memberships.data.length > 0);
+  let pendingInviteForAuthUser = false;
+  if (!boundActiveMembership) {
+    const invites = await supabase
+      .from("staff_login_invites")
+      .select("id, expires_at, status")
+      .eq("invited_auth_user_id", authUserId)
+      .eq("status", "pending")
+      .limit(3);
+    const now = Date.now();
+    pendingInviteForAuthUser = Boolean(
+      !invites.error &&
+        invites.data?.some((row: { expires_at?: string | null }) =>
+          Date.parse(String(row.expires_at)) > now,
+        ),
+    );
+  }
+  return resolveStaffSessionGate({
+    authenticated: true,
+    boundActiveMembership,
+    pendingInviteForAuthUser,
+  });
 }
