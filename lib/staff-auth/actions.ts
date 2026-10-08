@@ -20,8 +20,25 @@ import {
   isStaffInvitePilotEnabled,
   isStaffInviteSendOpen,
 } from "@/lib/staff-auth/staff-invite-flag";
-import { evaluateStaffInviteRequest } from "@/lib/staff-auth/staff-invite-command";
+import {
+  BIND_INVITED_STAFF_AUTH_USER_RPC,
+  REVOKE_STAFF_LOGIN_INVITE_RPC,
+  evaluateStaffInviteBind,
+  evaluateStaffInviteRequest,
+  evaluateStaffInviteRevoke,
+  type StaffInviteDecisionReason,
+  type StaffInviteRecord,
+  type StaffInviteRequestMode,
+} from "@/lib/staff-auth/staff-invite-command";
 import { resolveStaffInviteRedirect } from "@/lib/staff-auth/staff-invite-redirect";
+import { deliverStaffLoginInvite } from "@/lib/staff-auth/staff-invite-send-adapter";
+import {
+  loadOrganizationStaffInvites,
+  loadPendingStaffInviteForAuthUser,
+  loadStaffInviteForMembership,
+  loadStaffInviteTargetByMembershipId,
+} from "@/lib/staff-auth/staff-invite-load";
+import { createClient } from "@/lib/supabase/server";
 
 export async function getStaffInviteCapabilityAction() {
   return getStaffInviteCapability({
@@ -95,6 +112,7 @@ export async function inviteStaffLoginAction(input: {
   redirectTo?: string;
   membershipId?: string;
   organizationId?: string;
+  mode?: StaffInviteRequestMode;
 }): Promise<InviteStaffLoginResult> {
   void input.redirectTo;
   const env =
@@ -129,6 +147,10 @@ export async function inviteStaffLoginAction(input: {
   const target =
     roster.find((row) => row.id === input.membershipId) ??
     (await loadTargetMembership(input.organizationId, input.membershipId));
+  const existingInvite = await loadStaffInviteForMembership(
+    input.membershipId,
+    input.organizationId,
+  );
 
   const decision = evaluateStaffInviteRequest({
     invitePilotEnabled,
@@ -136,6 +158,7 @@ export async function inviteStaffLoginAction(input: {
     organizationId: input.organizationId,
     membershipId: input.membershipId,
     email: input.email,
+    mode: input.mode,
     actor: {
       authUserId: actorUser?.id ?? null,
       role: resolved.status === "ok" ? resolved.membership.role : null,
@@ -153,6 +176,7 @@ export async function inviteStaffLoginAction(input: {
           authUserId: target.authUserId ?? null,
         }
       : null,
+    existingInvite,
   });
 
   if (!decision.ok) {
@@ -172,11 +196,134 @@ export async function inviteStaffLoginAction(input: {
     };
   }
 
-  return {
-    ok: false,
-    reason: "invite_send_closed",
-    message: "邀請寄送尚未開放",
-  };
+  if (!inviteSendOpen) {
+    return {
+      ok: false,
+      reason: "invite_send_closed",
+      message: "邀請寄送尚未開放",
+    };
+  }
+
+  const sent = await deliverStaffLoginInvite({
+    email: decision.email,
+    redirectTo: redirect.redirectTo,
+    membershipId: input.membershipId,
+    organizationId: input.organizationId,
+    mode: decision.mode,
+    existingInviteId: existingInvite?.id ?? null,
+  });
+  if (!sent.ok) {
+    return {
+      ok: false,
+      reason: sent.reason,
+      message: sent.message,
+    };
+  }
+  return { ok: true, authUserId: sent.authUserId };
+}
+
+export type AcceptStaffInviteResult =
+  | { ok: true; membershipId: string }
+  | {
+      ok: false;
+      reason: StaffInviteDecisionReason | "error";
+      message: string;
+    };
+
+export async function acceptStaffInviteAction(): Promise<AcceptStaffInviteResult> {
+  const user = await getServerStaffAuthUser();
+  if (!user) {
+    return { ok: false, reason: "unauthorized", message: "請先開啟邀請連結" };
+  }
+  const invite = await loadPendingStaffInviteForAuthUser(user.id);
+  const membership = invite
+    ? await loadStaffInviteTargetByMembershipId(invite.membershipId, invite.organizationId)
+    : null;
+  const decision = evaluateStaffInviteBind({
+    invite,
+    membership,
+    actorAuthUserId: user.id,
+    actorEmail: user.email,
+  });
+  if (!decision.ok) {
+    return {
+      ok: false,
+      reason: decision.reason,
+      message: decision.message,
+    };
+  }
+  const supabase = await createClient();
+  const bound = await supabase.rpc(BIND_INVITED_STAFF_AUTH_USER_RPC, {
+    p_invite_id: decision.inviteId,
+  });
+  if (bound.error) {
+    return {
+      ok: false,
+      reason: "error",
+      message: "目前無法完成登入綁定",
+    };
+  }
+  return { ok: true, membershipId: decision.membershipId };
+}
+
+export type RevokeStaffInviteResult =
+  | { ok: true; inviteId: string }
+  | {
+      ok: false;
+      reason: StaffInviteDecisionReason;
+      message: string;
+    };
+
+export async function revokeStaffLoginInviteAction(input: {
+  inviteId?: string;
+  organizationId?: string;
+}): Promise<RevokeStaffInviteResult> {
+  const env =
+    typeof process !== "undefined" ? process.env : ({} as NodeJS.Dict<string>);
+  const actorUser = await getServerStaffAuthUser();
+  const resolved = await getAuthenticatedStaffMembership({
+    organizationId: input.organizationId,
+  });
+  const invites =
+    resolved.status === "ok"
+      ? await loadOrganizationStaffInvites(resolved.membership.organizationId)
+      : [];
+  const invite = invites.find((row) => row.id === input.inviteId) ?? null;
+  const decision = evaluateStaffInviteRevoke({
+    invitePilotEnabled: isStaffInvitePilotEnabled(env),
+    actor: {
+      authUserId: actorUser?.id ?? null,
+      role: resolved.status === "ok" ? resolved.membership.role : null,
+      isActive: resolved.status === "ok" ? resolved.membership.isActive : false,
+      organizationId: resolved.status === "ok" ? resolved.membership.organizationId : null,
+      userId: resolved.status === "ok" ? resolved.membership.userId : null,
+    },
+    invite: invite ?? null,
+  });
+  if (!decision.ok) {
+    return {
+      ok: false,
+      reason: decision.reason,
+      message: decision.message,
+    };
+  }
+  const supabase = await createClient();
+  const revoked = await supabase.rpc(REVOKE_STAFF_LOGIN_INVITE_RPC, {
+    p_invite_id: decision.inviteId,
+  });
+  if (revoked.error) {
+    return { ok: false, reason: "error", message: "目前無法撤銷邀請" };
+  }
+  return { ok: true, inviteId: decision.inviteId };
+}
+
+export async function listStaffLoginInvitesAction(
+  organizationId?: string,
+): Promise<StaffInviteRecord[]> {
+  if (!organizationId) return [];
+  const resolved = await getAuthenticatedStaffMembership({ organizationId });
+  if (resolved.status !== "ok") return [];
+  return loadOrganizationStaffInvites(resolved.membership.organizationId);
 }
 
 async function loadTargetMembership(

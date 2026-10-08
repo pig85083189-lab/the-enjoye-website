@@ -283,6 +283,7 @@ describe("Staff invite state machine and late bind", () => {
       ok: true,
       membershipId: YIXIN.id,
       authUserId: AUTH_INVITEE,
+      inviteId: "inv-yixin-canary",
     });
   });
 
@@ -468,8 +469,10 @@ describe("2B-1 source contracts stay closed", () => {
   });
 
   it("adds server role layouts so STAFF cannot URL-guess settings or finance", () => {
-    expect(source("app/staff/(app)/settings/layout.tsx")).toMatch(/requireStaffRolePage/);
+    expect(source("app/staff/(app)/settings/layout.tsx")).toMatch(/StaffRolePageLayout/);
     expect(source("app/staff/(app)/finance/layout.tsx")).toMatch(/STAFF_FINANCE_ROLES/);
+    expect(source("lib/staff/StaffRolePageLayout.tsx")).toMatch(/StaffRoleDeniedPanel/);
+    expect(source("lib/staff/require-staff-role-page.ts")).toMatch(/access === "login"/);
     expect(source("app/staff/(app)/layout.tsx")).toMatch(/loadStaffSessionGate/);
     expect(source("lib/supabase/proxy.ts")).toMatch(/resolveStaffSessionRedirect/);
     expect(source("lib/supabase/proxy.ts")).toMatch(/staff_login_invites/);

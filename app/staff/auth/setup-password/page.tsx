@@ -4,6 +4,7 @@ import { Suspense, useMemo, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { AuthAlert, AuthBrand, AuthCard, AuthShell } from "@/features/auth/AuthShell";
+import { acceptStaffInviteAction } from "@/lib/staff-auth/actions";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import { tryGetSupabaseEnv } from "@/lib/supabase/env";
 
@@ -74,6 +75,16 @@ function SetupPasswordForm() {
       }
       setPassword("");
       setConfirm("");
+      const accepted = await acceptStaffInviteAction();
+      if (!accepted.ok) {
+        setStatus("error");
+        setTitle("密碼已儲存，但尚未取得工作台權限");
+        setDescription(accepted.message);
+        if (accepted.reason === "expired" || accepted.reason === "invalid_invite") {
+          router.replace("/staff/auth/access-unavailable");
+        }
+        return;
+      }
       setStatus("success");
       setTitle("密碼已設定");
       setDescription("正在進入工作台。");

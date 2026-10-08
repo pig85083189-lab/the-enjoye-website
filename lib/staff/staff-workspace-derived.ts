@@ -107,7 +107,9 @@ export interface StaffWorkspaceRow {
   role: StaffRole;
   roleLabel: string;
   title: string | null;
-  loginBinding: "bound" | "unbound";
+  loginBinding: "bound" | "unbound" | "pending";
+  email: string | null;
+  authUserId: string | null;
   locationIds: string[];
   locationLabel: string;
   isActive: boolean;
@@ -529,6 +531,7 @@ export function buildStaffWorkspace(input: {
   timeOff: StaffTimeOff[];
   now: Date;
   weekStart?: Date;
+  pendingInviteMembershipIds?: readonly string[];
 }): StaffWorkspaceModel {
   const weekStart = input.weekStart
     ? startOfDay(input.weekStart)
@@ -624,7 +627,13 @@ export function buildStaffWorkspace(input: {
       role: membership.role,
       roleLabel,
       title,
-      loginBinding: membership.authUserId ? "bound" : "unbound",
+      loginBinding: membership.authUserId
+        ? "bound"
+        : (input.pendingInviteMembershipIds ?? []).includes(membership.id)
+          ? "pending"
+          : "unbound",
+      email: membership.email ?? null,
+      authUserId: membership.authUserId ?? null,
       locationIds: membership.locationIds,
       locationLabel: input.locationName,
       isActive: membership.isActive,

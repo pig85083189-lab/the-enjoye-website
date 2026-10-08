@@ -10,7 +10,7 @@ import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 
 export const STAFF_INVITE_PILOT_ENV = "BEAUTY_OS_STAFF_INVITE_PILOT";
 
-/** 2B-1 security foundation: never send Auth invites or bind from the action. */
+/** 2B-2: send/bind code exists but this flag stays false. No live email or Auth create. */
 export const STAFF_INVITE_SEND_OPEN = false;
 
 export function isStaffInvitePilotEnabled(

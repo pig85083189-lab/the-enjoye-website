@@ -51,14 +51,21 @@ export type StaffInviteDecisionReason =
   | "conflict"
   | "invite_send_closed"
   | "invalid_invite"
-  | "expired";
+  | "expired"
+  | "error";
+
+export type StaffInviteRequestMode = "invite" | "resend";
 
 export type StaffInviteRequestDecision =
-  | { ok: true; email: string }
+  | { ok: true; email: string; mode: StaffInviteRequestMode }
   | { ok: false; reason: StaffInviteDecisionReason; message: string };
 
 export type StaffInviteBindDecision =
-  | { ok: true; membershipId: string; authUserId: string }
+  | { ok: true; membershipId: string; authUserId: string; inviteId: string }
+  | { ok: false; reason: StaffInviteDecisionReason; message: string };
+
+export type StaffInviteRevokeDecision =
+  | { ok: true; inviteId: string }
   | { ok: false; reason: StaffInviteDecisionReason; message: string };
 
 function refuse(
@@ -77,6 +84,9 @@ export function evaluateStaffInviteRequest(input: {
   actor: StaffInviteActor;
   target: StaffInviteTarget | null;
   existingAuthUserIdForEmail?: string | null;
+  existingInvite?: StaffInviteRecord | null;
+  mode?: StaffInviteRequestMode;
+  now?: Date;
 }): StaffInviteRequestDecision {
   if (!input.invitePilotEnabled) {
     return refuse("pilot_disabled", "登入邀請功能尚未啟用");
@@ -129,10 +139,33 @@ export function evaluateStaffInviteRequest(input: {
   ) {
     return refuse("conflict", "這個 Email 已經有登入帳號");
   }
+  const mode = input.mode === "resend" ? "resend" : "invite";
+  const existing = resolveUsableInvite(input.existingInvite, input.now);
+  if (mode === "resend") {
+    if (!existing || existing.status !== "pending") {
+      return refuse("invalid_invite", "沒有可重寄的邀請");
+    }
+    if (existing.membershipId !== input.membershipId) {
+      return refuse("unauthorized", "找不到員工");
+    }
+    if (existing.organizationId !== input.organizationId) {
+      return refuse("unauthorized", "不能邀請其他店家的員工");
+    }
+    if (normalizeStaffEmail(existing.email) !== email) {
+      return refuse("invalid_email", "邀請 Email 必須與員工資料一致");
+    }
+  } else if (existing) {
+    if (existing.status === "pending") {
+      return refuse("conflict", "這位員工已有待處理的登入邀請");
+    }
+    if (existing.status === "accepted") {
+      return refuse("conflict", "這位員工已經接受登入邀請");
+    }
+  }
   if (!input.inviteSendOpen) {
     return refuse("invite_send_closed", "邀請寄送尚未開放");
   }
-  return { ok: true, email };
+  return { ok: true, email, mode };
 }
 
 export function evaluateStaffInviteBind(input: {
@@ -193,5 +226,78 @@ export function evaluateStaffInviteBind(input: {
     ok: true,
     membershipId: input.membership.id,
     authUserId: input.actorAuthUserId,
+    inviteId: input.invite.id,
   };
+}
+
+export function evaluateStaffInviteRevoke(input: {
+  invitePilotEnabled: boolean;
+  actor: StaffInviteActor;
+  invite: StaffInviteRecord | null;
+  now?: Date;
+}): StaffInviteRevokeDecision {
+  if (!input.invitePilotEnabled) {
+    return refuse("pilot_disabled", "登入邀請功能尚未啟用");
+  }
+  if (!input.actor.authUserId || !isAuthUuid(input.actor.authUserId)) {
+    return refuse("unauthorized", "請先登入後再撤銷邀請");
+  }
+  if (
+    !input.actor.isActive ||
+    !input.actor.organizationId ||
+    !canMembershipManageStaff({
+      role: input.actor.role ?? "STAFF",
+      isActive: input.actor.isActive,
+    })
+  ) {
+    return refuse("unauthorized", "沒有權限撤銷邀請");
+  }
+  if (!input.invite?.id.startsWith("inv-")) {
+    return refuse("invalid_invite", "邀請不存在");
+  }
+  if (input.invite.organizationId !== input.actor.organizationId) {
+    return refuse("unauthorized", "不能撤銷其他店家的邀請");
+  }
+  const usable = resolveUsableInvite(input.invite, input.now);
+  if (!usable || usable.status !== "pending") {
+    return refuse("invalid_invite", "沒有可撤銷的邀請");
+  }
+  const transition = transitionStaffInviteStatus({
+    status: usable.status,
+    event: "revoke",
+    expiresAt: usable.expiresAt,
+    now: input.now,
+  });
+  if (!transition.ok) {
+    return refuse(
+      transition.reason === "expired" ? "expired" : "invalid_invite",
+      transition.reason === "expired" ? "邀請已過期" : "邀請已失效",
+    );
+  }
+  return { ok: true, inviteId: usable.id };
+}
+
+export function resolveUsableInvite(
+  invite: StaffInviteRecord | null | undefined,
+  now?: Date,
+): StaffInviteRecord | null {
+  if (!invite?.id.startsWith("inv-")) return null;
+  if (invite.status === "pending" && isInviteExpired(invite.expiresAt, now)) {
+    return { ...invite, status: "expired" };
+  }
+  return invite;
+}
+
+export function interpretStaffInviteSendFailure(message: string): {
+  reason: Extract<StaffInviteDecisionReason, "conflict" | "invalid_email" | "error">;
+  message: string;
+} {
+  const text = message.trim();
+  if (/already|registered|exists/i.test(text)) {
+    return { reason: "conflict", message: "這個 Email 已經有登入帳號" };
+  }
+  if (/invalid.*(email|user)/i.test(text)) {
+    return { reason: "invalid_email", message: "請輸入有效的 Email" };
+  }
+  return { reason: "error", message: "邀請信寄送失敗" };
 }

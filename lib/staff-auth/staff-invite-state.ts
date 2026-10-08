@@ -27,6 +27,15 @@ export function isInviteExpired(expiresAt: string, now: Date = new Date()): bool
   return !Number.isFinite(expires) || expires <= now.getTime();
 }
 
+export function pendingInviteMembershipIds(
+  invites: Array<{ membershipId: string; status: StaffInviteStatus; expiresAt: string }>,
+  now: Date = new Date(),
+): string[] {
+  return invites
+    .filter((invite) => invite.status === "pending" && !isInviteExpired(invite.expiresAt, now))
+    .map((invite) => invite.membershipId);
+}
+
 export function transitionStaffInviteStatus(input: {
   status: StaffInviteStatus;
   event: StaffInviteEvent;

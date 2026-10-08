@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
-import { requireStaffRolePage } from "@/lib/staff/require-staff-role-page";
+import { StaffRolePageLayout } from "@/lib/staff/StaffRolePageLayout";
 import { STAFF_CATALOG_ROLES } from "@/lib/staff/staff-role-page-access";
 
 export default async function ProductsLayout({ children }: { children: ReactNode }) {
-  await requireStaffRolePage(STAFF_CATALOG_ROLES);
-  return children;
+  return <StaffRolePageLayout allowedRoles={STAFF_CATALOG_ROLES}>{children}</StaffRolePageLayout>;
 }
