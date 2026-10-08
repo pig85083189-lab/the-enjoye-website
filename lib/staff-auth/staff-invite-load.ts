@@ -12,6 +12,7 @@ type InviteRow = {
   invited_auth_user_id: string | null;
   status: string;
   expires_at: string;
+  created_at?: string | null;
 };
 
 type MembershipRow = {
@@ -33,6 +34,7 @@ export function staffInviteFromRow(row: InviteRow): StaffInviteRecord | null {
     invitedAuthUserId: row.invited_auth_user_id,
     status: row.status,
     expiresAt: row.expires_at,
+    createdAt: row.created_at ?? null,
   };
 }
 
@@ -56,7 +58,7 @@ export async function loadStaffInviteForMembership(
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("staff_login_invites")
-      .select("id, membership_id, organization_id, email, invited_auth_user_id, status, expires_at")
+      .select("id, membership_id, organization_id, email, invited_auth_user_id, status, expires_at, created_at")
       .eq("membership_id", membershipId)
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
@@ -83,7 +85,7 @@ export async function loadPendingStaffInviteForAuthUser(
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("staff_login_invites")
-      .select("id, membership_id, organization_id, email, invited_auth_user_id, status, expires_at")
+      .select("id, membership_id, organization_id, email, invited_auth_user_id, status, expires_at, created_at")
       .eq("invited_auth_user_id", authUserId)
       .eq("status", "pending")
       .limit(3);
@@ -106,7 +108,7 @@ export async function loadOrganizationStaffInvites(
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("staff_login_invites")
-      .select("id, membership_id, organization_id, email, invited_auth_user_id, status, expires_at")
+      .select("id, membership_id, organization_id, email, invited_auth_user_id, status, expires_at, created_at")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
       .limit(100);

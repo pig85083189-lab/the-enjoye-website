@@ -43,6 +43,7 @@ export type StaffInviteRecord = {
   invitedAuthUserId: string | null;
   status: StaffInviteStatus;
   expiresAt: string;
+  createdAt?: string | null;
 };
 
 export type StaffInviteDecisionReason =
@@ -139,15 +140,7 @@ export function evaluateStaffInviteRequest(input: {
     return refuse("error", "無法確認這個 Email 是否已有登入帳號");
   }
   if (input.authEmailClass === "bound" || input.authEmailClass === "unbound_existing") {
-    const pending = resolveUsableInvite(input.existingInvite, input.now);
-    const ours =
-      input.authEmailClass === "unbound_existing" &&
-      pending?.status === "pending" &&
-      (!pending.invitedAuthUserId ||
-        pending.invitedAuthUserId === input.existingAuthUserIdForEmail);
-    if (!ours) {
-      return refuse("conflict", "這個 Email 已經有登入帳號");
-    }
+    return refuse("conflict", "這個 Email 已經有登入帳號");
   }
   if (
     !input.authEmailClass &&

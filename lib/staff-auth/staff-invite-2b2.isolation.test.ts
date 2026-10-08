@@ -351,6 +351,8 @@ describe("2B-2 source contracts", () => {
     expect(adapter).toMatch(/CREATE_STAFF_LOGIN_INVITE_RPC/);
     expect(adapter).not.toMatch(/bind_invited_staff_auth_user/);
     expect(adapter).not.toMatch(/createUser/);
+    expect(adapter).not.toMatch(/generateLink/);
+    expect(adapter).not.toMatch(/resetPasswordForEmail/);
   });
 
   it("keeps password setup from entering the workspace before bind", () => {

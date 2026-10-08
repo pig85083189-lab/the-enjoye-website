@@ -66,7 +66,7 @@ export function StaffInvitePanel({
       mode,
     });
     setBusy(false);
-    setMessage(result.ok ? "邀請已處理" : result.message);
+    setMessage(result.message);
     onChanged?.();
   }
 

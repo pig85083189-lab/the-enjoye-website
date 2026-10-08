@@ -134,6 +134,7 @@ describe("2B-2 hardening: recoverable send after persist-first", () => {
         sendEmail: true,
         reuseInviteId: null,
         attachAuthUserId: null,
+        sendMethod: "invite_new",
         allowInviteExistingAuthUser: false,
       },
       persist: async ({ existingInviteId }) => {
@@ -200,7 +201,8 @@ describe("2B-2 hardening: recoverable send after persist-first", () => {
             sendEmail: true,
             reuseInviteId: "inv-yixin-canary",
             attachAuthUserId: AUTH_INVITEE,
-            allowInviteExistingAuthUser: true,
+            sendMethod: "resend_known",
+            allowInviteExistingAuthUser: false,
           },
       persist: async (input) => {
         persistCalls.push(input);
@@ -230,6 +232,7 @@ describe("2B-2 hardening: recoverable send after persist-first", () => {
         sendEmail: true,
         reuseInviteId: null,
         attachAuthUserId: null,
+        sendMethod: "invite_new",
         allowInviteExistingAuthUser: false,
       },
       persist: async () => ({ ok: true, inviteId: "inv-persist-first" }),
@@ -268,14 +271,14 @@ describe("2B-2 hardening: paginated Auth email lookup", () => {
         { ok: true, users: page2 },
       ],
     });
-    expect(reduced).toEqual({ ok: true, authUserId: AUTH_PAGE2 });
+    expect(reduced).toMatchObject({ ok: true, authUserId: AUTH_PAGE2 });
 
     const lookedUp = await lookupAuthUserIdForStaffEmail(TARGET_EMAIL, async (page) => {
       if (page === 1) return { users: page1, error: null };
       if (page === 2) return { users: page2, error: null };
       return { users: [], error: { message: "should not page further" } };
     });
-    expect(lookedUp).toEqual({ ok: true, authUserId: AUTH_PAGE2 });
+    expect(lookedUp).toMatchObject({ ok: true, authUserId: AUTH_PAGE2 });
   });
 
   it("fails closed when listUsers errors and never treats that as not_found", async () => {

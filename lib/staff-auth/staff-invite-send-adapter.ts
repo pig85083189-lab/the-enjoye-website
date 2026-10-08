@@ -21,11 +21,13 @@ import {
   interpretInviteRowAfterSend,
   planStaffInviteDelivery,
   reduceAuthUserListPages,
+  STAFF_INVITE_ROW_TTL_MS,
+  type StaffInviteAuthUserFacts,
   type StaffInviteDeliveryPlan,
 } from "@/lib/staff-auth/staff-invite-reconciliation";
 import { createClient } from "@/lib/supabase/server";
 
-export const STAFF_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const STAFF_INVITE_TTL_MS = STAFF_INVITE_ROW_TTL_MS;
 
 export type StaffInviteSendResult =
   | { ok: true; authUserId: string; inviteId: string; mode: StaffInviteRequestMode }
@@ -47,14 +49,23 @@ export type StaffInviteSendResult =
 export type AuthUserListPageFn = (
   page: number,
   perPage: number,
-) => Promise<{ users?: Array<{ id: string; email?: string | null }>; error?: { message?: string } | null }>;
+) => Promise<{
+  users?: Array<{
+    id: string;
+    email?: string | null;
+    email_confirmed_at?: string | null;
+    invited_at?: string | null;
+    created_at?: string | null;
+  }>;
+  error?: { message?: string } | null;
+}>;
 
 export async function lookupAuthUserIdForStaffEmail(
   email: string,
   listPage?: AuthUserListPageFn,
 ): Promise<
   | { ok: false; reason: "lookup_failed"; message: string }
-  | { ok: true; authUserId: string | null }
+  | { ok: true; authUserId: string | null; user: StaffInviteAuthUserFacts | null }
 > {
   const fetchPage =
     listPage ??
@@ -133,13 +144,22 @@ export async function executeRecoverableStaffInviteDelivery(input: {
     if (sent.ok) {
       authUserId = sent.authUserId;
       sendOk = Boolean(authUserId);
-    } else if (
-      sent.alreadyRegistered &&
-      input.plan.allowInviteExistingAuthUser &&
-      input.plan.attachAuthUserId
-    ) {
-      authUserId = input.plan.attachAuthUserId;
-      sendOk = false;
+    } else if (sent.alreadyRegistered && input.plan.attachAuthUserId) {
+      return {
+        ok: false,
+        reason: "error",
+        message:
+          "無法重寄邀請信。這個 Email 已有 Auth 帳號，inviteUserByEmail 不會保證再寄一封。請確認 Auth 支援重邀未完成帳號，或請已綁定帳號使用忘記密碼。",
+        authUserId: input.plan.attachAuthUserId,
+        inviteId: persisted.inviteId,
+      };
+    } else if (sent.alreadyRegistered) {
+      return {
+        ok: false,
+        reason: "conflict",
+        message: "這個 Email 已經有登入帳號",
+        inviteId: persisted.inviteId,
+      };
     } else {
       const mapped = interpretStaffInviteSendFailure(sent.message);
       const outcome = interpretInviteRowAfterSend({
@@ -275,6 +295,7 @@ export async function deliverStaffLoginInvite(input: {
   const classification = classifyStaffInviteAuthEmail({
     lookupOk: true,
     foundAuthUserId: lookup.authUserId,
+    foundAuthUser: lookup.user,
     targetAuthUserId: input.targetAuthUserId ?? null,
     pendingInvite: input.existingInvite ?? null,
     boundMembershipId: input.boundMembershipIdForEmail ?? null,
@@ -282,6 +303,7 @@ export async function deliverStaffLoginInvite(input: {
   const plan = planStaffInviteDelivery({
     classification,
     foundAuthUserId: lookup.authUserId,
+    foundAuthUser: lookup.user,
     existingInvite: input.existingInvite ?? null,
     mode: input.mode,
   });
@@ -316,6 +338,13 @@ export async function deliverStaffLoginInvite(input: {
       });
       if (!authUserId) {
         return { ok: false, alreadyRegistered: false, message: "邀請信寄送失敗" };
+      }
+      if (plan.sendMethod === "resend_known" && plan.attachAuthUserId !== authUserId) {
+        return {
+          ok: false,
+          alreadyRegistered: false,
+          message: "重寄結果與邀請紀錄的 Auth 帳號不一致",
+        };
       }
       return { ok: true, authUserId };
     },

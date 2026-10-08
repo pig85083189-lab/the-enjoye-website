@@ -35,7 +35,9 @@ import { resolveStaffInviteRedirect } from "@/lib/staff-auth/staff-invite-redire
 import {
   classifyStaffInviteAuthEmail,
   evaluateStaffPasswordSetup,
+  staffInviteDeliverySuccessMessage,
   type StaffInviteAuthEmailClass,
+  type StaffInviteAuthUserFacts,
 } from "@/lib/staff-auth/staff-invite-reconciliation";
 import {
   deliverStaffLoginInvite,
@@ -97,7 +99,7 @@ export async function persistStaffMembershipAction(
 }
 
 export type InviteStaffLoginResult =
-  | { ok: true; authUserId: string }
+  | { ok: true; authUserId: string; message: string }
   | {
       ok: false;
       reason:
@@ -164,6 +166,7 @@ export async function inviteStaffLoginAction(input: {
   const email = normalizeStaffEmail(input.email ?? "");
   let authEmailClass: StaffInviteAuthEmailClass | undefined;
   let foundAuthUserId: string | null = null;
+  let foundAuthUser: StaffInviteAuthUserFacts | null = null;
   let boundMembershipIdForEmail: string | null = null;
   if (inviteSendOpen && email) {
     const lookup = await lookupAuthUserIdForStaffEmail(email);
@@ -171,6 +174,7 @@ export async function inviteStaffLoginAction(input: {
       return { ok: false, reason: "error", message: lookup.message };
     }
     foundAuthUserId = lookup.authUserId;
+    foundAuthUser = lookup.user;
     boundMembershipIdForEmail = findBoundMembershipIdForEmail(
       roster,
       email,
@@ -179,6 +183,7 @@ export async function inviteStaffLoginAction(input: {
     authEmailClass = classifyStaffInviteAuthEmail({
       lookupOk: true,
       foundAuthUserId,
+      foundAuthUser,
       targetAuthUserId: target?.authUserId ?? null,
       pendingInvite: existingInvite,
       boundMembershipId: boundMembershipIdForEmail,
@@ -257,7 +262,11 @@ export async function inviteStaffLoginAction(input: {
       authUserId: sent.authUserId,
     };
   }
-  return { ok: true, authUserId: sent.authUserId };
+  return {
+    ok: true,
+    authUserId: sent.authUserId,
+    message: staffInviteDeliverySuccessMessage(),
+  };
 }
 
 export type AcceptStaffInviteResult =

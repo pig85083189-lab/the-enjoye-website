@@ -22,7 +22,7 @@ function SetupPasswordForm() {
     if (!expired) return { title: "", description: "" };
     return {
       title: "這個連結已失效",
-      description: "邀請連結可能已過期或已使用，請重新取得連結。",
+      description: "邀請信件連結已過期。系統邀請列可能仍有效，請店長重寄以取得新連結。",
     };
   }, [expired]);
   const [title, setTitle] = useState(initial.title);

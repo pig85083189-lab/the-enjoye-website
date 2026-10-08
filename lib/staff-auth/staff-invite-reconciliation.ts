@@ -13,6 +13,15 @@ type InviteRef = {
   invitedAuthUserId: string | null;
   status: StaffInviteStatus;
   expiresAt: string;
+  createdAt?: string | null;
+};
+
+export type StaffInviteAuthUserFacts = {
+  id: string;
+  email?: string | null;
+  emailConfirmedAt?: string | null;
+  invitedAt?: string | null;
+  createdAt?: string | null;
 };
 
 function pendingInvite(invite: InviteRef | null | undefined, now?: Date): InviteRef | null {
@@ -24,6 +33,61 @@ function pendingInvite(invite: InviteRef | null | undefined, now?: Date): Invite
 
 export const AUTH_USER_LIST_PAGE_SIZE = 200;
 export const AUTH_USER_LIST_MAX_PAGES = 50;
+
+/** Owner resend / bind window on staff_login_invites.expires_at. */
+export const STAFF_INVITE_ROW_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Supabase Auth invite/recovery/magic links share Email OTP Expiration.
+ * Hosted default is 3600s. This is not the 7-day invite row.
+ */
+export const SUPABASE_AUTH_EMAIL_LINK_TTL_DEFAULT_SECONDS = 3600;
+
+export function staffInviteDeliverySuccessMessage(): string {
+  return "邀請信已寄出。信件連結效期依 Supabase Email OTP Expiration（預設約 1 小時），不是 7 天。若連結過期，請重寄，不要當成已啟用。";
+}
+
+export function staffInviteAuthLinkExpiredMessage(): string {
+  return "邀請信件連結已過期。系統邀請列可能仍有效，請店長重寄以取得新連結。";
+}
+
+export function canAttachLookedUpAuthUserToPendingInvite(input: {
+  pendingInvite: InviteRef | null | undefined;
+  found: StaffInviteAuthUserFacts | null | undefined;
+  now?: Date;
+}): boolean {
+  const pending = pendingInvite(input.pendingInvite, input.now);
+  const found = input.found;
+  if (!pending || !found?.id || !isAuthUuid(found.id)) return false;
+  if (pending.invitedAuthUserId === found.id) return true;
+  if (pending.invitedAuthUserId) return false;
+  if (found.emailConfirmedAt) return false;
+  const inviteCreated = Date.parse(pending.createdAt ?? "");
+  const userCreated = Date.parse(found.invitedAt ?? found.createdAt ?? "");
+  if (!Number.isFinite(inviteCreated) || !Number.isFinite(userCreated)) return false;
+  return userCreated >= inviteCreated - 5_000;
+}
+
+export function interpretInviteAcceptability(input: {
+  inviteStatus: StaffInviteStatus;
+  inviteExpiresAt: string;
+  authLinkExpired: boolean;
+  now?: Date;
+}):
+  | "accept_ok"
+  | "auth_link_expired"
+  | "invite_expired"
+  | "invite_revoked"
+  | "invalid" {
+  if (input.inviteStatus === "revoked") return "invite_revoked";
+  if (input.inviteStatus === "accepted") return "invalid";
+  if (input.inviteStatus === "expired" || isInviteExpired(input.inviteExpiresAt, input.now)) {
+    return "invite_expired";
+  }
+  if (input.authLinkExpired) return "auth_link_expired";
+  if (input.inviteStatus === "pending") return "accept_ok";
+  return "invalid";
+}
 
 export type StaffInviteAuthEmailClass =
   | "lookup_failed"
@@ -44,29 +108,63 @@ export type StaffInviteDeliveryPlan =
       sendEmail: boolean;
       reuseInviteId: string | null;
       attachAuthUserId: string | null;
+      sendMethod: "invite_new" | "resend_known";
       allowInviteExistingAuthUser: boolean;
     };
 
 export type AuthUserListPage = {
   ok: boolean;
-  users: Array<{ id: string; email?: string | null }>;
+  users: Array<{
+    id: string;
+    email?: string | null;
+    email_confirmed_at?: string | null;
+    invited_at?: string | null;
+    created_at?: string | null;
+  }>;
 };
+
+export function authUserFactsFromListUser(user: {
+  id: string;
+  email?: string | null;
+  email_confirmed_at?: string | null;
+  invited_at?: string | null;
+  created_at?: string | null;
+  emailConfirmedAt?: string | null;
+  invitedAt?: string | null;
+  createdAt?: string | null;
+}): StaffInviteAuthUserFacts {
+  return {
+    id: user.id,
+    email: user.email,
+    emailConfirmedAt: user.emailConfirmedAt ?? user.email_confirmed_at ?? null,
+    invitedAt: user.invitedAt ?? user.invited_at ?? null,
+    createdAt: user.createdAt ?? user.created_at ?? null,
+  };
+}
 
 export function classifyStaffInviteAuthEmail(input: {
   lookupOk: boolean;
   foundAuthUserId: string | null;
+  foundAuthUser?: StaffInviteAuthUserFacts | null;
   targetAuthUserId: string | null;
   pendingInvite: InviteRef | null;
   boundMembershipId: string | null;
   now?: Date;
 }): StaffInviteAuthEmailClass {
   if (!input.lookupOk) return "lookup_failed";
-  const found = input.foundAuthUserId;
-  if (!found) return "not_found";
-  if (input.targetAuthUserId && input.targetAuthUserId === found) return "bound";
+  const found = input.foundAuthUser ?? (input.foundAuthUserId
+    ? { id: input.foundAuthUserId }
+    : null);
+  if (!found?.id) return "not_found";
+  if (input.targetAuthUserId && input.targetAuthUserId === found.id) return "bound";
   if (input.boundMembershipId) return "bound";
-  const pending = pendingInvite(input.pendingInvite, input.now);
-  if (pending?.invitedAuthUserId && pending.invitedAuthUserId === found) {
+  if (
+    canAttachLookedUpAuthUserToPendingInvite({
+      pendingInvite: input.pendingInvite,
+      found,
+      now: input.now,
+    })
+  ) {
     return "pending_invite";
   }
   return "unbound_existing";
@@ -79,7 +177,7 @@ export function reduceAuthUserListPages(input: {
   complete: boolean;
 }):
   | { ok: false; reason: "lookup_failed"; message: string }
-  | { ok: true; authUserId: string | null } {
+  | { ok: true; authUserId: string | null; user: StaffInviteAuthUserFacts | null } {
   const email = normalizeStaffEmail(input.email);
   if (!input.pages.length) {
     return { ok: false, reason: "lookup_failed", message: "無法確認這個 Email 是否已有登入帳號" };
@@ -113,14 +211,21 @@ export function reduceAuthUserListPages(input: {
     const found = page.users.find(
       (user) => user.email && normalizeStaffEmail(user.email) === email && isAuthUuid(user.id),
     );
-    if (found) return { ok: true, authUserId: found.id };
+    if (found) {
+      return {
+        ok: true,
+        authUserId: found.id,
+        user: authUserFactsFromListUser(found),
+      };
+    }
   }
-  return { ok: true, authUserId: null };
+  return { ok: true, authUserId: null, user: null };
 }
 
 export function planStaffInviteDelivery(input: {
   classification: StaffInviteAuthEmailClass;
   foundAuthUserId: string | null;
+  foundAuthUser?: StaffInviteAuthUserFacts | null;
   existingInvite: InviteRef | null;
   mode: "invite" | "resend";
   now?: Date;
@@ -138,9 +243,20 @@ export function planStaffInviteDelivery(input: {
 
   const pending = pendingInvite(input.existingInvite, input.now);
   const pendingId = pending?.id ?? null;
+  const found =
+    input.foundAuthUser ??
+    (input.foundAuthUserId ? { id: input.foundAuthUserId } : null);
 
   if (input.classification === "pending_invite") {
-    if (!pendingId || !input.foundAuthUserId) {
+    if (
+      !pendingId ||
+      !found?.id ||
+      !canAttachLookedUpAuthUserToPendingInvite({
+        pendingInvite: pending,
+        found,
+        now: input.now,
+      })
+    ) {
       return { ok: false, reason: "invalid_invite", message: "沒有可重寄的邀請" };
     }
     return {
@@ -148,22 +264,13 @@ export function planStaffInviteDelivery(input: {
       persistFirst: true,
       sendEmail: true,
       reuseInviteId: pendingId,
-      attachAuthUserId: input.foundAuthUserId,
-      allowInviteExistingAuthUser: true,
+      attachAuthUserId: found.id,
+      sendMethod: "resend_known",
+      allowInviteExistingAuthUser: false,
     };
   }
 
   if (input.classification === "unbound_existing") {
-    if (pendingId && (!pending?.invitedAuthUserId || pending.invitedAuthUserId === input.foundAuthUserId)) {
-      return {
-        ok: true,
-        persistFirst: true,
-        sendEmail: true,
-        reuseInviteId: pendingId,
-        attachAuthUserId: input.foundAuthUserId,
-        allowInviteExistingAuthUser: true,
-      };
-    }
     return { ok: false, reason: "conflict", message: "這個 Email 已經有登入帳號" };
   }
 
@@ -177,6 +284,7 @@ export function planStaffInviteDelivery(input: {
     sendEmail: true,
     reuseInviteId: pendingId,
     attachAuthUserId: null,
+    sendMethod: "invite_new",
     allowInviteExistingAuthUser: false,
   };
 }
