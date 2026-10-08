@@ -12,6 +12,7 @@ import {
 } from "@/lib/staff-auth/staff-invite-state";
 import { canMembershipManageStaff } from "@/lib/staff-auth/actors";
 import type { StaffRole } from "@/types/saas";
+import type { StaffInviteAuthEmailClass } from "@/lib/staff-auth/staff-invite-reconciliation";
 
 export const BIND_INVITED_STAFF_AUTH_USER_RPC = "bind_invited_staff_auth_user";
 export const CREATE_STAFF_LOGIN_INVITE_RPC = "create_staff_login_invite";
@@ -85,6 +86,7 @@ export function evaluateStaffInviteRequest(input: {
   target: StaffInviteTarget | null;
   existingAuthUserIdForEmail?: string | null;
   existingInvite?: StaffInviteRecord | null;
+  authEmailClass?: StaffInviteAuthEmailClass;
   mode?: StaffInviteRequestMode;
   now?: Date;
 }): StaffInviteRequestDecision {
@@ -133,14 +135,36 @@ export function evaluateStaffInviteRequest(input: {
   if (!targetEmail || targetEmail !== email) {
     return refuse("invalid_email", "邀請 Email 必須與員工資料一致");
   }
+  if (input.authEmailClass === "lookup_failed") {
+    return refuse("error", "無法確認這個 Email 是否已有登入帳號");
+  }
+  if (input.authEmailClass === "bound" || input.authEmailClass === "unbound_existing") {
+    const pending = resolveUsableInvite(input.existingInvite, input.now);
+    const ours =
+      input.authEmailClass === "unbound_existing" &&
+      pending?.status === "pending" &&
+      (!pending.invitedAuthUserId ||
+        pending.invitedAuthUserId === input.existingAuthUserIdForEmail);
+    if (!ours) {
+      return refuse("conflict", "這個 Email 已經有登入帳號");
+    }
+  }
   if (
+    !input.authEmailClass &&
     input.existingAuthUserIdForEmail &&
     input.existingAuthUserIdForEmail !== input.target.authUserId
   ) {
     return refuse("conflict", "這個 Email 已經有登入帳號");
   }
-  const mode = input.mode === "resend" ? "resend" : "invite";
+  const requestedMode = input.mode === "resend" ? "resend" : "invite";
   const existing = resolveUsableInvite(input.existingInvite, input.now);
+  const samePending =
+    existing?.status === "pending" &&
+    existing.membershipId === input.membershipId &&
+    existing.organizationId === input.organizationId &&
+    normalizeStaffEmail(existing.email) === email;
+  const mode: StaffInviteRequestMode =
+    requestedMode === "invite" && samePending ? "resend" : requestedMode;
   if (mode === "resend") {
     if (!existing || existing.status !== "pending") {
       return refuse("invalid_invite", "沒有可重寄的邀請");

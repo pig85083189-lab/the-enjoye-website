@@ -36,9 +36,8 @@ begin
   if v_email is null or position('@' in v_email) = 0 then
     raise exception 'invalid email' using errcode = '22023';
   end if;
-  if p_invited_auth_user_id is null then
-    raise exception 'invalid auth user' using errcode = '22023';
-  end if;
+  -- Persist-first may insert pending with a null Auth UUID, then attach after send.
+  -- Never delete Auth users from this function.
   if p_expires_at is null or p_expires_at <= now() then
     raise exception 'invalid expiry' using errcode = '22023';
   end if;
@@ -85,24 +84,31 @@ begin
     and status = 'pending'
     and expires_at <= now();
 
-  if p_existing_invite_id is not null then
-    select * into v_invite
-    from public.staff_login_invites
-    where id = p_existing_invite_id
-    for update;
+  -- Serialize concurrent create / resend / attach on this membership.
+  select * into v_invite
+  from public.staff_login_invites
+  where membership_id = v_membership.id
+    and status = 'pending'
+  for update;
 
+  if p_existing_invite_id is not null then
     if not found
-       or v_invite.membership_id is distinct from v_membership.id
+       or v_invite.id is distinct from p_existing_invite_id
        or v_invite.organization_id is distinct from v_membership.organization_id
        or v_invite.status is distinct from 'pending'
        or v_invite.expires_at <= now() then
       raise exception 'invalid invite' using errcode = '22023';
     end if;
+    if v_invite.invited_auth_user_id is not null
+       and p_invited_auth_user_id is not null
+       and v_invite.invited_auth_user_id is distinct from p_invited_auth_user_id then
+      raise exception 'invite auth mismatch' using errcode = '42501';
+    end if;
 
     update public.staff_login_invites
     set
       email = v_email,
-      invited_auth_user_id = p_invited_auth_user_id,
+      invited_auth_user_id = coalesce(p_invited_auth_user_id, v_invite.invited_auth_user_id),
       expires_at = p_expires_at
     where id = v_invite.id
       and status = 'pending';
@@ -117,37 +123,36 @@ begin
     );
   end if;
 
-  if exists (
-    select 1
-    from public.staff_login_invites
-    where membership_id = v_membership.id
-      and status = 'pending'
-      and expires_at > now()
-  ) then
+  if found then
     raise exception 'pending invite exists' using errcode = '23505';
   end if;
 
   v_id := 'inv-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 16);
 
-  insert into public.staff_login_invites (
-    id,
-    membership_id,
-    organization_id,
-    email,
-    invited_auth_user_id,
-    status,
-    expires_at,
-    invited_by_staff_id
-  ) values (
-    v_id,
-    v_membership.id,
-    v_membership.organization_id,
-    v_email,
-    p_invited_auth_user_id,
-    'pending',
-    p_expires_at,
-    v_actor.user_id
-  );
+  begin
+    insert into public.staff_login_invites (
+      id,
+      membership_id,
+      organization_id,
+      email,
+      invited_auth_user_id,
+      status,
+      expires_at,
+      invited_by_staff_id
+    ) values (
+      v_id,
+      v_membership.id,
+      v_membership.organization_id,
+      v_email,
+      p_invited_auth_user_id,
+      'pending',
+      p_expires_at,
+      v_actor.user_id
+    );
+  exception
+    when unique_violation then
+      raise exception 'pending invite exists' using errcode = '23505';
+  end;
 
   return jsonb_build_object(
     'invite_id', v_id,
@@ -161,7 +166,7 @@ end;
 $$;
 
 comment on function public.create_staff_login_invite(text, text, uuid, timestamptz, text) is
-  'Owner-only create or refresh of a pending Staff login invite. Does not create Staff or bind auth_user_id.';
+  'Owner-only persist-first create / attach / refresh of a pending Staff login invite. Null invited_auth_user_id is allowed until Auth send attaches. Does not create Staff, bind membership.auth_user_id, or delete Auth users.';
 
 revoke all on function public.create_staff_login_invite(text, text, uuid, timestamptz, text)
   from public, anon;

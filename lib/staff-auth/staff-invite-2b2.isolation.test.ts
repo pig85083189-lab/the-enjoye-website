@@ -86,11 +86,17 @@ function request(
 }
 
 describe("2B-2 invite states: pending / accepted / revoked / expired", () => {
-  it("refuses a second invite while a pending invite exists", () => {
+  it("retries a same-membership pending invite as resend instead of a second row", () => {
     expect(
       request({
         inviteSendOpen: true,
         existingInvite: pendingInvite(),
+      }),
+    ).toEqual({ ok: true, email: YIXIN.email, mode: "resend" });
+    expect(
+      request({
+        inviteSendOpen: true,
+        existingInvite: pendingInvite({ email: "other@example.com" }),
       }),
     ).toMatchObject({ ok: false, reason: "conflict" });
   });
@@ -349,18 +355,24 @@ describe("2B-2 source contracts", () => {
 
   it("keeps password setup from entering the workspace before bind", () => {
     const setup = source("app/staff/auth/setup-password/page.tsx");
-    expect(setup).toMatch(/acceptStaffInviteAction/);
+    expect(setup).toMatch(/completeStaffPasswordSetupAction/);
     expect(setup).toMatch(/updateUser\(\{\s*password/);
-    expect(setup.indexOf("acceptStaffInviteAction")).toBeLessThan(
+    expect(setup.indexOf("completeStaffPasswordSetupAction")).toBeLessThan(
       setup.lastIndexOf("/staff/today"),
     );
     expect(setup).toMatch(/尚未取得工作台權限/);
     const callback = source("app/staff/auth/callback/route.ts");
     expect(callback).toMatch(/loadStaffSessionGate/);
-    expect(callback).toMatch(/STAFF_SETUP_PASSWORD_HREF/);
-    expect(callback).toMatch(/STAFF_ACCESS_UNAVAILABLE_HREF/);
+    expect(callback).toMatch(/resolveStaffAuthCallbackNext/);
     expect(callback).not.toMatch(/membershipId/);
     expect(callback).not.toMatch(/user_metadata/);
+    const actions = source("lib/staff-auth/actions.ts");
+    expect(actions).toMatch(/export async function completeStaffPasswordSetupAction/);
+    expect(actions).toMatch(/evaluateStaffPasswordSetup/);
+    expect(actions).toMatch(/intent === "recovery"/);
+    expect(
+      actions.indexOf("if (intent === \"recovery\")"),
+    ).toBeLessThan(actions.lastIndexOf("acceptStaffInviteAction()"));
   });
 
   it("renders an explicit STAFF deny panel instead of a blank shell", () => {

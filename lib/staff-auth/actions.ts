@@ -1,6 +1,7 @@
 "use server";
 
 import { getStaffInviteCapability } from "@/lib/staff-auth/invite-capability";
+import { normalizeStaffEmail } from "@/lib/staff-auth/email";
 import {
   getAuthenticatedStaffMembership,
   getServerStaffAuthUser,
@@ -31,7 +32,15 @@ import {
   type StaffInviteRequestMode,
 } from "@/lib/staff-auth/staff-invite-command";
 import { resolveStaffInviteRedirect } from "@/lib/staff-auth/staff-invite-redirect";
-import { deliverStaffLoginInvite } from "@/lib/staff-auth/staff-invite-send-adapter";
+import {
+  classifyStaffInviteAuthEmail,
+  evaluateStaffPasswordSetup,
+  type StaffInviteAuthEmailClass,
+} from "@/lib/staff-auth/staff-invite-reconciliation";
+import {
+  deliverStaffLoginInvite,
+  lookupAuthUserIdForStaffEmail,
+} from "@/lib/staff-auth/staff-invite-send-adapter";
 import {
   loadOrganizationStaffInvites,
   loadPendingStaffInviteForAuthUser,
@@ -152,6 +161,30 @@ export async function inviteStaffLoginAction(input: {
     input.organizationId,
   );
 
+  const email = normalizeStaffEmail(input.email ?? "");
+  let authEmailClass: StaffInviteAuthEmailClass | undefined;
+  let foundAuthUserId: string | null = null;
+  let boundMembershipIdForEmail: string | null = null;
+  if (inviteSendOpen && email) {
+    const lookup = await lookupAuthUserIdForStaffEmail(email);
+    if (!lookup.ok) {
+      return { ok: false, reason: "error", message: lookup.message };
+    }
+    foundAuthUserId = lookup.authUserId;
+    boundMembershipIdForEmail = findBoundMembershipIdForEmail(
+      roster,
+      email,
+      foundAuthUserId,
+    );
+    authEmailClass = classifyStaffInviteAuthEmail({
+      lookupOk: true,
+      foundAuthUserId,
+      targetAuthUserId: target?.authUserId ?? null,
+      pendingInvite: existingInvite,
+      boundMembershipId: boundMembershipIdForEmail,
+    });
+  }
+
   const decision = evaluateStaffInviteRequest({
     invitePilotEnabled,
     inviteSendOpen,
@@ -177,6 +210,8 @@ export async function inviteStaffLoginAction(input: {
         }
       : null,
     existingInvite,
+    existingAuthUserIdForEmail: foundAuthUserId,
+    authEmailClass,
   });
 
   if (!decision.ok) {
@@ -210,13 +245,16 @@ export async function inviteStaffLoginAction(input: {
     membershipId: input.membershipId,
     organizationId: input.organizationId,
     mode: decision.mode,
-    existingInviteId: existingInvite?.id ?? null,
+    existingInvite,
+    targetAuthUserId: target?.authUserId ?? null,
+    boundMembershipIdForEmail,
   });
   if (!sent.ok) {
     return {
       ok: false,
       reason: sent.reason,
       message: sent.message,
+      authUserId: sent.authUserId,
     };
   }
   return { ok: true, authUserId: sent.authUserId };
@@ -264,6 +302,59 @@ export async function acceptStaffInviteAction(): Promise<AcceptStaffInviteResult
     };
   }
   return { ok: true, membershipId: decision.membershipId };
+}
+
+export type CompleteStaffPasswordSetupResult =
+  | { ok: true; intent: "recovery" | "invite"; membershipId?: string }
+  | {
+      ok: false;
+      intent: "invite" | "unavailable" | "login" | "recovery";
+      reason: StaffInviteDecisionReason | "error";
+      message: string;
+    };
+
+export async function completeStaffPasswordSetupAction(): Promise<CompleteStaffPasswordSetupResult> {
+  const user = await getServerStaffAuthUser();
+  if (!user) {
+    return {
+      ok: false,
+      intent: "login",
+      reason: "unauthorized",
+      message: "請先開啟邀請連結",
+    };
+  }
+  const resolved = await getAuthenticatedStaffMembership();
+  const boundActiveMembership =
+    resolved.status === "ok" && Boolean(resolved.membership?.isActive);
+  const pendingInvite = boundActiveMembership
+    ? null
+    : await loadPendingStaffInviteForAuthUser(user.id);
+  const intent = evaluateStaffPasswordSetup({
+    authenticated: true,
+    boundActiveMembership,
+    pendingInviteForAuthUser: Boolean(pendingInvite),
+  });
+  if (intent === "recovery") {
+    return { ok: true, intent: "recovery" };
+  }
+  if (intent !== "invite") {
+    return {
+      ok: false,
+      intent,
+      reason: "invalid_invite",
+      message: "沒有有效的登入邀請，無法啟用工作台",
+    };
+  }
+  const accepted = await acceptStaffInviteAction();
+  if (!accepted.ok) {
+    return {
+      ok: false,
+      intent: "invite",
+      reason: accepted.reason,
+      message: accepted.message,
+    };
+  }
+  return { ok: true, intent: "invite", membershipId: accepted.membershipId };
 }
 
 export type RevokeStaffInviteResult =
@@ -324,6 +415,26 @@ export async function listStaffLoginInvitesAction(
   const resolved = await getAuthenticatedStaffMembership({ organizationId });
   if (resolved.status !== "ok") return [];
   return loadOrganizationStaffInvites(resolved.membership.organizationId);
+}
+
+function findBoundMembershipIdForEmail(
+  roster: StaffMembership[],
+  email: string,
+  foundAuthUserId: string | null,
+): string | null {
+  const normalized = normalizeStaffEmail(email);
+  const byEmail = roster.find(
+    (row) =>
+      row.authUserId &&
+      row.email &&
+      normalizeStaffEmail(row.email) === normalized,
+  );
+  if (byEmail) return byEmail.id;
+  if (foundAuthUserId) {
+    const byAuth = roster.find((row) => row.authUserId === foundAuthUserId);
+    if (byAuth) return byAuth.id;
+  }
+  return null;
 }
 
 async function loadTargetMembership(

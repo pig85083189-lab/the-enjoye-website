@@ -71,3 +71,19 @@ export function resolveStaffSessionRedirect(input: {
 
   return null;
 }
+
+export function resolveStaffAuthCallbackNext(input: {
+  gate: StaffSessionGate;
+  requestedNext: string;
+}): string {
+  if (input.gate === "setup_password") return STAFF_SETUP_PASSWORD_HREF;
+  if (input.gate === "access_unavailable") return STAFF_ACCESS_UNAVAILABLE_HREF;
+  if (input.gate === "ok") {
+    if (input.requestedNext === STAFF_SETUP_PASSWORD_HREF) {
+      return STAFF_SETUP_PASSWORD_HREF;
+    }
+    if (input.requestedNext.startsWith("/staff/auth")) return STAFF_TODAY_HREF;
+    return input.requestedNext;
+  }
+  return `${STAFF_SETUP_PASSWORD_HREF}?error=invalid`;
+}
