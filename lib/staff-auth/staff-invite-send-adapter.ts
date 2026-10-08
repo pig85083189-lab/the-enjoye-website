@@ -36,6 +36,7 @@ export type StaffInviteSendResult =
         | "not_configured"
         | "conflict"
         | "invalid_email"
+        | "invalid_invite"
         | "error"
         | "mapping_failed";
       message: string;
@@ -55,12 +56,12 @@ export async function lookupAuthUserIdForStaffEmail(
   | { ok: false; reason: "lookup_failed"; message: string }
   | { ok: true; authUserId: string | null }
 > {
-  if (typeof window !== "undefined") {
-    throw new Error("Staff invite adapter cannot run in the browser");
-  }
   const fetchPage =
     listPage ??
     (async (page: number, perPage: number) => {
+      if (typeof window !== "undefined") {
+        throw new Error("Staff invite adapter cannot run in the browser");
+      }
       const admin = createServiceRoleClient();
       if (!admin) {
         return { error: { message: "not configured" }, users: undefined };
@@ -148,6 +149,14 @@ export async function executeRecoverableStaffInviteDelivery(input: {
         authUserId,
         inviteId: persisted.inviteId,
       });
+      if (outcome.ok) {
+        return {
+          ok: false,
+          reason: "error",
+          message: "邀請紀錄已建立，但邀請信寄送失敗。請重試，系統不會再建立第二筆邀請。",
+          inviteId: persisted.inviteId,
+        };
+      }
       return {
         ok: false,
         reason: mapped.reason === "conflict" ? "conflict" : outcome.reason,
