@@ -224,6 +224,8 @@ describe("I–M logout / routes / unconfigured", () => {
     expect(callback).toMatch(/exchangeCodeForSession/);
     expect(callback).toMatch(/safeStaffNextPath/);
     expect(callback).toMatch(/allowAuthRoutes:\s*true/);
+    expect(callback).toMatch(/applyAuthCookiesToRedirect/);
+    expect(callback).toMatch(/resolveStaffAuthCallbackDecision/);
     expect(callback).not.toMatch(/localStorage/);
     expect(callback).not.toMatch(/localStorage\.setItem/);
     expect(callback).not.toMatch(/updateUser\(\{\s*password/);

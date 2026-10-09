@@ -4,7 +4,16 @@ import { useEffect, useId, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { createStaffOnboardingFromDraft } from "@/lib/staff/staff-onboarding";
-import { provisionStaffEmployeeAction } from "@/lib/staff-auth/actions";
+import {
+  inviteStaffLoginAction,
+  provisionStaffEmployeeAction,
+} from "@/lib/staff-auth/actions";
+import {
+  defaultStaffCreateInviteChecked,
+  formatStaffCreateInviteNotice,
+  shouldOfferStaffCreateInvite,
+  validateStaffCreateInviteSelection,
+} from "@/lib/staff-auth/staff-create-invite";
 import { submitStaffOperationalCreate } from "@/features/staff/use-staff-remote-write";
 import {
   applyOnboardingHoursPattern,
@@ -100,8 +109,12 @@ export function StaffOnboardingDialog({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isActive, setIsActive] = useState(true);
+  const [sendInvite, setSendInvite] = useState(() =>
+    defaultStaffCreateInviteChecked({ actorRole, submitPath }),
+  );
   const createIdsRef = useRef(allocateStaffOperationalCreateIds());
   const formLocked = submitPath === "locked" || submitPath === "forbidden-local";
+  const offerCreateInvite = shouldOfferStaffCreateInvite({ actorRole, submitPath });
   const roleOptions = STAFF_REMOTE_CREATABLE_ROLES;
   const steps = remoteCreateEnabled && !remoteWriteEnabled
     ? STAFF_ONBOARDING_STEPS.filter((entry) => entry.id !== 3)
@@ -162,6 +175,16 @@ export function StaffOnboardingDialog({
       setError(invalid);
       return;
     }
+    if (offerCreateInvite && sendInvite && step === 1) {
+      const inviteInvalid = validateStaffCreateInviteSelection({
+        sendInvite,
+        email: draft.email,
+      });
+      if (inviteInvalid) {
+        setError(inviteInvalid);
+        return;
+      }
+    }
     if (remoteCreateEnabled && !remoteWriteEnabled && step === 1) {
       if (!isValidStaffEmail(email)) {
         setError("請輸入有效的登入 Email");
@@ -201,6 +224,16 @@ export function StaffOnboardingDialog({
         setError(invalid);
         return;
       }
+      if (offerCreateInvite && sendInvite) {
+        const inviteInvalid = validateStaffCreateInviteSelection({
+          sendInvite,
+          email: draft.email,
+        });
+        if (inviteInvalid) {
+          setError(inviteInvalid);
+          return;
+        }
+      }
       if (busy) return;
       setBusy(true);
       try {
@@ -228,13 +261,23 @@ export function StaffOnboardingDialog({
           setDiagnostic(ui.diagnostic);
           return;
         }
+        let notice = "員工已建立";
+        if (offerCreateInvite && sendInvite) {
+          const invited = await inviteStaffLoginAction({
+            email: result.created.email ?? draft.email,
+            membershipId: result.created.id,
+            organizationId,
+            mode: "invite",
+          });
+          notice = formatStaffCreateInviteNotice({ invite: invited });
+        }
         onCreated({
           membership: result.created,
           membershipFull: result.created,
           roster: result.roster,
           scheduleError: null,
           remote: true,
-          notice: "員工已建立",
+          notice,
         });
       } catch (err) {
         const ui = formatStaffCreateFailureUi(err);
@@ -512,8 +555,30 @@ export function StaffOnboardingDialog({
                   <p className="rounded-2xl bg-[#FAF7F5] px-3 py-2 text-[12px] leading-relaxed text-secondary-text">
                     {STAFF_HAS_AUTH_ACCOUNT_CREATE
                       ? "將同時建立登入帳號。"
-                      : "這裡只建立員工資料，不會建立登入帳號、寄送邀請或設定密碼。邀請登入會在之後另外提供。"}
+                      : offerCreateInvite
+                        ? "這裡只建立員工資料，不會建立登入帳號或由店長設定密碼。勾選後會另外寄送登入邀請，由員工自行設定密碼。"
+                        : "這裡只建立員工資料，不會建立登入帳號、寄送邀請或設定密碼。邀請登入會在之後另外提供。"}
                   </p>
+                  {offerCreateInvite ? (
+                    <label className="flex min-h-10 items-start gap-2 rounded-xl border border-border px-3 py-2 text-[13px] text-text">
+                      <input
+                        type="checkbox"
+                        data-staff-create-invite
+                        className="mt-0.5 h-4 w-4 accent-primary"
+                        checked={sendInvite}
+                        onChange={(event) => {
+                          setSendInvite(event.target.checked);
+                          setError("");
+                        }}
+                      />
+                      <span>
+                        寄送登入邀請
+                        <span className="mt-0.5 block text-[12px] text-secondary-text">
+                          員工會收到設定密碼的邀請信。店長不會指定初始密碼。
+                        </span>
+                      </span>
+                    </label>
+                  ) : null}
                 </>
               )}
             </div>
@@ -775,6 +840,12 @@ export function StaffOnboardingDialog({
                     <dt className="text-secondary-text">班表</dt>
                     <dd>{formatOnboardingScheduleSummary(draft)}</dd>
                   </div>
+                  {offerCreateInvite ? (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-secondary-text">登入邀請</dt>
+                      <dd>{sendInvite ? "建立後寄送" : "稍後再寄"}</dd>
+                    </div>
+                  ) : null}
                 </dl>
               </div>
             </div>

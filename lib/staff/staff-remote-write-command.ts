@@ -1,3 +1,7 @@
+import {
+  isStaffInviteCanaryEmail,
+  staffInviteCanaryCreateIds,
+} from "@/lib/staff-auth/staff-invite-canary";
 import { isValidStaffEmail, normalizeStaffEmail } from "@/lib/staff-auth/email";
 import { assertOperationalStaffId, isAuthUuid } from "@/lib/staff-auth/staff-id";
 import { newId } from "@/lib/repositories/storage";
@@ -76,9 +80,15 @@ export function prepareStaffOperationalCreateDraft(
   if (locationIds.some((id) => isAuthUuid(id))) {
     throw new StaffRemoteCreateError("invalid_input", "分店不屬於目前店家或沒有權限");
   }
-  const allocated = allocateStaffOperationalCreateIds();
-  const membershipId = draft.membershipId?.trim() || allocated.membershipId;
-  const userId = draft.userId?.trim() || allocated.userId;
+  const allocated = isStaffInviteCanaryEmail(email)
+    ? staffInviteCanaryCreateIds()
+    : allocateStaffOperationalCreateIds();
+  const membershipId = isStaffInviteCanaryEmail(email)
+    ? allocated.membershipId
+    : draft.membershipId?.trim() || allocated.membershipId;
+  const userId = isStaffInviteCanaryEmail(email)
+    ? allocated.userId
+    : draft.userId?.trim() || allocated.userId;
   if (isAuthUuid(membershipId) || isAuthUuid(userId)) {
     throw new StaffRemoteCreateError("invalid_input", "Auth UUID 不得作為員工識別");
   }

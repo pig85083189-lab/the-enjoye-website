@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { AuthAlert, AuthBrand, AuthCard, AuthShell } from "@/features/auth/AuthShell";
+import { staffAuthCallbackHref } from "@/lib/staff-auth/staff-auth-callback";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import { tryGetSupabaseEnv } from "@/lib/supabase/env";
 
@@ -34,7 +35,7 @@ export default function ForgotPasswordPage() {
       setDescription("登入服務尚未設定，請聯絡系統管理員。");
       return;
     }
-    const redirectTo = `${window.location.origin}/staff/auth/callback?next=/staff/auth/setup-password`;
+    const redirectTo = `${window.location.origin}${staffAuthCallbackHref("recovery")}`;
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo,
@@ -47,7 +48,9 @@ export default function ForgotPasswordPage() {
       }
       setStatus("success");
       setTitle("重設信件已寄出");
-      setDescription("請到 Email 開啟連結。這不會登出你目前的其他工作階段。");
+      setDescription(
+        "請用同一個瀏覽器開啟信件連結。這不會登出你目前的其他工作階段。",
+      );
     } catch {
       setStatus("error");
       setTitle("目前無法連線");
