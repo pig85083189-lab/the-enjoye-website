@@ -271,7 +271,7 @@ describe("2B-2 revoke, existing Auth, cross-org, and STAFF escalation", () => {
 });
 
 describe("2B-2 Owner invite UI stays hidden by default", () => {
-  it("hides the invite control unless pilot, send, Owner, and eligible target align", () => {
+  it("shows the send control for Owner-eligible staff and never for STAFF", () => {
     const eligible = {
       membershipId: YIXIN.id,
       organizationId: ORG_ENJOYE_ID,
@@ -289,7 +289,7 @@ describe("2B-2 Owner invite UI stays hidden by default", () => {
         actorOrganizationId: ORG_ENJOYE_ID,
         target: eligible,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       canShowStaffInviteControl({
         invitePilotEnabled: true,
@@ -299,12 +299,22 @@ describe("2B-2 Owner invite UI stays hidden by default", () => {
         actorOrganizationId: ORG_ENJOYE_ID,
         target: eligible,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       canShowStaffInviteControl({
         invitePilotEnabled: true,
         inviteSendOpen: true,
         actorRole: "STAFF",
+        actorActive: true,
+        actorOrganizationId: ORG_ENJOYE_ID,
+        target: eligible,
+      }),
+    ).toBe(false);
+    expect(
+      canShowStaffInviteControl({
+        invitePilotEnabled: true,
+        inviteSendOpen: true,
+        actorRole: "MANAGER",
         actorActive: true,
         actorOrganizationId: ORG_ENJOYE_ID,
         target: eligible,
@@ -329,7 +339,7 @@ describe("2B-2 Owner invite UI stays hidden by default", () => {
         invite: pendingInvite(),
       }),
     ).toBe(true);
-    expect(staffInviteBindingLabel("pending")).toBe("登入邀請處理中");
+    expect(staffInviteBindingLabel("pending")).toBe("等待啟用");
     expect(
       pendingInviteMembershipIds([pendingInvite(), pendingInvite({ status: "revoked" })]),
     ).toEqual([YIXIN.id]);

@@ -26,7 +26,7 @@ import type { StaffBreak, StaffTimeOff, StaffWorkingHours } from "@/lib/staff-sc
 import type { Location, StaffRole } from "@/types/saas";
 import { StaffInvitePanel } from "@/features/staff/StaffInvitePanel";
 import type { StaffInviteRecord } from "@/lib/staff-auth/staff-invite-command";
-import { staffInviteBindingLabel } from "@/lib/staff-auth/staff-invite-visibility";
+import { staffInviteLifecycleLabel } from "@/lib/staff-auth/staff-invite-visibility";
 import { cn } from "@/lib/utils";
 
 const DAYS: DayOfWeek[] = [1, 2, 3, 4, 5, 6, 0];
@@ -223,8 +223,12 @@ export function StaffQuickView({
                 >
                   {row.employmentLabel}
                 </span>
-                <p className="mt-1.5 text-[12px] text-secondary-text" data-staff-login-binding>
-                  登入權限 · {staffInviteBindingLabel(row.loginBinding)}
+                <p
+                  className="mt-1.5 text-[12px] text-secondary-text"
+                  data-staff-login-binding
+                  data-staff-invite-lifecycle={row.inviteLifecycle}
+                >
+                  登入權限 · {staffInviteLifecycleLabel(row.inviteLifecycle)}
                 </p>
               </div>
             </div>

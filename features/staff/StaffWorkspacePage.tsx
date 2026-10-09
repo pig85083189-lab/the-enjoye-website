@@ -18,6 +18,7 @@ import { StaffQuickView } from "@/features/staff/StaffQuickView";
 import { listStaffLoginInvitesAction } from "@/lib/staff-auth/actions";
 import type { StaffInviteRecord } from "@/lib/staff-auth/staff-invite-command";
 import { pendingInviteMembershipIds } from "@/lib/staff-auth/staff-invite-state";
+import { pickLatestStaffInviteForMembership } from "@/lib/staff-auth/staff-invite-visibility";
 import { canManageStaff } from "@/lib/staff/staff-onboarding-derived";
 import { combineLocalDateTime, formatYmd, startOfDay } from "@/lib/appointments/domain";
 import type { DayOfWeek } from "@/lib/staff-schedule/domain";
@@ -156,7 +157,7 @@ export function StaffWorkspacePage({
   }, [isClient, membershipRevision, organization.id]);
 
   useEffect(() => {
-    if (!isClient || !staffInvitePilot) return;
+    if (!isClient) return;
     let cancelled = false;
     void listStaffLoginInvitesAction(organization.id).then((rows) => {
       if (!cancelled) setStaffInvites(rows);
@@ -164,7 +165,7 @@ export function StaffWorkspacePage({
     return () => {
       cancelled = true;
     };
-  }, [isClient, organization.id, staffInvitePilot, membershipRevision]);
+  }, [isClient, organization.id, membershipRevision]);
 
   useEffect(() => {
     if (!isClient || !locationId) return;
@@ -222,6 +223,7 @@ export function StaffWorkspacePage({
         now,
         weekStart,
         pendingInviteMembershipIds: pendingMembershipIds,
+        staffInvites,
       }),
     [
       breaks,
@@ -231,6 +233,7 @@ export function StaffWorkspacePage({
       now,
       organization.id,
       pendingMembershipIds,
+      staffInvites,
       timeOff,
       weekStart,
       workingHours,
@@ -251,10 +254,9 @@ export function StaffWorkspacePage({
     : null;
   const showQuickView = shouldRenderStaffQuickView(selectedRow);
   const selectedWeek = workspace.weekGrid.find((row) => row.staffId === selectedStaffId);
-  const selectedInvite =
-    selectedRow
-      ? staffInvites.find((invite) => invite.membershipId === selectedRow.membershipId) ?? null
-      : null;
+  const selectedInvite = selectedRow
+    ? pickLatestStaffInviteForMembership(staffInvites, selectedRow.membershipId, now)
+    : null;
 
   function refreshStaffInvites() {
     void listStaffLoginInvitesAction(organization.id).then(setStaffInvites);
@@ -327,6 +329,7 @@ export function StaffWorkspacePage({
     if (result.remote) {
       setNotice(result.notice || "員工已建立");
       setError("");
+      refreshStaffInvites();
     }
     if (result.scheduleError) {
       setError(`員工已建立，但初始班表儲存失敗：${result.scheduleError}`);

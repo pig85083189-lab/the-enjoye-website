@@ -24,6 +24,12 @@ import {
   type TimeOffStatus,
 } from "@/lib/staff-schedule/domain";
 import type { StaffMembership, StaffRole } from "@/types/saas";
+import {
+  deriveStaffInviteLifecycle,
+  loginBindingFromLifecycle,
+  pickLatestStaffInviteForMembership,
+  type StaffInviteLifecycle,
+} from "@/lib/staff-auth/staff-invite-visibility";
 
 export const STAFF_WORKSPACE_PANEL_WIDTH_PX = 400;
 export const STAFF_WORKSPACE_INLINE_MIN_PX = 1200;
@@ -108,6 +114,7 @@ export interface StaffWorkspaceRow {
   roleLabel: string;
   title: string | null;
   loginBinding: "bound" | "unbound" | "pending";
+  inviteLifecycle: StaffInviteLifecycle;
   email: string | null;
   authUserId: string | null;
   locationIds: string[];
@@ -532,6 +539,12 @@ export function buildStaffWorkspace(input: {
   now: Date;
   weekStart?: Date;
   pendingInviteMembershipIds?: readonly string[];
+  staffInvites?: ReadonlyArray<{
+    membershipId: string;
+    status: string;
+    expiresAt: string;
+    invitedAuthUserId: string | null;
+  }>;
 }): StaffWorkspaceModel {
   const weekStart = input.weekStart
     ? startOfDay(input.weekStart)
@@ -617,6 +630,23 @@ export function buildStaffWorkspace(input: {
     const workingSegment = todayCell.segments.find((segment) => segment.kind === "working");
     const roleLabel = STAFF_ROLE_LABEL[membership.role];
     const title = membership.title?.trim() || null;
+    const membershipInvite = pickLatestStaffInviteForMembership(
+      input.staffInvites ?? [],
+      membership.id,
+      input.now,
+    );
+    const inviteLifecycle = deriveStaffInviteLifecycle({
+      authUserId: membership.authUserId ?? null,
+      invite: membershipInvite,
+      now: input.now,
+    });
+    let loginBinding = loginBindingFromLifecycle(inviteLifecycle);
+    if (
+      loginBinding === "unbound" &&
+      (input.pendingInviteMembershipIds ?? []).includes(membership.id)
+    ) {
+      loginBinding = "pending";
+    }
 
     rows.push({
       staffId: membership.userId,
@@ -627,11 +657,8 @@ export function buildStaffWorkspace(input: {
       role: membership.role,
       roleLabel,
       title,
-      loginBinding: membership.authUserId
-        ? "bound"
-        : (input.pendingInviteMembershipIds ?? []).includes(membership.id)
-          ? "pending"
-          : "unbound",
+      loginBinding,
+      inviteLifecycle,
       email: membership.email ?? null,
       authUserId: membership.authUserId ?? null,
       locationIds: membership.locationIds,
