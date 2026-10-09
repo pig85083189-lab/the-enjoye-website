@@ -366,8 +366,14 @@ describe("staff invite final: source contracts stay closed", () => {
     expect(adapter).toMatch(/evaluateStaffInviteCanarySend/);
     expect(adapter).not.toMatch(/bind_invited_staff_auth_user/);
     expect(source("lib/staff-auth/actions.ts")).not.toMatch(/inviteUserByEmail/);
-    expect(source("app/staff/auth/setup-password/page.tsx")).toMatch(
+    expect(source("lib/staff-auth/staff-invite-reconciliation.ts")).toMatch(
       /請店長重寄/,
+    );
+    expect(source("lib/staff-auth/staff-auth-callback.ts")).toMatch(
+      /staffInviteAuthLinkExpiredMessage/,
+    );
+    expect(source("app/staff/auth/setup-password/page.tsx")).toMatch(
+      /staffSetupPasswordLinkErrorCopy/,
     );
     const preview = resolveStaffInviteRedirect({
       NEXT_PUBLIC_SUPABASE_URL: `https://${PREVIEW_SUPABASE_HOST}`,

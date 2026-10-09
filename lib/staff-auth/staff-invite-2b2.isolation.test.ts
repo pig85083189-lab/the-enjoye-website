@@ -376,7 +376,10 @@ describe("2B-2 source contracts", () => {
     expect(setup).toMatch(/尚未取得工作台權限/);
     const callback = source("app/staff/auth/callback/route.ts");
     expect(callback).toMatch(/loadStaffSessionGate/);
-    expect(callback).toMatch(/resolveStaffAuthCallbackNext/);
+    expect(callback).toMatch(/resolveStaffAuthCallbackDecision/);
+    expect(source("lib/staff-auth/staff-auth-callback.ts")).toMatch(
+      /resolveStaffAuthCallbackNext/,
+    );
     expect(callback).not.toMatch(/membershipId/);
     expect(callback).not.toMatch(/user_metadata/);
     const actions = source("lib/staff-auth/actions.ts");

@@ -4,6 +4,8 @@
  * Preview and Production Supabase projects cannot share origins.
  */
 
+import { staffAuthCallbackHref } from "@/lib/staff-auth/staff-auth-callback";
+
 export const PRODUCTION_SUPABASE_HOST = "knccefcxncglgpmvgqlp.supabase.co";
 export const PREVIEW_SUPABASE_HOST = "bfzquejrtgqzzarhkiya.supabase.co";
 export const PRODUCTION_STAFF_ORIGIN = "https://the-enjoye-website.vercel.app";
@@ -14,8 +16,7 @@ const PRODUCTION_STAFF_ORIGINS = new Set([
   "https://the-enjoye-website-git-main-pig85083189-6631s-projects.vercel.app",
 ]);
 
-export const STAFF_INVITE_CALLBACK_PATH =
-  "/staff/auth/callback?next=/staff/auth/setup-password";
+export const STAFF_INVITE_CALLBACK_PATH = staffAuthCallbackHref("invite");
 
 export type StaffInviteRedirectResult =
   | { ok: true; origin: string; redirectTo: string }

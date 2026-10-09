@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { AuthAlert, AuthBrand, AuthCard, AuthShell } from "@/features/auth/AuthShell";
 import { completeStaffPasswordSetupAction } from "@/lib/staff-auth/actions";
+import { staffSetupPasswordLinkErrorCopy } from "@/lib/staff-auth/staff-auth-callback";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import { tryGetSupabaseEnv } from "@/lib/supabase/env";
 
@@ -12,21 +13,19 @@ function SetupPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const linkError = searchParams.get("error");
+  const linkFlow = searchParams.get("flow");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const expired = linkError === "invalid" || linkError === "expired";
+  const linkErrorCopy = useMemo(
+    () => staffSetupPasswordLinkErrorCopy({ error: linkError, flow: linkFlow }),
+    [linkError, linkFlow],
+  );
+  const expired = Boolean(linkErrorCopy);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">(
     expired ? "error" : "idle",
   );
-  const initial = useMemo(() => {
-    if (!expired) return { title: "", description: "" };
-    return {
-      title: "這個連結已失效",
-      description: "邀請信件連結已過期。系統邀請列可能仍有效，請店長重寄以取得新連結。",
-    };
-  }, [expired]);
-  const [title, setTitle] = useState(initial.title);
-  const [description, setDescription] = useState(initial.description);
+  const [title, setTitle] = useState(linkErrorCopy?.title ?? "");
+  const [description, setDescription] = useState(linkErrorCopy?.description ?? "");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,9 +60,18 @@ function SetupPasswordForm() {
     try {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) {
+        const unauthenticated = linkFlow
+          ? staffSetupPasswordLinkErrorCopy({
+              error: "invalid",
+              flow: linkFlow,
+            })
+          : null;
         setStatus("error");
-        setTitle("這個連結已失效");
-        setDescription("邀請連結可能已過期或已使用，請重新取得連結。");
+        setTitle(unauthenticated?.title ?? "這個連結已失效");
+        setDescription(
+          unauthenticated?.description ??
+            "目前尚未登入，無法設定密碼。請重新取得重設或邀請連結。",
+        );
         return;
       }
       const { error } = await supabase.auth.updateUser({ password });
@@ -153,9 +161,9 @@ function SetupPasswordForm() {
           >
             返回登入
           </button>
-          {expired ? (
+          {linkErrorCopy ? (
             <p className="text-center text-xs leading-relaxed text-secondary-text">
-              請聯絡店長重新取得邀請，或到登入頁使用忘記密碼。
+              {linkErrorCopy.hint}
             </p>
           ) : null}
         </form>

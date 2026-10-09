@@ -282,8 +282,15 @@ describe("2B-2 pre-canary: send / RPC / expire / double-submit / redirect", () =
     expect(staffInviteDeliverySuccessMessage()).toMatch(/1 小時/);
     expect(staffInviteDeliverySuccessMessage()).toMatch(/不是 7 天/);
     expect(staffInviteDeliverySuccessMessage()).not.toMatch(/已啟用工作台/);
-    const setup = source("app/staff/auth/setup-password/page.tsx");
-    expect(setup).toMatch(/請店長重寄/);
+    expect(source("lib/staff-auth/staff-invite-reconciliation.ts")).toMatch(
+      /請店長重寄/,
+    );
+    expect(source("lib/staff-auth/staff-auth-callback.ts")).toMatch(
+      /staffInviteAuthLinkExpiredMessage/,
+    );
+    expect(source("app/staff/auth/setup-password/page.tsx")).toMatch(
+      /staffSetupPasswordLinkErrorCopy/,
+    );
     expect(source("features/staff/StaffInvitePanel.tsx")).toMatch(/result\.message/);
   });
 

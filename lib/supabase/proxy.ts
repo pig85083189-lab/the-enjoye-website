@@ -1,6 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  STAFF_SUPABASE_COOKIE_ENCODING,
+  STAFF_SUPABASE_COOKIE_OPTIONS,
+} from "@/lib/supabase/auth-cookie-options";
 import { tryGetSupabaseEnv } from "@/lib/supabase/env";
+import { isStaffAuthCallbackPath } from "@/lib/staff-auth/staff-auth-callback";
 import {
   resolveStaffSessionGate,
   resolveStaffSessionRedirect,
@@ -40,20 +45,29 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.next({ request });
   }
 
+  if (isStaffAuthCallbackPath(pathname)) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(env.url, env.publishableKey, {
+    cookieEncoding: STAFF_SUPABASE_COOKIE_ENCODING,
+    cookieOptions: STAFF_SUPABASE_COOKIE_OPTIONS,
     cookies: {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet, headers = {}) {
         cookiesToSet.forEach(({ name, value }) => {
           request.cookies.set(name, value);
         });
         supabaseResponse = NextResponse.next({ request });
         cookiesToSet.forEach(({ name, value, options }) => {
           supabaseResponse.cookies.set(name, value, options);
+        });
+        Object.entries(headers).forEach(([key, value]) => {
+          supabaseResponse.headers.set(key, value);
         });
       },
     },
