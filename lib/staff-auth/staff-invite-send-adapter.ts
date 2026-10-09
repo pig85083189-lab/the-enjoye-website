@@ -1,7 +1,9 @@
 /**
  * Server-only Staff invite delivery. Never import from Client Components.
- * Persist the invite row first, then send, then attach. Never delete Auth users.
- * Tokens and passwords are not logged.
+ * Persist the invite row first, then send, then attach.
+ * Preview canary resend: Owner-session claim RPC first, skip persist when the
+ * pending invite is already attached, then inviteUserByEmail once. Never retry
+ * send after a claim. Never delete Auth users. Tokens and passwords are not logged.
  */
 
 import { createServiceRoleClient } from "@/lib/supabase/admin";
@@ -14,8 +16,13 @@ import {
   type StaffInviteRequestMode,
 } from "@/lib/staff-auth/staff-invite-command";
 import {
-  claimStaffInviteCanarySendAttempt,
+  CLAIM_STAFF_INVITE_CANARY_SEND_RPC,
+  STAFF_INVITE_CANARY_INVITE_ID,
+  STAFF_INVITE_CANARY_RESEND_ONLY_MESSAGE,
   evaluateStaffInviteCanarySend,
+  interpretStaffInviteCanaryClaimRpc,
+  isExactStaffInviteCanaryPendingResend,
+  type StaffInviteCanaryClaimResult,
 } from "@/lib/staff-auth/staff-invite-canary";
 import { isStaffInviteSendOpen } from "@/lib/staff-auth/staff-invite-flag";
 import {
@@ -40,6 +47,7 @@ export type StaffInviteSendResult =
       reason:
         | "invite_send_closed"
         | "not_configured"
+        | "unauthorized"
         | "conflict"
         | "invalid_email"
         | "invalid_invite"
@@ -128,17 +136,31 @@ export async function executeRecoverableStaffInviteDelivery(input: {
   mode: StaffInviteRequestMode;
   persist: RecoverableInvitePersistFn;
   sendInviteEmail: RecoverableInviteSendFn;
+  skipPersist?: boolean;
 }): Promise<StaffInviteSendResult> {
-  const persisted = await input.persist({
-    invitedAuthUserId: input.plan.attachAuthUserId,
-    existingInviteId: input.plan.reuseInviteId,
-  });
-  if (!persisted.ok) {
-    return {
-      ok: false,
-      reason: "error",
-      message: "邀請紀錄寫入失敗",
-    };
+  let inviteId: string;
+  if (input.skipPersist) {
+    if (!input.plan.reuseInviteId?.startsWith("inv-")) {
+      return {
+        ok: false,
+        reason: "invalid_invite",
+        message: "沒有可重寄的邀請",
+      };
+    }
+    inviteId = input.plan.reuseInviteId;
+  } else {
+    const persisted = await input.persist({
+      invitedAuthUserId: input.plan.attachAuthUserId,
+      existingInviteId: input.plan.reuseInviteId,
+    });
+    if (!persisted.ok) {
+      return {
+        ok: false,
+        reason: "error",
+        message: "邀請紀錄寫入失敗",
+      };
+    }
+    inviteId = persisted.inviteId;
   }
 
   let sendOk = !input.plan.sendEmail;
@@ -155,14 +177,14 @@ export async function executeRecoverableStaffInviteDelivery(input: {
         message:
           "無法重寄邀請信。這個 Email 已有 Auth 帳號，inviteUserByEmail 不會保證再寄一封。請確認 Auth 支援重邀未完成帳號，或請已綁定帳號使用忘記密碼。",
         authUserId: input.plan.attachAuthUserId,
-        inviteId: persisted.inviteId,
+        inviteId,
       };
     } else if (sent.alreadyRegistered) {
       return {
         ok: false,
         reason: "conflict",
         message: "這個 Email 已經有登入帳號",
-        inviteId: persisted.inviteId,
+        inviteId,
       };
     } else {
       const mapped = interpretStaffInviteSendFailure(sent.message);
@@ -171,14 +193,14 @@ export async function executeRecoverableStaffInviteDelivery(input: {
         persistOk: true,
         attachOk: false,
         authUserId,
-        inviteId: persisted.inviteId,
+        inviteId,
       });
       if (outcome.ok) {
         return {
           ok: false,
           reason: "error",
           message: "邀請紀錄已建立，但邀請信寄送失敗。請重試，系統不會再建立第二筆邀請。",
-          inviteId: persisted.inviteId,
+          inviteId,
         };
       }
       return {
@@ -189,16 +211,16 @@ export async function executeRecoverableStaffInviteDelivery(input: {
             ? mapped.message
             : outcome.message,
         authUserId: outcome.authUserId,
-        inviteId: persisted.inviteId,
+        inviteId,
       };
     }
   }
 
   let attachOk = Boolean(authUserId && input.plan.attachAuthUserId === authUserId);
-  if (authUserId && !attachOk) {
+  if (authUserId && !attachOk && !input.skipPersist) {
     const attached = await input.persist({
       invitedAuthUserId: authUserId,
-      existingInviteId: persisted.inviteId,
+      existingInviteId: inviteId,
     });
     attachOk = attached.ok;
   }
@@ -208,7 +230,7 @@ export async function executeRecoverableStaffInviteDelivery(input: {
     persistOk: true,
     attachOk,
     authUserId,
-    inviteId: persisted.inviteId,
+    inviteId,
   });
   if (!outcome.ok) {
     return {
@@ -227,7 +249,60 @@ export async function executeRecoverableStaffInviteDelivery(input: {
   };
 }
 
-async function persistStaffLoginInviteRow(input: {
+export async function claimStaffInviteCanarySendFromOwnerSession(): Promise<StaffInviteCanaryClaimResult> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(CLAIM_STAFF_INVITE_CANARY_SEND_RPC);
+  return interpretStaffInviteCanaryClaimRpc({ data, error });
+}
+
+export function isStaffInviteCanaryResendPlan(
+  plan: Extract<StaffInviteDeliveryPlan, { ok: true }>,
+  existingInvite?: StaffInviteRecord | null,
+): boolean {
+  return (
+    plan.sendMethod === "resend_known" &&
+    plan.sendEmail &&
+    plan.reuseInviteId === STAFF_INVITE_CANARY_INVITE_ID &&
+    Boolean(plan.attachAuthUserId) &&
+    isExactStaffInviteCanaryPendingResend(existingInvite)
+  );
+}
+
+export async function executeCanaryStaffInviteResendDelivery(input: {
+  plan: Extract<StaffInviteDeliveryPlan, { ok: true }>;
+  existingInvite?: StaffInviteRecord | null;
+  claim: () => Promise<StaffInviteCanaryClaimResult>;
+  sendInviteEmail: RecoverableInviteSendFn;
+}): Promise<StaffInviteSendResult> {
+  if (!isStaffInviteCanaryResendPlan(input.plan, input.existingInvite)) {
+    return {
+      ok: false,
+      reason: "invite_send_closed",
+      message: STAFF_INVITE_CANARY_RESEND_ONLY_MESSAGE,
+    };
+  }
+
+  const claimed = await input.claim();
+  if (!claimed.ok) {
+    return {
+      ok: false,
+      reason: claimed.reason,
+      message: claimed.message,
+    };
+  }
+
+  return executeRecoverableStaffInviteDelivery({
+    plan: input.plan,
+    mode: "resend",
+    skipPersist: true,
+    persist: async () => {
+      throw new Error("canary resend must not persist a second invite");
+    },
+    sendInviteEmail: input.sendInviteEmail,
+  });
+}
+
+export async function persistStaffLoginInviteRow(input: {
   membershipId: string;
   email: string;
   invitedAuthUserId: string | null;
@@ -323,24 +398,11 @@ export async function deliverStaffLoginInvite(input: {
     return { ok: false, reason: plan.reason, message: plan.message };
   }
 
-  return executeRecoverableStaffInviteDelivery({
+  return executeCanaryStaffInviteResendDelivery({
     plan,
-    mode: input.mode,
-    persist: ({ invitedAuthUserId, existingInviteId }) =>
-      persistStaffLoginInviteRow({
-        membershipId: input.membershipId,
-        email: input.email,
-        invitedAuthUserId,
-        existingInviteId,
-      }),
+    existingInvite: input.existingInvite ?? null,
+    claim: claimStaffInviteCanarySendFromOwnerSession,
     sendInviteEmail: async () => {
-      if (!claimStaffInviteCanarySendAttempt(input.membershipId, input.email)) {
-        return {
-          ok: false,
-          alreadyRegistered: false,
-          message: "此次 Preview 測試僅允許寄送一封邀請，且不得重寄",
-        };
-      }
       const { data, error } = await admin.auth.admin.inviteUserByEmail(input.email, {
         redirectTo: input.redirectTo,
       });
