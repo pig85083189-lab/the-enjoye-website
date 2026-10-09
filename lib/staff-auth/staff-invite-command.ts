@@ -80,6 +80,7 @@ function refuse(
 export function evaluateStaffInviteRequest(input: {
   invitePilotEnabled: boolean;
   inviteSendOpen: boolean;
+  canarySendAllowed?: boolean;
   organizationId?: string | null;
   membershipId?: string | null;
   email?: string | null;
@@ -179,7 +180,10 @@ export function evaluateStaffInviteRequest(input: {
       return refuse("conflict", "這位員工已經接受登入邀請");
     }
   }
-  if (!input.inviteSendOpen) {
+  if (input.canarySendAllowed && mode === "resend") {
+    return refuse("invite_send_closed", "此次 Preview 測試僅允許寄送一封邀請，且不得重寄");
+  }
+  if (!input.inviteSendOpen && !input.canarySendAllowed) {
     return refuse("invite_send_closed", "邀請寄送尚未開放");
   }
   return { ok: true, email, mode };

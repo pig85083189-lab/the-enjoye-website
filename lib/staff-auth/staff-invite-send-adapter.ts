@@ -13,6 +13,10 @@ import {
   type StaffInviteRecord,
   type StaffInviteRequestMode,
 } from "@/lib/staff-auth/staff-invite-command";
+import {
+  claimStaffInviteCanarySendAttempt,
+  evaluateStaffInviteCanarySend,
+} from "@/lib/staff-auth/staff-invite-canary";
 import { isStaffInviteSendOpen } from "@/lib/staff-auth/staff-invite-flag";
 import {
   AUTH_USER_LIST_MAX_PAGES,
@@ -265,11 +269,19 @@ export async function deliverStaffLoginInvite(input: {
   if (typeof window !== "undefined") {
     throw new Error("Staff invite adapter cannot run in the browser");
   }
-  if (!isStaffInviteSendOpen()) {
+  const sendOpen = isStaffInviteSendOpen();
+  const canary = evaluateStaffInviteCanarySend({
+    email: input.email,
+    membershipId: input.membershipId,
+    organizationId: input.organizationId,
+    mode: input.mode,
+    existingInvite: input.existingInvite ?? null,
+  });
+  if (!canary.ok) {
     return {
       ok: false,
       reason: "invite_send_closed",
-      message: "邀請寄送尚未開放",
+      message: sendOpen ? canary.message : canary.message,
     };
   }
   if (!tryGetSupabaseServiceRoleKey()) {
@@ -322,6 +334,13 @@ export async function deliverStaffLoginInvite(input: {
         existingInviteId,
       }),
     sendInviteEmail: async () => {
+      if (!claimStaffInviteCanarySendAttempt(input.membershipId, input.email)) {
+        return {
+          ok: false,
+          alreadyRegistered: false,
+          message: "此次 Preview 測試僅允許寄送一封邀請，且不得重寄",
+        };
+      }
       const { data, error } = await admin.auth.admin.inviteUserByEmail(input.email, {
         redirectTo: input.redirectTo,
       });

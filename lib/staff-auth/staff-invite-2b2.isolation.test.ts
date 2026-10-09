@@ -358,6 +358,7 @@ describe("2B-2 source contracts", () => {
     const adapter = source("lib/staff-auth/staff-invite-send-adapter.ts");
     expect(adapter).toMatch(/inviteUserByEmail/);
     expect(adapter).toMatch(/isStaffInviteSendOpen/);
+    expect(adapter).toMatch(/evaluateStaffInviteCanarySend/);
     expect(adapter).toMatch(/CREATE_STAFF_LOGIN_INVITE_RPC/);
     expect(adapter).not.toMatch(/bind_invited_staff_auth_user/);
     expect(adapter).not.toMatch(/createUser/);

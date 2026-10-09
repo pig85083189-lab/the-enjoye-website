@@ -359,9 +359,11 @@ describe("staff invite final: source contracts stay closed", () => {
     expect(source("lib/staff-auth/staff-invite-flag.ts")).toMatch(
       /STAFF_INVITE_SEND_OPEN = false/,
     );
+    expect(source("lib/staff-auth/actions.ts")).toMatch(/evaluateStaffInviteCanarySend/);
     const adapter = source("lib/staff-auth/staff-invite-send-adapter.ts");
     expect(adapter).toMatch(/persistFirst|Persist the invite row first/);
     expect(adapter).toMatch(/inviteUserByEmail/);
+    expect(adapter).toMatch(/evaluateStaffInviteCanarySend/);
     expect(adapter).not.toMatch(/bind_invited_staff_auth_user/);
     expect(source("lib/staff-auth/actions.ts")).not.toMatch(/inviteUserByEmail/);
     expect(source("app/staff/auth/setup-password/page.tsx")).toMatch(

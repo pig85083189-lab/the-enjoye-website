@@ -17,6 +17,7 @@ import { StaffRemoteCreateError } from "@/lib/staff/staff-remote-create-errors";
 import { isStaffRemoteCreatePilotEnabled } from "@/lib/staff/staff-remote-create-flag";
 import { runAuthenticatedStaffRemoteCreate } from "@/lib/staff/staff-remote-create-pilot";
 import type { StaffRemoteCreatePublicMembership } from "@/lib/staff/staff-remote-provision";
+import { evaluateStaffInviteCanarySend } from "@/lib/staff-auth/staff-invite-canary";
 import {
   isStaffInvitePilotEnabled,
   isStaffInviteSendOpen,
@@ -164,11 +165,20 @@ export async function inviteStaffLoginAction(input: {
   );
 
   const email = normalizeStaffEmail(input.email ?? "");
+  const canary = evaluateStaffInviteCanarySend({
+    env,
+    email: input.email,
+    membershipId: input.membershipId,
+    organizationId: input.organizationId,
+    userId: target?.userId ?? null,
+    mode: input.mode,
+    existingInvite,
+  });
   let authEmailClass: StaffInviteAuthEmailClass | undefined;
   let foundAuthUserId: string | null = null;
   let foundAuthUser: StaffInviteAuthUserFacts | null = null;
   let boundMembershipIdForEmail: string | null = null;
-  if (inviteSendOpen && email) {
+  if ((inviteSendOpen || canary.ok) && email) {
     const lookup = await lookupAuthUserIdForStaffEmail(email);
     if (!lookup.ok) {
       return { ok: false, reason: "error", message: lookup.message };
@@ -193,6 +203,7 @@ export async function inviteStaffLoginAction(input: {
   const decision = evaluateStaffInviteRequest({
     invitePilotEnabled,
     inviteSendOpen,
+    canarySendAllowed: canary.ok,
     organizationId: input.organizationId,
     membershipId: input.membershipId,
     email: input.email,
@@ -236,11 +247,11 @@ export async function inviteStaffLoginAction(input: {
     };
   }
 
-  if (!inviteSendOpen) {
+  if (!canary.ok) {
     return {
       ok: false,
       reason: "invite_send_closed",
-      message: "邀請寄送尚未開放",
+      message: canary.message,
     };
   }
 
