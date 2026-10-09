@@ -3,7 +3,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LOC_ENJOYE_PRIMARY_ID, ORG_ENJOYE_ID, ORG_LUMIERE_ID } from "@/lib/tenant/constants";
 import {
+  CLAIM_STAFF_INVITE_CANARY_SEND_RPC,
+  STAFF_INVITE_CANARY_CLAIM_ID,
   STAFF_INVITE_CANARY_EMAIL,
+  STAFF_INVITE_CANARY_INVITE_ID,
   STAFF_INVITE_CANARY_MEMBERSHIP_ID,
   STAFF_INVITE_CANARY_ORGANIZATION_ID,
   STAFF_INVITE_CANARY_SUPABASE_REF,
@@ -345,5 +348,64 @@ describe("Preview staff invite canary source contracts", () => {
     expect(source("lib/staff-auth/staff-invite-flag.ts")).toMatch(
       /STAFF_INVITE_SEND_OPEN = false/,
     );
+  });
+
+  it("adds a durable Owner-only canary claim RPC without wiring send or mutating invites", () => {
+    expect(CLAIM_STAFF_INVITE_CANARY_SEND_RPC).toBe("claim_staff_invite_canary_send");
+    expect(STAFF_INVITE_CANARY_CLAIM_ID).toBe(
+      `canary-resend:${STAFF_INVITE_CANARY_INVITE_ID}`,
+    );
+    const sql = source(
+      "supabase/migrations/20261009140000_staff_invite_canary_send_claim.sql",
+    );
+    expect(sql).toMatch(/create table if not exists public\.staff_invite_canary_send_claims/);
+    expect(sql).toMatch(
+      new RegExp(`create or replace function public\\.${CLAIM_STAFF_INVITE_CANARY_SEND_RPC}\\(\\)`),
+    );
+    expect(sql).toMatch(/security definer/);
+    expect(sql).toMatch(/set search_path = public/);
+    expect(sql).not.toMatch(/security invoker/);
+    expect(sql).toMatch(/v_uid uuid := auth\.uid\(\)/);
+    expect(sql).toMatch(/role = 'OWNER'/);
+    expect(sql).not.toMatch(/p_owner|owner_id|claimed_by_auth/);
+    expect(sql).toMatch(new RegExp(`id = '${STAFF_INVITE_CANARY_CLAIM_ID}'`));
+    expect(sql).toMatch(new RegExp(`invite_id = '${STAFF_INVITE_CANARY_INVITE_ID}'`));
+    expect(sql).toMatch(
+      new RegExp(`membership_id = '${STAFF_INVITE_CANARY_MEMBERSHIP_ID}'`),
+    );
+    expect(sql).toMatch(/organization_id = 'org-the-enjoye'/);
+    expect(sql).toMatch(new RegExp(`email = '${STAFF_INVITE_CANARY_EMAIL}'`));
+    expect(sql).toMatch(/user_id is distinct from 'staff-preview-canary-dog1060330'/);
+    expect(sql).toMatch(/role is distinct from 'STAFF'/);
+    expect(sql).toMatch(/auth_user_id is not null/);
+    expect(sql).toMatch(/invited_auth_user_id is null/);
+    expect(sql).toMatch(/from auth\.users as u/);
+    expect(sql).toMatch(/when unique_violation then/);
+    expect(sql).toMatch(/already_claimed/);
+    expect(sql).toMatch(/revoke all on function public\.claim_staff_invite_canary_send\(\)/);
+    expect(sql).toMatch(/from public, anon/);
+    expect(sql).toMatch(
+      /revoke all on table public\.staff_invite_canary_send_claims\s+from public, anon, authenticated, service_role/,
+    );
+    expect(sql).toMatch(
+      /grant execute on function public\.claim_staff_invite_canary_send\(\)\s+to authenticated/,
+    );
+    expect(sql).not.toMatch(/grant insert on table public\.staff_invite_canary_send_claims/);
+    expect(sql).not.toMatch(/grant update on table public\.staff_invite_canary_send_claims/);
+    expect(sql).not.toMatch(/grant delete on table public\.staff_invite_canary_send_claims/);
+    expect(sql).not.toMatch(/update public\.staff_login_invites/);
+    expect(sql).not.toMatch(/update public\.staff_auth_memberships/);
+    expect(sql).not.toMatch(/insert into public\.staff_login_invites/);
+    expect(sql).not.toMatch(/inviteUserByEmail|generateLink|resetPasswordForEmail|deleteUser/);
+    expect(source("lib/staff-auth/staff-invite-send-adapter.ts")).not.toMatch(
+      /claim_staff_invite_canary_send/,
+    );
+    expect(source("lib/staff-auth/actions.ts")).not.toMatch(
+      /claim_staff_invite_canary_send/,
+    );
+    expect(canaryInput({ mode: "resend" })).toMatchObject({
+      ok: false,
+      reason: "invite_send_closed",
+    });
   });
 });

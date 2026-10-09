@@ -20,7 +20,10 @@ export const STAFF_INVITE_CANARY_EMAIL = "dog1060330@gmail.com";
 export const STAFF_INVITE_CANARY_MEMBERSHIP_ID = "mem-preview-canary-dog1060330";
 export const STAFF_INVITE_CANARY_USER_ID = "staff-preview-canary-dog1060330";
 export const STAFF_INVITE_CANARY_ORGANIZATION_ID = ORG_ENJOYE_ID;
+export const STAFF_INVITE_CANARY_INVITE_ID = "inv-30506ef33d4d4f68";
+export const STAFF_INVITE_CANARY_CLAIM_ID = "canary-resend:inv-30506ef33d4d4f68";
 export const STAFF_INVITE_CANARY_SUPABASE_REF = "bfzquejrtgqzzarhkiya";
+export const CLAIM_STAFF_INVITE_CANARY_SEND_RPC = "claim_staff_invite_canary_send";
 
 const claimedCanarySends = new Set<string>();
 

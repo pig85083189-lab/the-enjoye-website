@@ -39,6 +39,7 @@ const EXPECTED_CHAIN = [
   "20261007150000_staff_operational_create_fix.sql",
   "20261008120000_staff_login_invite_foundation.sql",
   "20261008130000_staff_login_invite_create.sql",
+  "20261009140000_staff_invite_canary_send_claim.sql",
 ] as const;
 
 function read(rel: string): string {
