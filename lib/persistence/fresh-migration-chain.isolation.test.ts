@@ -43,6 +43,7 @@ const EXPECTED_CHAIN = [
   "20261010140000_line_broadcast_real_send.sql",
   "20261010160000_line_owner_test_push.sql",
   "20261010180000_line_webhook_least_privilege.sql",
+  "20261010190000_line_test_push_claim_daily_quota.sql",
 ] as const;
 
 function read(rel: string): string {

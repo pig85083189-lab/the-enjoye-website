@@ -19,7 +19,12 @@ import {
   persistCurrentLocation,
   persistOrganizationId,
 } from "@/lib/tenant/organization-store";
-import { LINE_BROADCAST_SEND_OPEN, LINE_TEST_PUSH_OPEN } from "@/lib/line/line-flag";
+import {
+  isLineBroadcastSendOpen,
+  isLineTestPushOpen,
+  LINE_BROADCAST_SEND_OPEN,
+  LINE_TEST_PUSH_OPEN,
+} from "@/lib/line/line-flag";
 
 describe("Beauty OS TEST organization seed", () => {
   beforeEach(() => {
@@ -63,5 +68,7 @@ describe("Beauty OS TEST organization seed", () => {
   it("does not open LINE send switches", () => {
     expect(LINE_TEST_PUSH_OPEN).toBe(false);
     expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+    expect(isLineTestPushOpen({ organizationId: ORG_BEAUTY_OS_TEST_ID })).toBe(false);
+    expect(isLineBroadcastSendOpen()).toBe(false);
   });
 });

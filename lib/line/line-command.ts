@@ -92,6 +92,31 @@ function requireOwner(actor: LineActor, organizationId?: string | null): LineDec
   return { ok: true };
 }
 
+export function resolveVerifiedLineOrganizationId(input: {
+  requestedOrganizationId?: string | null;
+  actor: LineActor;
+}): { ok: true; organizationId: string } | { ok: false; reason: LineDecisionReason; message: string } {
+  const requested = input.requestedOrganizationId?.trim() ?? "";
+  const owner = requireOwner(input.actor, requested);
+  if (!owner.ok) return owner;
+  const organizationId = input.actor.organizationId?.trim() ?? "";
+  if (!organizationId || organizationId !== requested) {
+    return refuse("unauthorized", "不能管理其他店家的 LINE");
+  }
+  return { ok: true, organizationId };
+}
+
+export function evaluateLineTestPushClaimQuota(input: {
+  consumedToday: number;
+  dailyLimit?: number;
+}): LineDecision {
+  const limit = input.dailyLimit ?? LINE_TEST_PUSH_DAILY_LIMIT;
+  if (input.consumedToday >= limit) {
+    return refuse("quota_exceeded", "今日測試發送次數已達上限");
+  }
+  return { ok: true };
+}
+
 export function evaluateLineConnectionSave(input: {
   connectionPilotEnabled: boolean;
   encryptionReady: boolean;

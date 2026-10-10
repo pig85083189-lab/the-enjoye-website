@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   MEMBERSHIP_ENJOYE_OWNER_ID,
+  ORG_BEAUTY_OS_TEST_ID,
   ORG_ENJOYE_ID,
   ORG_LUMIERE_ID,
 } from "@/lib/tenant/constants";
@@ -16,6 +17,7 @@ import {
   LINE_BROADCAST_REAL_SEND_MIGRATION_FILE,
   LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE,
   LINE_OWNER_TEST_PUSH_MIGRATION_FILE,
+  LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE,
   LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE,
 } from "@/lib/persistence/schema-contract";
 import { STAFF_LINE_ROLES, resolveStaffRolePageAccess } from "@/lib/staff/staff-role-page-access";
@@ -34,8 +36,10 @@ import {
   evaluateLineConnectionSave,
   evaluateLineConnectionTest,
   evaluateLineOwnerBindStart,
+  evaluateLineTestPushClaimQuota,
   evaluateLineTestPushSend,
   interpretLineBroadcastApiOutcome,
+  resolveVerifiedLineOrganizationId,
   LINE_BOT_INFO_PATH,
   LINE_BROADCAST_PATH,
   LINE_PUSH_PATH,
@@ -92,10 +96,14 @@ import {
   LINE_WEBHOOK_HOST_ENV,
   LINE_BROADCAST_DAILY_LIMIT,
   LINE_BROADCAST_SEND_OPEN,
+  LINE_TEST_PUSH_ALLOWED_ORG_ID,
   LINE_TEST_PUSH_DAILY_LIMIT,
   LINE_TEST_PUSH_OPEN,
+  LINE_TEST_PUSH_OPEN_ENV,
+  LINE_TEST_PUSH_ORG_ENV,
   LINE_CONNECTION_PILOT_ENV,
   LINE_CREDENTIAL_KEY_ENV,
+  resolveLineTestPushTransport,
 } from "@/lib/line/line-flag";
 import { canManageLineOfficialAccount } from "@/lib/line/line-roles";
 import { executeLineBroadcastHttp } from "@/lib/line/line-send-adapter";
@@ -157,10 +165,20 @@ const previewEnv = {
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
 };
 
+const previewAllowlistEnv = {
+  ...previewEnv,
+  [LINE_TEST_PUSH_OPEN_ENV]: "1",
+  [LINE_TEST_PUSH_ORG_ENV]: ORG_BEAUTY_OS_TEST_ID,
+  VERCEL_ENV: "preview",
+};
+
 describe("LINE Phase 1 flags", () => {
   it("keeps connection pilot and send path fail-closed", () => {
     expect(LINE_CONNECTION_PILOT_ENV).toBe("BEAUTY_OS_LINE_CONNECTION_PILOT");
     expect(LINE_CREDENTIAL_KEY_ENV).toBe("BEAUTY_OS_LINE_CREDENTIAL_KEY");
+    expect(LINE_TEST_PUSH_OPEN_ENV).toBe("BEAUTY_OS_LINE_TEST_PUSH_OPEN");
+    expect(LINE_TEST_PUSH_ORG_ENV).toBe("BEAUTY_OS_LINE_TEST_PUSH_ORG");
+    expect(LINE_TEST_PUSH_ALLOWED_ORG_ID).toBe(ORG_BEAUTY_OS_TEST_ID);
     expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
     expect(LINE_TEST_PUSH_OPEN).toBe(false);
     expect(LINE_BROADCAST_DAILY_LIMIT).toBe(3);
@@ -172,8 +190,187 @@ describe("LINE Phase 1 flags", () => {
     expect(isLineConnectionPilotEnabled({ [LINE_CONNECTION_PILOT_ENV]: "1" })).toBe(false);
     expect(isLineConnectionPilotEnabled(previewEnv)).toBe(true);
     expect(isLineBroadcastSendOpen(previewEnv)).toBe(false);
-    expect(isLineTestPushOpen(previewEnv)).toBe(false);
+    expect(
+      isLineBroadcastSendOpen({
+        ...previewEnv,
+        BEAUTY_OS_LINE_BROADCAST_SEND_OPEN: "1",
+      }),
+    ).toBe(false);
+    expect(isLineTestPushOpen({ env: previewEnv })).toBe(false);
+    expect(isLineTestPushOpen({ organizationId: ORG_BEAUTY_OS_TEST_ID, env: previewEnv })).toBe(
+      false,
+    );
     expect(hasLineCredentialKey({})).toBe(false);
+  });
+});
+
+describe("LINE Phase 1D Preview test-push allowlist", () => {
+  const testRecipient = {
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    bound: true,
+    hint: "••••fc8c",
+    bindMethod: "webhook_code" as const,
+    boundAt: "2026-10-10T07:44:49.000Z",
+  };
+
+  it("opens only for Preview + exact Beauty OS TEST allowlist", () => {
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: previewAllowlistEnv,
+      }),
+    ).toBe(true);
+    expect(
+      resolveLineTestPushTransport({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: previewAllowlistEnv,
+      }),
+    ).toEqual({ open: true, organizationId: ORG_BEAUTY_OS_TEST_ID });
+    expect(
+      evaluateLineTestPushSend({
+        connectionPilotEnabled: true,
+        testPushOpen: isLineTestPushOpen({
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          env: previewAllowlistEnv,
+        }),
+        ownerTestPushEnabled: true,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID }),
+        textBody: "測試",
+        existing: draftBroadcast({
+          id: "lts-draft000000001",
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          requestId: "ltsq-req00000000001",
+        }),
+        requestId: "ltsq-req00000000001",
+        acceptedToday: 0,
+        accountConnected: true,
+        acknowledged: true,
+        recipient: testRecipient,
+      }),
+    ).toMatchObject({ ok: true, requestId: "ltsq-req00000000001" });
+  });
+
+  it("refuses THE ENJOYE, other orgs, Production, and missing or wrong env", () => {
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_ENJOYE_ID,
+        env: previewAllowlistEnv,
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_LUMIERE_ID,
+        env: previewAllowlistEnv,
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, VERCEL_ENV: "production" },
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, [LINE_TEST_PUSH_OPEN_ENV]: undefined },
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, [LINE_TEST_PUSH_OPEN_ENV]: "true" },
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, [LINE_TEST_PUSH_ORG_ENV]: ORG_ENJOYE_ID },
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, [LINE_CONNECTION_PILOT_ENV]: undefined },
+      }),
+    ).toBe(false);
+    expect(
+      resolveLineTestPushTransport({
+        organizationId: ORG_ENJOYE_ID,
+        env: previewAllowlistEnv,
+      }),
+    ).toEqual({ open: false });
+    expect(
+      resolveLineTestPushTransport({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, VERCEL_ENV: "production" },
+      }),
+    ).toEqual({ open: false });
+  });
+
+  it("refuses client-chosen foreign orgs and unbound or non-owner actors", () => {
+    expect(
+      resolveVerifiedLineOrganizationId({
+        requestedOrganizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({ organizationId: ORG_ENJOYE_ID }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      resolveVerifiedLineOrganizationId({
+        requestedOrganizationId: ORG_ENJOYE_ID,
+        actor: ownerActor({ organizationId: ORG_ENJOYE_ID }),
+      }),
+    ).toMatchObject({ ok: true, organizationId: ORG_ENJOYE_ID });
+    expect(
+      resolveVerifiedLineOrganizationId({
+        requestedOrganizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          role: "MANAGER",
+        }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineTestPushSend({
+        connectionPilotEnabled: true,
+        testPushOpen: true,
+        ownerTestPushEnabled: true,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID }),
+        textBody: "測試",
+        requestId: "ltsq-req00000000001",
+        acceptedToday: 0,
+        accountConnected: true,
+        acknowledged: true,
+        recipient: null,
+      }),
+    ).toMatchObject({ ok: false, reason: "not_configured" });
+  });
+
+  it("does not decrypt recipients or call LINE when the transport is closed", () => {
+    expect(
+      resolveLineTestPushTransport({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: previewEnv,
+      }).open,
+    ).toBe(false);
+    const actions = source("lib/line/actions.ts");
+    const testPush = actions.slice(actions.indexOf("export async function sendLineTestPushAction"));
+    expect(actions).toMatch(/loadVerifiedLineOrganization/);
+    expect(testPush).toMatch(/resolveLineTestPushTransport/);
+    expect(testPush).toMatch(/if \(!transport\.open\)/);
+    expect(testPush.indexOf("if (!transport.open)")).toBeGreaterThan(
+      testPush.indexOf("resolveLineTestPushTransport"),
+    );
+    expect(testPush.indexOf("OWNER_READ_LINE_RECIPIENT_CIPHER_RPC")).toBeGreaterThan(
+      testPush.indexOf("if (!transport.open)"),
+    );
+    expect(testPush.indexOf("decryptLineCredential")).toBeGreaterThan(
+      testPush.indexOf("if (!transport.open)"),
+    );
+    expect(testPush.indexOf("executeLineTestPushHttp")).toBeGreaterThan(
+      testPush.indexOf("if (!transport.open)"),
+    );
   });
 });
 
@@ -747,6 +944,31 @@ describe("LINE Phase 1C owner bind and test push", () => {
     expect(
       evaluateLineTestPushSend({ ...base, testPushOpen: false }),
     ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineTestPushSend({
+        ...base,
+        actor: ownerActor({ role: "MANAGER" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineTestPushSend({
+        ...base,
+        existing: draftBroadcast({
+          id: "lts-1",
+          requestId: "ltsq-req00000000001",
+          status: "accepted",
+        }),
+        requestId: "ltsq-req00000000001",
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
+      evaluateLineTestPushSend({ ...base, acceptedToday: LINE_TEST_PUSH_DAILY_LIMIT }),
+    ).toMatchObject({ ok: false, reason: "quota_exceeded" });
+    expect(evaluateLineTestPushClaimQuota({ consumedToday: 3 })).toMatchObject({
+      ok: false,
+      reason: "quota_exceeded",
+    });
+    expect(evaluateLineTestPushClaimQuota({ consumedToday: 2 })).toMatchObject({ ok: true });
     expect(newLineTestRequestId(() => "aaaaaaaa-bbbb-cccc-dddd-eeeeffffffffffff")).toMatch(/^ltsq-/);
   });
 
@@ -1278,8 +1500,29 @@ describe("LINE source contracts", () => {
     );
     expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(/failed_attempts/);
     expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(/v_attempts >= 5/);
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(CLAIM_LINE_TEST_SEND_RPC);
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(
+      /from public\.line_official_accounts a/,
+    );
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(/for update/);
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(/quota_exceeded/);
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(
+      /status in \('accepted', 'sending', 'pending_confirmation'\)/,
+    );
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(/v_consumed_today >= 3/);
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).not.toMatch(
+      /grant execute on function public\.claim_line_test_send[^;]+anon/,
+    );
     expect(source("lib/line/line-flag.ts")).toMatch(/LINE_TEST_PUSH_OPEN = false/);
     expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_TEST_PUSH_OPEN_ENV/);
+    expect(source("lib/line/line-flag.ts")).not.toMatch(/BEAUTY_OS_LINE_BROADCAST_SEND_OPEN/);
+    expect(source("lib/line/line-flag.ts")).toMatch(
+      /isLineBroadcastSendOpen\([\s\S]*LINE_BROADCAST_SEND_OPEN/,
+    );
+    expect(source("lib/line/actions.ts")).toMatch(/loadVerifiedLineOrganization/);
+    expect(source("lib/line/actions.ts")).toMatch(/sendLineBroadcastAction/);
+    expect(source("lib/line/actions.ts")).toMatch(/sendLineTestPushAction/);
     expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1D/);
     expect(source("docs/saas/line-official-account.md")).toMatch(/不得修改 THE ENJOYE 現有官方帳號的 Webhook/);
   });

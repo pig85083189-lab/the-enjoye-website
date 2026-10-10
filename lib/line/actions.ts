@@ -30,6 +30,7 @@ import {
   evaluateLineTestPushSend,
   newLineRequestId,
   newLineTestRequestId,
+  resolveVerifiedLineOrganizationId,
   type LineActor,
 } from "@/lib/line/line-command";
 import { fetchLineBotInfo } from "@/lib/line/line-connection-adapter";
@@ -49,6 +50,7 @@ import {
   isLineBroadcastSendOpen,
   isLineConnectionPilotEnabled,
   isLineTestPushOpen,
+  resolveLineTestPushTransport,
 } from "@/lib/line/line-flag";
 import { fetchLineMessageQuota } from "@/lib/line/line-quota-adapter";
 import { isLineOfficialAccountConnected, unknownLineQuota } from "@/lib/line/line-quota";
@@ -110,6 +112,19 @@ async function loadActor(organizationId?: string | null) {
     actor: actorFromResolved(resolved, user?.id ?? null),
     resolved,
   };
+}
+
+async function loadVerifiedLineOrganization(requestedOrganizationId?: string | null): Promise<
+  | { ok: true; actor: LineActor; organizationId: string }
+  | { ok: false; reason: LineDecisionReason; message: string }
+> {
+  const { actor } = await loadActor(requestedOrganizationId);
+  const verified = resolveVerifiedLineOrganizationId({
+    requestedOrganizationId,
+    actor,
+  });
+  if (!verified.ok) return verified;
+  return { ok: true, actor, organizationId: verified.organizationId };
 }
 
 async function runLineAction<T>(
@@ -402,10 +417,12 @@ export async function loadLineBroadcastPrepareAction(
   organizationId: string,
 ): Promise<LineActionResult<LineBroadcastPrepare>> {
   return runLineAction(async () => {
-    const { actor } = await loadActor(organizationId);
+    const verified = await loadVerifiedLineOrganization(organizationId);
+    if (!verified.ok) return verified;
+    const { actor, organizationId: scopedOrg } = verified;
     const gate = evaluateLineBroadcastDraft({
       connectionPilotEnabled: isLineConnectionPilotEnabled(),
-      organizationId,
+      organizationId: scopedOrg,
       actor,
       textBody: "probe",
     });
@@ -415,11 +432,11 @@ export async function loadLineBroadcastPrepareAction(
     if (!isLineConnectionPilotEnabled()) {
       return { ok: false, reason: "pilot_disabled", message: "LINE 串接尚未啟用" };
     }
-    const account = await loadLineOfficialAccount(organizationId);
-    const broadcasts = await loadLineBroadcasts(organizationId);
+    const account = await loadLineOfficialAccount(scopedOrg);
+    const broadcasts = await loadLineBroadcasts(scopedOrg);
     const quota =
       isLineBroadcastSendOpen() && account?.tokenConfigured
-        ? await loadLineQuotaForOwner(organizationId)
+        ? await loadLineQuotaForOwner(scopedOrg)
         : unknownLineQuota(
             account?.tokenConfigured
               ? "實際發送尚未開放，未查詢 LINE 額度"
@@ -432,11 +449,11 @@ export async function loadLineBroadcastPrepareAction(
         account,
         quota,
         sendOpen: isLineBroadcastSendOpen(),
-        testPushOpen: isLineTestPushOpen(),
+        testPushOpen: isLineTestPushOpen({ organizationId: scopedOrg }),
         broadcasts,
-        testSends: await loadLineTestSends(organizationId),
-        recipient: await loadLineOwnerRecipient(organizationId),
-        webhook: await loadLineWebhookPublicUrl(organizationId),
+        testSends: await loadLineTestSends(scopedOrg),
+        recipient: await loadLineOwnerRecipient(scopedOrg),
+        webhook: await loadLineWebhookPublicUrl(scopedOrg),
       },
     };
   }, "無法讀取群發準備資料");
@@ -448,35 +465,37 @@ export async function confirmLineBroadcastAction(input: {
   requestId: string;
   broadcastId?: string;
 }): Promise<LineActionResult> {
-  const { actor } = await loadActor(input.organizationId);
+  const verified = await loadVerifiedLineOrganization(input.organizationId);
+  if (!verified.ok) return verified;
+  const { actor, organizationId } = verified;
   let existing =
     (input.broadcastId
-      ? (await loadLineBroadcasts(input.organizationId)).find((row) => row.id === input.broadcastId)
-      : null) ?? (await loadLineBroadcastByRequestId(input.organizationId, input.requestId));
+      ? (await loadLineBroadcasts(organizationId)).find((row) => row.id === input.broadcastId)
+      : null) ?? (await loadLineBroadcastByRequestId(organizationId, input.requestId));
   if (!existing) {
     const drafted = await saveLineBroadcastDraftAction({
-      organizationId: input.organizationId,
+      organizationId,
       textBody: input.textBody,
       requestId: input.requestId,
     });
     if (drafted.ok && drafted.data) {
       existing = await loadLineBroadcastByRequestId(
-        input.organizationId,
+        organizationId,
         drafted.data.requestId,
       );
     }
   }
   const today = new Date().toISOString().slice(0, 10);
   const acceptedToday = countAcceptedBroadcastsOnDay(
-    await loadLineBroadcasts(input.organizationId),
+    await loadLineBroadcasts(organizationId),
     today,
   );
-  const account = await loadLineOfficialAccount(input.organizationId);
+  const account = await loadLineOfficialAccount(organizationId);
   const decision = evaluateLineBroadcastSend({
     connectionPilotEnabled: isLineConnectionPilotEnabled(),
     sendOpen: isLineBroadcastSendOpen(),
     ownerBroadcastEnabled: Boolean(account?.broadcastEnabled),
-    organizationId: input.organizationId,
+    organizationId,
     actor,
     textBody: input.textBody,
     existing,
@@ -488,7 +507,7 @@ export async function confirmLineBroadcastAction(input: {
       const supabase = await createClient();
       if (decision.reason === "send_closed") {
         await supabase.rpc(MARK_LINE_BROADCAST_SEND_CLOSED_RPC, {
-          p_organization_id: input.organizationId,
+          p_organization_id: organizationId,
           p_broadcast_id: existing.id,
           p_request_id: input.requestId,
         });
@@ -511,37 +530,39 @@ export async function sendLineBroadcastAction(input: {
   acknowledged: boolean;
 }): Promise<LineActionResult> {
   return runLineAction(async () => {
-    const { actor } = await loadActor(input.organizationId);
+    const verified = await loadVerifiedLineOrganization(input.organizationId);
+    if (!verified.ok) return verified;
+    const { actor, organizationId } = verified;
     let existing =
       (input.broadcastId
-        ? (await loadLineBroadcasts(input.organizationId)).find((row) => row.id === input.broadcastId)
-        : null) ?? (await loadLineBroadcastByRequestId(input.organizationId, input.requestId));
+        ? (await loadLineBroadcasts(organizationId)).find((row) => row.id === input.broadcastId)
+        : null) ?? (await loadLineBroadcastByRequestId(organizationId, input.requestId));
     if (!existing) {
       const drafted = await saveLineBroadcastDraftAction({
-        organizationId: input.organizationId,
+        organizationId,
         textBody: input.textBody,
         requestId: input.requestId,
       });
       if (drafted.ok && drafted.data) {
         existing = await loadLineBroadcastByRequestId(
-          input.organizationId,
+          organizationId,
           drafted.data.requestId,
         );
       }
     }
     const today = new Date().toISOString().slice(0, 10);
-    const broadcasts = await loadLineBroadcasts(input.organizationId);
+    const broadcasts = await loadLineBroadcasts(organizationId);
     const acceptedToday = countAcceptedBroadcastsOnDay(broadcasts, today);
-    const account = await loadLineOfficialAccount(input.organizationId);
+    const account = await loadLineOfficialAccount(organizationId);
     const quota =
       isLineBroadcastSendOpen() && account?.tokenConfigured
-        ? await loadLineQuotaForOwner(input.organizationId)
+        ? await loadLineQuotaForOwner(organizationId)
         : unknownLineQuota("實際發送尚未開放，未查詢 LINE 額度");
     const decision = evaluateLineBroadcastRealSend({
       connectionPilotEnabled: isLineConnectionPilotEnabled(),
       sendOpen: isLineBroadcastSendOpen(),
       ownerBroadcastEnabled: Boolean(account?.broadcastEnabled),
-      organizationId: input.organizationId,
+      organizationId,
       actor,
       textBody: input.textBody,
       existing,
@@ -555,7 +576,7 @@ export async function sendLineBroadcastAction(input: {
       if (existing?.id) {
         const supabase = await createClient();
         await supabase.rpc(RECORD_LINE_BROADCAST_OWNER_EVENT_RPC, {
-          p_organization_id: input.organizationId,
+          p_organization_id: organizationId,
           p_broadcast_id: existing.id,
           p_event_type: "send_refused",
           p_detail: decision.message,
@@ -568,7 +589,7 @@ export async function sendLineBroadcastAction(input: {
     const pipeline = await runClaimedLineBroadcastSend({
       claim: async () => {
         const claimed = await supabase.rpc(CLAIM_LINE_BROADCAST_SEND_RPC, {
-          p_organization_id: input.organizationId,
+          p_organization_id: organizationId,
           p_broadcast_id: existing?.id ?? null,
           p_request_id: decision.requestId,
           p_text_body: input.textBody,
@@ -601,7 +622,7 @@ export async function sendLineBroadcastAction(input: {
             httpStatus: null,
           };
         }
-        const secrets = await readOwnerAccessTokenCipher(input.organizationId);
+        const secrets = await readOwnerAccessTokenCipher(organizationId);
         if (secrets.error || !secrets.cipher.startsWith("v1.")) {
           throw new Error("missing-token");
         }
@@ -624,7 +645,7 @@ export async function sendLineBroadcastAction(input: {
             ? "send_closed"
             : outcome.apiResult;
         await supabase.rpc(COMPLETE_LINE_BROADCAST_SEND_RPC, {
-          p_organization_id: input.organizationId,
+          p_organization_id: organizationId,
           p_broadcast_id: existing?.id ?? "",
           p_request_id: decision.requestId,
           p_status: status,
@@ -818,18 +839,21 @@ export async function sendLineTestPushAction(input: {
   acknowledged: boolean;
 }): Promise<LineActionResult> {
   return runLineAction(async () => {
-    const { actor } = await loadActor(input.organizationId);
+    const verified = await loadVerifiedLineOrganization(input.organizationId);
+    if (!verified.ok) return verified;
+    const { actor, organizationId } = verified;
+    const testPushOpen = isLineTestPushOpen({ organizationId });
     let existing =
       (input.testSendId
-        ? (await loadLineTestSends(input.organizationId)).find((row) => row.id === input.testSendId)
-        : null) ?? (await loadLineTestSendByRequestId(input.organizationId, input.requestId));
+        ? (await loadLineTestSends(organizationId)).find((row) => row.id === input.testSendId)
+        : null) ?? (await loadLineTestSendByRequestId(organizationId, input.requestId));
     if (!existing) {
       const requestId = input.requestId.startsWith("ltsq-")
         ? input.requestId
         : newLineTestRequestId();
       const supabase = await createClient();
       const drafted = await supabase.rpc(UPSERT_LINE_TEST_SEND_DRAFT_RPC, {
-        p_organization_id: input.organizationId,
+        p_organization_id: organizationId,
         p_test_send_id: input.testSendId ?? null,
         p_request_id: requestId,
         p_text_body: input.textBody,
@@ -837,21 +861,21 @@ export async function sendLineTestPushAction(input: {
       const payload = drafted.data && typeof drafted.data === "object" ? drafted.data : {};
       const testSendId = String((payload as { test_send_id?: unknown }).test_send_id ?? "");
       if (!drafted.error && testSendId.startsWith("lts-")) {
-        existing = await loadLineTestSendByRequestId(input.organizationId, requestId);
+        existing = await loadLineTestSendByRequestId(organizationId, requestId);
       }
     }
     const today = new Date().toISOString().slice(0, 10);
     const acceptedToday = countAcceptedBroadcastsOnDay(
-      await loadLineTestSends(input.organizationId),
+      await loadLineTestSends(organizationId),
       today,
     );
-    const account = await loadLineOfficialAccount(input.organizationId);
-    const recipient = await loadLineOwnerRecipient(input.organizationId);
+    const account = await loadLineOfficialAccount(organizationId);
+    const recipient = await loadLineOwnerRecipient(organizationId);
     const decision = evaluateLineTestPushSend({
       connectionPilotEnabled: isLineConnectionPilotEnabled(),
-      testPushOpen: isLineTestPushOpen(),
+      testPushOpen,
       ownerTestPushEnabled: Boolean(account?.testPushEnabled),
-      organizationId: input.organizationId,
+      organizationId,
       actor,
       textBody: input.textBody,
       existing,
@@ -865,7 +889,7 @@ export async function sendLineTestPushAction(input: {
       if (existing?.id) {
         const supabase = await createClient();
         await supabase.rpc(RECORD_LINE_BROADCAST_OWNER_EVENT_RPC, {
-          p_organization_id: input.organizationId,
+          p_organization_id: organizationId,
           p_broadcast_id: null,
           p_event_type: "send_refused",
           p_detail: decision.message,
@@ -878,7 +902,7 @@ export async function sendLineTestPushAction(input: {
     const pipeline = await runClaimedLineBroadcastSend({
       claim: async () => {
         const claimed = await supabase.rpc(CLAIM_LINE_TEST_SEND_RPC, {
-          p_organization_id: input.organizationId,
+          p_organization_id: organizationId,
           p_test_send_id: existing?.id ?? null,
           p_request_id: decision.requestId,
           p_text_body: input.textBody,
@@ -903,12 +927,13 @@ export async function sendLineTestPushAction(input: {
         };
       },
       send: async () => {
-        if (!isLineTestPushOpen()) {
+        const transport = resolveLineTestPushTransport({ organizationId });
+        if (!transport.open) {
           return { timedOut: false, httpOk: false, lineRequestId: null, httpStatus: null };
         }
-        const tokenSecrets = await readOwnerAccessTokenCipher(input.organizationId);
+        const tokenSecrets = await readOwnerAccessTokenCipher(transport.organizationId);
         const recipientSecrets = await supabase.rpc(OWNER_READ_LINE_RECIPIENT_CIPHER_RPC, {
-          p_organization_id: input.organizationId,
+          p_organization_id: transport.organizationId,
         });
         const recipientPayload =
           recipientSecrets.data && typeof recipientSecrets.data === "object"
@@ -928,20 +953,20 @@ export async function sendLineTestPushAction(input: {
           lineUserId: userId.plaintext,
           textBody: input.textBody,
           requestId: decision.requestId,
-          testPushOpen: isLineTestPushOpen(),
+          testPushOpen: true,
         });
       },
       complete: async (outcome) => {
         const status =
-          !isLineTestPushOpen() && outcome.apiResult === "failed"
+          !isLineTestPushOpen({ organizationId }) && outcome.apiResult === "failed"
             ? "send_closed"
             : outcome.status;
         const apiResult =
-          !isLineTestPushOpen() && outcome.apiResult === "failed"
+          !isLineTestPushOpen({ organizationId }) && outcome.apiResult === "failed"
             ? "send_closed"
             : outcome.apiResult;
         await supabase.rpc(COMPLETE_LINE_TEST_SEND_RPC, {
-          p_organization_id: input.organizationId,
+          p_organization_id: organizationId,
           p_test_send_id: existing?.id ?? "",
           p_request_id: decision.requestId,
           p_status: status,
@@ -952,7 +977,7 @@ export async function sendLineTestPushAction(input: {
       },
     });
 
-    if (!isLineTestPushOpen()) {
+    if (!isLineTestPushOpen({ organizationId })) {
       return {
         ok: false,
         reason: "send_closed",

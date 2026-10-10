@@ -87,6 +87,10 @@ export const LINE_OWNER_TEST_PUSH_MIGRATION_FILE =
 export const LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE =
   "supabase/migrations/20261010180000_line_webhook_least_privilege.sql";
 
+/** LINE test-push claim daily quota. Additive. Does not rewrite 160000 / 180000. */
+export const LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE =
+  "supabase/migrations/20261010190000_line_test_push_claim_daily_quota.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",

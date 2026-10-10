@@ -19,7 +19,7 @@ Production Supabase、Production 環境變數與 Production 部署保持不變�
 | Staff RBAC | 沿用 `staff_auth_memberships`。只有 active `OWNER` 可確認真實發送。 |
 | 加密憑證 | AES-256-GCM。Client 與 log 看不到 Secret / Token。 |
 | 發送 Adapter | `executeLineBroadcastHttp` 仍被 `LINE_BROADCAST_SEND_OPEN = false` 擋住。測試只走 mock。 |
-| 測試 Push | `executeLineTestPushHttp` 仍被 `LINE_TEST_PUSH_OPEN = false` 擋住。測試只走 mock。 |
+| 測試 Push | `LINE_TEST_PUSH_OPEN = false`。只有 Preview allowlist（尚未設定 env）才能開。測試只走 mock。 |
 | LINE API | 連線測試 `GET /v2/bot/info`；額度唯讀；Broadcast / Push 預設不呼叫。 |
 | THE ENJOYE | Preview 已保存憑證。本階段不得覆蓋，也不得修改其既有官方帳號 Webhook。 |
 
@@ -72,7 +72,8 @@ Webhook **不再使用** `SUPABASE_SERVICE_ROLE_KEY`。
 3. Webhook 驗簽後加密 `source.userId`
 4. 測試發送走 `POST /v2/bot/message/push`，本階段常數仍關閉，不會真的呼叫
 
-本階段常數仍是 `LINE_BROADCAST_SEND_OPEN = false` 與 `LINE_TEST_PUSH_OPEN = false`。
+本階段常數仍是 `LINE_BROADCAST_SEND_OPEN = false` 與 `LINE_TEST_PUSH_OPEN = false`。  
+測試 Push 另外要求 Preview-only allowlist，**目前沒有設定** `BEAUTY_OS_LINE_TEST_PUSH_OPEN` / `BEAUTY_OS_LINE_TEST_PUSH_ORG`。Broadcast **沒有**環境變數繞過。
 
 ---
 
@@ -172,7 +173,22 @@ Staff git 分支網域與單一 Preview URL 仍 302 SSO。Production 別名沒�
 2. 不要改 THE ENJOYE Webhook 或憑證。不要覆蓋 THE ENJOYE 的加密保存。
 3. 切到 Beauty OS TEST 後，由 Owner **自己在畫面輸入** `ai` 的 Channel 憑證。
 4. 從 Settings 複製 Webhook URL（會是專用 webhook 別名）。暫時不要改 `ai` Webhook，等另一次授權。
-5. `LINE_TEST_PUSH_OPEN` 與 `LINE_BROADCAST_SEND_OPEN` 保持 false，直到另一次明確授權。
+5. `LINE_TEST_PUSH_OPEN` 與 `LINE_BROADCAST_SEND_OPEN` 保持 false。不要把常數改成 true。
+6. 不要設定 `BEAUTY_OS_LINE_TEST_PUSH_OPEN` 或 `BEAUTY_OS_LINE_TEST_PUSH_ORG`，直到另一次明確授權。
+
+### Preview-only Test Push Allowlist
+
+`isLineTestPushOpen` 只有同時成立才為 true：
+
+1. `BEAUTY_OS_LINE_CONNECTION_PILOT=1`
+2. `BEAUTY_OS_LINE_TEST_PUSH_OPEN=1`
+3. `BEAUTY_OS_LINE_TEST_PUSH_ORG=org-beauty-os-test`
+4. 伺服器驗證過的 `organizationId === org-beauty-os-test`
+5. `VERCEL_ENV` 不是 `production`
+
+缺少任一條件一律關閉。THE ENJOYE 與其他 Organization 不能用。Production 即使誤設 env 也關閉。發送入口使用 `loadVerifiedLineOrganization`，不用 Client 任意指定的店家。
+
+`claim_line_test_send` 在同一交易鎖定該店 `line_official_accounts`、計算當日 `accepted/sending/pending_confirmation`、再原子改 `sending`。每日上限 3。
 
 ### 首次真實 Push 驗收（尚未授權，本階段不做）
 
@@ -181,7 +197,7 @@ Staff git 分支網域與單一 Preview URL 仍 302 SSO。Production 別名沒�
 - 專用測試官方帳號已綁 Webhook（不是 THE ENJOYE）
 - Owner 已用驗證碼完成本人綁定
 - Preview Webhook 可被 LINE 公開打到（無 SSO / 登入導向）
-- `LINE_TEST_PUSH_OPEN` 仍關閉，需另一次明確授權才打開
+- Allowlist 程式已就緒，**發送 env 尚未設定**
 - Production 保持關閉
 
-還不能算「可以立刻真送」。要真送時必須另開授權：只在 Preview 打開 `LINE_TEST_PUSH_OPEN`，用極短文字走「確認測試發送」，成功只表示 API 已接受，驗收後立刻關回。
+還不能算「可以立刻真送」。要真送時必須另開授權：只在 Preview 分支設定上述兩個 env、套用 `20261010190000` claim quota migration，用極短文字走「確認測試發送」，成功只表示 API 已接受，驗收後立刻刪除 env 並重新部署。
