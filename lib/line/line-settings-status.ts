@@ -173,6 +173,7 @@ export function publicAccountAfterSave(input: {
     secretConfigured: true,
     tokenConfigured: true,
     broadcastEnabled: input.previous?.broadcastEnabled ?? false,
+    testPushEnabled: input.previous?.testPushEnabled ?? false,
     lastTestedAt: input.previous?.lastTestedAt ?? null,
     lastTestStatus: input.previous?.lastTestStatus ?? null,
     lastTestMessage: input.previous?.lastTestMessage ?? null,

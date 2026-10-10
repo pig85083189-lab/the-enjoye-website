@@ -3,21 +3,32 @@
 import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import {
   CLAIM_LINE_BROADCAST_SEND_RPC,
+  CLAIM_LINE_TEST_SEND_RPC,
   COMPLETE_LINE_BROADCAST_SEND_RPC,
+  COMPLETE_LINE_TEST_SEND_RPC,
   MARK_LINE_BROADCAST_SEND_CLOSED_RPC,
+  OWNER_READ_LINE_RECIPIENT_CIPHER_RPC,
   OWNER_READ_LINE_TOKEN_CIPHER_RPC,
   RECORD_LINE_BROADCAST_OWNER_EVENT_RPC,
   RECORD_LINE_CONNECTION_TEST_RPC,
   SET_LINE_BROADCAST_ENABLED_RPC,
+  SET_LINE_TEST_PUSH_ENABLED_RPC,
+  START_LINE_OWNER_BIND_RPC,
+  UNBIND_LINE_OWNER_RECIPIENT_RPC,
   UPSERT_LINE_BROADCAST_DRAFT_RPC,
   UPSERT_LINE_CONNECTION_RPC,
+  UPSERT_LINE_TEST_SEND_DRAFT_RPC,
   evaluateLineBroadcastDraft,
   evaluateLineBroadcastEnable,
   evaluateLineBroadcastRealSend,
   evaluateLineBroadcastSend,
   evaluateLineConnectionSave,
   evaluateLineConnectionTest,
+  evaluateLineOwnerBindStart,
+  evaluateLineTestPushEnable,
+  evaluateLineTestPushSend,
   newLineRequestId,
+  newLineTestRequestId,
   type LineActor,
 } from "@/lib/line/line-command";
 import { fetchLineBotInfo } from "@/lib/line/line-connection-adapter";
@@ -31,9 +42,11 @@ import {
   hasLineCredentialKey,
   isLineBroadcastSendOpen,
   isLineConnectionPilotEnabled,
+  isLineTestPushOpen,
 } from "@/lib/line/line-flag";
 import { fetchLineMessageQuota } from "@/lib/line/line-quota-adapter";
 import { isLineOfficialAccountConnected, unknownLineQuota } from "@/lib/line/line-quota";
+import { executeLineTestPushHttp } from "@/lib/line/line-push-adapter";
 import { executeLineBroadcastHttp } from "@/lib/line/line-send-adapter";
 import { runClaimedLineBroadcastSend } from "@/lib/line/line-send-pipeline";
 import {
@@ -49,10 +62,14 @@ import {
   loadLineBroadcastByRequestId,
   loadLineBroadcasts,
   loadLineOfficialAccount,
+  loadLineOwnerRecipient,
+  loadLineTestSendByRequestId,
+  loadLineTestSends,
   readLineOfficialAccount,
 } from "@/lib/line/line-load";
 import type {
   LineBroadcastPrepare,
+  LineTestSendPublic,
   LineBroadcastPublic,
   LineDecisionReason,
   LineOfficialAccountPublic,
@@ -407,7 +424,10 @@ export async function loadLineBroadcastPrepareAction(
         account,
         quota,
         sendOpen: isLineBroadcastSendOpen(),
+        testPushOpen: isLineTestPushOpen(),
         broadcasts,
+        testSends: await loadLineTestSends(organizationId),
+        recipient: await loadLineOwnerRecipient(organizationId),
       },
     };
   }, "無法讀取群發準備資料");
@@ -617,4 +637,245 @@ export async function sendLineBroadcastAction(input: {
       ? { ok: true, message: pipeline.message }
       : { ok: false, reason: pipeline.reason, message: pipeline.message };
   }, "真實發送失敗");
+}
+
+export async function startLineOwnerBindAction(input: {
+  organizationId: string;
+}): Promise<LineActionResult<{ code: string; expiresAt: string }>> {
+  return runLineAction(async () => {
+    const { actor } = await loadActor(input.organizationId);
+    const account = await loadLineOfficialAccount(input.organizationId);
+    const decision = evaluateLineOwnerBindStart({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(),
+      organizationId: input.organizationId,
+      actor,
+      secretConfigured: Boolean(account?.secretConfigured),
+    });
+    if (!decision.ok) return decision;
+    const supabase = await createClient();
+    const started = await supabase.rpc(START_LINE_OWNER_BIND_RPC, {
+      p_organization_id: input.organizationId,
+    });
+    const payload = started.data && typeof started.data === "object" ? started.data : {};
+    const code = String((payload as { code?: unknown }).code ?? "");
+    const expiresAt = String((payload as { expires_at?: unknown }).expires_at ?? "");
+    if (started.error || !/^[0-9A-F]{8}$/.test(code)) {
+      return { ok: false, reason: "error", message: "無法產生綁定驗證碼" };
+    }
+    return {
+      ok: true,
+      message: "請用你自己的 LINE 把驗證碼傳給本官方帳號。不要輸入 User ID。",
+      data: { code, expiresAt },
+    };
+  }, "無法產生綁定驗證碼");
+}
+
+export async function unbindLineOwnerRecipientAction(input: {
+  organizationId: string;
+}): Promise<LineActionResult> {
+  return runLineAction(async () => {
+    const { actor } = await loadActor(input.organizationId);
+    const decision = evaluateLineOwnerBindStart({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(),
+      organizationId: input.organizationId,
+      actor,
+      secretConfigured: true,
+    });
+    if (!decision.ok) return decision;
+    const supabase = await createClient();
+    const unbound = await supabase.rpc(UNBIND_LINE_OWNER_RECIPIENT_RPC, {
+      p_organization_id: input.organizationId,
+    });
+    if (unbound.error) {
+      return { ok: false, reason: "error", message: "無法解除綁定" };
+    }
+    return { ok: true, message: "已解除店長 LINE 綁定" };
+  }, "無法解除綁定");
+}
+
+export async function setLineTestPushEnabledAction(input: {
+  organizationId: string;
+  enabled: boolean;
+}): Promise<LineActionResult> {
+  return runLineAction(async () => {
+    const { actor } = await loadActor(input.organizationId);
+    const recipient = await loadLineOwnerRecipient(input.organizationId);
+    const decision = evaluateLineTestPushEnable({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(),
+      organizationId: input.organizationId,
+      actor,
+      enabled: input.enabled,
+      recipientBound: Boolean(recipient?.bound),
+    });
+    if (!decision.ok) return decision;
+    const supabase = await createClient();
+    const updated = await supabase.rpc(SET_LINE_TEST_PUSH_ENABLED_RPC, {
+      p_organization_id: input.organizationId,
+      p_enabled: input.enabled,
+    });
+    if (updated.error) {
+      return { ok: false, reason: "error", message: "無法更新測試發送開關" };
+    }
+    return {
+      ok: true,
+      message: input.enabled
+        ? "已記錄店長啟用測試發送。實際 Push 仍須伺服器開關開啟。"
+        : "已關閉測試發送",
+    };
+  }, LINE_SETTINGS_UNEXPECTED_ERROR);
+}
+
+export async function sendLineTestPushAction(input: {
+  organizationId: string;
+  textBody: string;
+  requestId: string;
+  testSendId?: string;
+  acknowledged: boolean;
+}): Promise<LineActionResult> {
+  return runLineAction(async () => {
+    const { actor } = await loadActor(input.organizationId);
+    let existing =
+      (input.testSendId
+        ? (await loadLineTestSends(input.organizationId)).find((row) => row.id === input.testSendId)
+        : null) ?? (await loadLineTestSendByRequestId(input.organizationId, input.requestId));
+    if (!existing) {
+      const requestId = input.requestId.startsWith("ltsq-")
+        ? input.requestId
+        : newLineTestRequestId();
+      const supabase = await createClient();
+      const drafted = await supabase.rpc(UPSERT_LINE_TEST_SEND_DRAFT_RPC, {
+        p_organization_id: input.organizationId,
+        p_test_send_id: input.testSendId ?? null,
+        p_request_id: requestId,
+        p_text_body: input.textBody,
+      });
+      const payload = drafted.data && typeof drafted.data === "object" ? drafted.data : {};
+      const testSendId = String((payload as { test_send_id?: unknown }).test_send_id ?? "");
+      if (!drafted.error && testSendId.startsWith("lts-")) {
+        existing = await loadLineTestSendByRequestId(input.organizationId, requestId);
+      }
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const acceptedToday = countAcceptedBroadcastsOnDay(
+      await loadLineTestSends(input.organizationId),
+      today,
+    );
+    const account = await loadLineOfficialAccount(input.organizationId);
+    const recipient = await loadLineOwnerRecipient(input.organizationId);
+    const decision = evaluateLineTestPushSend({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(),
+      testPushOpen: isLineTestPushOpen(),
+      ownerTestPushEnabled: Boolean(account?.testPushEnabled),
+      organizationId: input.organizationId,
+      actor,
+      textBody: input.textBody,
+      existing,
+      requestId: input.requestId,
+      acceptedToday,
+      accountConnected: isLineOfficialAccountConnected(account),
+      acknowledged: input.acknowledged,
+      recipient,
+    });
+    if (!decision.ok) {
+      if (existing?.id) {
+        const supabase = await createClient();
+        await supabase.rpc(RECORD_LINE_BROADCAST_OWNER_EVENT_RPC, {
+          p_organization_id: input.organizationId,
+          p_broadcast_id: null,
+          p_event_type: "send_refused",
+          p_detail: decision.message,
+        });
+      }
+      return decision;
+    }
+
+    const supabase = await createClient();
+    const pipeline = await runClaimedLineBroadcastSend({
+      claim: async () => {
+        const claimed = await supabase.rpc(CLAIM_LINE_TEST_SEND_RPC, {
+          p_organization_id: input.organizationId,
+          p_test_send_id: existing?.id ?? null,
+          p_request_id: decision.requestId,
+          p_text_body: input.textBody,
+        });
+        const parsed = parseClaimPayload(claimed.data);
+        if (claimed.error || !parsed.claimed || !parsed.broadcastId.startsWith("lts-")) {
+          return {
+            ok: false,
+            reason: claimed.error ? "error" : parsed.reason,
+            message: claimed.error ? "無法鎖定這則測試發送" : parsed.message,
+          };
+        }
+        existing = {
+          ...(existing as LineTestSendPublic),
+          id: parsed.broadcastId,
+          requestId: parsed.requestId || decision.requestId,
+        };
+        return {
+          ok: true,
+          broadcastId: parsed.broadcastId,
+          requestId: parsed.requestId || decision.requestId,
+        };
+      },
+      send: async () => {
+        if (!isLineTestPushOpen()) {
+          return { timedOut: false, httpOk: false, lineRequestId: null, httpStatus: null };
+        }
+        const tokenSecrets = await readOwnerAccessTokenCipher(input.organizationId);
+        const recipientSecrets = await supabase.rpc(OWNER_READ_LINE_RECIPIENT_CIPHER_RPC, {
+          p_organization_id: input.organizationId,
+        });
+        const recipientPayload =
+          recipientSecrets.data && typeof recipientSecrets.data === "object"
+            ? recipientSecrets.data
+            : {};
+        const userCipher = String(
+          (recipientPayload as { line_user_id_cipher?: unknown }).line_user_id_cipher ?? "",
+        );
+        if (tokenSecrets.error || !tokenSecrets.cipher.startsWith("v1.") || !userCipher.startsWith("v1.")) {
+          throw new Error("missing-credentials");
+        }
+        const token = decryptLineCredential(tokenSecrets.cipher, process.env);
+        const userId = decryptLineCredential(userCipher, process.env);
+        if (!token.ok || !userId.ok) throw new Error("decrypt-failed");
+        return executeLineTestPushHttp({
+          accessToken: token.plaintext,
+          lineUserId: userId.plaintext,
+          textBody: input.textBody,
+          requestId: decision.requestId,
+          testPushOpen: isLineTestPushOpen(),
+        });
+      },
+      complete: async (outcome) => {
+        const status =
+          !isLineTestPushOpen() && outcome.apiResult === "failed"
+            ? "send_closed"
+            : outcome.status;
+        const apiResult =
+          !isLineTestPushOpen() && outcome.apiResult === "failed"
+            ? "send_closed"
+            : outcome.apiResult;
+        await supabase.rpc(COMPLETE_LINE_TEST_SEND_RPC, {
+          p_organization_id: input.organizationId,
+          p_test_send_id: existing?.id ?? "",
+          p_request_id: decision.requestId,
+          p_status: status,
+          p_api_result: apiResult,
+          p_line_request_id: outcome.lineRequestId,
+          p_error_message: outcome.message,
+        });
+      },
+    });
+
+    if (!isLineTestPushOpen()) {
+      return {
+        ok: false,
+        reason: "send_closed",
+        message: "測試發送仍維持關閉。系統沒有呼叫 LINE Push，也沒有向好友發送。",
+      };
+    }
+    return pipeline.ok
+      ? { ok: true, message: pipeline.message }
+      : { ok: false, reason: pipeline.reason, message: pipeline.message };
+  }, "測試發送失敗");
 }

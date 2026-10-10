@@ -9,8 +9,9 @@ import {
   loadLineBroadcastPrepareAction,
   saveLineBroadcastDraftAction,
   sendLineBroadcastAction,
+  sendLineTestPushAction,
 } from "@/lib/line/actions";
-import { newLineRequestId } from "@/lib/line/line-command";
+import { newLineRequestId, newLineTestRequestId } from "@/lib/line/line-command";
 import { LINE_BROADCAST_TEXT_MAX } from "@/lib/line/line-flag";
 import { restoreLineBroadcastEditor, unknownLineQuota } from "@/lib/line/line-quota";
 import {
@@ -18,11 +19,14 @@ import {
   lineBroadcastApiResultLabel,
   lineBroadcastStatusLabel,
   lineOfficialAccountNameLabel,
+  lineOwnerRecipientLabel,
 } from "@/lib/line/line-visibility";
 import type {
   LineBroadcastPublic,
   LineOfficialAccountPublic,
+  LineOwnerRecipientPublic,
   LineQuotaPublic,
+  LineTestSendPublic,
 } from "@/lib/line/line-types";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
@@ -39,8 +43,13 @@ export function LineBroadcastCenter({
   const [account, setAccount] = useState<LineOfficialAccountPublic | null>(null);
   const [quota, setQuota] = useState<LineQuotaPublic>(() => unknownLineQuota());
   const [sendOpen, setSendOpen] = useState(false);
+  const [testPushOpen, setTestPushOpen] = useState(false);
+  const [recipient, setRecipient] = useState<LineOwnerRecipientPublic | null>(null);
+  const [testSends, setTestSends] = useState<LineTestSendPublic[]>([]);
+  const [testRequestId, setTestRequestId] = useState(() => newLineTestRequestId());
   const [confirming, setConfirming] = useState(false);
   const [realSendAck, setRealSendAck] = useState(false);
+  const [testAck, setTestAck] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
@@ -53,12 +62,18 @@ export function LineBroadcastCenter({
     account: LineOfficialAccountPublic | null;
     quota: LineQuotaPublic;
     sendOpen: boolean;
+    testPushOpen: boolean;
     broadcasts: LineBroadcastPublic[];
+    testSends: LineTestSendPublic[];
+    recipient: LineOwnerRecipientPublic | null;
   }) {
     setAccount(data.account);
     setQuota(data.quota);
     setSendOpen(data.sendOpen);
+    setTestPushOpen(data.testPushOpen);
     setHistory(data.broadcasts);
+    setTestSends(data.testSends);
+    setRecipient(data.recipient);
   }
 
   function reload(restoreDraft: boolean) {
@@ -162,6 +177,7 @@ export function LineBroadcastCenter({
                 variant="secondary"
                 onClick={() => {
                   setRealSendAck(false);
+                  setTestAck(false);
                   setConfirming(true);
                   reload(false);
                 }}
@@ -287,11 +303,90 @@ export function LineBroadcastCenter({
             </Button>
           </div>
 
-          <Button type="button" variant="ghost" onClick={() => setConfirming(false)}>
+          <div className="space-y-2 border-t border-border pt-4" data-line-test-push>
+            <p className="text-sm font-medium text-text">發送測試給自己</p>
+            <p className="text-sm text-secondary-text">
+              使用 Push 傳給已驗證的店長 LINE，不是 Broadcast。伺服器開關：
+              {testPushOpen ? "開啟" : "關閉（預設）"}。
+            </p>
+            <p className="text-sm text-secondary-text" data-line-test-recipient>
+              收件者：{lineOwnerRecipientLabel(recipient)}
+            </p>
+            <label className="flex items-start gap-2 text-sm text-text">
+              <input
+                type="checkbox"
+                data-line-test-send-ack
+                className="mt-1"
+                checked={testAck}
+                onChange={(event) => setTestAck(event.target.checked)}
+              />
+              <span>
+                我是店長，確認把這則測試訊息只發給已綁定的自己，且逾時不會自動重送。
+              </span>
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending || !testAck}
+              onClick={() => {
+                setError("");
+                startTransition(async () => {
+                  const result = await sendLineTestPushAction({
+                    organizationId: organization.id,
+                    textBody,
+                    requestId: testRequestId,
+                    acknowledged: testAck,
+                  });
+                  setConfirming(false);
+                  setTestAck(false);
+                  if (result.ok) {
+                    setMessage(result.message);
+                    setTestRequestId(newLineTestRequestId());
+                  } else {
+                    setError(result.message);
+                  }
+                  reload(false);
+                });
+              }}
+            >
+              確認測試發送
+            </Button>
+            <Link href="/staff/settings/line" className="block text-sm text-primary">
+              前往綁定店長 LINE
+            </Link>
+          </div>
+
+          <Button type="button" variant="ghost" onClick={() => {
+            setConfirming(false);
+            setTestAck(false);
+          }}>
             返回編輯
           </Button>
         </Card>
       ) : null}
+
+      <Card padding="lg" className="space-y-3" data-line-test-history>
+        <h2 className="text-[16px] font-semibold text-text">測試發送紀錄</h2>
+        {testSends.length === 0 ? (
+          <p className="text-sm text-secondary-text">還沒有測試發送紀錄。</p>
+        ) : (
+          <ul className="space-y-2">
+            {testSends.map((row) => (
+              <li key={row.id} className="rounded-2xl border border-border px-4 py-3">
+                <p className="text-sm font-medium text-text">
+                  {lineBroadcastStatusLabel(row.status)}
+                </p>
+                <p className="mt-1 text-[13px] whitespace-pre-wrap text-secondary-text">
+                  {row.textBody}
+                </p>
+                <p className="mt-1 text-[12px] text-secondary-text">
+                  {lineBroadcastApiResultLabel(row.apiResult)} · {row.requestId}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <Card padding="lg" className="space-y-3">
         <h2 className="text-[16px] font-semibold text-text">歷史紀錄</h2>

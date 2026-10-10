@@ -14,27 +14,44 @@ import {
 import {
   LINE_BROADCAST_REAL_SEND_MIGRATION_FILE,
   LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE,
+  LINE_OWNER_TEST_PUSH_MIGRATION_FILE,
 } from "@/lib/persistence/schema-contract";
 import { STAFF_LINE_ROLES, resolveStaffRolePageAccess } from "@/lib/staff/staff-role-page-access";
 import {
   CLAIM_LINE_BROADCAST_SEND_RPC,
+  CLAIM_LINE_TEST_SEND_RPC,
   COMPLETE_LINE_BROADCAST_SEND_RPC,
+  CONSUME_LINE_OWNER_BIND_RPC,
   evaluateLineBroadcastDraft,
   evaluateLineBroadcastEnable,
   evaluateLineBroadcastRealSend,
   evaluateLineBroadcastSend,
   evaluateLineConnectionSave,
   evaluateLineConnectionTest,
+  evaluateLineOwnerBindStart,
+  evaluateLineTestPushSend,
   interpretLineBroadcastApiOutcome,
   LINE_BOT_INFO_PATH,
   LINE_BROADCAST_PATH,
+  LINE_PUSH_PATH,
   LINE_QUOTA_CONSUMPTION_PATH,
   LINE_QUOTA_PATH,
   MARK_LINE_BROADCAST_SEND_CLOSED_RPC,
   newLineRequestId,
+  newLineTestRequestId,
+  READ_LINE_CHANNEL_SECRET_CIPHER_RPC,
   READ_LINE_SECRETS_RPC,
   type LineActor,
 } from "@/lib/line/line-command";
+import {
+  hashLineBindCode,
+  isLineUserId,
+  normalizeLineBindCode,
+  selectLineWebhookBindCandidate,
+  verifyLineWebhookSignature,
+} from "@/lib/line/line-bind";
+import { executeLineTestPushHttp } from "@/lib/line/line-push-adapter";
+import { processLineWebhookBind } from "@/lib/line/line-webhook";
 import {
   describeLineQuota,
   latestRestorableLineDraft,
@@ -53,8 +70,11 @@ import {
   hasLineCredentialKey,
   isLineBroadcastSendOpen,
   isLineConnectionPilotEnabled,
+  isLineTestPushOpen,
   LINE_BROADCAST_DAILY_LIMIT,
   LINE_BROADCAST_SEND_OPEN,
+  LINE_TEST_PUSH_DAILY_LIMIT,
+  LINE_TEST_PUSH_OPEN,
   LINE_CONNECTION_PILOT_ENV,
   LINE_CREDENTIAL_KEY_ENV,
 } from "@/lib/line/line-flag";
@@ -123,11 +143,14 @@ describe("LINE Phase 1 flags", () => {
     expect(LINE_CONNECTION_PILOT_ENV).toBe("BEAUTY_OS_LINE_CONNECTION_PILOT");
     expect(LINE_CREDENTIAL_KEY_ENV).toBe("BEAUTY_OS_LINE_CREDENTIAL_KEY");
     expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+    expect(LINE_TEST_PUSH_OPEN).toBe(false);
     expect(LINE_BROADCAST_DAILY_LIMIT).toBe(3);
+    expect(LINE_TEST_PUSH_DAILY_LIMIT).toBe(3);
     expect(isLineConnectionPilotEnabled({})).toBe(false);
     expect(isLineConnectionPilotEnabled({ [LINE_CONNECTION_PILOT_ENV]: "1" })).toBe(false);
     expect(isLineConnectionPilotEnabled(previewEnv)).toBe(true);
     expect(isLineBroadcastSendOpen(previewEnv)).toBe(false);
+    expect(isLineTestPushOpen(previewEnv)).toBe(false);
     expect(hasLineCredentialKey({})).toBe(false);
   });
 });
@@ -593,6 +616,155 @@ describe("LINE Phase 1B quota, claim, and draft restore", () => {
   });
 });
 
+describe("LINE Phase 1C owner bind and test push", () => {
+  const recipient = {
+    organizationId: ORG_ENJOYE_ID,
+    bound: true,
+    hint: "••••abcd",
+    bindMethod: "webhook_code" as const,
+    boundAt: "2026-10-10T00:00:00.000Z",
+  };
+
+  it("verifies webhook signature and rejects unsigned or cross-org codes", async () => {
+    const secret = "channel-secret";
+    const rawBody = JSON.stringify({
+      events: [{ type: "message", source: { type: "user", userId: "U" + "a".repeat(32) }, message: { type: "text", text: "ABCDEF12" } }],
+    });
+    const signature = (await import("node:crypto"))
+      .createHmac("sha256", secret)
+      .update(rawBody)
+      .digest("base64");
+    expect(verifyLineWebhookSignature({ rawBody, channelSecret: secret, signature })).toBe(true);
+    expect(verifyLineWebhookSignature({ rawBody, channelSecret: secret, signature: "nope" })).toBe(false);
+    expect(isLineUserId("U" + "a".repeat(32))).toBe(true);
+    expect(isLineUserId("console-admin-id")).toBe(false);
+    expect(normalizeLineBindCode("ab cd ef 12")).toBe("ABCDEF12");
+    expect(hashLineBindCode(ORG_ENJOYE_ID, "ABCDEF12")).not.toBe(
+      hashLineBindCode(ORG_LUMIERE_ID, "ABCDEF12"),
+    );
+    expect(
+      selectLineWebhookBindCandidate([
+        { sourceType: "group", userId: "U" + "a".repeat(32), text: "ABCDEF12" },
+      ]),
+    ).toBeNull();
+    const bound = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature,
+      channelSecret: secret,
+      encryptUserId: (userId) => ({ cipher: `v1.${userId.slice(-4)}`, keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(bound).toMatchObject({ ok: true, bound: true });
+    const forged = await processLineWebhookBind({
+      organizationId: ORG_LUMIERE_ID,
+      rawBody,
+      signature,
+      channelSecret: "other-secret",
+      encryptUserId: () => ({ cipher: "v1.x", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(forged).toMatchObject({ ok: false, reason: "unauthorized" });
+  });
+
+  it("refuses unauthorized recipients, missing ack, duplicates, and concurrent pending", () => {
+    const base = {
+      connectionPilotEnabled: true,
+      testPushOpen: true,
+      ownerTestPushEnabled: true,
+      organizationId: ORG_ENJOYE_ID,
+      actor: ownerActor(),
+      textBody: "測試給自己",
+      existing: draftBroadcast({ id: "lts-draft000000001", requestId: "ltsq-req00000000001" }),
+      requestId: "ltsq-req00000000001",
+      acceptedToday: 0,
+      accountConnected: true,
+      acknowledged: true,
+      recipient,
+    };
+    expect(evaluateLineOwnerBindStart({
+      connectionPilotEnabled: true,
+      organizationId: ORG_ENJOYE_ID,
+      actor: ownerActor({ role: "MANAGER" }),
+      secretConfigured: true,
+    })).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(evaluateLineTestPushSend({ ...base, acknowledged: false })).toMatchObject({
+      ok: false,
+      reason: "invalid_input",
+    });
+    expect(evaluateLineTestPushSend({ ...base, recipient: null })).toMatchObject({
+      ok: false,
+      reason: "not_configured",
+    });
+    expect(
+      evaluateLineTestPushSend({
+        ...base,
+        recipient: { ...recipient, organizationId: ORG_LUMIERE_ID },
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineTestPushSend({
+        ...base,
+        existing: draftBroadcast({
+          id: "lts-1",
+          requestId: "ltsq-req00000000001",
+          status: "accepted",
+        }),
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
+      evaluateLineTestPushSend({
+        ...base,
+        existing: draftBroadcast({
+          id: "lts-1",
+          requestId: "ltsq-req00000000001",
+          status: "sending",
+        }),
+      }),
+    ).toMatchObject({ ok: false, reason: "pending_confirmation" });
+    expect(
+      evaluateLineTestPushSend({ ...base, testPushOpen: false }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(newLineTestRequestId(() => "aaaaaaaa-bbbb-cccc-dddd-eeeeffffffffffff")).toMatch(/^ltsq-/);
+  });
+
+  it("test push adapter uses Push not Broadcast and stays closed by default", async () => {
+    expect(LINE_PUSH_PATH).toBe("/v2/bot/message/push");
+    let fetched = 0;
+    const closed = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId: "U" + "a".repeat(32),
+      textBody: "hello",
+      requestId: "ltsq-req00000000001",
+      testPushOpen: false,
+      fetchImpl: async () => {
+        fetched += 1;
+        return new Response("{}", { status: 200 });
+      },
+    });
+    expect(closed.httpOk).toBe(false);
+    expect(fetched).toBe(0);
+    const opened = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId: "U" + "a".repeat(32),
+      textBody: "hello",
+      requestId: "ltsq-req00000000001",
+      testPushOpen: true,
+      fetchImpl: async (input) => {
+        fetched += 1;
+        expect(String(input)).toContain("/v2/bot/message/push");
+        expect(String(input)).not.toContain("/message/broadcast");
+        return new Response("{}", {
+          status: 200,
+          headers: { "x-line-request-id": "push-1" },
+        });
+      },
+    });
+    expect(opened).toMatchObject({ httpOk: true, lineRequestId: "push-1" });
+    expect(fetched).toBe(1);
+  });
+});
+
 describe("LINE settings status display", () => {
   const savedAccount: LineOfficialAccountPublic = {
     organizationId: ORG_ENJOYE_ID,
@@ -603,6 +775,7 @@ describe("LINE settings status display", () => {
     secretConfigured: true,
     tokenConfigured: true,
     broadcastEnabled: false,
+    testPushEnabled: false,
     lastTestedAt: null,
     lastTestStatus: null,
     lastTestMessage: null,
@@ -724,12 +897,16 @@ describe("LINE source contracts", () => {
 
   it("never ships secrets or send adapters to the client UI", () => {
     expect(settingsUi).not.toMatch(/line-crypto|line-send-adapter|createServiceRoleClient/);
-    expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-quota-adapter|createServiceRoleClient/);
+    expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-quota-adapter|line-push-adapter|createServiceRoleClient/);
     expect(broadcastUi).toMatch(/確認（不會實際發送）/);
     expect(broadcastUi).toMatch(/確認真實發送/);
+    expect(broadcastUi).toMatch(/確認測試發送/);
     expect(broadcastUi).toMatch(/data-line-broadcast-real-send/);
+    expect(broadcastUi).toMatch(/data-line-test-push/);
     expect(broadcastUi).toMatch(/data-line-real-send-ack/);
     expect(broadcastUi).toMatch(/restoreLineBroadcastEditor/);
+    expect(settingsUi).toMatch(/data-line-owner-bind/);
+    expect(settingsUi).not.toMatch(/lineUserId|channelAdminUserId|管理者 User ID/);
     expect(settingsHub).toMatch(/data-line-settings-entry/);
     expect(settingsHub).not.toMatch(/channelAccessToken|channel_secret_cipher/);
     expect(settingsUi).toMatch(/data-line-settings-feedback/);
@@ -757,6 +934,14 @@ describe("LINE source contracts", () => {
   it("does not change Production hosts or invent a second RBAC", () => {
     expect(source("lib/line/line-roles.ts")).toMatch(/staff_auth_memberships|OWNER/);
     expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_TEST_PUSH_OPEN = false/);
+    expect(actions).toMatch(/sendLineTestPushAction|evaluateLineTestPushSend/);
+    expect(actions).not.toMatch(
+      /export async function sendLineTestPushAction\(input: \{[^}]*lineUserId/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/route.ts")).toMatch(/x-line-signature/);
+    expect(source("app/api/line/webhook/[organizationId]/route.ts")).toMatch(/createServiceRoleClient/);
+    expect(source("app/api/line/webhook/[organizationId]/route.ts")).not.toMatch(/console\.(log|info|debug)/);
     expect(source("app/staff/(app)/settings/line/page.tsx")).toMatch(/STAFF_LINE_ROLES/);
     expect(source("app/staff/(app)/line/layout.tsx")).toMatch(/STAFF_LINE_ROLES/);
     expect(PRODUCTION_SUPABASE_HOST).toBe("knccefcxncglgpmvgqlp.supabase.co");
@@ -766,5 +951,14 @@ describe("LINE source contracts", () => {
     expect(source(LINE_BROADCAST_REAL_SEND_MIGRATION_FILE)).toMatch(CLAIM_LINE_BROADCAST_SEND_RPC);
     expect(source(LINE_BROADCAST_REAL_SEND_MIGRATION_FILE)).toMatch(COMPLETE_LINE_BROADCAST_SEND_RPC);
     expect(source(LINE_BROADCAST_REAL_SEND_MIGRATION_FILE)).not.toMatch(/friend_count|follower_count/);
+    expect(source(LINE_OWNER_TEST_PUSH_MIGRATION_FILE)).toMatch(CLAIM_LINE_TEST_SEND_RPC);
+    expect(source(LINE_OWNER_TEST_PUSH_MIGRATION_FILE)).toMatch(CONSUME_LINE_OWNER_BIND_RPC);
+    expect(source(LINE_OWNER_TEST_PUSH_MIGRATION_FILE)).toMatch(
+      new RegExp(`revoke all on function public\\.${READ_LINE_CHANNEL_SECRET_CIPHER_RPC}`),
+    );
+    expect(source(LINE_OWNER_TEST_PUSH_MIGRATION_FILE)).not.toMatch(
+      new RegExp(`grant execute on function public\\.${READ_LINE_CHANNEL_SECRET_CIPHER_RPC}`),
+    );
+    expect(source(LINE_OWNER_TEST_PUSH_MIGRATION_FILE)).not.toMatch(/friend_count|console_admin/);
   });
 });

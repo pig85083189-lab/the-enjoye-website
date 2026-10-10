@@ -79,11 +79,19 @@ export const LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE =
 export const LINE_BROADCAST_REAL_SEND_MIGRATION_FILE =
   "supabase/migrations/20261010140000_line_broadcast_real_send.sql";
 
+/** LINE Owner test-push bind. Additive. Does not rewrite 120000 / 140000. */
+export const LINE_OWNER_TEST_PUSH_MIGRATION_FILE =
+  "supabase/migrations/20261010160000_line_owner_test_push.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",
   "line_broadcasts",
   "line_broadcast_events",
+  "line_owner_recipients",
+  "line_owner_recipient_secrets",
+  "line_owner_bind_challenges",
+  "line_test_sends",
 ] as const;
 
 /** Must never appear as stored columns (second books). */

@@ -1,7 +1,7 @@
-# LINE Official Account — Phase 1B
+# LINE Official Account — Phase 1C
 
-Beauty OS SaaS 共用的 LINE 官方帳號串接與文字群發中心。  
-**Phase 1B 已接好真實 Broadcast 架構，但實際發送預設維持關閉。**  
+Beauty OS SaaS 共用的 LINE 官方帳號串接、文字群發與店長安全測試發送。  
+**Broadcast 與測試 Push 是獨立開關，兩者預設都關閉。**  
 本階段只在 Preview 開發與驗證。Production Supabase、Production 環境變數與 Production 部署保持不變。
 
 ---
@@ -25,18 +25,13 @@ Beauty OS SaaS 共用的 LINE 官方帳號串接與文字群發中心。
 
 ## B. 新增與修改檔案
 
-Phase 1B 新增：
+Phase 1C 新增：
 
-- `supabase/migrations/20261010140000_line_broadcast_real_send.sql`
-- `lib/line/line-quota.ts`
-- `lib/line/line-quota-adapter.ts`
-- `lib/line/line-send-pipeline.ts`
+- `supabase/migrations/20261010160000_line_owner_test_push.sql`
+- `lib/line/line-bind.ts`、`line-webhook.ts`、`line-push-adapter.ts`
+- `app/api/line/webhook/[organizationId]/route.ts`
 
-修改：
-
-- `lib/line/actions.ts`、`line-command.ts`、`line-send-adapter.ts`、`line-types.ts`、`line-visibility.ts`、`line-flag.ts`
-- `features/line/LineBroadcastCenter.tsx`、`LineOfficialAccountSettings.tsx`
-- isolation tests、schema-contract、migration chain、本文件
+Phase 1B 既有：claim / quota / send pipeline。Client 不引入 crypto、send、push adapter。
 
 ---
 
@@ -63,7 +58,18 @@ Phase 1B 新增：
 
 成功文案只會是 **「LINE API 已接受」**。不宣稱全部好友已送達。
 
-本階段常數仍是 `LINE_BROADCAST_SEND_OPEN = false`，因此 Preview 會在第 4 步拒絕，記錄 `send_refused`，**不 claim、不解密發送、不打 Broadcast**。
+本階段常數仍是 `LINE_BROADCAST_SEND_OPEN = false` 與 `LINE_TEST_PUSH_OPEN = false`。
+
+### 店長測試 Push（Phase 1C）
+
+評估後採用 **簽章 Webhook + 一次性驗證碼**，不採用 LINE Login（需另一組 Login Channel，且不能證明收得到此 OA 的 Push），也不接受 Console 管理者 User ID。
+
+1. active OWNER 產生 8 碼驗證碼（明文只回傳一次，資料庫只存 hash）
+2. 店長用自己的 LINE 把驗證碼傳給本官方帳號
+3. `POST /api/line/webhook/{orgId}` 用該店 Channel Secret 驗 `x-line-signature`
+4. 通過後才把 `source.userId` 加密寫入 `line_owner_recipient_secrets`
+5. 測試發送走 `POST /v2/bot/message/push`，對象只能是伺服器保存的綁定收件者
+6. Client 不能傳 User ID；每日上限與 Broadcast 分開；原子 claim；timeout 不重送
 
 ---
 
@@ -97,6 +103,8 @@ Phase 1B 新增：
 - mock Broadcast / 唯讀 quota
 - Client 不引入 crypto / send / quota adapter
 - 「確認（不會實際發送）」與「確認真實發送」同時存在
+- Webhook 簽章、跨店 code、未授權收件者、測試重複/併發
+- 測試 Push adapter 預設不打 HTTP，路徑是 `/message/push` 不是 Broadcast
 
 ---
 

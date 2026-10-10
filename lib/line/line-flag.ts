@@ -13,7 +13,11 @@ export const LINE_CONNECTION_PILOT_ENV = "BEAUTY_OS_LINE_CONNECTION_PILOT";
 /** Phase 1B: real send stays hardcoded closed. Do not flip on Preview. */
 export const LINE_BROADCAST_SEND_OPEN = false;
 
+/** Phase 1C: Owner test Push stays independently closed. */
+export const LINE_TEST_PUSH_OPEN = false;
+
 export const LINE_BROADCAST_DAILY_LIMIT = 3;
+export const LINE_TEST_PUSH_DAILY_LIMIT = 3;
 export const LINE_BROADCAST_TEXT_MAX = 5000;
 export const LINE_CREDENTIAL_KEY_ID = "line-cred-v1";
 
@@ -36,6 +40,12 @@ export function isLineBroadcastSendOpen(
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
 ): boolean {
   return isLineConnectionPilotEnabled(env) && LINE_BROADCAST_SEND_OPEN;
+}
+
+export function isLineTestPushOpen(
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+): boolean {
+  return isLineConnectionPilotEnabled(env) && LINE_TEST_PUSH_OPEN;
 }
 
 export function hasLineCredentialKey(

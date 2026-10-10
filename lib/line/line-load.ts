@@ -4,6 +4,8 @@ import type {
   LineBroadcastStatus,
   LineConnectionTestStatus,
   LineOfficialAccountPublic,
+  LineOwnerRecipientPublic,
+  LineTestSendPublic,
 } from "@/lib/line/line-types";
 
 function asAccount(row: Record<string, unknown> | null): LineOfficialAccountPublic | null {
@@ -17,6 +19,7 @@ function asAccount(row: Record<string, unknown> | null): LineOfficialAccountPubl
     secretConfigured: Boolean(row.secret_configured),
     tokenConfigured: Boolean(row.token_configured),
     broadcastEnabled: Boolean(row.broadcast_enabled),
+    testPushEnabled: Boolean(row.test_push_enabled),
     lastTestedAt: (row.last_tested_at as string | null) ?? null,
     lastTestStatus: (row.last_test_status as LineConnectionTestStatus | null) ?? null,
     lastTestMessage: (row.last_test_message as string | null) ?? null,
@@ -50,7 +53,7 @@ export async function readLineOfficialAccount(
   const { data, error } = await supabase
     .from("line_official_accounts")
     .select(
-      "organization_id,channel_id,bot_display_name,bot_basic_id,token_hint,secret_configured,token_configured,broadcast_enabled,last_tested_at,last_test_status,last_test_message",
+      "organization_id,channel_id,bot_display_name,bot_basic_id,token_hint,secret_configured,token_configured,broadcast_enabled,test_push_enabled,last_tested_at,last_test_status,last_test_message",
     )
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -90,6 +93,59 @@ export async function loadLineBroadcastByRequestId(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("line_broadcasts")
+    .select(
+      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,created_at,updated_at,confirmed_at",
+    )
+    .eq("organization_id", organizationId)
+    .eq("request_id", requestId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return asBroadcast(data as Record<string, unknown>);
+}
+
+export async function loadLineOwnerRecipient(
+  organizationId: string,
+): Promise<LineOwnerRecipientPublic | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("line_owner_recipients")
+    .select("organization_id,line_user_id_hint,bind_method,bound_at")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error || !data) return null;
+  const row = data as Record<string, unknown>;
+  return {
+    organizationId: String(row.organization_id ?? organizationId),
+    bound: true,
+    hint: (row.line_user_id_hint as string | null) ?? null,
+    bindMethod: "webhook_code",
+    boundAt: (row.bound_at as string | null) ?? null,
+  };
+}
+
+export async function loadLineTestSends(
+  organizationId: string,
+): Promise<LineTestSendPublic[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("line_test_sends")
+    .select(
+      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,created_at,updated_at,confirmed_at",
+    )
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error || !data) return [];
+  return data.map((row) => asBroadcast(row as Record<string, unknown>));
+}
+
+export async function loadLineTestSendByRequestId(
+  organizationId: string,
+  requestId: string,
+): Promise<LineTestSendPublic | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("line_test_sends")
     .select(
       "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,created_at,updated_at,confirmed_at",
     )

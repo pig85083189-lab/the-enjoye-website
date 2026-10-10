@@ -6,6 +6,7 @@
 import {
   LINE_BROADCAST_DAILY_LIMIT,
   LINE_BROADCAST_TEXT_MAX,
+  LINE_TEST_PUSH_DAILY_LIMIT,
 } from "@/lib/line/line-flag";
 import { canManageLineOfficialAccount } from "@/lib/line/line-roles";
 import { lineQuotaBlocksSend } from "@/lib/line/line-quota";
@@ -14,7 +15,9 @@ import type {
   LineBroadcastPublic,
   LineBroadcastStatus,
   LineDecisionReason,
+  LineOwnerRecipientPublic,
   LineQuotaPublic,
+  LineTestSendPublic,
 } from "@/lib/line/line-types";
 import type { StaffRole } from "@/types/saas";
 
@@ -28,9 +31,19 @@ export const COMPLETE_LINE_BROADCAST_SEND_RPC = "complete_line_broadcast_send";
 export const RECORD_LINE_BROADCAST_OWNER_EVENT_RPC = "record_line_broadcast_owner_event";
 export const READ_LINE_SECRETS_RPC = "read_line_official_account_secrets";
 export const OWNER_READ_LINE_TOKEN_CIPHER_RPC = "owner_read_line_access_token_cipher";
+export const READ_LINE_CHANNEL_SECRET_CIPHER_RPC = "read_line_channel_secret_cipher";
+export const START_LINE_OWNER_BIND_RPC = "start_line_owner_bind_challenge";
+export const CONSUME_LINE_OWNER_BIND_RPC = "consume_line_owner_bind_challenge";
+export const UNBIND_LINE_OWNER_RECIPIENT_RPC = "unbind_line_owner_recipient";
+export const OWNER_READ_LINE_RECIPIENT_CIPHER_RPC = "owner_read_line_recipient_user_id_cipher";
+export const SET_LINE_TEST_PUSH_ENABLED_RPC = "set_line_test_push_enabled";
+export const UPSERT_LINE_TEST_SEND_DRAFT_RPC = "upsert_line_test_send_draft";
+export const CLAIM_LINE_TEST_SEND_RPC = "claim_line_test_send";
+export const COMPLETE_LINE_TEST_SEND_RPC = "complete_line_test_send";
 
 export const LINE_BOT_INFO_PATH = "/v2/bot/info";
 export const LINE_BROADCAST_PATH = "/v2/bot/message/broadcast";
+export const LINE_PUSH_PATH = "/v2/bot/message/push";
 export const LINE_QUOTA_PATH = "/v2/bot/message/quota";
 export const LINE_QUOTA_CONSUMPTION_PATH = "/v2/bot/message/quota/consumption";
 export const LINE_API_ORIGIN = "https://api.line.me";
@@ -286,4 +299,108 @@ export function newLineBroadcastId(random: () => string = () => crypto.randomUUI
 
 export function newLineEventId(random: () => string = () => crypto.randomUUID()): string {
   return `lbe-${random().replace(/-/g, "").slice(0, 16)}`;
+}
+
+export function newLineTestRequestId(random: () => string = () => crypto.randomUUID()): string {
+  return `ltsq-${random().replace(/-/g, "").slice(0, 16)}`;
+}
+
+export function evaluateLineOwnerBindStart(input: {
+  connectionPilotEnabled: boolean;
+  organizationId?: string | null;
+  actor: LineActor;
+  secretConfigured: boolean;
+}): LineDecision {
+  if (!input.connectionPilotEnabled) {
+    return refuse("pilot_disabled", "LINE 串接尚未啟用");
+  }
+  const owner = requireOwner(input.actor, input.organizationId);
+  if (!owner.ok) return owner;
+  if (!input.secretConfigured) {
+    return refuse("not_configured", "請先保存 LINE 官方帳號憑證");
+  }
+  return { ok: true };
+}
+
+export function evaluateLineTestPushEnable(input: {
+  connectionPilotEnabled: boolean;
+  organizationId?: string | null;
+  actor: LineActor;
+  enabled: boolean;
+  recipientBound: boolean;
+}): LineDecision {
+  if (!input.connectionPilotEnabled) {
+    return refuse("pilot_disabled", "LINE 串接尚未啟用");
+  }
+  const owner = requireOwner(input.actor, input.organizationId);
+  if (!owner.ok) return owner;
+  if (input.enabled && !input.recipientBound) {
+    return refuse("not_configured", "請先完成店長 LINE 綁定");
+  }
+  return { ok: true };
+}
+
+export function evaluateLineTestPushSend(input: {
+  connectionPilotEnabled: boolean;
+  testPushOpen: boolean;
+  ownerTestPushEnabled: boolean;
+  organizationId?: string | null;
+  actor: LineActor;
+  textBody?: string | null;
+  existing?: LineTestSendPublic | null;
+  requestId?: string | null;
+  acceptedToday: number;
+  dailyLimit?: number;
+  accountConnected: boolean;
+  acknowledged: boolean;
+  recipient?: LineOwnerRecipientPublic | null;
+}):
+  | { ok: true; requestId: string }
+  | { ok: false; reason: LineDecisionReason; message: string } {
+  if (!input.acknowledged) {
+    return refuse("invalid_input", "請先勾選測試發送確認");
+  }
+  const draft = evaluateLineBroadcastDraft({
+    connectionPilotEnabled: input.connectionPilotEnabled,
+    organizationId: input.organizationId,
+    actor: input.actor,
+    textBody: input.textBody,
+  });
+  if (!draft.ok) return draft;
+  if (!input.accountConnected) {
+    return refuse("not_configured", "請先完成 LINE 官方帳號連線測試");
+  }
+  if (!input.recipient?.bound) {
+    return refuse("not_configured", "請先完成店長 LINE 綁定");
+  }
+  if (input.recipient.organizationId !== input.organizationId) {
+    return refuse("unauthorized", "不能發送給其他店家的收件者");
+  }
+  if (input.existing && input.existing.organizationId !== input.organizationId) {
+    return refuse("unauthorized", "不能發送其他店家的測試訊息");
+  }
+  if (input.existing?.status === "pending_confirmation") {
+    return refuse("pending_confirmation", "上一則測試結果待確認，系統不會自動重送");
+  }
+  if (input.existing?.status === "accepted") {
+    return refuse("duplicate", "這則測試已經被 LINE API 接受，不會重送");
+  }
+  if (input.existing?.status === "sending") {
+    return refuse("pending_confirmation", "測試發送進行中，請勿重複送出");
+  }
+  const requestId = input.requestId?.trim() || input.existing?.requestId || "";
+  if (!requestId.startsWith("ltsq-")) {
+    return refuse("invalid_input", "缺少可追蹤的測試發送識別");
+  }
+  const limit = input.dailyLimit ?? LINE_TEST_PUSH_DAILY_LIMIT;
+  if (input.acceptedToday >= limit) {
+    return refuse("quota_exceeded", "今日測試發送次數已達上限");
+  }
+  if (!input.ownerTestPushEnabled) {
+    return refuse("send_closed", "店長尚未啟用測試發送");
+  }
+  if (!input.testPushOpen) {
+    return refuse("send_closed", "測試發送尚未開放實際 Push");
+  }
+  return { ok: true, requestId };
 }

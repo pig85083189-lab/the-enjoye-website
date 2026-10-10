@@ -5,10 +5,14 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import {
+  loadLineBroadcastPrepareAction,
+  loadLineOfficialAccountAction,
   saveLineOfficialAccountAction,
   setLineBroadcastEnabledAction,
+  setLineTestPushEnabledAction,
+  startLineOwnerBindAction,
   testLineOfficialAccountAction,
-  loadLineOfficialAccountAction,
+  unbindLineOwnerRecipientAction,
 } from "@/lib/line/actions";
 import {
   LINE_SETTINGS_LOAD_ERROR,
@@ -22,8 +26,8 @@ import {
   type LineActionFeedback,
   type LineSettingsLoadState,
 } from "@/lib/line/line-settings-status";
-import { canShowLineSettings } from "@/lib/line/line-visibility";
-import type { LineOfficialAccountPublic } from "@/lib/line/line-types";
+import { canShowLineSettings, lineOwnerRecipientLabel } from "@/lib/line/line-visibility";
+import type { LineOfficialAccountPublic, LineOwnerRecipientPublic } from "@/lib/line/line-types";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 const fieldClass =
@@ -73,6 +77,12 @@ export function LineOfficialAccountSettings({
     kind: "idle",
     message: "",
   });
+  const [bindFeedback, setBindFeedback] = useState<LineActionFeedback>({
+    kind: "idle",
+    message: "",
+  });
+  const [recipient, setRecipient] = useState<LineOwnerRecipientPublic | null>(null);
+  const [bindCode, setBindCode] = useState("");
   const [busy, setBusy] = useState(false);
   const generationRef = useRef(0);
 
@@ -100,6 +110,11 @@ export function LineOfficialAccountSettings({
         setAccount(next.account);
         if (next.account?.channelId) setChannelId(next.account.channelId);
         if (next.feedback.kind !== "idle") setCredentialFeedback(next.feedback);
+        const prepared = await loadLineBroadcastPrepareAction(organization.id);
+        if (generation === generationRef.current && prepared.ok && prepared.data) {
+          setRecipient(prepared.data.recipient ?? null);
+          if (prepared.data.account) setAccount(prepared.data.account);
+        }
       } catch {
         if (generation !== generationRef.current) return;
         setLoadState("load_failed");
@@ -334,6 +349,129 @@ export function LineOfficialAccountSettings({
               </Link>
             </div>
             <Feedback feedback={broadcastFeedback} testId="broadcast" />
+          </Card>
+
+          <Card data-line-owner-bind padding="lg" className="space-y-3">
+            <h2 className="text-[16px] font-semibold text-text">測試收件者綁定</h2>
+            <p className="text-[13px] text-secondary-text">
+              店長用自己的 LINE 把驗證碼傳給本官方帳號。系統用 Webhook 簽章確認身分，不能手填
+              User ID，也不能使用 Developers Console 的管理者 ID。
+            </p>
+            <p className="text-sm text-text" data-line-owner-bind-status>
+              {lineOwnerRecipientLabel(recipient)}
+            </p>
+            {bindCode ? (
+              <p className="rounded-2xl bg-primary-light/50 px-4 py-3 font-mono text-[18px] tracking-[0.2em]">
+                {bindCode}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || loadState === "loading"}
+                onClick={() => {
+                  const generation = ++generationRef.current;
+                  setBusy(true);
+                  setBindFeedback({ kind: "idle", message: "" });
+                  void (async () => {
+                    try {
+                      const result = await startLineOwnerBindAction({
+                        organizationId: organization.id,
+                      });
+                      if (generation !== generationRef.current) return;
+                      setBindFeedback(
+                        result.ok
+                          ? { kind: "success", message: result.message }
+                          : { kind: "error", message: result.message },
+                      );
+                      if (result.ok && result.data) setBindCode(result.data.code);
+                    } catch {
+                      if (generation !== generationRef.current) return;
+                      setBindFeedback(lineActionCaughtError(LINE_SETTINGS_UNEXPECTED_ERROR));
+                    } finally {
+                      if (generation === generationRef.current) setBusy(false);
+                    }
+                  })();
+                }}
+              >
+                產生驗證碼
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy || !recipient?.bound}
+                onClick={() => {
+                  const generation = ++generationRef.current;
+                  setBusy(true);
+                  void (async () => {
+                    try {
+                      const result = await unbindLineOwnerRecipientAction({
+                        organizationId: organization.id,
+                      });
+                      if (generation !== generationRef.current) return;
+                      setBindFeedback(
+                        result.ok
+                          ? { kind: "success", message: result.message }
+                          : { kind: "error", message: result.message },
+                      );
+                      if (result.ok) {
+                        setRecipient(null);
+                        setBindCode("");
+                      }
+                    } catch {
+                      if (generation !== generationRef.current) return;
+                      setBindFeedback(lineActionCaughtError(LINE_SETTINGS_UNEXPECTED_ERROR));
+                    } finally {
+                      if (generation === generationRef.current) setBusy(false);
+                    }
+                  })();
+                }}
+              >
+                解除綁定
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  const generation = ++generationRef.current;
+                  setBusy(true);
+                  void (async () => {
+                    try {
+                      const result = await setLineTestPushEnabledAction({
+                        organizationId: organization.id,
+                        enabled: !account?.testPushEnabled,
+                      });
+                      if (generation !== generationRef.current) return;
+                      setBindFeedback(
+                        result.ok
+                          ? { kind: "success", message: result.message }
+                          : { kind: "error", message: result.message },
+                      );
+                      if (result.ok) {
+                        setAccount((current) =>
+                          current
+                            ? { ...current, testPushEnabled: !current.testPushEnabled }
+                            : current,
+                        );
+                      }
+                    } catch {
+                      if (generation !== generationRef.current) return;
+                      setBindFeedback(lineActionCaughtError(LINE_SETTINGS_UNEXPECTED_ERROR));
+                    } finally {
+                      if (generation === generationRef.current) setBusy(false);
+                    }
+                  })();
+                }}
+              >
+                {account?.testPushEnabled ? "關閉測試發送" : "店長啟用測試發送"}
+              </Button>
+            </div>
+            <p className="text-[12px] text-secondary-text">
+              測試發送開關與正式群發開關分開。兩者預設都關閉，不會呼叫 Push 或 Broadcast。
+            </p>
+            <Feedback feedback={bindFeedback} testId="bind" />
           </Card>
         </>
       )}

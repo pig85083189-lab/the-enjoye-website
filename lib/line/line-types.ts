@@ -26,10 +26,21 @@ export type LineOfficialAccountPublic = {
   secretConfigured: boolean;
   tokenConfigured: boolean;
   broadcastEnabled: boolean;
+  testPushEnabled: boolean;
   lastTestedAt: string | null;
   lastTestStatus: LineConnectionTestStatus | null;
   lastTestMessage: string | null;
 };
+
+export type LineOwnerRecipientPublic = {
+  organizationId: string;
+  bound: boolean;
+  hint: string | null;
+  bindMethod: "webhook_code" | null;
+  boundAt: string | null;
+};
+
+export type LineTestSendPublic = LineBroadcastPublic;
 
 export type LineQuotaPublic = {
   known: boolean;
@@ -58,7 +69,10 @@ export type LineBroadcastPrepare = {
   account: LineOfficialAccountPublic | null;
   quota: LineQuotaPublic;
   sendOpen: boolean;
+  testPushOpen: boolean;
   broadcasts: LineBroadcastPublic[];
+  testSends: LineTestSendPublic[];
+  recipient: LineOwnerRecipientPublic | null;
 };
 
 export type LineDecisionReason =

@@ -46,3 +46,10 @@ export function lineOfficialAccountNameLabel(
   const name = account?.botDisplayName?.trim();
   return name || "未知（尚未完成連線測試）";
 }
+
+export function lineOwnerRecipientLabel(
+  recipient: { bound?: boolean; hint?: string | null } | null | undefined,
+): string {
+  if (!recipient?.bound) return "尚未綁定店長 LINE";
+  return `已綁定 ${recipient.hint || "••••"}`;
+}
