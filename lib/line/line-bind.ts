@@ -17,6 +17,16 @@ export function hashLineBindCode(organizationId: string, code: string): string {
     .digest("hex");
 }
 
+export function hashLineWebhookPublicToken(organizationId: string, token: string): string {
+  return createHash("sha256")
+    .update(`${organizationId}:${token.trim()}`, "utf8")
+    .digest("hex");
+}
+
+export function isLineWebhookPublicToken(value: string | null | undefined): boolean {
+  return Boolean(value && /^[A-Za-z0-9_-]{32,128}$/.test(value.trim()));
+}
+
 export function normalizeLineBindCode(text: string | null | undefined): string | null {
   const compact = (text ?? "").replace(/\s+/g, "").toUpperCase();
   if (!/^[0-9A-F]{8}$/.test(compact)) return null;
@@ -40,6 +50,8 @@ export function verifyLineWebhookSignature(input: {
 }
 
 export type LineWebhookTextEvent = {
+  eventId?: string | null;
+  isRedelivery?: boolean;
   sourceType: string | null;
   userId: string | null;
   text: string | null;
@@ -53,7 +65,13 @@ export function extractLineWebhookTextEvents(payload: unknown): LineWebhookTextE
     const row = event && typeof event === "object" ? (event as Record<string, unknown>) : {};
     const source = row.source && typeof row.source === "object" ? (row.source as Record<string, unknown>) : {};
     const message = row.message && typeof row.message === "object" ? (row.message as Record<string, unknown>) : {};
+    const delivery =
+      row.deliveryContext && typeof row.deliveryContext === "object"
+        ? (row.deliveryContext as Record<string, unknown>)
+        : {};
     return {
+      eventId: typeof row.webhookEventId === "string" ? row.webhookEventId : null,
+      isRedelivery: delivery.isRedelivery === true,
       sourceType: typeof source.type === "string" ? source.type : null,
       userId: typeof source.userId === "string" ? source.userId : null,
       text: typeof message.text === "string" ? message.text : null,

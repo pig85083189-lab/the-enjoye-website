@@ -1,8 +1,11 @@
-# LINE Official Account — Phase 1C
+# LINE Official Account — Phase 1D
+
+本文件延續 Phase 1、Phase 1B、Phase 1C：可重用的官方帳號串接、文字 Broadcast、店長測試 Push。發送開關預設關閉。
 
 Beauty OS SaaS 共用的 LINE 官方帳號串接、文字群發與店長安全測試發送。  
 **Broadcast 與測試 Push 是獨立開關，兩者預設都關閉。**  
-本階段只在 Preview 開發與驗證。Production Supabase、Production 環境變數與 Production 部署保持不變。
+本階段只在 Preview 準備真實 Webhook 綁定與單人 Push 驗收，**不發送任何真實 LINE 訊息**。  
+Production Supabase、Production 環境變數與 Production 部署保持不變。
 
 ---
 
@@ -16,8 +19,9 @@ Beauty OS SaaS 共用的 LINE 官方帳號串接、文字群發與店長安全�
 | Staff RBAC | 沿用 `staff_auth_memberships`。只有 active `OWNER` 可確認真實發送。 |
 | 加密憑證 | AES-256-GCM。Client 與 log 看不到 Secret / Token。 |
 | 發送 Adapter | `executeLineBroadcastHttp` 仍被 `LINE_BROADCAST_SEND_OPEN = false` 擋住。測試只走 mock。 |
-| LINE API | 連線測試 `GET /v2/bot/info`；額度 `GET /v2/bot/message/quota` + `/consumption`；Broadcast `POST /v2/bot/message/broadcast`（預設不呼叫）。 |
-| Preview | 憑證表在修 UI 後仍為 0 列，沒有可覆寫或誤用的真實 token。 |
+| 測試 Push | `executeLineTestPushHttp` 仍被 `LINE_TEST_PUSH_OPEN = false` 擋住。測試只走 mock。 |
+| LINE API | 連線測試 `GET /v2/bot/info`；額度唯讀；Broadcast / Push 預設不呼叫。 |
+| THE ENJOYE | Preview 已保存憑證。本階段不得覆蓋，也不得修改其既有官方帳號 Webhook。 |
 
 公開官網 CTA 仍使用既有 `lib/line.ts`。伺服器模組在 `lib/line/*`，**沒有** `lib/line/index.ts`。
 
@@ -25,51 +29,50 @@ Beauty OS SaaS 共用的 LINE 官方帳號串接、文字群發與店長安全�
 
 ## B. 新增與修改檔案
 
-Phase 1C 新增：
+Phase 1D 新增：
 
-- `supabase/migrations/20261010160000_line_owner_test_push.sql`
-- `lib/line/line-bind.ts`、`line-webhook.ts`、`line-push-adapter.ts`
-- `app/api/line/webhook/[organizationId]/route.ts`
+- `supabase/migrations/20261010180000_line_webhook_least_privilege.sql`
+- `app/api/line/webhook/[organizationId]/[publicToken]/route.ts`
+- `lib/line/line-webhook-limits.ts`、`line-webhook-url.ts`
+- `lib/supabase/anon.ts`（publishable key，不用 service role）
 
-Phase 1B 既有：claim / quota / send pipeline。Client 不引入 crypto、send、push adapter。
+舊路徑 `POST /api/line/webhook/{orgId}` 改為 404，不再使用 service role。
 
 ---
 
-## C. 真實發送架構
+## C. Webhook 與測試發送架構
 
-流程維持 **Draft → Preview → Confirm → History**。
+### 公開接收
 
-確認畫面有兩條分開的路，**沒有**把「確認（不會實際發送）」默默改成真送：
+1. Next `proxy.ts` 只匹配 `/staff`，**不會**把 LINE webhook 導向登入。
+2. Webhook URL 為 `https://<Preview 分支網域>/api/line/webhook/{orgId}/{publicToken}`。
+3. 簽章使用 `request.text()` 的原始 body，以該 Organization 的 Channel Secret 做 HMAC-SHA256，對照 `x-line-signature`。
+4. 驗證碼 8 碼 hex、明文只回傳一次、資料庫只存 `orgId:CODE` 的 SHA-256；10 分鐘失效；錯誤 5 次即作廢。
+5. `webhookEventId` 以 `(organization_id, event_id)` 去重；重送不再 consume。
 
-1. **練習確認** → `confirmLineBroadcastAction` → `send_closed`，不呼叫 LINE。
-2. **真實發送** → 必須勾選「我了解這會向全部好友發送」→ `sendLineBroadcastAction`。
+### 最小權限
 
-真實發送伺服器端順序：
+Webhook **不再使用** `SUPABASE_SERVICE_ROLE_KEY`。  
+匿名 publishable client 只能呼叫 token-gated SECURITY DEFINER RPC：
 
-1. active OWNER、店家隔離、草稿文字、request ID（`lbrq-%`）
-2. 帳號已連線（token + 連線測試 ok）
-3. 店長已啟用 `broadcast_enabled`
-4. `LINE_BROADCAST_SEND_OPEN === true`
-5. 應用每日上限與（若已知）LINE 額度
-6. `claim_line_broadcast_send` 原子鎖定為 `sending`
-7. 解密該 Organization 自己的 Access Token
-8. `POST /v2/bot/message/broadcast`，`X-Line-Retry-Key = request_id`
-9. `complete_line_broadcast_send` 寫入結果與 audit
+| RPC | 回傳 |
+|-----|------|
+| `read_line_webhook_channel_secret_cipher` | 僅 Channel Secret **密文** |
+| `claim_line_webhook_event` | 事件去重 |
+| `consume_line_owner_bind_challenge_public` | 綁定結果 |
 
-成功文案只會是 **「LINE API 已接受」**。不宣稱全部好友已送達。
+上述 RPC 在 token 不符時不回 Access Token、不回明文 Secret。Client / log 看不到密文解密結果。
+
+### 店長測試 Push
+
+流程不變：簽章 Webhook + 一次性驗證碼。不採用 LINE Login，不接受 Console 管理者 User ID。
+
+1. active OWNER 產生驗證碼
+2. 店長用自己的 LINE 把驗證碼傳給**專用測試官方帳號**
+3. Webhook 驗簽後加密 `source.userId`
+4. 測試發送走 `POST /v2/bot/message/push`，本階段常數仍關閉，不會真的呼叫
 
 本階段常數仍是 `LINE_BROADCAST_SEND_OPEN = false` 與 `LINE_TEST_PUSH_OPEN = false`。
-
-### 店長測試 Push（Phase 1C）
-
-評估後採用 **簽章 Webhook + 一次性驗證碼**，不採用 LINE Login（需另一組 Login Channel，且不能證明收得到此 OA 的 Push），也不接受 Console 管理者 User ID。
-
-1. active OWNER 產生 8 碼驗證碼（明文只回傳一次，資料庫只存 hash）
-2. 店長用自己的 LINE 把驗證碼傳給本官方帳號
-3. `POST /api/line/webhook/{orgId}` 用該店 Channel Secret 驗 `x-line-signature`
-4. 通過後才把 `source.userId` 加密寫入 `line_owner_recipient_secrets`
-5. 測試發送走 `POST /v2/bot/message/push`，對象只能是伺服器保存的綁定收件者
-6. Client 不能傳 User ID；每日上限與 Broadcast 分開；原子 claim；timeout 不重送
 
 ---
 
@@ -78,17 +81,14 @@ Phase 1B 既有：claim / quota / send pipeline。Client 不引入 crypto、send
 額度：
 
 - Adapter 唯讀查詢 LINE `quota` 與 `quota/consumption`
-- 取得完整 limited 資料才計算剩餘
-- 失敗、缺資料、尚未保存 token、或實際發送關閉 → 顯示 **未知**
 - 發送關閉時不解密、不使用真實 Channel Token 查額度
 - 不造好友數，不造剩餘額度
 
 防重複：
 
-- `(organization_id, request_id)` unique
-- `FOR UPDATE` 原子 claim；`accepted` / `sending` / `pending_confirmation` 不能再送
+- Broadcast / test send：`(organization_id, request_id)` unique、原子 claim
 - timeout / 例外 → `pending_confirmation`，**不自動重送**
-- 同一 pipeline 的 HTTP 最多一次
+- Webhook：`line_webhook_events` 對 `webhookEventId` 去重
 
 ---
 
@@ -98,29 +98,59 @@ Phase 1B 既有：claim / quota / send pipeline。Client 不引入 crypto、send
 
 - 多租戶隔離與非 Owner
 - 重複發送、額度不足、API 失敗、timeout 不重送
-- 草稿保存後重新整理仍可讀取
 - send 關閉時 adapter 不打 HTTP
-- mock Broadcast / 唯讀 quota
-- Client 不引入 crypto / send / quota adapter
-- 「確認（不會實際發送）」與「確認真實發送」同時存在
-- Webhook 簽章、跨店 code、未授權收件者、測試重複/併發
-- 測試 Push adapter 預設不打 HTTP，路徑是 `/message/push` 不是 Broadcast
+- Webhook 原始 body 簽章、跨店 code、未授權收件者
+- 過期驗證碼、5 次嘗試上限、重複事件、失敗簽章
+- 測試 Push adapter 預設不打 HTTP
+- Webhook route 不使用 service role；公開 RPC 不回 Access Token
 
 ---
 
-## G / H. 部署邊界與首次真實發送驗收
+## 專用測試官方帳號安全設定
+
+只建立**新的測試官方帳號**。不要動 THE ENJOYE 既有 Messaging API Channel。
+
+1. LINE Official Account Manager 建立新帳號（名稱標明 Preview / 測試）。
+2. LINE Developers 建立 Messaging API Channel。
+3. 發行 Channel ID、Channel Secret、Channel Access Token。
+4. 在 Beauty OS Preview **另一間測試店家**（不要覆寫 THE ENJOYE 已保存憑證）由 Owner 加密保存。
+5. 開啟 Messaging API webhook，URL 只貼 Settings 顯示的  
+   `/api/line/webhook/{orgId}/{publicToken}`。  
+   **不得修改 THE ENJOYE 現有官方帳號的 Webhook。**
+6. 使用驗證：LINE 會 POST 空 `events`；本系統在簽章通過後回 200。
+7. 不要把 Vercel 全站 `x-vercel-protection-bypass` 填進 THE ENJOYE。若 Preview 仍有 Deployment Protection SSO，只把**此測試帳號**的 webhook 指到已解除保護的 Preview 分支網域，或請 Owner 把該 Preview 分支網域加入 Deployment Protection Exceptions。不要關閉 Production 保護。
+8. 不要把 Console 管理者 User ID 當收件者。
+9. 不要開啟 `LINE_TEST_PUSH_OPEN` 或 `LINE_BROADCAST_SEND_OPEN`（本 PR 也不會開）。
+
+---
+
+## Owner 操作步驟（本階段不發送）
+
+1. 用 Owner 登入 Preview `/staff/settings/line`。
+2. 確認 THE ENJOYE 憑證狀態仍是已保存；**不要按加密保存去覆蓋**，除非你在另一間測試店家寫入測試帳號憑證。
+3. 複製「專用測試官方帳號 Webhook URL」，只貼到測試帳號。
+4. 按「產生驗證碼」，10 分鐘內用自己的 LINE 把 8 碼傳給測試官方帳號。
+5. 畫面應顯示已綁定 `••••` 遮罩。失敗、過期或超過 5 次需重產驗證碼。
+6. 「店長啟用測試發送」只是店內旗標。實際 Push 仍關閉。
+7. 群發中心的「確認（不會實際發送）」維持練習鈕；「確認測試發送」本階段會因伺服器開關關閉而拒絕，且不會呼叫 LINE。
+
+---
+
+## G / H. 部署邊界與首次真實 Push 驗收條件
 
 | 環境 | 狀態 |
 |------|------|
-| Preview | Ready：`https://the-enjoye-website-7xns5ggxd-pig85083189-6631s-projects.vercel.app`（`8e07746`，`dpl_8ub6oFjh5SYTQXDc3PW43pPGgfGv`）。別名 `https://the-enjoye-website-git-cursor-98180f-pig85083189-6631s-projects.vercel.app`。已套用 `20261010140000` 到 Preview Supabase `bfzquejrtgqzzarhkiya`。未呼叫 Broadcast。 |
+| Preview | 本階段部署後更新。已套用 `20261010180000` 到 Preview Supabase `bfzquejrtgqzzarhkiya`。未呼叫 Push / Broadcast。未開啟發送開關。 |
 | Production | **未變**。仍是 staff-auth release `dpl_DGWw59QtgvjqrZpHyE6WufJV2Skb` / `e3c750d`。Production Supabase `knccefcxncglgpmvgqlp` 沒有 LINE 表。沒有 LINE env。不部署 Production。不合併 main。 |
 
-### 後續首次真實發送驗收（尚未授權，不要在本 PR 做）
+### 首次真實 Push 驗收（尚未授權，本階段不做）
 
-1. 使用**專用測試官方帳號**，禁止 THE ENJOYE 或任何已有真實好友的帳號。
-2. 只在 Preview 打開伺服器開關；Production 保持關閉。
-3. Owner 完成連線測試、啟用群發、確認額度不是未知且足夠。
-4. 用極短測試文字走「確認真實發送」，勾選知情同意。
-5. 預期：歷史顯示「LINE API 已接受」，audit 有 `send_claimed` + `api_accepted`。
-6. timeout 必須停在待確認，不得重送。
-7. 驗收後立刻把 `LINE_BROADCAST_SEND_OPEN` 關回 false。
+具備條件：
+
+- 專用測試官方帳號已綁 Webhook（不是 THE ENJOYE）
+- Owner 已用驗證碼完成本人綁定
+- Preview Webhook 可被 LINE 公開打到（無 SSO / 登入導向）
+- `LINE_TEST_PUSH_OPEN` 仍關閉，需另一次明確授權才打開
+- Production 保持關閉
+
+還不能算「可以立刻真送」。要真送時必須另開授權：只在 Preview 打開 `LINE_TEST_PUSH_OPEN`，用極短文字走「確認測試發送」，成功只表示 API 已接受，驗收後立刻關回。

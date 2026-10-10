@@ -20,6 +20,8 @@ export const LINE_BROADCAST_DAILY_LIMIT = 3;
 export const LINE_TEST_PUSH_DAILY_LIMIT = 3;
 export const LINE_BROADCAST_TEXT_MAX = 5000;
 export const LINE_CREDENTIAL_KEY_ID = "line-cred-v1";
+export const LINE_BIND_CODE_TTL_MINUTES = 10;
+export const LINE_BIND_MAX_ATTEMPTS = 5;
 
 export function isLineConnectionPilotEnabled(
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},

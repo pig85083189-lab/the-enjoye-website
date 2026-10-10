@@ -1,6 +1,6 @@
 /**
  * Server-only LINE webhook bind processor.
- * Verifies Channel Secret signature, then binds the messaging user.
+ * Verifies Channel Secret signature on the raw body, then binds the messaging user.
  * Never accepts a client-supplied User ID. Never Push / Broadcast.
  */
 
@@ -10,9 +10,17 @@ import {
   selectLineWebhookBindCandidate,
   verifyLineWebhookSignature,
 } from "@/lib/line/line-bind";
+import { evaluateLineWebhookEventClaim } from "@/lib/line/line-webhook-limits";
+
+export type LineWebhookConsumeReason =
+  | "invalid_input"
+  | "expired"
+  | "attempt_limited"
+  | "unauthorized"
+  | "duplicate";
 
 export type LineWebhookBindResult =
-  | { ok: true; bound: boolean; hint?: string }
+  | { ok: true; bound: boolean; hint?: string; duplicate?: boolean }
   | { ok: false; reason: "unauthorized" | "invalid_input" | "error"; message: string };
 
 export async function processLineWebhookBind(input: {
@@ -21,13 +29,14 @@ export async function processLineWebhookBind(input: {
   signature: string | null;
   channelSecret: string | null;
   encryptUserId: (userId: string) => { cipher: string; keyId: string } | null;
+  claimEvent?: (eventId: string) => Promise<{ duplicate: boolean }>;
   consume: (input: {
     organizationId: string;
     code: string;
     cipher: string;
     hint: string;
     keyId: string;
-  }) => Promise<{ bound: boolean }>;
+  }) => Promise<{ bound: boolean; reason?: LineWebhookConsumeReason }>;
 }): Promise<LineWebhookBindResult> {
   if (typeof window !== "undefined") {
     throw new Error("LINE webhook cannot run in the browser");
@@ -53,9 +62,29 @@ export async function processLineWebhookBind(input: {
   } catch {
     return { ok: false, reason: "invalid_input", message: "Webhook 內容無法解析" };
   }
-  const candidate = selectLineWebhookBindCandidate(extractLineWebhookTextEvents(payload));
-  if (!candidate) {
+  const events = extractLineWebhookTextEvents(payload);
+  const candidateEvent = events.find((event) => {
+    const selected = selectLineWebhookBindCandidate([event]);
+    return Boolean(selected);
+  });
+  const candidate = candidateEvent ? selectLineWebhookBindCandidate([candidateEvent]) : null;
+  if (!candidate || !candidateEvent) {
     return { ok: true, bound: false };
+  }
+  const eventId = candidateEvent.eventId?.trim() ?? "";
+  if (eventId && input.claimEvent) {
+    const claimed = await input.claimEvent(eventId);
+    if (
+      claimed.duplicate ||
+      !evaluateLineWebhookEventClaim({
+        seenEventIds: claimed.duplicate ? new Set([eventId]) : new Set(),
+        eventId,
+      }).accept
+    ) {
+      return { ok: true, bound: false, duplicate: true };
+    }
+  } else if (candidateEvent.isRedelivery === true) {
+    return { ok: true, bound: false, duplicate: true };
   }
   const packed = input.encryptUserId(candidate.userId);
   if (!packed) {

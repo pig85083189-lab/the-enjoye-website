@@ -9,6 +9,7 @@ import {
   MARK_LINE_BROADCAST_SEND_CLOSED_RPC,
   OWNER_READ_LINE_RECIPIENT_CIPHER_RPC,
   OWNER_READ_LINE_TOKEN_CIPHER_RPC,
+  UPSERT_LINE_WEBHOOK_PUBLIC_TOKEN_RPC,
   RECORD_LINE_BROADCAST_OWNER_EVENT_RPC,
   RECORD_LINE_CONNECTION_TEST_RPC,
   SET_LINE_BROADCAST_ENABLED_RPC,
@@ -38,6 +39,11 @@ import {
   encryptLineCredential,
   tokenHintFromAccessToken,
 } from "@/lib/line/line-crypto";
+import { hashLineWebhookPublicToken } from "@/lib/line/line-bind";
+import {
+  createLineWebhookPublicToken,
+  lineWebhookPublicUrl,
+} from "@/lib/line/line-webhook-url";
 import {
   hasLineCredentialKey,
   isLineBroadcastSendOpen,
@@ -65,6 +71,7 @@ import {
   loadLineOwnerRecipient,
   loadLineTestSendByRequestId,
   loadLineTestSends,
+  loadLineWebhookPublicUrl,
   readLineOfficialAccount,
 } from "@/lib/line/line-load";
 import type {
@@ -73,6 +80,7 @@ import type {
   LineBroadcastPublic,
   LineDecisionReason,
   LineOfficialAccountPublic,
+  LineWebhookPublicUrl,
 } from "@/lib/line/line-types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -428,6 +436,7 @@ export async function loadLineBroadcastPrepareAction(
         broadcasts,
         testSends: await loadLineTestSends(organizationId),
         recipient: await loadLineOwnerRecipient(organizationId),
+        webhook: await loadLineWebhookPublicUrl(organizationId),
       },
     };
   }, "無法讀取群發準備資料");
@@ -637,6 +646,82 @@ export async function sendLineBroadcastAction(input: {
       ? { ok: true, message: pipeline.message }
       : { ok: false, reason: pipeline.reason, message: pipeline.message };
   }, "真實發送失敗");
+}
+
+async function writeLineWebhookPublicToken(input: {
+  organizationId: string;
+  rotate: boolean;
+}): Promise<LineActionResult<LineWebhookPublicUrl>> {
+  const { actor } = await loadActor(input.organizationId);
+  const account = await loadLineOfficialAccount(input.organizationId);
+  const decision = evaluateLineOwnerBindStart({
+    connectionPilotEnabled: isLineConnectionPilotEnabled(),
+    organizationId: input.organizationId,
+    actor,
+    secretConfigured: Boolean(account?.secretConfigured),
+  });
+  if (!decision.ok) return decision;
+  if (!input.rotate) {
+    const existing = await loadLineWebhookPublicUrl(input.organizationId);
+    if (existing) {
+      return { ok: true, message: "Webhook URL 已準備", data: existing };
+    }
+  }
+  const token = createLineWebhookPublicToken();
+  const packed = encryptLineCredential(token);
+  if (!packed.ok) {
+    return { ok: false, reason: "error", message: packed.message };
+  }
+  const supabase = await createClient();
+  const saved = await supabase.rpc(UPSERT_LINE_WEBHOOK_PUBLIC_TOKEN_RPC, {
+    p_organization_id: input.organizationId,
+    p_token_hash: hashLineWebhookPublicToken(input.organizationId, token),
+    p_token_hint: tokenHintFromAccessToken(token),
+    p_token_cipher: packed.cipher,
+    p_key_id: packed.keyId,
+    p_rotate: input.rotate,
+  });
+  if (saved.error) {
+    return { ok: false, reason: "error", message: "無法建立 Webhook URL" };
+  }
+  const created =
+    saved.data && typeof saved.data === "object"
+      ? (saved.data as { created?: unknown }).created === true
+      : false;
+  if (!created) {
+    const existing = await loadLineWebhookPublicUrl(input.organizationId);
+    if (existing) {
+      return { ok: true, message: "Webhook URL 已準備", data: existing };
+    }
+  }
+  return {
+    ok: true,
+    message: input.rotate
+      ? "已輪替 Webhook URL。請只填到專用測試官方帳號，不要改 THE ENJOYE。"
+      : "Webhook URL 已準備。請只填到專用測試官方帳號，不要改 THE ENJOYE。",
+    data: {
+      url: lineWebhookPublicUrl(input.organizationId, token),
+      hint: tokenHintFromAccessToken(token),
+    },
+  };
+}
+
+export async function ensureLineWebhookPublicUrlAction(input: {
+  organizationId: string;
+}): Promise<LineActionResult<LineWebhookPublicUrl>> {
+  return runLineAction(
+    () => writeLineWebhookPublicToken({ organizationId: input.organizationId, rotate: false }),
+    "無法建立 Webhook URL",
+  );
+}
+
+export async function rotateLineWebhookPublicTokenAction(input: {
+  organizationId: string;
+}): Promise<LineActionResult<LineWebhookPublicUrl>> {
+  return runLineAction(
+    () => writeLineWebhookPublicToken({ organizationId: input.organizationId, rotate: true }),
+    "無法輪替 Webhook URL",
+  );
 }
 
 export async function startLineOwnerBindAction(input: {

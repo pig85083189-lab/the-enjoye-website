@@ -1,4 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
+import { OWNER_READ_LINE_WEBHOOK_TOKEN_CIPHER_RPC } from "@/lib/line/line-command";
+import { decryptLineCredential } from "@/lib/line/line-crypto";
+import { lineWebhookPublicUrl } from "@/lib/line/line-webhook-url";
 import type {
   LineBroadcastPublic,
   LineBroadcastStatus,
@@ -6,6 +9,7 @@ import type {
   LineOfficialAccountPublic,
   LineOwnerRecipientPublic,
   LineTestSendPublic,
+  LineWebhookPublicUrl,
 } from "@/lib/line/line-types";
 
 function asAccount(row: Record<string, unknown> | null): LineOfficialAccountPublic | null {
@@ -154,6 +158,25 @@ export async function loadLineTestSendByRequestId(
     .maybeSingle();
   if (error || !data) return null;
   return asBroadcast(data as Record<string, unknown>);
+}
+
+export async function loadLineWebhookPublicUrl(
+  organizationId: string,
+): Promise<LineWebhookPublicUrl | null> {
+  const supabase = await createClient();
+  const read = await supabase.rpc(OWNER_READ_LINE_WEBHOOK_TOKEN_CIPHER_RPC, {
+    p_organization_id: organizationId,
+  });
+  const row = read.data && typeof read.data === "object" ? (read.data as Record<string, unknown>) : null;
+  const cipher = row && typeof row.token_cipher === "string" ? row.token_cipher : "";
+  const hint = row && typeof row.token_hint === "string" ? row.token_hint : "";
+  if (!cipher.startsWith("v1.")) return null;
+  const opened = decryptLineCredential(cipher);
+  if (!opened.ok) return null;
+  return {
+    url: lineWebhookPublicUrl(organizationId, opened.plaintext),
+    hint: hint || "••••",
+  };
 }
 
 export function countAcceptedBroadcastsOnDay(

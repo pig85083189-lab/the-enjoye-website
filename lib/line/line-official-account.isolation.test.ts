@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { createHmac } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -15,13 +16,17 @@ import {
   LINE_BROADCAST_REAL_SEND_MIGRATION_FILE,
   LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE,
   LINE_OWNER_TEST_PUSH_MIGRATION_FILE,
+  LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE,
 } from "@/lib/persistence/schema-contract";
 import { STAFF_LINE_ROLES, resolveStaffRolePageAccess } from "@/lib/staff/staff-role-page-access";
 import {
   CLAIM_LINE_BROADCAST_SEND_RPC,
   CLAIM_LINE_TEST_SEND_RPC,
+  CLAIM_LINE_WEBHOOK_EVENT_RPC,
   COMPLETE_LINE_BROADCAST_SEND_RPC,
+  CONSUME_LINE_OWNER_BIND_PUBLIC_RPC,
   CONSUME_LINE_OWNER_BIND_RPC,
+  READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC,
   evaluateLineBroadcastDraft,
   evaluateLineBroadcastEnable,
   evaluateLineBroadcastRealSend,
@@ -45,11 +50,18 @@ import {
 } from "@/lib/line/line-command";
 import {
   hashLineBindCode,
+  hashLineWebhookPublicToken,
   isLineUserId,
+  isLineWebhookPublicToken,
   normalizeLineBindCode,
   selectLineWebhookBindCandidate,
   verifyLineWebhookSignature,
 } from "@/lib/line/line-bind";
+import {
+  evaluateLineBindAttempt,
+  evaluateLineWebhookEventClaim,
+} from "@/lib/line/line-webhook-limits";
+import { lineWebhookPublicPath, lineWebhookPublicUrl } from "@/lib/line/line-webhook-url";
 import { executeLineTestPushHttp } from "@/lib/line/line-push-adapter";
 import { processLineWebhookBind } from "@/lib/line/line-webhook";
 import {
@@ -71,6 +83,8 @@ import {
   isLineBroadcastSendOpen,
   isLineConnectionPilotEnabled,
   isLineTestPushOpen,
+  LINE_BIND_CODE_TTL_MINUTES,
+  LINE_BIND_MAX_ATTEMPTS,
   LINE_BROADCAST_DAILY_LIMIT,
   LINE_BROADCAST_SEND_OPEN,
   LINE_TEST_PUSH_DAILY_LIMIT,
@@ -146,6 +160,8 @@ describe("LINE Phase 1 flags", () => {
     expect(LINE_TEST_PUSH_OPEN).toBe(false);
     expect(LINE_BROADCAST_DAILY_LIMIT).toBe(3);
     expect(LINE_TEST_PUSH_DAILY_LIMIT).toBe(3);
+    expect(LINE_BIND_CODE_TTL_MINUTES).toBe(10);
+    expect(LINE_BIND_MAX_ATTEMPTS).toBe(5);
     expect(isLineConnectionPilotEnabled({})).toBe(false);
     expect(isLineConnectionPilotEnabled({ [LINE_CONNECTION_PILOT_ENV]: "1" })).toBe(false);
     expect(isLineConnectionPilotEnabled(previewEnv)).toBe(true);
@@ -765,6 +781,142 @@ describe("LINE Phase 1C owner bind and test push", () => {
   });
 });
 
+describe("LINE Phase 1D webhook least privilege", () => {
+  const secret = "channel-secret";
+  const userId = "U" + "a".repeat(32);
+
+  function signedBody(body: unknown, channelSecret = secret) {
+    const rawBody = JSON.stringify(body);
+    return {
+      rawBody,
+      signature: createHmac("sha256", channelSecret).update(rawBody).digest("base64"),
+    };
+  }
+
+  it("scopes webhook tokens per organization and keeps the path token-gated", () => {
+    const token = "a".repeat(43);
+    expect(isLineWebhookPublicToken(token)).toBe(true);
+    expect(isLineWebhookPublicToken("short")).toBe(false);
+    expect(hashLineWebhookPublicToken(ORG_ENJOYE_ID, token)).not.toBe(
+      hashLineWebhookPublicToken(ORG_LUMIERE_ID, token),
+    );
+    expect(lineWebhookPublicPath(ORG_ENJOYE_ID, token)).toContain(`/api/line/webhook/${ORG_ENJOYE_ID}/`);
+    expect(
+      lineWebhookPublicUrl(ORG_ENJOYE_ID, token, {
+        VERCEL_BRANCH_URL: "preview.example.test",
+      }),
+    ).toBe(`https://preview.example.test/api/line/webhook/${ORG_ENJOYE_ID}/${token}`);
+  });
+
+  it("rejects expired codes, burns after 5 attempts, and dedups webhook events", async () => {
+    const codeHash = hashLineBindCode(ORG_ENJOYE_ID, "ABCDEF12");
+    expect(
+      evaluateLineBindAttempt({
+        nowMs: 20,
+        expiresAtMs: 10,
+        failedAttempts: 0,
+        codeHash,
+        providedHash: codeHash,
+      }),
+    ).toMatchObject({ ok: false, reason: "expired", burn: true });
+    const fourth = evaluateLineBindAttempt({
+      nowMs: 1,
+      expiresAtMs: 10,
+      failedAttempts: 3,
+      codeHash,
+      providedHash: "nope",
+    });
+    expect(fourth).toMatchObject({ ok: false, reason: "invalid_input", nextAttempts: 4, burn: false });
+    expect(
+      evaluateLineBindAttempt({
+        nowMs: 1,
+        expiresAtMs: 10,
+        failedAttempts: 4,
+        codeHash,
+        providedHash: "nope",
+      }),
+    ).toMatchObject({ ok: false, reason: "attempt_limited", nextAttempts: 5, burn: true });
+    expect(
+      evaluateLineWebhookEventClaim({ seenEventIds: new Set(["evt-1"]), eventId: "evt-1" }),
+    ).toMatchObject({ accept: false, duplicate: true });
+
+    const seen = new Set<string>();
+    const { rawBody, signature } = signedBody({
+      events: [
+        {
+          type: "message",
+          webhookEventId: "evt-dup-1",
+          deliveryContext: { isRedelivery: false },
+          source: { type: "user", userId },
+          message: { type: "text", text: "ABCDEF12" },
+        },
+      ],
+    });
+    const consumeCalls: string[] = [];
+    const first = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature,
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      claimEvent: async (eventId) => {
+        if (seen.has(eventId)) return { duplicate: true };
+        seen.add(eventId);
+        return { duplicate: false };
+      },
+      consume: async () => {
+        consumeCalls.push("first");
+        return { bound: true };
+      },
+    });
+    const replay = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature,
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      claimEvent: async (eventId) => ({ duplicate: seen.has(eventId) }),
+      consume: async () => {
+        consumeCalls.push("replay");
+        return { bound: true };
+      },
+    });
+    expect(first).toMatchObject({ ok: true, bound: true });
+    expect(replay).toMatchObject({ ok: true, bound: false, duplicate: true });
+    expect(consumeCalls).toEqual(["first"]);
+
+    const expired = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature,
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: false, reason: "expired" }),
+    });
+    expect(expired).toMatchObject({ ok: true, bound: false });
+
+    const isolated = await processLineWebhookBind({
+      organizationId: ORG_LUMIERE_ID,
+      rawBody,
+      signature,
+      channelSecret: "other-secret",
+      encryptUserId: () => ({ cipher: "v1.x", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(isolated).toMatchObject({ ok: false, reason: "unauthorized" });
+
+    const failed = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature: "forged",
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(failed).toMatchObject({ ok: false, reason: "unauthorized" });
+  });
+});
+
 describe("LINE settings status display", () => {
   const savedAccount: LineOfficialAccountPublic = {
     organizationId: ORG_ENJOYE_ID,
@@ -906,6 +1058,8 @@ describe("LINE source contracts", () => {
     expect(broadcastUi).toMatch(/data-line-real-send-ack/);
     expect(broadcastUi).toMatch(/restoreLineBroadcastEditor/);
     expect(settingsUi).toMatch(/data-line-owner-bind/);
+    expect(settingsUi).toMatch(/data-line-webhook-url/);
+    expect(settingsUi).toMatch(/禁止改 THE ENJOYE/);
     expect(settingsUi).not.toMatch(/lineUserId|channelAdminUserId|管理者 User ID/);
     expect(settingsHub).toMatch(/data-line-settings-entry/);
     expect(settingsHub).not.toMatch(/channelAccessToken|channel_secret_cipher/);
@@ -939,9 +1093,26 @@ describe("LINE source contracts", () => {
     expect(actions).not.toMatch(
       /export async function sendLineTestPushAction\(input: \{[^}]*lineUserId/,
     );
-    expect(source("app/api/line/webhook/[organizationId]/route.ts")).toMatch(/x-line-signature/);
-    expect(source("app/api/line/webhook/[organizationId]/route.ts")).toMatch(/createServiceRoleClient/);
-    expect(source("app/api/line/webhook/[organizationId]/route.ts")).not.toMatch(/console\.(log|info|debug)/);
+    expect(source("app/api/line/webhook/[organizationId]/route.ts")).not.toMatch(
+      /createServiceRoleClient|x-line-signature/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).toMatch(
+      /x-line-signature/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).toMatch(
+      /request\.text\(\)/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).toMatch(
+      "READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC",
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).not.toMatch(
+      /createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY|access_token/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).not.toMatch(
+      /console\.(log|info|debug)/,
+    );
+    expect(source("lib/supabase/anon.ts")).toMatch(/publishableKey/);
+    expect(source("lib/supabase/anon.ts")).not.toMatch(/SERVICE_ROLE|serviceRole/);
     expect(source("app/staff/(app)/settings/line/page.tsx")).toMatch(/STAFF_LINE_ROLES/);
     expect(source("app/staff/(app)/line/layout.tsx")).toMatch(/STAFF_LINE_ROLES/);
     expect(PRODUCTION_SUPABASE_HOST).toBe("knccefcxncglgpmvgqlp.supabase.co");
@@ -960,5 +1131,27 @@ describe("LINE source contracts", () => {
       new RegExp(`grant execute on function public\\.${READ_LINE_CHANNEL_SECRET_CIPHER_RPC}`),
     );
     expect(source(LINE_OWNER_TEST_PUSH_MIGRATION_FILE)).not.toMatch(/friend_count|console_admin/);
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(
+      READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC,
+    );
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(CLAIM_LINE_WEBHOOK_EVENT_RPC);
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(
+      CONSUME_LINE_OWNER_BIND_PUBLIC_RPC,
+    );
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(
+      /grant execute on function public\.read_line_webhook_channel_secret_cipher/,
+    );
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).not.toMatch(
+      /grant execute on function public\.read_line_channel_secret_cipher/,
+    );
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).not.toMatch(
+      /channel_access_token_cipher/,
+    );
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(/failed_attempts/);
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(/v_attempts >= 5/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_TEST_PUSH_OPEN = false/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1D/);
+    expect(source("docs/saas/line-official-account.md")).toMatch(/不得修改 THE ENJOYE 現有官方帳號的 Webhook/);
   });
 });

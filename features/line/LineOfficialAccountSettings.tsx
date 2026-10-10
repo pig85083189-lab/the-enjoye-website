@@ -5,8 +5,10 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import {
+  ensureLineWebhookPublicUrlAction,
   loadLineBroadcastPrepareAction,
   loadLineOfficialAccountAction,
+  rotateLineWebhookPublicTokenAction,
   saveLineOfficialAccountAction,
   setLineBroadcastEnabledAction,
   setLineTestPushEnabledAction,
@@ -27,7 +29,11 @@ import {
   type LineSettingsLoadState,
 } from "@/lib/line/line-settings-status";
 import { canShowLineSettings, lineOwnerRecipientLabel } from "@/lib/line/line-visibility";
-import type { LineOfficialAccountPublic, LineOwnerRecipientPublic } from "@/lib/line/line-types";
+import type {
+  LineOfficialAccountPublic,
+  LineOwnerRecipientPublic,
+  LineWebhookPublicUrl,
+} from "@/lib/line/line-types";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 const fieldClass =
@@ -82,6 +88,7 @@ export function LineOfficialAccountSettings({
     message: "",
   });
   const [recipient, setRecipient] = useState<LineOwnerRecipientPublic | null>(null);
+  const [webhook, setWebhook] = useState<LineWebhookPublicUrl | null>(null);
   const [bindCode, setBindCode] = useState("");
   const [busy, setBusy] = useState(false);
   const generationRef = useRef(0);
@@ -113,7 +120,21 @@ export function LineOfficialAccountSettings({
         const prepared = await loadLineBroadcastPrepareAction(organization.id);
         if (generation === generationRef.current && prepared.ok && prepared.data) {
           setRecipient(prepared.data.recipient ?? null);
+          setWebhook(prepared.data.webhook ?? null);
           if (prepared.data.account) setAccount(prepared.data.account);
+        }
+        if (
+          generation === generationRef.current &&
+          loaded.ok &&
+          loaded.data?.secretConfigured &&
+          !(prepared.ok && prepared.data?.webhook)
+        ) {
+          const ensured = await ensureLineWebhookPublicUrlAction({
+            organizationId: organization.id,
+          });
+          if (generation === generationRef.current && ensured.ok && ensured.data) {
+            setWebhook(ensured.data);
+          }
         }
       } catch {
         if (generation !== generationRef.current) return;
@@ -246,6 +267,14 @@ export function LineOfficialAccountSettings({
                         setChannelAccessToken("");
                       }
                       setCredentialFeedback(next.feedback);
+                      if (next.account?.secretConfigured) {
+                        const ensured = await ensureLineWebhookPublicUrlAction({
+                          organizationId: organization.id,
+                        });
+                        if (generation === generationRef.current && ensured.ok && ensured.data) {
+                          setWebhook(ensured.data);
+                        }
+                      }
                     } catch {
                       if (generation !== generationRef.current) return;
                       setCredentialFeedback(lineActionCaughtError(LINE_SETTINGS_SAVE_ERROR));
@@ -357,6 +386,73 @@ export function LineOfficialAccountSettings({
               店長用自己的 LINE 把驗證碼傳給本官方帳號。系統用 Webhook 簽章確認身分，不能手填
               User ID，也不能使用 Developers Console 的管理者 ID。
             </p>
+            <div data-line-webhook-url className="space-y-2">
+              <p className="text-sm font-medium text-text">專用測試官方帳號 Webhook URL</p>
+              <p className="text-[13px] text-secondary-text">
+                只填到<strong>新的測試官方帳號</strong>。禁止改 THE ENJOYE 既有 Webhook，也禁止覆蓋已保存的
+                THE ENJOYE 憑證。
+              </p>
+              <input
+                className={`${fieldClass} font-mono text-[12px]`}
+                readOnly
+                value={webhook?.url ?? "請先保存 Channel Secret，系統會產生 URL"}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy || !webhook?.url}
+                  onClick={() => {
+                    if (!webhook?.url) return;
+                    void navigator.clipboard.writeText(webhook.url).then(
+                      () =>
+                        setBindFeedback({
+                          kind: "success",
+                          message: "已複製 Webhook URL。請只貼到專用測試官方帳號。",
+                        }),
+                      () =>
+                        setBindFeedback({
+                          kind: "error",
+                          message: "無法複製，請手動選取 URL。",
+                        }),
+                    );
+                  }}
+                >
+                  複製 Webhook URL
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy || loadState === "loading"}
+                  onClick={() => {
+                    const generation = ++generationRef.current;
+                    setBusy(true);
+                    void (async () => {
+                      try {
+                        const result = await rotateLineWebhookPublicTokenAction({
+                          organizationId: organization.id,
+                        });
+                        if (generation !== generationRef.current) return;
+                        setBindFeedback(
+                          result.ok
+                            ? { kind: "success", message: result.message }
+                            : { kind: "error", message: result.message },
+                        );
+                        if (result.ok && result.data) setWebhook(result.data);
+                      } catch {
+                        if (generation !== generationRef.current) return;
+                        setBindFeedback(lineActionCaughtError(LINE_SETTINGS_UNEXPECTED_ERROR));
+                      } finally {
+                        if (generation === generationRef.current) setBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  輪替 URL
+                </Button>
+              </div>
+            </div>
             <p className="text-sm text-text" data-line-owner-bind-status>
               {lineOwnerRecipientLabel(recipient)}
             </p>

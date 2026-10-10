@@ -32,8 +32,14 @@ export const RECORD_LINE_BROADCAST_OWNER_EVENT_RPC = "record_line_broadcast_owne
 export const READ_LINE_SECRETS_RPC = "read_line_official_account_secrets";
 export const OWNER_READ_LINE_TOKEN_CIPHER_RPC = "owner_read_line_access_token_cipher";
 export const READ_LINE_CHANNEL_SECRET_CIPHER_RPC = "read_line_channel_secret_cipher";
+export const READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC =
+  "read_line_webhook_channel_secret_cipher";
+export const UPSERT_LINE_WEBHOOK_PUBLIC_TOKEN_RPC = "upsert_line_webhook_public_token";
+export const OWNER_READ_LINE_WEBHOOK_TOKEN_CIPHER_RPC = "owner_read_line_webhook_token_cipher";
+export const CLAIM_LINE_WEBHOOK_EVENT_RPC = "claim_line_webhook_event";
 export const START_LINE_OWNER_BIND_RPC = "start_line_owner_bind_challenge";
 export const CONSUME_LINE_OWNER_BIND_RPC = "consume_line_owner_bind_challenge";
+export const CONSUME_LINE_OWNER_BIND_PUBLIC_RPC = "consume_line_owner_bind_challenge_public";
 export const UNBIND_LINE_OWNER_RECIPIENT_RPC = "unbind_line_owner_recipient";
 export const OWNER_READ_LINE_RECIPIENT_CIPHER_RPC = "owner_read_line_recipient_user_id_cipher";
 export const SET_LINE_TEST_PUSH_ENABLED_RPC = "set_line_test_push_enabled";

@@ -65,6 +65,11 @@ export type LineBroadcastPublic = {
   confirmedAt: string | null;
 };
 
+export type LineWebhookPublicUrl = {
+  url: string;
+  hint: string;
+};
+
 export type LineBroadcastPrepare = {
   account: LineOfficialAccountPublic | null;
   quota: LineQuotaPublic;
@@ -73,6 +78,7 @@ export type LineBroadcastPrepare = {
   broadcasts: LineBroadcastPublic[];
   testSends: LineTestSendPublic[];
   recipient: LineOwnerRecipientPublic | null;
+  webhook: LineWebhookPublicUrl | null;
 };
 
 export type LineDecisionReason =
