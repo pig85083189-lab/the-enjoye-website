@@ -118,7 +118,9 @@ Webhook **不再使用** `SUPABASE_SERVICE_ROLE_KEY`。
    `/api/line/webhook/{orgId}/{publicToken}`。  
    **不得修改 THE ENJOYE 現有官方帳號的 Webhook。**
 6. 使用驗證：LINE 會 POST 空 `events`；本系統在簽章通過後回 200。
-7. 不要把 Vercel 全站 `x-vercel-protection-bypass` 填進 THE ENJOYE。若 Preview 仍有 Deployment Protection SSO，只把**此測試帳號**的 webhook 指到已解除保護的 Preview 分支網域，或請 Owner 把該 Preview 分支網域加入 Deployment Protection Exceptions。不要關閉 Production 保護。
+7. Webhook 只貼專用 Preview 別名  
+   `https://the-enjoye-line-webhook-preview-pig85083189-6631s-projects.vercel.app`  
+   不要把 `x-vercel-protection-bypass` 填進任何官方帳號。不要改 THE ENJOYE Webhook。不要關閉 Production 或 Staff Preview 保護。
 8. 不要把 Console 管理者 User ID 當收件者。
 9. 不要開啟 `LINE_TEST_PUSH_OPEN` 或 `LINE_BROADCAST_SEND_OPEN`（本 PR 也不會開）。
 
@@ -140,42 +142,37 @@ Webhook **不再使用** `SUPABASE_SERVICE_ROLE_KEY`。
 
 | 環境 | 狀態 |
 |------|------|
-| Preview | READY：`https://the-enjoye-website-6zm7051ka-pig85083189-6631s-projects.vercel.app`（`3421965`，`dpl_5r2yaQ6LXUKHcBp5Ur5iBXKdhRfM`）。別名 `https://the-enjoye-website-git-cursor-98180f-pig85083189-6631s-projects.vercel.app`。已套用 `20261010180000` 到 Preview Supabase `bfzquejrtgqzzarhkiya`。THE ENJOYE 憑證未改。未呼叫 Push / Broadcast。未開啟發送開關。 |
+| Preview | READY：`https://the-enjoye-website-40dw6roe0-pig85083189-6631s-projects.vercel.app`（`8942f53`，`dpl_fhgwomtoh5G461UezFVDNpN4id9B`）。Staff 別名仍受 SSO 保護。Webhook 別名見下方。已套用 `20261010180000`。THE ENJOYE 憑證未改。未呼叫 Push / Broadcast。未開啟發送開關。 |
 | Production | **未變**。仍是 staff-auth release `dpl_DGWw59QtgvjqrZpHyE6WufJV2Skb` / `e3c750d`。Production Supabase `knccefcxncglgpmvgqlp` 沒有 LINE 表。沒有 LINE env。不部署 Production。不合併 main。 |
 
-### Preview Webhook 公開存取：方案比較與 STOP
+### Preview Webhook 公開存取（Owner 已核准 A+B）
 
-Vercel 沒有路徑級 Deployment Protection 例外。未帶登入的 LINE 請求仍會被 SSO 擋下。
+專用別名（git branch `cursor/line-official-account-phase-1-7c7d`，不指 Production）：  
+`https://the-enjoye-line-webhook-preview-pig85083189-6631s-projects.vercel.app`
 
-| 方案 | 公開範圍 | Production | 多租戶 | 結論 |
-|------|----------|------------|--------|------|
-| A. 獨立 Webhook Preview 部署／專案 | 可只放 webhook | 不變 | 適合，但多一套 env／部署 | 過度，且可能新增專案費用 |
-| B. 把現有 Staff Preview 分支網域加入 Exception | 整個 Staff Preview 在 Vercel 層公開 | 不變 | 差：管理頁與 webhook 同網域 | 不採用 |
-| **推薦 A+B：專用 Preview webhook 主機名 + 只對該主機名做 Exception + 應用層 host lock** | 只公開 webhook 主機；該主機上 `/staff` 回 404 | 不變 | 與未來 `hooks.` + `app.` 分離一致 | **採用，等待 Owner 核准** |
+Deployment Protection Exception 只加在這個別名（`alias-protection-override`）。  
+Staff git 分支網域與單一 Preview URL 仍 302 SSO。Production 別名沒有這個網域。
 
-本階段程式已加上 host lock（`BEAUTY_OS_LINE_WEBHOOK_HOST`）。**尚未**新增網域、尚未加入 Exception、尚未寫入 Preview env。依要求先 STOP。
+未登入實測：
 
-Owner 核准後請只做這些（不要動 Production、不要解除 Staff 分支網域保護）：
+| 請求 | 結果 |
+|------|------|
+| GET webhook 別名 `/api/line/webhook/{org}/{token}` | 200 `{ok:true,bound:false}`（未登入） |
+| POST 無簽章 / 偽造簽章 / 空 events / group source / 假 userId | 403 |
+| GET 過短 token 或非 `org-` | 404 |
+| GET webhook 別名 `/`、`/staff`、`/staff/login`、`/staff/settings/line`、`/admin` | 404（Host Lock） |
+| GET Staff Preview 分支網域 | 302 `Protected by Vercel Authentication` |
+| GET 單一 Preview URL | 302 `Protected by Vercel Authentication` |
+| Production `/`、`/staff` | 307 `/staff/login`（原行為） |
+| Production webhook 路徑 | 404（Production 沒有此路由） |
 
-1. 為此 Preview 分支新增**專用別名**，例如  
-   `the-enjoye-line-webhook-preview-pig85083189-6631s-projects.vercel.app`  
-   指向同一個 Preview 部署，**不要**指到 Production。
-2. 只把**這個 webhook 別名**加入 Deployment Protection Exceptions。  
-   不要把 `the-enjoye-website-git-cursor-98180f-pig85083189-6631s-projects.vercel.app` 設成公開。
-3. 只在此 git branch 的 Preview env 設定（非 Production）：  
-   `BEAUTY_OS_LINE_WEBHOOK_HOST=<webhook 別名>`  
-   `BEAUTY_OS_LINE_WEBHOOK_BASE_URL=https://<webhook 別名>`
-4. 不要產生或把 `x-vercel-protection-bypass` 填進任何 LINE 官方帳號。
-5. 不要開啟 `LINE_TEST_PUSH_OPEN` / `LINE_BROADCAST_SEND_OPEN`。
-6. 不要改 THE ENJOYE 憑證或既有 Webhook。
+下一步（仍不發送真實訊息、不開開關）：
 
-核准後驗證：
-
-- 未登入 GET/POST `https://<webhook 別名>/api/line/webhook/{org}/{token}` 不再 302/401。
-- 未登入 GET `https://<webhook 別名>/staff` → 404。
-- Staff 仍走受保護的 git 分支網域並需登入。
-- 無效 token、錯誤簽章、偽造／群組事件被拒絕；跨店 token 對不到 Secret。
-- Production 部署與保護不變。
+1. 建立**專用測試官方帳號**。不要改 THE ENJOYE Webhook 或憑證。
+2. 在 Preview **另一間測試店家**加密保存測試帳號憑證。
+3. 從 Settings 複製 Webhook URL（會是專用 webhook 別名），只貼到測試帳號。
+4. 產生驗證碼，用自己的 LINE 傳給測試帳號完成綁定。
+5. `LINE_TEST_PUSH_OPEN` 與 `LINE_BROADCAST_SEND_OPEN` 保持 false，直到另一次明確授權。
 
 ### 首次真實 Push 驗收（尚未授權，本階段不做）
 
