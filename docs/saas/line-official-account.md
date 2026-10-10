@@ -104,8 +104,8 @@ Phase 1B 新增：
 
 | 環境 | 狀態 |
 |------|------|
-| Preview | 只在此分支部署與套用 `20261010140000`。不打真實 Broadcast。 |
-| Production | **未變**。Production Supabase `knccefcxncglgpmvgqlp` 沒有 LINE 表。沒有 LINE env。不部署 Production。不合併 main。 |
+| Preview | Ready：`https://the-enjoye-website-7xns5ggxd-pig85083189-6631s-projects.vercel.app`（`8e07746`，`dpl_8ub6oFjh5SYTQXDc3PW43pPGgfGv`）。別名 `https://the-enjoye-website-git-cursor-98180f-pig85083189-6631s-projects.vercel.app`。已套用 `20261010140000` 到 Preview Supabase `bfzquejrtgqzzarhkiya`。未呼叫 Broadcast。 |
+| Production | **未變**。仍是 staff-auth release `dpl_DGWw59QtgvjqrZpHyE6WufJV2Skb` / `e3c750d`。Production Supabase `knccefcxncglgpmvgqlp` 沒有 LINE 表。沒有 LINE env。不部署 Production。不合併 main。 |
 
 ### 後續首次真實發送驗收（尚未授權，不要在本 PR 做）
 
