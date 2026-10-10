@@ -140,8 +140,23 @@ Webhook **不再使用** `SUPABASE_SERVICE_ROLE_KEY`。
 
 | 環境 | 狀態 |
 |------|------|
-| Preview | 本階段部署後更新。已套用 `20261010180000` 到 Preview Supabase `bfzquejrtgqzzarhkiya`。未呼叫 Push / Broadcast。未開啟發送開關。 |
+| Preview | READY：`https://the-enjoye-website-6zm7051ka-pig85083189-6631s-projects.vercel.app`（`3421965`，`dpl_5r2yaQ6LXUKHcBp5Ur5iBXKdhRfM`）。別名 `https://the-enjoye-website-git-cursor-98180f-pig85083189-6631s-projects.vercel.app`。已套用 `20261010180000` 到 Preview Supabase `bfzquejrtgqzzarhkiya`。THE ENJOYE 憑證未改。未呼叫 Push / Broadcast。未開啟發送開關。 |
 | Production | **未變**。仍是 staff-auth release `dpl_DGWw59QtgvjqrZpHyE6WufJV2Skb` / `e3c750d`。Production Supabase `knccefcxncglgpmvgqlp` 沒有 LINE 表。沒有 LINE env。不部署 Production。不合併 main。 |
+
+### STOP：LINE 還不能公開打到 Preview Webhook
+
+未帶 Vercel 登入的 GET/POST 會被 **Vercel Authentication** 擋下（GET 302 `vercel.com/sso-api`，POST 401）。  
+Next `proxy.ts` 不會擋 `/api/line/webhook`；阻擋發生在 Vercel Deployment Protection。  
+Vercel 沒有路徑級例外。本階段**沒有**：
+
+- 關閉專案全域 Deployment Protection
+- 把 `x-vercel-protection-bypass` 填進任何 LINE 官方帳號（含 THE ENJOYE）
+- 開啟發送開關
+- 覆蓋 THE ENJOYE 憑證或改其 Webhook
+
+要讓 LINE 驗證請求進得來，Owner 只需把 Preview 分支網域  
+`the-enjoye-website-git-cursor-98180f-pig85083189-6631s-projects.vercel.app`  
+加入 **Deployment Protection Exceptions**。這會讓該 Preview 網域公開，但 `/staff` 仍要員工登入。不要動 Production。
 
 ### 首次真實 Push 驗收（尚未授權，本階段不做）
 
