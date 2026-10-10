@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { OWNER_READ_LINE_WEBHOOK_TOKEN_CIPHER_RPC } from "@/lib/line/line-command";
 import { decryptLineCredential } from "@/lib/line/line-crypto";
 import { lineWebhookPublicUrl } from "@/lib/line/line-webhook-url";
+import { isLineHttpErrorClass } from "@/lib/line/line-http-error";
 import type {
   LineBroadcastPublic,
   LineBroadcastStatus,
@@ -40,6 +41,11 @@ function asBroadcast(row: Record<string, unknown>): LineBroadcastPublic {
     lineRequestId: (row.line_request_id as string | null) ?? null,
     apiResult: (row.api_result as LineBroadcastPublic["apiResult"]) ?? null,
     errorMessage: (row.error_message as string | null) ?? null,
+    httpStatus: typeof row.http_status === "number" ? row.http_status : null,
+    errorClass:
+      typeof row.error_class === "string" && isLineHttpErrorClass(row.error_class)
+        ? row.error_class
+        : null,
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
     confirmedAt: (row.confirmed_at as string | null) ?? null,
@@ -134,7 +140,7 @@ export async function loadLineTestSends(
   const { data, error } = await supabase
     .from("line_test_sends")
     .select(
-      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,created_at,updated_at,confirmed_at",
+      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,http_status,error_class,created_at,updated_at,confirmed_at",
     )
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
@@ -151,7 +157,7 @@ export async function loadLineTestSendByRequestId(
   const { data, error } = await supabase
     .from("line_test_sends")
     .select(
-      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,created_at,updated_at,confirmed_at",
+      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,http_status,error_class,created_at,updated_at,confirmed_at",
     )
     .eq("organization_id", organizationId)
     .eq("request_id", requestId)

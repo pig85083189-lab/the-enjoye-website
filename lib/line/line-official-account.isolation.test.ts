@@ -18,6 +18,7 @@ import {
   LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE,
   LINE_OWNER_TEST_PUSH_MIGRATION_FILE,
   LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE,
+  LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE,
   LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE,
 } from "@/lib/persistence/schema-contract";
 import { STAFF_LINE_ROLES, resolveStaffRolePageAccess } from "@/lib/staff/staff-role-page-access";
@@ -70,6 +71,10 @@ import {
   evaluateLineWebhookHostAccess,
 } from "@/lib/line/line-webhook-host";
 import { lineWebhookPublicPath, lineWebhookPublicUrl } from "@/lib/line/line-webhook-url";
+import {
+  classifyLineHttpError,
+  interpretLineTestPushApiOutcome,
+} from "@/lib/line/line-http-error";
 import { executeLineTestPushHttp } from "@/lib/line/line-push-adapter";
 import { processLineWebhookBind } from "@/lib/line/line-webhook";
 import {
@@ -121,6 +126,8 @@ import {
 import {
   canShowLineSettings,
   lineBroadcastApiResultLabel,
+  lineTestPushDiagnosticLabel,
+  lineTestPushDisplayedError,
 } from "@/lib/line/line-visibility";
 import type { LineBroadcastPublic, LineOfficialAccountPublic } from "@/lib/line/line-types";
 
@@ -1007,6 +1014,111 @@ describe("LINE Phase 1C owner bind and test push", () => {
     expect(opened).toMatchObject({ httpOk: true, lineRequestId: "push-1" });
     expect(fetched).toBe(1);
   });
+
+  it("classifies mock Push HTTP errors without reading LINE bodies or saying 廣播", async () => {
+    const cases = [
+      { status: 400, errorClass: "invalid_request" as const },
+      { status: 401, errorClass: "unauthorized" as const },
+      { status: 403, errorClass: "forbidden" as const },
+      { status: 429, errorClass: "quota_exceeded" as const },
+      { status: 500, errorClass: "unknown" as const },
+      { status: 503, errorClass: "unknown" as const },
+    ];
+    for (const item of cases) {
+      expect(classifyLineHttpError({ httpStatus: item.status })).toBe(item.errorClass);
+      const http = await executeLineTestPushHttp({
+        accessToken: "mock-token",
+        lineUserId: "U" + "a".repeat(32),
+        textBody: "hello",
+        requestId: "ltsq-req00000000001",
+        testPushOpen: true,
+        fetchImpl: async () =>
+          new Response(`SECRET_BODY token=xxx user=Usecret`, {
+            status: item.status,
+            headers: { "x-line-request-id": `line-${item.status}` },
+          }),
+      });
+      expect(http).toEqual({
+        timedOut: false,
+        httpOk: false,
+        lineRequestId: `line-${item.status}`,
+        httpStatus: item.status,
+      });
+      expect(JSON.stringify(http)).not.toMatch(/SECRET_BODY|token=xxx|Usecret/);
+      const outcome = interpretLineTestPushApiOutcome(http);
+      expect(outcome).toMatchObject({
+        apiResult: "failed",
+        status: "failed",
+        errorClass: item.errorClass,
+      });
+      expect(outcome.message).not.toMatch(/廣播/);
+      expect(lineTestPushDisplayedError(outcome.message)).not.toMatch(/廣播/);
+    }
+
+    const timedOut = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId: "U" + "a".repeat(32),
+      textBody: "hello",
+      requestId: "ltsq-req00000000001",
+      testPushOpen: true,
+      fetchImpl: async () => {
+        const error = new Error("The operation was aborted");
+        error.name = "AbortError";
+        throw error;
+      },
+    });
+    expect(timedOut).toEqual({
+      timedOut: true,
+      httpOk: false,
+      lineRequestId: null,
+      httpStatus: null,
+    });
+    expect(interpretLineTestPushApiOutcome(timedOut)).toMatchObject({
+      apiResult: "pending_confirmation",
+      status: "pending_confirmation",
+      errorClass: "timeout",
+    });
+    expect(interpretLineTestPushApiOutcome(timedOut).message).not.toMatch(/廣播/);
+    expect(lineTestPushDisplayedError("LINE API 拒絕這則廣播")).toBe(
+      "LINE API 拒絕這則測試發送",
+    );
+    expect(lineTestPushDiagnosticLabel({ httpStatus: 401, errorClass: "unauthorized" })).toBe(
+      "HTTP 401 · unauthorized",
+    );
+  });
+
+  it("records Push diagnostics through the claim pipeline without retrying", async () => {
+    const completed: Array<{
+      httpStatus: number | null;
+      errorClass?: string | null;
+      message: string;
+    }> = [];
+    const failed = await runClaimedLineBroadcastSend({
+      interpret: interpretLineTestPushApiOutcome,
+      claim: async () => ({ ok: true, broadcastId: "lts-1", requestId: "ltsq-1" }),
+      send: async () => ({
+        timedOut: false,
+        httpOk: false,
+        lineRequestId: "line-401",
+        httpStatus: 401,
+      }),
+      complete: async (outcome) => {
+        completed.push(outcome);
+      },
+    });
+    expect(failed).toMatchObject({ ok: false, reason: "error" });
+    expect(completed).toEqual([
+      {
+        apiResult: "failed",
+        status: "failed",
+        message: "LINE API 拒絕這則測試發送（未授權）",
+        lineRequestId: "line-401",
+        httpStatus: 401,
+        errorClass: "unauthorized",
+      },
+    ]);
+    expect(completed[0]?.message).not.toMatch(/廣播/);
+  });
 });
 
 describe("LINE Phase 1D webhook least privilege", () => {
@@ -1512,6 +1624,34 @@ describe("LINE source contracts", () => {
     expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(/v_consumed_today >= 3/);
     expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).not.toMatch(
       /grant execute on function public\.claim_line_test_send[^;]+anon/,
+    );
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).toMatch(/http_status/);
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).toMatch(/error_class/);
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).toMatch(
+      /unauthorized[\s\S]*forbidden[\s\S]*invalid_request[\s\S]*quota_exceeded[\s\S]*timeout[\s\S]*unknown/,
+    );
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).toMatch(
+      /complete_line_test_send/,
+    );
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).not.toMatch(
+      /claim_line_test_send/,
+    );
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).toMatch(/status = 'sending'/);
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).not.toMatch(
+      /ltsq-[0-9a-f]{16}/,
+    );
+    expect(
+      source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE).replace(/^--.*$/gm, ""),
+    ).not.toMatch(/channel_secret|access_token|line_user_id|response_body/i);
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).not.toMatch(
+      /update public\.line_test_sends[\s\S]*http_status = \d+/,
+    );
+    expect(source("lib/line/line-push-adapter.ts")).not.toMatch(/response\.(text|json|blob)\(/);
+    expect(source("lib/line/actions.ts")).toMatch(/interpretLineTestPushApiOutcome/);
+    expect(source("lib/line/actions.ts")).toMatch(/p_http_status/);
+    expect(source("lib/line/actions.ts")).toMatch(/p_error_class/);
+    expect(source("features/line/LineBroadcastCenter.tsx")).toMatch(
+      /lineTestSendHistoryMeta|lineTestPushDisplayedError/,
     );
     expect(source("lib/line/line-flag.ts")).toMatch(/LINE_TEST_PUSH_OPEN = false/);
     expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);

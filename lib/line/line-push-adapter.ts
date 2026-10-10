@@ -1,6 +1,7 @@
 /**
  * Server-only LINE Push adapter for Owner self-test.
  * Independent of Broadcast. Defaults closed. Timeout must not retry.
+ * Keep only status and LINE request id. Never consume the response body.
  */
 
 import { LINE_API_ORIGIN, LINE_PUSH_PATH } from "@/lib/line/line-command";

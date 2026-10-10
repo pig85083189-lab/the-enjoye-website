@@ -298,12 +298,18 @@ export function interpretLineBroadcastApiOutcome(input: {
   timedOut: boolean;
   httpOk: boolean;
   lineRequestId?: string | null;
-}): { apiResult: LineApiResult; status: LineBroadcastStatus; message: string } {
+}): {
+  apiResult: LineApiResult;
+  status: LineBroadcastStatus;
+  message: string;
+  errorClass: null;
+} {
   if (input.timedOut) {
     return {
       apiResult: "pending_confirmation",
       status: "pending_confirmation",
       message: "LINE API 逾時，系統已標記待確認，不會自動重送",
+      errorClass: null,
     };
   }
   if (input.httpOk) {
@@ -311,12 +317,14 @@ export function interpretLineBroadcastApiOutcome(input: {
       apiResult: "accepted",
       status: "accepted",
       message: "LINE API 已接受。不代表每位好友都已收到。",
+      errorClass: null,
     };
   }
   return {
     apiResult: "failed",
     status: "failed",
     message: "LINE API 拒絕這則廣播",
+    errorClass: null,
   };
 }
 

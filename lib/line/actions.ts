@@ -54,6 +54,7 @@ import {
 } from "@/lib/line/line-flag";
 import { fetchLineMessageQuota } from "@/lib/line/line-quota-adapter";
 import { isLineOfficialAccountConnected, unknownLineQuota } from "@/lib/line/line-quota";
+import { interpretLineTestPushApiOutcome } from "@/lib/line/line-http-error";
 import { executeLineTestPushHttp } from "@/lib/line/line-push-adapter";
 import { executeLineBroadcastHttp } from "@/lib/line/line-send-adapter";
 import { runClaimedLineBroadcastSend } from "@/lib/line/line-send-pipeline";
@@ -900,6 +901,7 @@ export async function sendLineTestPushAction(input: {
 
     const supabase = await createClient();
     const pipeline = await runClaimedLineBroadcastSend({
+      interpret: interpretLineTestPushApiOutcome,
       claim: async () => {
         const claimed = await supabase.rpc(CLAIM_LINE_TEST_SEND_RPC, {
           p_organization_id: organizationId,
@@ -973,6 +975,8 @@ export async function sendLineTestPushAction(input: {
           p_api_result: apiResult,
           p_line_request_id: outcome.lineRequestId,
           p_error_message: outcome.message,
+          p_http_status: outcome.httpStatus,
+          p_error_class: outcome.errorClass ?? null,
         });
       },
     });

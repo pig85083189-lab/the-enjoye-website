@@ -5,11 +5,23 @@
 
 import { interpretLineBroadcastApiOutcome } from "@/lib/line/line-command";
 import type { LineBroadcastHttpResult } from "@/lib/line/line-send-adapter";
-import type { LineApiResult, LineBroadcastStatus, LineDecisionReason } from "@/lib/line/line-types";
+import type {
+  LineApiResult,
+  LineBroadcastStatus,
+  LineDecisionReason,
+  LineHttpErrorClass,
+} from "@/lib/line/line-types";
 
 export type LineSendClaimResult =
   | { ok: true; broadcastId: string; requestId: string }
   | { ok: false; reason: LineDecisionReason; message: string };
+
+export type LineApiInterpretResult = {
+  apiResult: LineApiResult;
+  status: LineBroadcastStatus;
+  message: string;
+  errorClass?: LineHttpErrorClass | null;
+};
 
 export type LineSendCompleteInput = {
   apiResult: LineApiResult;
@@ -17,6 +29,7 @@ export type LineSendCompleteInput = {
   message: string;
   lineRequestId: string | null;
   httpStatus: number | null;
+  errorClass?: LineHttpErrorClass | null;
 };
 
 export type LineClaimedSendResult =
@@ -27,6 +40,7 @@ export async function runClaimedLineBroadcastSend(input: {
   claim: () => Promise<LineSendClaimResult>;
   send: () => Promise<LineBroadcastHttpResult>;
   complete: (outcome: LineSendCompleteInput) => Promise<void>;
+  interpret?: (http: LineBroadcastHttpResult) => LineApiInterpretResult;
 }): Promise<LineClaimedSendResult> {
   const claimed = await input.claim();
   if (!claimed.ok) return claimed;
@@ -43,11 +57,15 @@ export async function runClaimedLineBroadcastSend(input: {
     };
   }
 
-  const outcome = interpretLineBroadcastApiOutcome(http);
+  const interpret = input.interpret ?? interpretLineBroadcastApiOutcome;
+  const outcome: LineApiInterpretResult = interpret(http);
   await input.complete({
-    ...outcome,
+    apiResult: outcome.apiResult,
+    status: outcome.status,
+    message: outcome.message,
     lineRequestId: http.lineRequestId,
     httpStatus: http.httpStatus,
+    errorClass: outcome.errorClass ?? null,
   });
 
   if (outcome.apiResult === "accepted") {

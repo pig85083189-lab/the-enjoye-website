@@ -91,6 +91,10 @@ export const LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE =
 export const LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE =
   "supabase/migrations/20261010190000_line_test_push_claim_daily_quota.sql";
 
+/** LINE test-push HTTP status / error-class diagnostics. Additive. Does not rewrite 190000. */
+export const LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE =
+  "supabase/migrations/20261010200000_line_test_push_error_diagnostics.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",

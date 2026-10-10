@@ -17,6 +17,14 @@ export type LineApiResult =
   | "pending_confirmation"
   | "send_closed";
 
+export type LineHttpErrorClass =
+  | "unauthorized"
+  | "forbidden"
+  | "invalid_request"
+  | "quota_exceeded"
+  | "timeout"
+  | "unknown";
+
 export type LineOfficialAccountPublic = {
   organizationId: string;
   channelId: string | null;
@@ -60,6 +68,8 @@ export type LineBroadcastPublic = {
   lineRequestId: string | null;
   apiResult: LineApiResult | null;
   errorMessage: string | null;
+  httpStatus?: number | null;
+  errorClass?: LineHttpErrorClass | null;
   createdAt: string;
   updatedAt: string;
   confirmedAt: string | null;

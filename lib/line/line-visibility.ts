@@ -40,6 +40,23 @@ export function lineBroadcastApiResultLabel(result: string | null): string {
   return "尚未發送";
 }
 
+export function lineTestPushDisplayedError(message: string | null | undefined): string | null {
+  const text = message?.trim() ?? "";
+  if (!text) return null;
+  if (text.includes("廣播")) return "LINE API 拒絕這則測試發送";
+  return text;
+}
+
+export function lineTestPushDiagnosticLabel(row: {
+  httpStatus?: number | null;
+  errorClass?: string | null;
+}): string | null {
+  const parts: string[] = [];
+  if (typeof row.httpStatus === "number") parts.push(`HTTP ${row.httpStatus}`);
+  if (row.errorClass) parts.push(row.errorClass);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 export function lineOfficialAccountNameLabel(
   account: { botDisplayName?: string | null } | null | undefined,
 ): string {

@@ -20,6 +20,8 @@ import {
   lineBroadcastStatusLabel,
   lineOfficialAccountNameLabel,
   lineOwnerRecipientLabel,
+  lineTestPushDiagnosticLabel,
+  lineTestPushDisplayedError,
 } from "@/lib/line/line-visibility";
 import type {
   LineBroadcastPublic,
@@ -29,6 +31,14 @@ import type {
   LineTestSendPublic,
 } from "@/lib/line/line-types";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
+
+function lineTestSendHistoryMeta(row: LineTestSendPublic): string {
+  const shownError = lineTestPushDisplayedError(row.errorMessage);
+  const diagnostic = lineTestPushDiagnosticLabel(row);
+  return `${lineBroadcastApiResultLabel(row.apiResult)} · ${row.requestId}${
+    shownError ? ` · ${shownError}` : ""
+  }${diagnostic ? ` · ${diagnostic}` : ""}`;
+}
 
 export function LineBroadcastCenter({
   connectionPilotEnabled,
@@ -380,7 +390,7 @@ export function LineBroadcastCenter({
                   {row.textBody}
                 </p>
                 <p className="mt-1 text-[12px] text-secondary-text">
-                  {lineBroadcastApiResultLabel(row.apiResult)} · {row.requestId}
+                  {lineTestSendHistoryMeta(row)}
                 </p>
               </li>
             ))}
