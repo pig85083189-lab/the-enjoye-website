@@ -687,6 +687,45 @@ $$;
 comment on function public.read_line_official_account_secrets(text) is
   'Server/service_role only. Never grant to authenticated. Returns ciphertext, never plaintext.';
 
+create or replace function public.owner_read_line_access_token_cipher(
+  p_organization_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_cipher text;
+  v_key_id text;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated' using errcode = '42501';
+  end if;
+  if not public.user_is_org_owner(p_organization_id) then
+    raise exception 'unauthorized' using errcode = '42501';
+  end if;
+
+  select s.channel_access_token_cipher, s.key_id
+    into v_cipher, v_key_id
+  from public.line_official_account_secrets s
+  where s.organization_id = p_organization_id;
+
+  if v_cipher is null then
+    return jsonb_build_object('configured', false);
+  end if;
+
+  return jsonb_build_object(
+    'configured', true,
+    'channel_access_token_cipher', v_cipher,
+    'key_id', v_key_id
+  );
+end;
+$$;
+
+comment on function public.owner_read_line_access_token_cipher(text) is
+  'Owner-only ciphertext for connection test. Never returns plaintext or Channel Secret.';
+
 revoke all on function public.upsert_line_official_account_connection(text, text, text, text, text, text)
   from public, anon;
 grant execute on function public.upsert_line_official_account_connection(text, text, text, text, text, text)
@@ -707,3 +746,7 @@ grant execute on function public.mark_line_broadcast_send_closed(text, text, tex
   to authenticated;
 revoke all on function public.read_line_official_account_secrets(text)
   from public, anon, authenticated;
+revoke all on function public.owner_read_line_access_token_cipher(text)
+  from public, anon;
+grant execute on function public.owner_read_line_access_token_cipher(text)
+  to authenticated;

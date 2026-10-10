@@ -380,6 +380,8 @@ describe("LINE source contracts", () => {
     expect(migration).not.toMatch(
       new RegExp(`grant execute on function public\\.${READ_LINE_SECRETS_RPC}`),
     );
+    expect(migration).toMatch(/owner_read_line_access_token_cipher/);
+    expect(migration).toMatch(/grant execute on function public\.owner_read_line_access_token_cipher/);
     expect(migration).not.toMatch(/friend_count|follower_count|segment_id|audience_id/);
     expect(migration).not.toMatch(/create table if not exists public\.organizations/);
     expect(migration).toMatch(/line_broadcasts_one_request_per_org/);
@@ -396,7 +398,8 @@ describe("LINE source contracts", () => {
     expect(send).toMatch(/X-Line-Retry-Key/);
     expect(actions).not.toMatch(/executeLineBroadcastHttp/);
     expect(actions).toMatch(/LINE_BROADCAST_SEND_CLOSED_RPC|mark_line_broadcast_send_closed/);
-    expect(actions).toMatch(/from\("line_official_account_secrets"\)/);
+    expect(actions).not.toMatch(/createServiceRoleClient/);
+    expect(actions).toMatch(/OWNER_READ_LINE_TOKEN_CIPHER_RPC|owner_read_line_access_token_cipher/);
     expect(actions).toMatch(/channel_access_token_cipher/);
     expect(actions).not.toMatch(/console\.(log|info|debug|error|warn)\(/);
     expect(source("lib/line/line-connection-adapter.ts")).not.toMatch(/console\.(log|info|debug)/);

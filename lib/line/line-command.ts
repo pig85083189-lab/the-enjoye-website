@@ -22,6 +22,7 @@ export const RECORD_LINE_CONNECTION_TEST_RPC = "record_line_connection_test";
 export const UPSERT_LINE_BROADCAST_DRAFT_RPC = "upsert_line_broadcast_draft";
 export const MARK_LINE_BROADCAST_SEND_CLOSED_RPC = "mark_line_broadcast_send_closed";
 export const READ_LINE_SECRETS_RPC = "read_line_official_account_secrets";
+export const OWNER_READ_LINE_TOKEN_CIPHER_RPC = "owner_read_line_access_token_cipher";
 
 export const LINE_BOT_INFO_PATH = "/v2/bot/info";
 export const LINE_BROADCAST_PATH = "/v2/bot/message/broadcast";

@@ -61,7 +61,7 @@ RLS：`user_is_org_owner(organization_id)` = active Owner membership **且** `us
 1. Owner 在設定頁輸入 Channel ID / Secret / Access Token。
 2. Server Action 先決策，再以 `BEAUTY_OS_LINE_CREDENTIAL_KEY`（32-byte base64）加密。
 3. RPC 只寫入密文與 hint。一般 SELECT 看不到 Secret / Token。
-4. 「測試連線」用 service_role 讀密文、伺服器解密，呼叫 `GET /v2/bot/info`。
+4. 「測試連線」由 Owner RPC 讀取 Access Token 密文（不回傳 Secret），伺服器解密後呼叫 `GET /v2/bot/info`。
 5. 連線測試**不會**呼叫 Broadcast，也**不會**對好友寄送訊息。
 
 Pilot：`BEAUTY_OS_LINE_CONNECTION_PILOT=1` 且已設定 Supabase URL / publishable key。未設則整個 UI fail-closed。

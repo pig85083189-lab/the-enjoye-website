@@ -3,6 +3,7 @@
 import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import {
   MARK_LINE_BROADCAST_SEND_CLOSED_RPC,
+  OWNER_READ_LINE_TOKEN_CIPHER_RPC,
   RECORD_LINE_CONNECTION_TEST_RPC,
   SET_LINE_BROADCAST_ENABLED_RPC,
   UPSERT_LINE_BROADCAST_DRAFT_RPC,
@@ -38,7 +39,6 @@ import type {
   LineDecisionReason,
   LineOfficialAccountPublic,
 } from "@/lib/line/line-types";
-import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export type LineActionResult<T = undefined> =
@@ -173,17 +173,16 @@ export async function testLineOfficialAccountAction(input: {
   });
   if (!decision.ok) return decision;
 
-  const admin = createServiceRoleClient();
-  if (!admin) {
-    return { ok: false, reason: "not_configured", message: "LINE 憑證讀取尚未設定" };
-  }
-  const secrets = await admin
-    .from("line_official_account_secrets")
-    .select("channel_access_token_cipher")
-    .eq("organization_id", input.organizationId)
-    .maybeSingle();
-  const cipher = secrets.data?.channel_access_token_cipher;
-  if (!cipher || typeof cipher !== "string") {
+  const supabase = await createClient();
+  const secrets = await supabase.rpc(OWNER_READ_LINE_TOKEN_CIPHER_RPC, {
+    p_organization_id: input.organizationId,
+  });
+  const payload = secrets.data && typeof secrets.data === "object" ? secrets.data : null;
+  const cipher =
+    payload && "channel_access_token_cipher" in payload
+      ? String((payload as { channel_access_token_cipher?: unknown }).channel_access_token_cipher ?? "")
+      : "";
+  if (secrets.error || !cipher.startsWith("v1.")) {
     return { ok: false, reason: "not_configured", message: "找不到已保存的 LINE 憑證" };
   }
   const token = decryptLineCredential(cipher, env);
@@ -192,7 +191,6 @@ export async function testLineOfficialAccountAction(input: {
   }
 
   const probed = await fetchLineBotInfo(token.plaintext);
-  const supabase = await createClient();
   await supabase.rpc(RECORD_LINE_CONNECTION_TEST_RPC, {
     p_organization_id: input.organizationId,
     p_status: probed.ok ? "ok" : "failed",
