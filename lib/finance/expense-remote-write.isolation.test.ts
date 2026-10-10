@@ -255,7 +255,10 @@ describe("expense remote write", () => {
         createInput({ organizationId: "org-lumiere", appId: "exp-mtest06-ddd444" }),
         WRITE_ON,
       ),
-    ).rejects.toBeInstanceOf(UnmappedIdentityError);
+    ).rejects.toMatchObject({
+      name: "IdentityCatalogError",
+      reason: "missing_membership",
+    });
     await expect(
       runAuthenticatedExpenseCreate(
         fakeClient({ userId: AUTH_OWNER, tables: validTables({ locations: [] }) }),

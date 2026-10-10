@@ -168,6 +168,65 @@ describe("Phase 1B authenticated IdentityCatalog", () => {
     ).rejects.toMatchObject({ name: "IdentityCatalogError", reason: "ambiguous_membership" });
   });
 
+  it("resolves one Auth user across organizations only when organizationAppId is given", async () => {
+    const TEST_ORG_APP = "org-beauty-os-test";
+    const TEST_ORG_UUID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const TEST_LOC_UUID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    const tables = validTables({
+      staff_auth_memberships: [
+        {
+          id: "mem-enjoye-owner",
+          user_id: STAFF_APP,
+          auth_user_id: AUTH_UUID,
+          organization_id: ORG_APP,
+          role: "OWNER",
+          is_active: true,
+        },
+        {
+          id: "mem-beauty-os-test-owner",
+          user_id: STAFF_APP,
+          auth_user_id: AUTH_UUID,
+          organization_id: TEST_ORG_APP,
+          role: "OWNER",
+          is_active: true,
+        },
+      ],
+      organizations: [
+        { id: ORG_UUID, app_id: ORG_APP },
+        { id: TEST_ORG_UUID, app_id: TEST_ORG_APP },
+      ],
+      locations: [
+        { id: LOC_UUID, app_id: LOC_APP, organization_id: ORG_UUID },
+        {
+          id: TEST_LOC_UUID,
+          app_id: "loc-beauty-os-test-main",
+          organization_id: TEST_ORG_UUID,
+        },
+      ],
+      customers: [
+        { id: "cust-enjoye", app_id: "cust-enjoye-1", organization_id: ORG_UUID },
+        { id: "cust-test", app_id: "cust-test-1", organization_id: TEST_ORG_UUID },
+      ],
+    });
+    const client = fakeClient({ userId: AUTH_UUID, tables });
+    await expect(loadAuthenticatedIdentityCatalog(client)).rejects.toMatchObject({
+      name: "IdentityCatalogError",
+      reason: "ambiguous_membership",
+    });
+    const enjoye = await loadAuthenticatedIdentityCatalog(client, ORG_APP);
+    expect(enjoye.organizationAppId).toBe(ORG_APP);
+    expect(enjoye.organizationDbId).toBe(ORG_UUID);
+    expect(enjoye.operationalStaffId).toBe(STAFF_APP);
+    expect(enjoye.mapper.resolveLocationDbId(ORG_APP, LOC_APP)).toBe(LOC_UUID);
+    expect(enjoye.catalog.findCustomerByAppId(ORG_UUID, "cust-enjoye-1")?.dbId).toBe("cust-enjoye");
+    expect(enjoye.catalog.findCustomerByAppId(TEST_ORG_UUID, "cust-test-1")).toBeUndefined();
+    const testOrg = await loadAuthenticatedIdentityCatalog(client, TEST_ORG_APP);
+    expect(testOrg.organizationAppId).toBe(TEST_ORG_APP);
+    expect(testOrg.organizationDbId).toBe(TEST_ORG_UUID);
+    expect(testOrg.catalog.findCustomerByAppId(TEST_ORG_UUID, "cust-test-1")?.dbId).toBe("cust-test");
+    expect(testOrg.catalog.findCustomerByAppId(ORG_UUID, "cust-enjoye-1")).toBeUndefined();
+  });
+
   it("fails closed when organization mapping is ambiguous", async () => {
     await expect(
       loadAuthenticatedIdentityCatalog(

@@ -168,10 +168,10 @@ Staff git 分支網域與單一 Preview URL 仍 302 SSO。Production 別名沒�
 
 下一步（仍不發送真實訊息、不開開關）：
 
-1. 建立**專用測試官方帳號**。不要改 THE ENJOYE Webhook 或憑證。
-2. 在 Preview **另一間測試店家**加密保存測試帳號憑證。
-3. 從 Settings 複製 Webhook URL（會是專用 webhook 別名），只貼到測試帳號。
-4. 產生驗證碼，用自己的 LINE 傳給測試帳號完成綁定。
+1. Preview 已建立獨立店家 `org-beauty-os-test`（Beauty OS TEST）。Owner 可在 Staff Preview 切換。
+2. 不要改 THE ENJOYE Webhook 或憑證。不要覆蓋 THE ENJOYE 的加密保存。
+3. 切到 Beauty OS TEST 後，由 Owner **自己在畫面輸入** `ai` 的 Channel 憑證。
+4. 從 Settings 複製 Webhook URL（會是專用 webhook 別名）。暫時不要改 `ai` Webhook，等另一次授權。
 5. `LINE_TEST_PUSH_OPEN` 與 `LINE_BROADCAST_SEND_OPEN` 保持 false，直到另一次明確授權。
 
 ### 首次真實 Push 驗收（尚未授權，本階段不做）

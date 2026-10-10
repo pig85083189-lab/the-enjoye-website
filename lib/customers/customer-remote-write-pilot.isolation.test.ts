@@ -310,7 +310,10 @@ describe("Customer remote write create", () => {
         },
         WRITE_ON,
       ),
-    ).rejects.toBeInstanceOf(UnmappedIdentityError);
+    ).rejects.toMatchObject({
+      name: "IdentityCatalogError",
+      reason: "missing_membership",
+    });
     const tables = validTables({
       customers: [
         qaCustomerRow(),

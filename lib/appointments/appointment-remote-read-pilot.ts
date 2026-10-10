@@ -34,8 +34,9 @@ export {
 
 export async function createAuthenticatedAppointmentReadPersistence(
   client: IdentitySupabaseClient,
+  organizationAppId?: string | null,
 ) {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   return {
     identity,
     appointments: new AppointmentRemoteAdapter(
@@ -50,7 +51,10 @@ export async function listRemotePilotAppointmentsByCustomer(
   customerId: string,
   client: IdentitySupabaseClient,
 ): Promise<ScheduleAppointment[]> {
-  const persistence = await createAuthenticatedAppointmentReadPersistence(client);
+  const persistence = await createAuthenticatedAppointmentReadPersistence(
+    client,
+    organizationId,
+  );
   return persistence.appointments.listByCustomerId(organizationId, customerId);
 }
 
@@ -59,6 +63,9 @@ export async function getRemotePilotAppointment(
   appointmentId: string,
   client: IdentitySupabaseClient,
 ): Promise<ScheduleAppointment | undefined> {
-  const persistence = await createAuthenticatedAppointmentReadPersistence(client);
+  const persistence = await createAuthenticatedAppointmentReadPersistence(
+    client,
+    organizationId,
+  );
   return persistence.appointments.get(organizationId, appointmentId);
 }

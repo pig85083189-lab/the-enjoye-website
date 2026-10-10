@@ -67,8 +67,9 @@ function assertOrganizationBoundary(
 
 export async function createAuthenticatedCustomerWritePersistence(
   client: CustomerWriteClient,
+  organizationAppId?: string | null,
 ): Promise<AuthenticatedCustomerWritePersistence> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   return {
     identity,
     customers: new CustomerRemoteAdapter(
@@ -87,7 +88,10 @@ export async function runAuthenticatedCustomerWriteCreate(
   if (!isCustomerRemoteWritePilotEnabled(env)) {
     throw new CustomerWritePilotOffError();
   }
-  const persistence = await createAuthenticatedCustomerWritePersistence(client);
+  const persistence = await createAuthenticatedCustomerWritePersistence(
+    client,
+    input.organizationId,
+  );
   assertOrganizationBoundary(persistence.identity, input.organizationId);
   // Customer is organization-owned. UI seed locations (including loc-enjoye-gongyi)
   // must not be required or written. locationId is ignored when present.

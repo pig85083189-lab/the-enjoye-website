@@ -76,8 +76,9 @@ export interface AuthenticatedAppointmentMutatePersistence {
 
 export async function createAuthenticatedAppointmentMutatePersistence(
   client: AppointmentMutateClient,
+  organizationAppId?: string | null,
 ): Promise<AuthenticatedAppointmentMutatePersistence> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   const snapshots = await loadAppointmentWriteSnapshots(client, identity);
   const appointments = new AppointmentRemoteAdapter(
     identity.mapper,
@@ -110,7 +111,10 @@ export async function runAuthenticatedAppointmentWriteMutate(
   if (!isAppointmentRemoteMutatePilotEnabled(env)) {
     throw new Error("Appointment remote mutate pilot is off");
   }
-  const persistence = await createAuthenticatedAppointmentMutatePersistence(client);
+  const persistence = await createAuthenticatedAppointmentMutatePersistence(
+    client,
+    input.organizationId,
+  );
   const staff = persistence.identity.catalog.findStaffByAppId(
     persistence.identity.organizationDbId,
     persistence.identity.operationalStaffId,
