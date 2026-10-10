@@ -24,6 +24,9 @@ import {
 } from "@/lib/staff/staff-workspace-derived";
 import type { StaffBreak, StaffTimeOff, StaffWorkingHours } from "@/lib/staff-schedule/domain";
 import type { Location, StaffRole } from "@/types/saas";
+import { StaffInvitePanel } from "@/features/staff/StaffInvitePanel";
+import type { StaffInviteRecord } from "@/lib/staff-auth/staff-invite-command";
+import { staffInviteLifecycleLabel } from "@/lib/staff-auth/staff-invite-visibility";
 import { cn } from "@/lib/utils";
 
 const DAYS: DayOfWeek[] = [1, 2, 3, 4, 5, 6, 0];
@@ -87,6 +90,12 @@ interface StaffQuickViewProps {
     locationIds: string[];
   }) => void;
   onSetActive?: (isActive: boolean) => void;
+  invitePilotEnabled?: boolean;
+  inviteSendOpen?: boolean;
+  actorRole?: StaffRole | null;
+  actorActive?: boolean;
+  pendingInvite?: StaffInviteRecord | null;
+  onInviteChanged?: () => void;
 }
 
 export function StaffQuickView({
@@ -131,6 +140,12 @@ export function StaffQuickView({
   isCurrentUser = false,
   onSaveProfile,
   onSetActive,
+  invitePilotEnabled = false,
+  inviteSendOpen = false,
+  actorRole = null,
+  actorActive = false,
+  pendingInvite = null,
+  onInviteChanged,
 }: StaffQuickViewProps) {
   const upcoming = listUpcomingTimeOff({
     timeOff,
@@ -208,11 +223,13 @@ export function StaffQuickView({
                 >
                   {row.employmentLabel}
                 </span>
-                {row.loginBinding === "unbound" ? (
-                  <p className="mt-1.5 text-[12px] text-secondary-text" data-staff-login-binding>
-                    登入權限 · 尚未邀請
-                  </p>
-                ) : null}
+                <p
+                  className="mt-1.5 text-[12px] text-secondary-text"
+                  data-staff-login-binding
+                  data-staff-invite-lifecycle={row.inviteLifecycle}
+                >
+                  登入權限 · {staffInviteLifecycleLabel(row.inviteLifecycle)}
+                </p>
               </div>
             </div>
 
@@ -404,6 +421,25 @@ export function StaffQuickView({
                     ) : null}
                   </section>
                 ) : null}
+
+                <StaffInvitePanel
+                  invitePilotEnabled={invitePilotEnabled}
+                  inviteSendOpen={inviteSendOpen}
+                  actorRole={actorRole}
+                  actorActive={actorActive}
+                  actorOrganizationId={organizationId}
+                  target={{
+                    membershipId: row.membershipId,
+                    organizationId: row.organizationId,
+                    userId: row.staffId,
+                    email: row.email,
+                    isActive: row.isActive,
+                    authUserId: row.authUserId,
+                  }}
+                  invite={pendingInvite}
+                  binding={row.loginBinding}
+                  onChanged={onInviteChanged}
+                />
               </div>
             ) : null}
 

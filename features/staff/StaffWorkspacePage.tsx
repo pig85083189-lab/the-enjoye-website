@@ -15,6 +15,10 @@ import { Card } from "@/components/ui/Card";
 import { OrgLocationSwitcher } from "@/components/navigation/OrgLocationSwitcher";
 import { StaffOnboardingDialog } from "@/features/staff/StaffOnboardingDialog";
 import { StaffQuickView } from "@/features/staff/StaffQuickView";
+import { listStaffLoginInvitesAction } from "@/lib/staff-auth/actions";
+import type { StaffInviteRecord } from "@/lib/staff-auth/staff-invite-command";
+import { pendingInviteMembershipIds } from "@/lib/staff-auth/staff-invite-state";
+import { pickLatestStaffInviteForMembership } from "@/lib/staff-auth/staff-invite-visibility";
 import { canManageStaff } from "@/lib/staff/staff-onboarding-derived";
 import { combineLocalDateTime, formatYmd, startOfDay } from "@/lib/appointments/domain";
 import type { DayOfWeek } from "@/lib/staff-schedule/domain";
@@ -92,9 +96,13 @@ function todayIndexInWeek(now: Date): number {
 export function StaffWorkspacePage({
   staffRemoteCreatePilot = false,
   staffRemoteWritePilot = false,
+  staffInvitePilot = false,
+  staffInviteSendOpen = false,
 }: {
   staffRemoteCreatePilot?: boolean;
   staffRemoteWritePilot?: boolean;
+  staffInvitePilot?: boolean;
+  staffInviteSendOpen?: boolean;
 }) {
   const { organization, currentLocation, locations, membership } = useOrganization();
   const isClient = useIsClient();
@@ -137,6 +145,7 @@ export function StaffWorkspacePage({
   const [offEnd, setOffEnd] = useState("21:00");
   const [offReason, setOffReason] = useState("");
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [staffInvites, setStaffInvites] = useState<StaffInviteRecord[]>([]);
   const canAddStaff = canManageStaff(membership?.role);
   const remoteRosterLocked =
     isClient && organizationHasRemoteMemberships(organization.id);
@@ -146,6 +155,17 @@ export function StaffWorkspacePage({
     if (!isClient) return [];
     return listMemberships(organization.id);
   }, [isClient, membershipRevision, organization.id]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    let cancelled = false;
+    void listStaffLoginInvitesAction(organization.id).then((rows) => {
+      if (!cancelled) setStaffInvites(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isClient, organization.id, membershipRevision]);
 
   useEffect(() => {
     if (!isClient || !locationId) return;
@@ -185,6 +205,11 @@ export function StaffWorkspacePage({
     return addStaffWeekDays(base, weekOffset * 7);
   }, [now, weekOffset]);
 
+  const pendingMembershipIds = useMemo(
+    () => pendingInviteMembershipIds(staffInvites, now),
+    [now, staffInvites],
+  );
+
   const workspace = useMemo(
     () =>
       buildStaffWorkspace({
@@ -197,6 +222,8 @@ export function StaffWorkspacePage({
         timeOff,
         now,
         weekStart,
+        pendingInviteMembershipIds: pendingMembershipIds,
+        staffInvites,
       }),
     [
       breaks,
@@ -205,6 +232,8 @@ export function StaffWorkspacePage({
       memberships,
       now,
       organization.id,
+      pendingMembershipIds,
+      staffInvites,
       timeOff,
       weekStart,
       workingHours,
@@ -225,6 +254,13 @@ export function StaffWorkspacePage({
     : null;
   const showQuickView = shouldRenderStaffQuickView(selectedRow);
   const selectedWeek = workspace.weekGrid.find((row) => row.staffId === selectedStaffId);
+  const selectedInvite = selectedRow
+    ? pickLatestStaffInviteForMembership(staffInvites, selectedRow.membershipId, now)
+    : null;
+
+  function refreshStaffInvites() {
+    void listStaffLoginInvitesAction(organization.id).then(setStaffInvites);
+  }
   const emptyCopy = staffEmptyCopy({
     hasStaff: workspace.rows.length > 0,
     filter,
@@ -293,6 +329,7 @@ export function StaffWorkspacePage({
     if (result.remote) {
       setNotice(result.notice || "員工已建立");
       setError("");
+      refreshStaffInvites();
     }
     if (result.scheduleError) {
       setError(`員工已建立，但初始班表儲存失敗：${result.scheduleError}`);
@@ -648,6 +685,12 @@ export function StaffWorkspacePage({
               isCurrentUser={selectedRow.staffId === membership?.userId}
               onSaveProfile={saveSelectedProfile}
               onSetActive={setSelectedActive}
+              invitePilotEnabled={staffInvitePilot}
+              inviteSendOpen={staffInviteSendOpen}
+              actorRole={membership?.role ?? null}
+              actorActive={membership?.isActive ?? false}
+              pendingInvite={selectedInvite}
+              onInviteChanged={refreshStaffInvites}
             />
           </div>
         ) : null}
@@ -722,6 +765,12 @@ export function StaffWorkspacePage({
             isCurrentUser={selectedRow.staffId === membership?.userId}
             onSaveProfile={saveSelectedProfile}
             onSetActive={setSelectedActive}
+            invitePilotEnabled={staffInvitePilot}
+            inviteSendOpen={staffInviteSendOpen}
+            actorRole={membership?.role ?? null}
+            actorActive={membership?.isActive ?? false}
+            pendingInvite={selectedInvite}
+            onInviteChanged={refreshStaffInvites}
           />
         </div>
       ) : null}

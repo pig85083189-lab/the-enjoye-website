@@ -37,6 +37,8 @@ const EXPECTED_CHAIN = [
   "20261007130000_finance_expense_write_hardening.sql",
   "20261007140000_staff_operational_create.sql",
   "20261007150000_staff_operational_create_fix.sql",
+  "20261008120000_staff_login_invite_foundation.sql",
+  "20261008130000_staff_login_invite_create.sql",
 ] as const;
 
 function read(rel: string): string {
@@ -53,6 +55,7 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
 
   it("keeps the full timestamp order including the pre-113000 bridge", () => {
     expect(files).toEqual([...EXPECTED_CHAIN]);
+    expect(files).not.toContain("20261009140000_staff_invite_canary_send_claim.sql");
     expect(AUDIT_LOGS_ACTOR_BRIDGE_MIGRATION_FILE).toContain("20260928112975");
     expect(AUDIT_LOGS_ACTOR_BRIDGE_MIGRATION_FILE > IDENTITY_MIGRATION_FILE).toBe(
       true,

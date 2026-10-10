@@ -344,8 +344,15 @@ describe("S–T contracts + invite honesty", () => {
       false,
     );
     expect(getStaffInviteCapability({ serviceRoleKey: null }).message).toMatch(
-      /尚未設定/,
+      /尚未啟用/,
     );
+    expect(
+      getStaffInviteCapability({
+        invitePilotEnabled: true,
+        inviteSendOpen: true,
+        serviceRoleKey: null,
+      }).message,
+    ).toMatch(/尚未設定/);
     expect(ownerBootstrapProcedure().some((line) => line.includes("password"))).toBe(
       true,
     );

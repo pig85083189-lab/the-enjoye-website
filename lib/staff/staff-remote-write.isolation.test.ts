@@ -472,8 +472,17 @@ describe("staff operational remote write", () => {
     );
     expect(source("features/staff/StaffOnboardingDialog.tsx")).toMatch(/建立員工/);
     expect(source("features/staff/StaffOnboardingDialog.tsx")).toMatch(/不會建立登入帳號/);
+    expect(source("features/staff/StaffOnboardingDialog.tsx")).toMatch(
+      /submitStaffOperationalCreate/,
+    );
+    expect(source("features/staff/StaffOnboardingDialog.tsx")).toMatch(/inviteStaffLoginAction/);
+    expect(
+      source("features/staff/StaffOnboardingDialog.tsx").indexOf("submitStaffOperationalCreate"),
+    ).toBeLessThan(
+      source("features/staff/StaffOnboardingDialog.tsx").lastIndexOf("inviteStaffLoginAction"),
+    );
     expect(source("features/staff/StaffOnboardingDialog.tsx")).not.toMatch(
-      /data-staff-invite|邀請登入<\/button>/,
+      /inviteUserByEmail|admin\.createUser/,
     );
     expect(source("features/staff/use-staff-remote-write.ts")).toMatch(/createBrowserClientOrNull/);
     expect(source("features/staff/use-staff-remote-write.ts")).toMatch(/staffRemoteWriteBrowserEnv/);

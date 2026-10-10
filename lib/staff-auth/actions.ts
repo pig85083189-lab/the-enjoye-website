@@ -1,17 +1,14 @@
 "use server";
 
 import { getStaffInviteCapability } from "@/lib/staff-auth/invite-capability";
+import { normalizeStaffEmail } from "@/lib/staff-auth/email";
 import {
-  bindServerStaffMembershipAuthUser,
   getAuthenticatedStaffMembership,
   getServerStaffAuthUser,
   loadServerMembershipsForAuthUser,
   persistServerStaffMembership,
 } from "@/lib/staff-auth/server";
-import { extractInvitedAuthUserId } from "@/lib/staff-auth/invite-mapping";
-import { isValidStaffEmail, normalizeStaffEmail } from "@/lib/staff-auth/email";
 import { tryGetSupabaseServiceRoleKey } from "@/lib/supabase/env";
-import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { canMembershipManageStaff } from "@/lib/staff-auth/actors";
 import type { StaffMembership } from "@/types/saas";
 import { createLiveStaffRemoteProvisionDeps } from "@/lib/staff/staff-remote-create-adapter";
@@ -20,9 +17,44 @@ import { StaffRemoteCreateError } from "@/lib/staff/staff-remote-create-errors";
 import { isStaffRemoteCreatePilotEnabled } from "@/lib/staff/staff-remote-create-flag";
 import { runAuthenticatedStaffRemoteCreate } from "@/lib/staff/staff-remote-create-pilot";
 import type { StaffRemoteCreatePublicMembership } from "@/lib/staff/staff-remote-provision";
+import {
+  isStaffInvitePilotEnabled,
+  isStaffInviteSendOpen,
+} from "@/lib/staff-auth/staff-invite-flag";
+import {
+  BIND_INVITED_STAFF_AUTH_USER_RPC,
+  REVOKE_STAFF_LOGIN_INVITE_RPC,
+  evaluateStaffInviteBind,
+  evaluateStaffInviteRequest,
+  evaluateStaffInviteRevoke,
+  type StaffInviteDecisionReason,
+  type StaffInviteRecord,
+  type StaffInviteRequestMode,
+} from "@/lib/staff-auth/staff-invite-command";
+import { resolveStaffInviteRedirect } from "@/lib/staff-auth/staff-invite-redirect";
+import {
+  classifyStaffInviteAuthEmail,
+  evaluateStaffPasswordSetup,
+  staffInviteDeliverySuccessMessage,
+  type StaffInviteAuthEmailClass,
+  type StaffInviteAuthUserFacts,
+} from "@/lib/staff-auth/staff-invite-reconciliation";
+import {
+  deliverStaffLoginInvite,
+  lookupAuthUserIdForStaffEmail,
+} from "@/lib/staff-auth/staff-invite-send-adapter";
+import {
+  loadOrganizationStaffInvites,
+  loadPendingStaffInviteForAuthUser,
+  loadStaffInviteForMembership,
+  loadStaffInviteTargetByMembershipId,
+} from "@/lib/staff-auth/staff-invite-load";
+import { createClient } from "@/lib/supabase/server";
 
 export async function getStaffInviteCapabilityAction() {
   return getStaffInviteCapability({
+    invitePilotEnabled: isStaffInvitePilotEnabled(),
+    inviteSendOpen: isStaffInviteSendOpen(),
     serviceRoleKey: tryGetSupabaseServiceRoleKey(),
   });
 }
@@ -67,13 +99,19 @@ export async function persistStaffMembershipAction(
 }
 
 export type InviteStaffLoginResult =
-  | { ok: true; authUserId: string }
+  | { ok: true; authUserId: string; message: string }
   | {
       ok: false;
       reason:
+        | "pilot_disabled"
         | "not_configured"
         | "unauthorized"
         | "invalid_email"
+        | "conflict"
+        | "invite_send_closed"
+        | "cross_environment"
+        | "invalid_invite"
+        | "expired"
         | "error"
         | "mapping_failed";
       message: string;
@@ -81,95 +119,346 @@ export type InviteStaffLoginResult =
     };
 
 export async function inviteStaffLoginAction(input: {
-  email: string;
-  redirectTo: string;
+  email?: string;
+  redirectTo?: string;
   membershipId?: string;
   organizationId?: string;
+  mode?: StaffInviteRequestMode;
 }): Promise<InviteStaffLoginResult> {
-  const capability = getStaffInviteCapability({
-    serviceRoleKey: tryGetSupabaseServiceRoleKey(),
-  });
-  if (!capability.configured) {
-    return { ok: false, reason: "not_configured", message: capability.message };
+  void input.redirectTo;
+  const env =
+    typeof process !== "undefined" ? process.env : ({} as NodeJS.Dict<string>);
+  const invitePilotEnabled = isStaffInvitePilotEnabled(env);
+  const inviteSendOpen = isStaffInviteSendOpen(env);
+
+  if (!invitePilotEnabled) {
+    return {
+      ok: false,
+      reason: "pilot_disabled",
+      message: "登入邀請功能尚未啟用",
+    };
   }
 
-  const actor = await getServerStaffAuthUser();
-  if (!actor) {
+  if (!input.organizationId || !input.membershipId) {
     return {
       ok: false,
       reason: "unauthorized",
-      message: "請先登入後再邀請員工",
+      message: "缺少員工或分店識別，無法邀請",
     };
   }
 
-  if (input.organizationId) {
-    const resolved = await getAuthenticatedStaffMembership({
-      organizationId: input.organizationId,
-    });
-    if (
-      resolved.status !== "ok" ||
-      !canMembershipManageStaff(resolved.membership)
-    ) {
-      return {
-        ok: false,
-        reason: "unauthorized",
-        message: "沒有權限管理員工",
-      };
+  const actorUser = await getServerStaffAuthUser();
+  const resolved = await getAuthenticatedStaffMembership({
+    organizationId: input.organizationId,
+  });
+  const roster =
+    resolved.status === "ok" || resolved.status === "wrong_org"
+      ? resolved.memberships
+      : [];
+  const target =
+    roster.find((row) => row.id === input.membershipId) ??
+    (await loadTargetMembership(input.organizationId, input.membershipId));
+  const existingInvite = await loadStaffInviteForMembership(
+    input.membershipId,
+    input.organizationId,
+  );
+
+  const email = normalizeStaffEmail(input.email ?? "");
+  let authEmailClass: StaffInviteAuthEmailClass | undefined;
+  let foundAuthUserId: string | null = null;
+  let foundAuthUser: StaffInviteAuthUserFacts | null = null;
+  let boundMembershipIdForEmail: string | null = null;
+  if (inviteSendOpen && email) {
+    const lookup = await lookupAuthUserIdForStaffEmail(email);
+    if (!lookup.ok) {
+      return { ok: false, reason: "error", message: lookup.message };
     }
+    foundAuthUserId = lookup.authUserId;
+    foundAuthUser = lookup.user;
+    boundMembershipIdForEmail = findBoundMembershipIdForEmail(
+      roster,
+      email,
+      foundAuthUserId,
+    );
+    authEmailClass = classifyStaffInviteAuthEmail({
+      lookupOk: true,
+      foundAuthUserId,
+      foundAuthUser,
+      targetAuthUserId: target?.authUserId ?? null,
+      pendingInvite: existingInvite,
+      boundMembershipId: boundMembershipIdForEmail,
+    });
   }
 
-  if (!isValidStaffEmail(input.email)) {
+  const decision = evaluateStaffInviteRequest({
+    invitePilotEnabled,
+    inviteSendOpen,
+    canarySendAllowed: false,
+    organizationId: input.organizationId,
+    membershipId: input.membershipId,
+    email: input.email,
+    mode: input.mode,
+    actor: {
+      authUserId: actorUser?.id ?? null,
+      role: resolved.status === "ok" ? resolved.membership.role : null,
+      isActive: resolved.status === "ok" ? resolved.membership.isActive : false,
+      organizationId: resolved.status === "ok" ? resolved.membership.organizationId : null,
+      userId: resolved.status === "ok" ? resolved.membership.userId : null,
+    },
+    target: target
+      ? {
+          id: target.id,
+          organizationId: target.organizationId,
+          userId: target.userId,
+          email: target.email ?? null,
+          isActive: target.isActive,
+          authUserId: target.authUserId ?? null,
+        }
+      : null,
+    existingInvite,
+    existingAuthUserIdForEmail: foundAuthUserId,
+    authEmailClass,
+  });
+
+  if (!decision.ok) {
     return {
       ok: false,
-      reason: "invalid_email",
-      message: "請輸入有效的 Email",
+      reason: decision.reason,
+      message: decision.message,
     };
   }
 
-  const admin = createServiceRoleClient();
-  if (!admin) {
+  const redirect = resolveStaffInviteRedirect(env, input.redirectTo);
+  if (!redirect.ok) {
     return {
       ok: false,
-      reason: "not_configured",
-      message: "登入邀請功能尚未設定",
+      reason: redirect.reason === "cross_environment" ? "cross_environment" : "error",
+      message: redirect.message,
     };
   }
 
-  const email = normalizeStaffEmail(input.email);
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: input.redirectTo,
-  });
+  if (!inviteSendOpen) {
+    return {
+      ok: false,
+      reason: "invite_send_closed",
+      message: "邀請寄送尚未開放",
+    };
+  }
 
-  const authUserId = extractInvitedAuthUserId({
-    userId: data.user?.id,
-    identities: data.user?.identities ?? null,
+  const sent = await deliverStaffLoginInvite({
+    email: decision.email,
+    redirectTo: redirect.redirectTo,
+    membershipId: input.membershipId,
+    organizationId: input.organizationId,
+    mode: decision.mode,
+    existingInvite,
+    targetAuthUserId: target?.authUserId ?? null,
+    boundMembershipIdForEmail,
   });
+  if (!sent.ok) {
+    return {
+      ok: false,
+      reason: sent.reason,
+      message: sent.message,
+      authUserId: sent.authUserId,
+    };
+  }
+  return {
+    ok: true,
+    authUserId: sent.authUserId,
+    message: staffInviteDeliverySuccessMessage(),
+  };
+}
 
-  if (error || !authUserId) {
+export type AcceptStaffInviteResult =
+  | { ok: true; membershipId: string }
+  | {
+      ok: false;
+      reason: StaffInviteDecisionReason | "error";
+      message: string;
+    };
+
+export async function acceptStaffInviteAction(): Promise<AcceptStaffInviteResult> {
+  const user = await getServerStaffAuthUser();
+  if (!user) {
+    return { ok: false, reason: "unauthorized", message: "請先開啟邀請連結" };
+  }
+  const invite = await loadPendingStaffInviteForAuthUser(user.id);
+  const membership = invite
+    ? await loadStaffInviteTargetByMembershipId(invite.membershipId, invite.organizationId)
+    : null;
+  const decision = evaluateStaffInviteBind({
+    invite,
+    membership,
+    actorAuthUserId: user.id,
+    actorEmail: user.email,
+  });
+  if (!decision.ok) {
+    return {
+      ok: false,
+      reason: decision.reason,
+      message: decision.message,
+    };
+  }
+  const supabase = await createClient();
+  const bound = await supabase.rpc(BIND_INVITED_STAFF_AUTH_USER_RPC, {
+    p_invite_id: decision.inviteId,
+  });
+  if (bound.error) {
     return {
       ok: false,
       reason: "error",
-      message: error?.message || "邀請寄送失敗",
+      message: "目前無法完成登入綁定",
     };
   }
+  return { ok: true, membershipId: decision.membershipId };
+}
 
-  if (input.membershipId) {
-    try {
-      await bindServerStaffMembershipAuthUser(input.membershipId, authUserId);
-    } catch (bindError) {
-      return {
-        ok: false,
-        reason: "mapping_failed",
-        authUserId,
-        message:
-          bindError instanceof Error
-            ? `邀請已寄出，但登入綁定失敗：${bindError.message}`
-            : "邀請已寄出，但登入綁定失敗",
-      };
-    }
+export type CompleteStaffPasswordSetupResult =
+  | { ok: true; intent: "recovery" | "invite"; membershipId?: string }
+  | {
+      ok: false;
+      intent: "invite" | "unavailable" | "login" | "recovery";
+      reason: StaffInviteDecisionReason | "error";
+      message: string;
+    };
+
+export async function completeStaffPasswordSetupAction(): Promise<CompleteStaffPasswordSetupResult> {
+  const user = await getServerStaffAuthUser();
+  if (!user) {
+    return {
+      ok: false,
+      intent: "login",
+      reason: "unauthorized",
+      message: "請先開啟邀請連結",
+    };
   }
+  const resolved = await getAuthenticatedStaffMembership();
+  const boundActiveMembership =
+    resolved.status === "ok" && Boolean(resolved.membership?.isActive);
+  const pendingInvite = boundActiveMembership
+    ? null
+    : await loadPendingStaffInviteForAuthUser(user.id);
+  const intent = evaluateStaffPasswordSetup({
+    authenticated: true,
+    boundActiveMembership,
+    pendingInviteForAuthUser: Boolean(pendingInvite),
+  });
+  if (intent === "recovery") {
+    return { ok: true, intent: "recovery" };
+  }
+  if (intent !== "invite") {
+    return {
+      ok: false,
+      intent,
+      reason: "invalid_invite",
+      message: "沒有有效的登入邀請，無法啟用工作台",
+    };
+  }
+  const accepted = await acceptStaffInviteAction();
+  if (!accepted.ok) {
+    return {
+      ok: false,
+      intent: "invite",
+      reason: accepted.reason,
+      message: accepted.message,
+    };
+  }
+  return { ok: true, intent: "invite", membershipId: accepted.membershipId };
+}
 
-  return { ok: true, authUserId };
+export type RevokeStaffInviteResult =
+  | { ok: true; inviteId: string }
+  | {
+      ok: false;
+      reason: StaffInviteDecisionReason;
+      message: string;
+    };
+
+export async function revokeStaffLoginInviteAction(input: {
+  inviteId?: string;
+  organizationId?: string;
+}): Promise<RevokeStaffInviteResult> {
+  const env =
+    typeof process !== "undefined" ? process.env : ({} as NodeJS.Dict<string>);
+  const actorUser = await getServerStaffAuthUser();
+  const resolved = await getAuthenticatedStaffMembership({
+    organizationId: input.organizationId,
+  });
+  const invites =
+    resolved.status === "ok"
+      ? await loadOrganizationStaffInvites(resolved.membership.organizationId)
+      : [];
+  const invite = invites.find((row) => row.id === input.inviteId) ?? null;
+  const decision = evaluateStaffInviteRevoke({
+    invitePilotEnabled: isStaffInvitePilotEnabled(env),
+    actor: {
+      authUserId: actorUser?.id ?? null,
+      role: resolved.status === "ok" ? resolved.membership.role : null,
+      isActive: resolved.status === "ok" ? resolved.membership.isActive : false,
+      organizationId: resolved.status === "ok" ? resolved.membership.organizationId : null,
+      userId: resolved.status === "ok" ? resolved.membership.userId : null,
+    },
+    invite: invite ?? null,
+  });
+  if (!decision.ok) {
+    return {
+      ok: false,
+      reason: decision.reason,
+      message: decision.message,
+    };
+  }
+  const supabase = await createClient();
+  const revoked = await supabase.rpc(REVOKE_STAFF_LOGIN_INVITE_RPC, {
+    p_invite_id: decision.inviteId,
+  });
+  if (revoked.error) {
+    return { ok: false, reason: "error", message: "目前無法撤銷邀請" };
+  }
+  return { ok: true, inviteId: decision.inviteId };
+}
+
+export async function listStaffLoginInvitesAction(
+  organizationId?: string,
+): Promise<StaffInviteRecord[]> {
+  if (!organizationId) return [];
+  const resolved = await getAuthenticatedStaffMembership({ organizationId });
+  if (resolved.status !== "ok") return [];
+  return loadOrganizationStaffInvites(resolved.membership.organizationId);
+}
+
+function findBoundMembershipIdForEmail(
+  roster: StaffMembership[],
+  email: string,
+  foundAuthUserId: string | null,
+): string | null {
+  const normalized = normalizeStaffEmail(email);
+  const byEmail = roster.find(
+    (row) =>
+      row.authUserId &&
+      row.email &&
+      normalizeStaffEmail(row.email) === normalized,
+  );
+  if (byEmail) return byEmail.id;
+  if (foundAuthUserId) {
+    const byAuth = roster.find((row) => row.authUserId === foundAuthUserId);
+    if (byAuth) return byAuth.id;
+  }
+  return null;
+}
+
+async function loadTargetMembership(
+  organizationId: string,
+  membershipId: string,
+): Promise<StaffMembership | null> {
+  const user = await getServerStaffAuthUser();
+  if (!user) return null;
+  const rows = await loadServerMembershipsForAuthUser(user.id);
+  return (
+    rows.find(
+      (row) => row.id === membershipId && row.organizationId === organizationId,
+    ) ?? null
+  );
 }
 
 export type ProvisionStaffEmployeeResult =
