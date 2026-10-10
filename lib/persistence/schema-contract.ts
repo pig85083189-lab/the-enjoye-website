@@ -71,6 +71,17 @@ export const STAFF_OPERATIONAL_CREATE_MIGRATION_FILE =
 export const STAFF_OPERATIONAL_CREATE_FIX_MIGRATION_FILE =
   "supabase/migrations/20261007150000_staff_operational_create_fix.sql";
 
+/** LINE Official Account foundation. Additive. Secrets have no authenticated grants. */
+export const LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE =
+  "supabase/migrations/20261010120000_line_official_account_foundation.sql";
+
+export const LINE_TABLES = [
+  "line_official_accounts",
+  "line_official_account_secrets",
+  "line_broadcasts",
+  "line_broadcast_events",
+] as const;
+
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [
   "remaining_sessions",

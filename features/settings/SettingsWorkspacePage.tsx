@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { OrgLocationSwitcher } from "@/components/navigation/OrgLocationSwitcher";
+import { canShowLineSettings } from "@/lib/line/line-visibility";
 import { updateOrganizationLocal } from "@/lib/tenant/organization-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
@@ -34,7 +36,8 @@ const labelClass = "mb-1.5 block text-sm font-medium text-text";
 const helperClass = "mt-1.5 text-[12px] leading-5 text-secondary-text";
 
 export function SettingsWorkspacePage() {
-  const { organization, currentLocation } = useOrganization();
+  const { organization, currentLocation, membership } = useOrganization();
+  const showLineEntry = canShowLineSettings(membership);
   const [boundOrgId, setBoundOrgId] = useState(organization.id);
   const [draft, setDraft] = useState<OrganizationSettingsDraft>(() =>
     toOrganizationSettingsDraft(organization),
@@ -346,6 +349,22 @@ export function SettingsWorkspacePage() {
           </Card>
         </div>
       </div>
+
+      {showLineEntry ? (
+        <Card
+          data-line-settings-entry
+          padding="lg"
+          className="mt-4 min-w-0 space-y-2 shadow-none"
+        >
+          <h2 className="text-[16px] font-semibold text-text">LINE 官方帳號</h2>
+          <p className="text-[13px] leading-6 text-secondary-text">
+            為此店家連接 Messaging API，並管理文字群發。憑證只存在伺服器。
+          </p>
+          <Link href="/staff/settings/line" className="inline-flex min-h-11 items-center text-sm text-primary">
+            管理 LINE 官方帳號
+          </Link>
+        </Card>
+      ) : null}
 
       <div aria-live="polite" className="sr-only">
         {showDirtyBar ? "你有尚未儲存的變更" : ""}
