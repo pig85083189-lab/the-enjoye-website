@@ -102,9 +102,9 @@ Pilot：`BEAUTY_OS_LINE_CONNECTION_PILOT=1` 且已設定 Supabase URL / publisha
 
 ## G / H. 部署邊界
 
-| 環境 | 允許 |
+| 環境 | 狀態 |
 |------|------|
-| Preview | 可套用 migration、可設 Preview env、可部署 Preview |
-| Production | **不改** Supabase、**不改** env、**不部署** |
+| Preview | Ready：`https://the-enjoye-website-rknunheck-pig85083189-6631s-projects.vercel.app`。已套用 `20261010120000` 到 Preview Supabase `bfzquejrtgqzzarhkiya`。`BEAUTY_OS_LINE_CONNECTION_PILOT` 與憑證金鑰只加在此 feature branch 的 Preview。 |
+| Production | **未變**。Production 部署仍是先前 staff-auth release。Production Supabase `knccefcxncglgpmvgqlp` 沒有 LINE 表。Production 沒有 LINE env。 |
 
-Production host 維持 `knccefcxncglgpmvgqlp.supabase.co`。
+未登入的 Preview `/staff/line` 與 `/staff/settings/line` 會 307 到 staff login。Phase 1 沒有呼叫 LINE Broadcast。
