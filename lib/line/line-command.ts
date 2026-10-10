@@ -39,7 +39,10 @@ export type LineDecision =
   | { ok: true }
   | { ok: false; reason: LineDecisionReason; message: string };
 
-function refuse(reason: LineDecisionReason, message: string): LineDecision {
+function refuse(
+  reason: LineDecisionReason,
+  message: string,
+): Extract<LineDecision, { ok: false }> {
   return { ok: false, reason, message };
 }
 

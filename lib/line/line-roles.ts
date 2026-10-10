@@ -7,7 +7,5 @@ export function canManageLineOfficialAccount(actor: {
   role?: StaffRole | string | null;
   isActive?: boolean;
 } | null | undefined): boolean {
-  return Boolean(
-    actor?.isActive && actor.role && LINE_MANAGE_ROLES.includes(actor.role as StaffRole),
-  );
+  return Boolean(actor?.isActive && actor.role === "OWNER");
 }
