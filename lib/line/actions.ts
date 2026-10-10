@@ -392,9 +392,14 @@ export async function loadLineBroadcastPrepareAction(
     }
     const account = await loadLineOfficialAccount(organizationId);
     const broadcasts = await loadLineBroadcasts(organizationId);
-    const quota = account?.tokenConfigured
-      ? await loadLineQuotaForOwner(organizationId)
-      : unknownLineQuota("尚未保存 Channel Access Token");
+    const quota =
+      isLineBroadcastSendOpen() && account?.tokenConfigured
+        ? await loadLineQuotaForOwner(organizationId)
+        : unknownLineQuota(
+            account?.tokenConfigured
+              ? "實際發送尚未開放，未查詢 LINE 額度"
+              : "尚未保存 Channel Access Token",
+          );
     return {
       ok: true,
       message: "ok",
@@ -499,9 +504,10 @@ export async function sendLineBroadcastAction(input: {
     const broadcasts = await loadLineBroadcasts(input.organizationId);
     const acceptedToday = countAcceptedBroadcastsOnDay(broadcasts, today);
     const account = await loadLineOfficialAccount(input.organizationId);
-    const quota = account?.tokenConfigured
-      ? await loadLineQuotaForOwner(input.organizationId)
-      : unknownLineQuota();
+    const quota =
+      isLineBroadcastSendOpen() && account?.tokenConfigured
+        ? await loadLineQuotaForOwner(input.organizationId)
+        : unknownLineQuota("實際發送尚未開放，未查詢 LINE 額度");
     const decision = evaluateLineBroadcastRealSend({
       connectionPilotEnabled: isLineConnectionPilotEnabled(),
       sendOpen: isLineBroadcastSendOpen(),

@@ -741,6 +741,7 @@ describe("LINE source contracts", () => {
     expect(crypto).toMatch(/LINE credential crypto cannot run in the browser/);
     expect(send).toMatch(/X-Line-Retry-Key/);
     expect(actions).toMatch(/executeLineBroadcastHttp/);
+    expect(actions).toMatch(/實際發送尚未開放，未查詢 LINE 額度/);
     expect(actions).toMatch(/CLAIM_LINE_BROADCAST_SEND_RPC|claim_line_broadcast_send/);
     expect(actions).toMatch(/COMPLETE_LINE_BROADCAST_SEND_RPC|complete_line_broadcast_send/);
     expect(actions).toMatch(/LINE_BROADCAST_SEND_CLOSED_RPC|mark_line_broadcast_send_closed/);

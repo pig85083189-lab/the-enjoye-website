@@ -71,9 +71,10 @@ Phase 1B 新增：
 
 額度：
 
-- 唯讀查詢 LINE `quota` 與 `quota/consumption`
+- Adapter 唯讀查詢 LINE `quota` 與 `quota/consumption`
 - 取得完整 limited 資料才計算剩餘
-- 失敗、缺資料、尚未保存 token → 顯示 **未知**
+- 失敗、缺資料、尚未保存 token、或實際發送關閉 → 顯示 **未知**
+- 發送關閉時不解密、不使用真實 Channel Token 查額度
 - 不造好友數，不造剩餘額度
 
 防重複：
