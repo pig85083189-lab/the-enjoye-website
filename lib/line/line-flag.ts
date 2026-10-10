@@ -9,6 +9,8 @@ import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 
 export const LINE_CREDENTIAL_KEY_ENV = "BEAUTY_OS_LINE_CREDENTIAL_KEY";
 export const LINE_CONNECTION_PILOT_ENV = "BEAUTY_OS_LINE_CONNECTION_PILOT";
+export const LINE_WEBHOOK_HOST_ENV = "BEAUTY_OS_LINE_WEBHOOK_HOST";
+export const LINE_WEBHOOK_BASE_URL_ENV = "BEAUTY_OS_LINE_WEBHOOK_BASE_URL";
 
 /** Phase 1B: real send stays hardcoded closed. Do not flip on Preview. */
 export const LINE_BROADCAST_SEND_OPEN = false;

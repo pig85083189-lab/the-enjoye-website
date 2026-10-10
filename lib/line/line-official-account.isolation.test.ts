@@ -61,6 +61,10 @@ import {
   evaluateLineBindAttempt,
   evaluateLineWebhookEventClaim,
 } from "@/lib/line/line-webhook-limits";
+import {
+  evaluateLineWebhookAdmission,
+  evaluateLineWebhookHostAccess,
+} from "@/lib/line/line-webhook-host";
 import { lineWebhookPublicPath, lineWebhookPublicUrl } from "@/lib/line/line-webhook-url";
 import { executeLineTestPushHttp } from "@/lib/line/line-push-adapter";
 import { processLineWebhookBind } from "@/lib/line/line-webhook";
@@ -85,6 +89,7 @@ import {
   isLineTestPushOpen,
   LINE_BIND_CODE_TTL_MINUTES,
   LINE_BIND_MAX_ATTEMPTS,
+  LINE_WEBHOOK_HOST_ENV,
   LINE_BROADCAST_DAILY_LIMIT,
   LINE_BROADCAST_SEND_OPEN,
   LINE_TEST_PUSH_DAILY_LIMIT,
@@ -162,6 +167,7 @@ describe("LINE Phase 1 flags", () => {
     expect(LINE_TEST_PUSH_DAILY_LIMIT).toBe(3);
     expect(LINE_BIND_CODE_TTL_MINUTES).toBe(10);
     expect(LINE_BIND_MAX_ATTEMPTS).toBe(5);
+    expect(LINE_WEBHOOK_HOST_ENV).toBe("BEAUTY_OS_LINE_WEBHOOK_HOST");
     expect(isLineConnectionPilotEnabled({})).toBe(false);
     expect(isLineConnectionPilotEnabled({ [LINE_CONNECTION_PILOT_ENV]: "1" })).toBe(false);
     expect(isLineConnectionPilotEnabled(previewEnv)).toBe(true);
@@ -806,6 +812,126 @@ describe("LINE Phase 1D webhook least privilege", () => {
         VERCEL_BRANCH_URL: "preview.example.test",
       }),
     ).toBe(`https://preview.example.test/api/line/webhook/${ORG_ENJOYE_ID}/${token}`);
+    expect(
+      lineWebhookPublicUrl(ORG_ENJOYE_ID, token, {
+        [LINE_WEBHOOK_HOST_ENV]: "hooks-preview.example.test",
+        VERCEL_BRANCH_URL: "staff-preview.example.test",
+      }),
+    ).toBe(`https://hooks-preview.example.test/api/line/webhook/${ORG_ENJOYE_ID}/${token}`);
+  });
+
+  it("keeps staff off a dedicated webhook host and rejects bad tokens, signatures, and forgeries", async () => {
+    const webhookEnv = { [LINE_WEBHOOK_HOST_ENV]: "hooks-preview.example.test" };
+    expect(
+      evaluateLineWebhookHostAccess({
+        host: "hooks-preview.example.test",
+        pathname: "/staff/settings/line",
+        env: webhookEnv,
+      }),
+    ).toMatchObject({ allow: false, reason: "not_webhook_path" });
+    expect(
+      evaluateLineWebhookHostAccess({
+        host: "staff-preview.example.test",
+        pathname: `/api/line/webhook/${ORG_ENJOYE_ID}/${"a".repeat(43)}`,
+        env: webhookEnv,
+      }),
+    ).toMatchObject({ allow: false, reason: "wrong_host" });
+    expect(
+      evaluateLineWebhookHostAccess({
+        host: "hooks-preview.example.test",
+        pathname: `/api/line/webhook/${ORG_ENJOYE_ID}/${"a".repeat(43)}`,
+        env: webhookEnv,
+      }),
+    ).toMatchObject({ allow: true });
+    expect(
+      evaluateLineWebhookAdmission({
+        organizationId: ORG_ENJOYE_ID,
+        publicToken: "short",
+      }),
+    ).toMatchObject({ allow: false, reason: "invalid_input" });
+    expect(
+      evaluateLineWebhookAdmission({
+        organizationId: "not-an-org",
+        publicToken: "a".repeat(43),
+      }),
+    ).toMatchObject({ allow: false, reason: "invalid_input" });
+
+    const forgedGroup = signedBody({
+      events: [
+        {
+          type: "message",
+          webhookEventId: "evt-group-1",
+          source: { type: "group", userId, groupId: "Cgroup" },
+          message: { type: "text", text: "ABCDEF12" },
+        },
+      ],
+    });
+    let consumed = 0;
+    const group = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody: forgedGroup.rawBody,
+      signature: forgedGroup.signature,
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => {
+        consumed += 1;
+        return { bound: true };
+      },
+    });
+    expect(group).toMatchObject({ ok: true, bound: false });
+    expect(consumed).toBe(0);
+
+    const fakeUser = signedBody({
+      events: [
+        {
+          type: "message",
+          webhookEventId: "evt-fake-user",
+          source: { type: "user", userId: "console-admin-id" },
+          message: { type: "text", text: "ABCDEF12" },
+        },
+      ],
+    });
+    const fake = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody: fakeUser.rawBody,
+      signature: fakeUser.signature,
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => {
+        consumed += 1;
+        return { bound: true };
+      },
+    });
+    expect(fake).toMatchObject({ ok: true, bound: false });
+    expect(consumed).toBe(0);
+
+    const { rawBody, signature } = signedBody({
+      events: [
+        {
+          type: "message",
+          source: { type: "user", userId },
+          message: { type: "text", text: "ABCDEF12" },
+        },
+      ],
+    });
+    const badSig = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature: "Zm9yZ2Vk",
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(badSig).toMatchObject({ ok: false, reason: "unauthorized" });
+    const missingSecret = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature,
+      channelSecret: null,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(missingSecret).toMatchObject({ ok: false, reason: "unauthorized" });
   });
 
   it("rejects expired codes, burns after 5 attempts, and dedups webhook events", async () => {
@@ -1111,6 +1237,9 @@ describe("LINE source contracts", () => {
     expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).not.toMatch(
       /console\.(log|info|debug)/,
     );
+    expect(source("proxy.ts")).toMatch(/evaluateLineWebhookHostAccess/);
+    expect(source("proxy.ts")).toMatch(/\/staff\/:path\*/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_WEBHOOK_HOST_ENV/);
     expect(source("lib/supabase/anon.ts")).toMatch(/publishableKey/);
     expect(source("lib/supabase/anon.ts")).not.toMatch(/SERVICE_ROLE|serviceRole/);
     expect(source("app/staff/(app)/settings/line/page.tsx")).toMatch(/STAFF_LINE_ROLES/);

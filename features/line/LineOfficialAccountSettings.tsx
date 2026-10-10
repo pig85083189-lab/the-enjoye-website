@@ -390,7 +390,7 @@ export function LineOfficialAccountSettings({
               <p className="text-sm font-medium text-text">專用測試官方帳號 Webhook URL</p>
               <p className="text-[13px] text-secondary-text">
                 只填到<strong>新的測試官方帳號</strong>。禁止改 THE ENJOYE 既有 Webhook，也禁止覆蓋已保存的
-                THE ENJOYE 憑證。
+                THE ENJOYE 憑證。專用 webhook 主機核准後，此 URL 不會指向 Staff Preview 網域。
               </p>
               <input
                 className={`${fieldClass} font-mono text-[12px]`}

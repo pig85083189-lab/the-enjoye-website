@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { LINE_WEBHOOK_BASE_URL_ENV, LINE_WEBHOOK_HOST_ENV } from "@/lib/line/line-flag";
 import { isLineWebhookPublicToken } from "@/lib/line/line-bind";
 
 export function createLineWebhookPublicToken(): string {
@@ -15,8 +16,10 @@ export function lineWebhookPublicPath(organizationId: string, token: string): st
 export function lineWebhookPublicBaseUrl(
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
 ): string {
-  const explicit = (env.BEAUTY_OS_LINE_WEBHOOK_BASE_URL ?? "").trim().replace(/\/$/, "");
+  const explicit = (env[LINE_WEBHOOK_BASE_URL_ENV] ?? "").trim().replace(/\/$/, "");
   if (explicit) return explicit;
+  const webhookHost = (env[LINE_WEBHOOK_HOST_ENV] ?? "").trim().replace(/^https?:\/\//, "");
+  if (webhookHost) return `https://${webhookHost.replace(/\/$/, "")}`;
   const branch = (env.VERCEL_BRANCH_URL ?? "").trim().replace(/^https?:\/\//, "");
   if (branch) return `https://${branch}`;
   const vercel = (env.VERCEL_URL ?? "").trim().replace(/^https?:\/\//, "");

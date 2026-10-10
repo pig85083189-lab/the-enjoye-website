@@ -5,20 +5,30 @@ import {
   READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC,
 } from "@/lib/line/line-command";
 import { decryptLineCredential, encryptLineCredential } from "@/lib/line/line-crypto";
+import { evaluateLineWebhookAdmission } from "@/lib/line/line-webhook-host";
 import { processLineWebhookBind } from "@/lib/line/line-webhook";
-import { assertLineWebhookPublicToken } from "@/lib/line/line-webhook-url";
 import { createAnonymousClient } from "@/lib/supabase/anon";
+
+function requestHost(request: Request): string | null {
+  return request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+}
 
 function json(status: number, body: { ok: boolean; bound?: boolean }) {
   return NextResponse.json(body, { status });
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ organizationId: string; publicToken: string }> },
 ) {
   const { organizationId, publicToken } = await context.params;
-  if (!organizationId?.startsWith("org-") || !assertLineWebhookPublicToken(publicToken)) {
+  const admitted = evaluateLineWebhookAdmission({
+    organizationId,
+    publicToken,
+    host: requestHost(request),
+    pathname: new URL(request.url).pathname,
+  });
+  if (!admitted.allow) {
     return json(404, { ok: false });
   }
   return json(200, { ok: true, bound: false });
@@ -29,10 +39,16 @@ export async function POST(
   context: { params: Promise<{ organizationId: string; publicToken: string }> },
 ) {
   const { organizationId, publicToken } = await context.params;
-  const token = assertLineWebhookPublicToken(publicToken);
-  if (!organizationId?.startsWith("org-") || !token) {
+  const admitted = evaluateLineWebhookAdmission({
+    organizationId,
+    publicToken,
+    host: requestHost(request),
+    pathname: new URL(request.url).pathname,
+  });
+  if (!admitted.allow) {
     return json(404, { ok: false });
   }
+  const token = publicToken.trim();
   const supabase = createAnonymousClient();
   if (!supabase) {
     return json(503, { ok: false });
