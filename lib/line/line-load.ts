@@ -39,9 +39,13 @@ function asBroadcast(row: Record<string, unknown>): LineBroadcastPublic {
   };
 }
 
-export async function loadLineOfficialAccount(
+export type LineAccountRead =
+  | { ok: true; account: LineOfficialAccountPublic | null }
+  | { ok: false; message: string };
+
+export async function readLineOfficialAccount(
   organizationId: string,
-): Promise<LineOfficialAccountPublic | null> {
+): Promise<LineAccountRead> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("line_official_accounts")
@@ -50,8 +54,17 @@ export async function loadLineOfficialAccount(
     )
     .eq("organization_id", organizationId)
     .maybeSingle();
-  if (error || !data) return null;
-  return asAccount(data as Record<string, unknown>);
+  if (error) {
+    return { ok: false, message: "無法讀取 LINE 官方帳號設定" };
+  }
+  return { ok: true, account: asAccount((data as Record<string, unknown> | null) ?? null) };
+}
+
+export async function loadLineOfficialAccount(
+  organizationId: string,
+): Promise<LineOfficialAccountPublic | null> {
+  const read = await readLineOfficialAccount(organizationId);
+  return read.ok ? read.account : null;
 }
 
 export async function loadLineBroadcasts(

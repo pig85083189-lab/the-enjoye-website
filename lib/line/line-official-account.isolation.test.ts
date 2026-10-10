@@ -47,10 +47,19 @@ import { executeLineBroadcastHttp } from "@/lib/line/line-send-adapter";
 import { fetchLineBotInfo } from "@/lib/line/line-connection-adapter";
 import { countAcceptedBroadcastsOnDay } from "@/lib/line/line-load";
 import {
+  LINE_SETTINGS_LOAD_ERROR,
+  LINE_SETTINGS_SAVE_ERROR,
+  LINE_SETTINGS_SAVE_SUCCESS,
+  applyLineSettingsLoadResult,
+  applyLineSettingsSaveResult,
+  describeLineSettingsStatus,
+  publicAccountAfterSave,
+} from "@/lib/line/line-settings-status";
+import {
   canShowLineSettings,
   lineBroadcastApiResultLabel,
 } from "@/lib/line/line-visibility";
-import type { LineBroadcastPublic } from "@/lib/line/line-types";
+import type { LineBroadcastPublic, LineOfficialAccountPublic } from "@/lib/line/line-types";
 
 const ROOT = process.cwd();
 const AUTH_OWNER = "496f2538-8759-4038-b033-bc367e930cab";
@@ -355,6 +364,102 @@ describe("LINE HTTP adapters", () => {
   });
 });
 
+describe("LINE settings status display", () => {
+  const savedAccount: LineOfficialAccountPublic = {
+    organizationId: ORG_ENJOYE_ID,
+    channelId: "1650000000",
+    botDisplayName: null,
+    botBasicId: null,
+    tokenHint: "••••1234",
+    secretConfigured: true,
+    tokenConfigured: true,
+    broadcastEnabled: false,
+    lastTestedAt: null,
+    lastTestStatus: null,
+    lastTestMessage: null,
+  };
+
+  it("shows loading, unset, saved, and load-failed states without secrets", () => {
+    expect(describeLineSettingsStatus({ loadState: "loading", account: null }).statusLabel).toBe(
+      "正在讀取 LINE 設定…",
+    );
+    expect(describeLineSettingsStatus({ loadState: "ready", account: null })).toMatchObject({
+      credentialState: "unset",
+      statusLabel: "尚未保存 LINE 官方帳號憑證",
+      secretLabel: "未設定",
+      tokenLabel: "未設定",
+    });
+    const saved = describeLineSettingsStatus({ loadState: "ready", account: savedAccount });
+    expect(saved.credentialState).toBe("saved");
+    expect(saved.channelIdLabel).toBe("1650000000");
+    expect(saved.secretLabel).toBe("Secret 已設定");
+    expect(saved.tokenLabel).toBe("Token 已設定 ••••1234");
+    expect(JSON.stringify(saved)).not.toMatch(/channel-secret|access-token|plaintext/i);
+    expect(
+      describeLineSettingsStatus({ loadState: "load_failed", account: null }).statusLabel,
+    ).toBe(LINE_SETTINGS_LOAD_ERROR);
+  });
+
+  it("keeps a later save from being overwritten by a stale load", () => {
+    const stale = applyLineSettingsLoadResult({
+      generation: 1,
+      currentGeneration: 2,
+      ok: true,
+      account: null,
+    });
+    expect(stale.ignored).toBe(true);
+    const failed = applyLineSettingsLoadResult({
+      generation: 3,
+      currentGeneration: 3,
+      ok: false,
+    });
+    expect(failed).toMatchObject({
+      ignored: false,
+      loadState: "load_failed",
+      feedback: { kind: "error", message: LINE_SETTINGS_LOAD_ERROR },
+    });
+    const success = applyLineSettingsSaveResult({
+      generation: 4,
+      currentGeneration: 4,
+      ok: true,
+      message: LINE_SETTINGS_SAVE_SUCCESS,
+      account: savedAccount,
+    });
+    expect(success).toMatchObject({
+      ignored: false,
+      clearSecrets: true,
+      account: savedAccount,
+      feedback: { kind: "success", message: LINE_SETTINGS_SAVE_SUCCESS },
+    });
+    const saveFailed = applyLineSettingsSaveResult({
+      generation: 5,
+      currentGeneration: 5,
+      ok: false,
+      message: LINE_SETTINGS_SAVE_ERROR,
+    });
+    expect(saveFailed.feedback).toEqual({
+      kind: "error",
+      message: LINE_SETTINGS_SAVE_ERROR,
+    });
+    expect(saveFailed.clearSecrets).toBe(false);
+  });
+
+  it("rebuilds a public saved snapshot without secret or token plaintext", () => {
+    const snapshot = publicAccountAfterSave({
+      organizationId: ORG_ENJOYE_ID,
+      channelId: "1650000000",
+      tokenHint: "••••9876",
+    });
+    expect(snapshot).toMatchObject({
+      channelId: "1650000000",
+      secretConfigured: true,
+      tokenConfigured: true,
+      tokenHint: "••••9876",
+    });
+    expect(JSON.stringify(snapshot)).not.toMatch(/secret-value|token-value|plaintext/i);
+  });
+});
+
 describe("LINE source contracts", () => {
   const migration = source(LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE);
   const actions = source("lib/line/actions.ts");
@@ -393,6 +498,11 @@ describe("LINE source contracts", () => {
     expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|createServiceRoleClient/);
     expect(settingsHub).toMatch(/data-line-settings-entry/);
     expect(settingsHub).not.toMatch(/channelAccessToken|channel_secret_cipher/);
+    expect(settingsUi).toMatch(/data-line-settings-feedback/);
+    expect(settingsUi).toMatch(/data-line-settings-status/);
+    expect(settingsUi).toMatch(/catch \{/);
+    expect(settingsUi).toMatch(/generationRef/);
+    expect(settingsUi).not.toMatch(/refresh\(\)/);
     expect(crypto).toMatch(/aes-256-gcm/);
     expect(crypto).toMatch(/LINE credential crypto cannot run in the browser/);
     expect(send).toMatch(/X-Line-Retry-Key/);

@@ -29,10 +29,19 @@ import {
   isLineConnectionPilotEnabled,
 } from "@/lib/line/line-flag";
 import {
+  LINE_SETTINGS_LOAD_ERROR,
+  LINE_SETTINGS_SAVE_ERROR,
+  LINE_SETTINGS_SAVE_SUCCESS,
+  LINE_SETTINGS_TEST_ERROR,
+  LINE_SETTINGS_UNEXPECTED_ERROR,
+  publicAccountAfterSave,
+} from "@/lib/line/line-settings-status";
+import {
   countAcceptedBroadcastsOnDay,
   loadLineBroadcastByRequestId,
   loadLineBroadcasts,
   loadLineOfficialAccount,
+  readLineOfficialAccount,
 } from "@/lib/line/line-load";
 import type {
   LineBroadcastPublic,
@@ -69,29 +78,46 @@ async function loadActor(organizationId?: string | null) {
   };
 }
 
+async function runLineAction<T>(
+  work: () => Promise<LineActionResult<T>>,
+  fallback: string,
+): Promise<LineActionResult<T>> {
+  try {
+    return await work();
+  } catch {
+    return { ok: false, reason: "error", message: fallback };
+  }
+}
+
 export async function loadLineOfficialAccountAction(
   organizationId: string,
 ): Promise<LineActionResult<LineOfficialAccountPublic | null>> {
-  const { actor } = await loadActor(organizationId);
-  const gate = evaluateLineConnectionTest({
-    connectionPilotEnabled: isLineConnectionPilotEnabled(),
-    encryptionReady: true,
-    organizationId,
-    actor,
-    secretConfigured: true,
-    tokenConfigured: true,
-  });
-  if (!gate.ok && gate.reason === "unauthorized") {
-    return { ok: false, reason: gate.reason, message: gate.message };
-  }
-  if (!isLineConnectionPilotEnabled()) {
-    return { ok: false, reason: "pilot_disabled", message: "LINE 串接尚未啟用" };
-  }
-  return {
-    ok: true,
-    message: "ok",
-    data: await loadLineOfficialAccount(organizationId),
-  };
+  return runLineAction(async () => {
+    const { actor } = await loadActor(organizationId);
+    const gate = evaluateLineConnectionTest({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(),
+      encryptionReady: true,
+      organizationId,
+      actor,
+      secretConfigured: true,
+      tokenConfigured: true,
+    });
+    if (!gate.ok && gate.reason === "unauthorized") {
+      return { ok: false, reason: gate.reason, message: gate.message };
+    }
+    if (!isLineConnectionPilotEnabled()) {
+      return { ok: false, reason: "pilot_disabled", message: "LINE 串接尚未啟用" };
+    }
+    const read = await readLineOfficialAccount(organizationId);
+    if (!read.ok) {
+      return { ok: false, reason: "error", message: LINE_SETTINGS_LOAD_ERROR };
+    }
+    return {
+      ok: true,
+      message: "ok",
+      data: read.account,
+    };
+  }, LINE_SETTINGS_LOAD_ERROR);
 }
 
 export async function loadLineBroadcastsAction(
@@ -122,44 +148,59 @@ export async function saveLineOfficialAccountAction(input: {
   channelId: string;
   channelSecret: string;
   channelAccessToken: string;
-}): Promise<LineActionResult> {
-  const env = process.env;
-  const { actor } = await loadActor(input.organizationId);
-  const decision = evaluateLineConnectionSave({
-    connectionPilotEnabled: isLineConnectionPilotEnabled(env),
-    encryptionReady: canEncryptLineCredentials(env),
-    organizationId: input.organizationId,
-    actor,
-    channelId: input.channelId,
-    channelSecret: input.channelSecret,
-    channelAccessToken: input.channelAccessToken,
-  });
-  if (!decision.ok) return decision;
+}): Promise<LineActionResult<LineOfficialAccountPublic>> {
+  return runLineAction(async () => {
+    const env = process.env;
+    const { actor } = await loadActor(input.organizationId);
+    const decision = evaluateLineConnectionSave({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(env),
+      encryptionReady: canEncryptLineCredentials(env),
+      organizationId: input.organizationId,
+      actor,
+      channelId: input.channelId,
+      channelSecret: input.channelSecret,
+      channelAccessToken: input.channelAccessToken,
+    });
+    if (!decision.ok) return decision;
 
-  const secret = encryptLineCredential(input.channelSecret.trim(), env);
-  const token = encryptLineCredential(input.channelAccessToken.trim(), env);
-  if (!secret.ok || !token.ok) {
-    return { ok: false, reason: "not_configured", message: "LINE 憑證加密金鑰尚未設定" };
-  }
+    const secret = encryptLineCredential(input.channelSecret.trim(), env);
+    const token = encryptLineCredential(input.channelAccessToken.trim(), env);
+    if (!secret.ok || !token.ok) {
+      return { ok: false, reason: "not_configured", message: "LINE 憑證加密金鑰尚未設定" };
+    }
 
-  const supabase = await createClient();
-  const inserted = await supabase.rpc(UPSERT_LINE_CONNECTION_RPC, {
-    p_organization_id: input.organizationId,
-    p_channel_id: input.channelId.trim(),
-    p_channel_secret_cipher: secret.cipher,
-    p_channel_access_token_cipher: token.cipher,
-    p_key_id: secret.keyId,
-    p_token_hint: tokenHintFromAccessToken(input.channelAccessToken),
-  });
-  if (inserted.error) {
-    return { ok: false, reason: "error", message: "LINE 憑證寫入失敗" };
-  }
-  return { ok: true, message: "LINE 官方帳號憑證已加密保存" };
+    const tokenHint = tokenHintFromAccessToken(input.channelAccessToken);
+    const supabase = await createClient();
+    const inserted = await supabase.rpc(UPSERT_LINE_CONNECTION_RPC, {
+      p_organization_id: input.organizationId,
+      p_channel_id: input.channelId.trim(),
+      p_channel_secret_cipher: secret.cipher,
+      p_channel_access_token_cipher: token.cipher,
+      p_key_id: secret.keyId,
+      p_token_hint: tokenHint,
+    });
+    if (inserted.error) {
+      return { ok: false, reason: "error", message: LINE_SETTINGS_SAVE_ERROR };
+    }
+    const read = await readLineOfficialAccount(input.organizationId);
+    const previous = read.ok ? read.account : null;
+    return {
+      ok: true,
+      message: LINE_SETTINGS_SAVE_SUCCESS,
+      data: publicAccountAfterSave({
+        organizationId: input.organizationId,
+        channelId: input.channelId.trim(),
+        tokenHint,
+        previous,
+      }),
+    };
+  }, LINE_SETTINGS_SAVE_ERROR);
 }
 
 export async function testLineOfficialAccountAction(input: {
   organizationId: string;
 }): Promise<LineActionResult> {
+  return runLineAction(async () => {
   const env = process.env;
   const { actor } = await loadActor(input.organizationId);
   const account = await loadLineOfficialAccount(input.organizationId);
@@ -202,36 +243,39 @@ export async function testLineOfficialAccountAction(input: {
     return { ok: false, reason: "error", message: probed.message };
   }
   return { ok: true, message: "連線成功。這次測試沒有向好友發送訊息。" };
+  }, LINE_SETTINGS_TEST_ERROR);
 }
 
 export async function setLineBroadcastEnabledAction(input: {
   organizationId: string;
   enabled: boolean;
 }): Promise<LineActionResult> {
-  const { actor } = await loadActor(input.organizationId);
-  const account = await loadLineOfficialAccount(input.organizationId);
-  const decision = evaluateLineBroadcastEnable({
-    connectionPilotEnabled: isLineConnectionPilotEnabled(),
-    organizationId: input.organizationId,
-    actor,
-    enabled: input.enabled,
-    tokenConfigured: Boolean(account?.tokenConfigured && account.lastTestStatus === "ok"),
-  });
-  if (!decision.ok) return decision;
-  const supabase = await createClient();
-  const updated = await supabase.rpc(SET_LINE_BROADCAST_ENABLED_RPC, {
-    p_organization_id: input.organizationId,
-    p_enabled: input.enabled,
-  });
-  if (updated.error) {
-    return { ok: false, reason: "error", message: "無法更新群發開關" };
-  }
-  return {
-    ok: true,
-    message: input.enabled
-      ? "已記錄店長啟用。Phase 1 仍不會實際發送 LINE 訊息。"
-      : "已關閉 LINE 群發",
-  };
+  return runLineAction(async () => {
+    const { actor } = await loadActor(input.organizationId);
+    const account = await loadLineOfficialAccount(input.organizationId);
+    const decision = evaluateLineBroadcastEnable({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(),
+      organizationId: input.organizationId,
+      actor,
+      enabled: input.enabled,
+      tokenConfigured: Boolean(account?.tokenConfigured && account.lastTestStatus === "ok"),
+    });
+    if (!decision.ok) return decision;
+    const supabase = await createClient();
+    const updated = await supabase.rpc(SET_LINE_BROADCAST_ENABLED_RPC, {
+      p_organization_id: input.organizationId,
+      p_enabled: input.enabled,
+    });
+    if (updated.error) {
+      return { ok: false, reason: "error", message: "無法更新群發開關" };
+    }
+    return {
+      ok: true,
+      message: input.enabled
+        ? "已記錄店長啟用。Phase 1 仍不會實際發送 LINE 訊息。"
+        : "已關閉 LINE 群發",
+    };
+  }, LINE_SETTINGS_UNEXPECTED_ERROR);
 }
 
 export async function saveLineBroadcastDraftAction(input: {

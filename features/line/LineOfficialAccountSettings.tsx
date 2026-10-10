@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -10,12 +10,47 @@ import {
   testLineOfficialAccountAction,
   loadLineOfficialAccountAction,
 } from "@/lib/line/actions";
+import {
+  LINE_SETTINGS_LOAD_ERROR,
+  LINE_SETTINGS_SAVE_ERROR,
+  LINE_SETTINGS_TEST_ERROR,
+  LINE_SETTINGS_UNEXPECTED_ERROR,
+  applyLineSettingsLoadResult,
+  applyLineSettingsSaveResult,
+  describeLineSettingsStatus,
+  lineActionCaughtError,
+  type LineActionFeedback,
+  type LineSettingsLoadState,
+} from "@/lib/line/line-settings-status";
 import { canShowLineSettings } from "@/lib/line/line-visibility";
 import type { LineOfficialAccountPublic } from "@/lib/line/line-types";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 const fieldClass =
   "min-h-11 w-full min-w-0 rounded-2xl border border-border bg-surface px-4 text-[15px] text-text outline-none ring-primary/30 focus-visible:ring-2";
+
+function Feedback({
+  feedback,
+  testId,
+}: {
+  feedback: LineActionFeedback;
+  testId: string;
+}) {
+  if (feedback.kind === "idle" || !feedback.message) return null;
+  return (
+    <p
+      data-line-settings-feedback={testId}
+      role={feedback.kind === "error" ? "alert" : "status"}
+      className={
+        feedback.kind === "error"
+          ? "text-[13px] text-danger"
+          : "text-[13px] text-[#5C7F66]"
+      }
+    >
+      {feedback.message}
+    </p>
+  );
+}
 
 export function LineOfficialAccountSettings({
   connectionPilotEnabled,
@@ -24,24 +59,53 @@ export function LineOfficialAccountSettings({
 }) {
   const { organization, membership } = useOrganization();
   const [account, setAccount] = useState<LineOfficialAccountPublic | null>(null);
+  const [loadState, setLoadState] = useState<LineSettingsLoadState>(
+    connectionPilotEnabled ? "loading" : "idle",
+  );
   const [channelId, setChannelId] = useState("");
   const [channelSecret, setChannelSecret] = useState("");
   const [channelAccessToken, setChannelAccessToken] = useState("");
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [pending, startTransition] = useTransition();
+  const [credentialFeedback, setCredentialFeedback] = useState<LineActionFeedback>({
+    kind: "idle",
+    message: "",
+  });
+  const [broadcastFeedback, setBroadcastFeedback] = useState<LineActionFeedback>({
+    kind: "idle",
+    message: "",
+  });
+  const [busy, setBusy] = useState(false);
+  const generationRef = useRef(0);
 
   const allowed = canShowLineSettings(membership);
+  const status = useMemo(
+    () => describeLineSettingsStatus({ loadState, account }),
+    [loadState, account],
+  );
 
   useEffect(() => {
     if (!allowed || !connectionPilotEnabled) return;
-    startTransition(async () => {
-      const loaded = await loadLineOfficialAccountAction(organization.id);
-      if (loaded.ok) {
-        setAccount(loaded.data ?? null);
-        setChannelId(loaded.data?.channelId ?? "");
+    const generation = ++generationRef.current;
+    void (async () => {
+      try {
+        setLoadState("loading");
+        const loaded = await loadLineOfficialAccountAction(organization.id);
+        const next = applyLineSettingsLoadResult({
+          generation,
+          currentGeneration: generationRef.current,
+          ok: loaded.ok,
+          account: loaded.ok ? loaded.data ?? null : null,
+        });
+        if (next.ignored) return;
+        setLoadState(next.loadState);
+        setAccount(next.account);
+        if (next.account?.channelId) setChannelId(next.account.channelId);
+        if (next.feedback.kind !== "idle") setCredentialFeedback(next.feedback);
+      } catch {
+        if (generation !== generationRef.current) return;
+        setLoadState("load_failed");
+        setCredentialFeedback(lineActionCaughtError(LINE_SETTINGS_LOAD_ERROR));
       }
-    });
+    })();
   }, [allowed, connectionPilotEnabled, organization.id]);
 
   if (!allowed) {
@@ -53,13 +117,6 @@ export function LineOfficialAccountSettings({
         </p>
       </Card>
     );
-  }
-
-  function refresh() {
-    startTransition(async () => {
-      const loaded = await loadLineOfficialAccountAction(organization.id);
-      if (loaded.ok) setAccount(loaded.data ?? null);
-    });
   }
 
   return (
@@ -90,6 +147,16 @@ export function LineOfficialAccountSettings({
                 Channel Secret 與 Access Token 會先加密再寫入資料庫。一般查詢看不到明文。
               </p>
             </div>
+            <div
+              data-line-settings-status={status.credentialState}
+              data-line-settings-load={status.loadState}
+              className="rounded-2xl bg-primary-light/50 px-4 py-3"
+            >
+              <p className="text-sm font-medium text-text">{status.statusLabel}</p>
+              <p className="mt-1 text-[13px] text-secondary-text">
+                Channel ID：{status.channelIdLabel} · {status.secretLabel} · {status.tokenLabel}
+              </p>
+            </div>
             <label className="block text-sm font-medium text-text">
               Channel ID
               <input
@@ -97,6 +164,7 @@ export function LineOfficialAccountSettings({
                 value={channelId}
                 onChange={(event) => setChannelId(event.target.value)}
                 autoComplete="off"
+                disabled={busy || loadState === "loading"}
               />
             </label>
             <label className="block text-sm font-medium text-text">
@@ -106,8 +174,11 @@ export function LineOfficialAccountSettings({
                 type="password"
                 value={channelSecret}
                 onChange={(event) => setChannelSecret(event.target.value)}
-                placeholder={account?.secretConfigured ? "已保存，重新輸入即可覆蓋" : "請貼上 Channel Secret"}
+                placeholder={
+                  account?.secretConfigured ? "已保存，重新輸入即可覆蓋" : "請貼上 Channel Secret"
+                }
                 autoComplete="new-password"
+                disabled={busy || loadState === "loading"}
               />
             </label>
             <label className="block text-sm font-medium text-text">
@@ -123,31 +194,50 @@ export function LineOfficialAccountSettings({
                     : "請貼上 Channel Access Token"
                 }
                 autoComplete="new-password"
+                disabled={busy || loadState === "loading"}
               />
             </label>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
-                disabled={pending}
+                disabled={busy || loadState === "loading"}
                 onClick={() => {
-                  setError("");
-                  setMessage("");
-                  startTransition(async () => {
-                    const result = await saveLineOfficialAccountAction({
-                      organizationId: organization.id,
-                      channelId,
-                      channelSecret,
-                      channelAccessToken,
-                    });
-                    if (result.ok) {
-                      setMessage(result.message);
-                      setChannelSecret("");
-                      setChannelAccessToken("");
-                      refresh();
-                    } else {
-                      setError(result.message);
+                  const generation = ++generationRef.current;
+                  setBusy(true);
+                  setCredentialFeedback({ kind: "idle", message: "" });
+                  void (async () => {
+                    try {
+                      const result = await saveLineOfficialAccountAction({
+                        organizationId: organization.id,
+                        channelId,
+                        channelSecret,
+                        channelAccessToken,
+                      });
+                      const next = applyLineSettingsSaveResult({
+                        generation,
+                        currentGeneration: generationRef.current,
+                        ok: result.ok,
+                        message: result.ok ? result.message : result.message,
+                        account: result.ok ? result.data ?? null : null,
+                      });
+                      if (next.ignored) return;
+                      setLoadState(next.loadState);
+                      if (next.account) {
+                        setAccount(next.account);
+                        if (next.account.channelId) setChannelId(next.account.channelId);
+                      }
+                      if (next.clearSecrets) {
+                        setChannelSecret("");
+                        setChannelAccessToken("");
+                      }
+                      setCredentialFeedback(next.feedback);
+                    } catch {
+                      if (generation !== generationRef.current) return;
+                      setCredentialFeedback(lineActionCaughtError(LINE_SETTINGS_SAVE_ERROR));
+                    } finally {
+                      if (generation === generationRef.current) setBusy(false);
                     }
-                  });
+                  })();
                 }}
               >
                 加密保存
@@ -155,26 +245,35 @@ export function LineOfficialAccountSettings({
               <Button
                 type="button"
                 variant="outline"
-                disabled={pending}
+                disabled={busy || loadState === "loading"}
                 onClick={() => {
-                  setError("");
-                  setMessage("");
-                  startTransition(async () => {
-                    const result = await testLineOfficialAccountAction({
-                      organizationId: organization.id,
-                    });
-                    if (result.ok) {
-                      setMessage(result.message);
-                      refresh();
-                    } else {
-                      setError(result.message);
+                  const generation = ++generationRef.current;
+                  setBusy(true);
+                  setCredentialFeedback({ kind: "idle", message: "" });
+                  void (async () => {
+                    try {
+                      const result = await testLineOfficialAccountAction({
+                        organizationId: organization.id,
+                      });
+                      if (generation !== generationRef.current) return;
+                      setCredentialFeedback(
+                        result.ok
+                          ? { kind: "success", message: result.message }
+                          : { kind: "error", message: result.message },
+                      );
+                    } catch {
+                      if (generation !== generationRef.current) return;
+                      setCredentialFeedback(lineActionCaughtError(LINE_SETTINGS_TEST_ERROR));
+                    } finally {
+                      if (generation === generationRef.current) setBusy(false);
                     }
-                  });
+                  })();
                 }}
               >
                 測試連線（不發送訊息）
               </Button>
             </div>
+            <Feedback feedback={credentialFeedback} testId="credentials" />
             {account?.lastTestStatus ? (
               <p className="text-[13px] text-secondary-text">
                 上次測試：{account.lastTestStatus}
@@ -195,20 +294,37 @@ export function LineOfficialAccountSettings({
               <Button
                 type="button"
                 variant="outline"
-                disabled={pending}
+                disabled={busy || loadState === "loading"}
                 onClick={() => {
-                  startTransition(async () => {
-                    const result = await setLineBroadcastEnabledAction({
-                      organizationId: organization.id,
-                      enabled: !account?.broadcastEnabled,
-                    });
-                    if (result.ok) {
-                      setMessage(result.message);
-                      refresh();
-                    } else {
-                      setError(result.message);
+                  const generation = ++generationRef.current;
+                  setBusy(true);
+                  setBroadcastFeedback({ kind: "idle", message: "" });
+                  void (async () => {
+                    try {
+                      const result = await setLineBroadcastEnabledAction({
+                        organizationId: organization.id,
+                        enabled: !account?.broadcastEnabled,
+                      });
+                      if (generation !== generationRef.current) return;
+                      setBroadcastFeedback(
+                        result.ok
+                          ? { kind: "success", message: result.message }
+                          : { kind: "error", message: result.message },
+                      );
+                      if (result.ok) {
+                        setAccount((current) =>
+                          current
+                            ? { ...current, broadcastEnabled: !current.broadcastEnabled }
+                            : current,
+                        );
+                      }
+                    } catch {
+                      if (generation !== generationRef.current) return;
+                      setBroadcastFeedback(lineActionCaughtError(LINE_SETTINGS_UNEXPECTED_ERROR));
+                    } finally {
+                      if (generation === generationRef.current) setBusy(false);
                     }
-                  });
+                  })();
                 }}
               >
                 {account?.broadcastEnabled ? "關閉群發" : "店長啟用群發"}
@@ -217,16 +333,10 @@ export function LineOfficialAccountSettings({
                 前往群發中心
               </Link>
             </div>
+            <Feedback feedback={broadcastFeedback} testId="broadcast" />
           </Card>
         </>
       )}
-
-      {message ? <p className="text-[13px] text-[#5C7F66]">{message}</p> : null}
-      {error ? (
-        <p role="alert" className="text-[13px] text-danger">
-          {error}
-        </p>
-      ) : null}
     </div>
   );
 }
