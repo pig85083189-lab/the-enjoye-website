@@ -161,23 +161,25 @@ afterEach(() => {
 });
 
 describe("Phase 1C-6D.2C authorization", () => {
-  it("Owner sees Staff navigation and non-Owners do not", () => {
+  it("Owner and Manager see Staff navigation; other roles do not", () => {
     expect(getVisibleNavigationItems("OWNER").map((item) => item.id)).toContain("staff");
+    expect(getVisibleNavigationItems("MANAGER").map((item) => item.id)).toContain("staff");
     expect(canManageStaff("OWNER")).toBe(true);
-    for (const role of ["MANAGER", "STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
+    expect(canManageStaff("MANAGER")).toBe(true);
+    for (const role of ["STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
       expect(getVisibleNavigationItems(role).map((item) => item.id)).not.toContain("staff");
       expect(canManageStaff(role)).toBe(false);
     }
   });
 
-  it("direct Staff route access is Owner-only and fail-closed", () => {
+  it("direct Staff route access is Owner/Manager and fail-closed for others", () => {
     expect(resolveStaffManagementAccess({ authenticated: false })).toBe("login");
     expect(
       resolveStaffManagementAccess({ authenticated: true, role: "STAFF", isActive: true }),
     ).toBe("forbidden");
     expect(
       resolveStaffManagementAccess({ authenticated: true, role: "MANAGER", isActive: true }),
-    ).toBe("forbidden");
+    ).toBe("ok");
     expect(
       resolveStaffManagementAccess({ authenticated: true, role: "OWNER", isActive: false }),
     ).toBe("forbidden");

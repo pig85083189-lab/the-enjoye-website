@@ -14,6 +14,8 @@ import {
   canOpenOrder,
   canReadTreatment,
   canWriteTreatment,
+  canCreateExpense,
+  canCreateOperationalStaff,
   resolveCheckoutAccess,
 } from "@/lib/staff-auth/operational-capabilities";
 import {
@@ -93,6 +95,14 @@ describe("Phase 1C-6D.2D operational capabilities", () => {
     expect(canCheckout(undefined)).toBe(false);
     expect(canManageStaffCapability(actor("OWNER"))).toBe(true);
     expect(canManageStaffCapability(actor("MANAGER"))).toBe(false);
+    expect(canCreateOperationalStaff(actor("OWNER"))).toBe(true);
+    expect(canCreateOperationalStaff(actor("MANAGER"))).toBe(true);
+    expect(canCreateOperationalStaff(actor("STAFF"))).toBe(false);
+    expect(canCreateExpense(actor("OWNER"))).toBe(true);
+    expect(canCreateExpense(actor("MANAGER"))).toBe(true);
+    expect(canCreateExpense(actor("STAFF"))).toBe(false);
+    expect(canCreateExpense(actor("RECEPTIONIST"))).toBe(false);
+    expect(canCreateExpense(actor("ACCOUNTANT"))).toBe(false);
   });
 
   it("grants Treatment read/write to operational salon roles and denies ACCOUNTANT", () => {
@@ -115,16 +125,25 @@ describe("Phase 1C-6D.2D operational capabilities", () => {
     expect(canCancelAppointment(undefined)).toBe(false);
   });
 
-  it("keeps Staff management OWNER-only", () => {
+  it("opens Staff workspace to OWNER and MANAGER for operational CREATE", () => {
     expect(canManageStaff("OWNER")).toBe(true);
+    expect(canManageStaff("MANAGER")).toBe(true);
     expect(getVisibleNavigationItems("OWNER").map((item) => item.id)).toContain("staff");
-    for (const role of ["MANAGER", "STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
+    expect(getVisibleNavigationItems("MANAGER").map((item) => item.id)).toContain("staff");
+    expect(
+      resolveStaffManagementAccess({ authenticated: true, role: "OWNER", isActive: true }),
+    ).toBe("ok");
+    expect(
+      resolveStaffManagementAccess({ authenticated: true, role: "MANAGER", isActive: true }),
+    ).toBe("ok");
+    for (const role of ["STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
       expect(canManageStaff(role)).toBe(false);
       expect(getVisibleNavigationItems(role).map((item) => item.id)).not.toContain("staff");
       expect(
         resolveStaffManagementAccess({ authenticated: true, role, isActive: true }),
       ).toBe("forbidden");
     }
+    expect(canManageStaffCapability(actor("MANAGER"))).toBe(false);
     expect(staffManagementForbiddenHref()).toBe("/staff/today");
   });
 });

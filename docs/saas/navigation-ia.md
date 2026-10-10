@@ -38,6 +38,11 @@ Sales
   Checkout
   Packages
   Transactions
+  Finance
+    Overview
+    Income
+    Expenses
+    Monthly report
   Products (future)
 
 CRM
@@ -104,6 +109,10 @@ Treatment workspace stays full-screen; enter via Today / Customer / Appointment 
 | `/staff/products` | **ready** | Catalog + inventory (4.10B–C) |
 | `/staff/follow-ups` | **ready** | FollowUpTask workspace (4.11C) |
 | `/staff/reports` | **ready** | Ops dashboard derived metrics (4.11D) |
+| `/staff/finance` | **ready** | Finance V1 營運總覽 |
+| `/staff/finance/income` | **ready** | 收入紀錄（canonical Transaction） |
+| `/staff/finance/expenses` | **ready** | 支出記帳 UI（WRITE 未開） |
+| `/staff/finance/reports` | **ready** | 財務月報表 |
 | `/staff/staff` | **ready** | 員工與排班 (hours / breaks / time off) |
 | `/staff/settings` (+ org/locations) | ready hub | |
 | `/staff/more` | ready | Mobile/tablet hub |

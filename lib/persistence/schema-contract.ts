@@ -55,6 +55,22 @@ export const STRATEGY_B_RLS_MIGRATION_FILE =
 export const COMMERCE_TABLE_WRITE_HARDENING_MIGRATION_FILE =
   "supabase/migrations/20261006130000_commerce_table_write_hardening.sql";
 
+/** Finance V1B Expense foundation. Already applied on Preview. Do not rewrite. */
+export const FINANCE_EXPENSE_FOUNDATION_MIGRATION_FILE =
+  "supabase/migrations/20261007120000_finance_expense_foundation.sql";
+
+/** Finance V1C Expense WRITE hardening. Revokes INSERT. SELECT remains. */
+export const FINANCE_EXPENSE_WRITE_HARDENING_MIGRATION_FILE =
+  "supabase/migrations/20261007130000_finance_expense_write_hardening.sql";
+
+/** Staff CREATE V1 operational INSERT. Additive. Auth provisioning stays closed. */
+export const STAFF_OPERATIONAL_CREATE_MIGRATION_FILE =
+  "supabase/migrations/20261007140000_staff_operational_create.sql";
+
+/** Staff CREATE V1 atomic RPC. Additive. Does not rewrite 140000. */
+export const STAFF_OPERATIONAL_CREATE_FIX_MIGRATION_FILE =
+  "supabase/migrations/20261007150000_staff_operational_create_fix.sql";
+
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [
   "remaining_sessions",

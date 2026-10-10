@@ -11,6 +11,7 @@ import { isNavItemVisibleForRole } from "@/lib/navigation/resolve";
 import type { DayOfWeek } from "@/lib/staff-schedule/domain";
 import { DAY_OF_WEEK_LABEL } from "@/lib/staff-schedule/domain";
 import type { StaffApplyHoursDraft } from "@/lib/staff/staff-workspace-derived";
+import { isValidStaffEmail } from "@/lib/staff-auth/email";
 import type { Location, StaffRole } from "@/types/saas";
 import { STAFF_REMOTE_CREATABLE_ROLES } from "./staff-remote-create-command";
 
@@ -48,6 +49,9 @@ export interface StaffOnboardingDayHours {
 
 export interface StaffOnboardingDraft {
   displayName: string;
+  phone: string;
+  email: string;
+  title: string;
   role: StaffRole;
   locationIds: string[];
   scheduleMode: StaffOnboardingScheduleMode;
@@ -63,7 +67,7 @@ export const STAFF_ONBOARDING_STEPS: Array<{
   { id: 3, label: "初始班表" },
 ];
 
-/** Mirrors canonical /staff/staff nav roles (staff.manage → OWNER). */
+/** Mirrors canonical /staff/staff nav roles (staff.manage → OWNER / MANAGER). */
 export function canManageStaff(role: StaffRole | undefined): boolean {
   const staffNav = NAVIGATION_ITEMS.find((item) => item.id === "staff");
   if (!staffNav) return false;
@@ -87,6 +91,9 @@ export function toggleOnboardingLocation(
 export function emptyOnboardingDraft(defaultLocationId?: string): StaffOnboardingDraft {
   return {
     displayName: "",
+    phone: "",
+    email: "",
+    title: "",
     role: "STAFF",
     locationIds: defaultLocationId ? [defaultLocationId] : [],
     scheduleMode: "later",
@@ -130,7 +137,15 @@ export function isOnboardingTimeValid(startTime: string, endTime: string): boole
 
 export function validateOnboardingStep1(draft: StaffOnboardingDraft): string | null {
   if (!draft.displayName.trim()) return "請填寫員工姓名";
+  if (draft.email.trim() && !isValidStaffEmail(draft.email)) return "請輸入有效的 Email";
   return null;
+}
+
+export function formatOnboardingScheduleSummary(draft: StaffOnboardingDraft): string {
+  if (draft.scheduleMode === "later") return "未排班";
+  const working = draft.hours.filter((item) => item.isWorking);
+  if (working.length === 0) return "未排班";
+  return "未排班（遠端班表尚未開放）";
 }
 
 export function validateOnboardingStep2(

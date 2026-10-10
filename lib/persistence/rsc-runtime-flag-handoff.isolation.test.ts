@@ -47,5 +47,9 @@ describe("Phase 1C-6H.2P RSC runtime flag handoff", () => {
     expect(read("app/staff/(app)/treatments/page.tsx")).toMatch(/isTreatmentRemoteReadPilotEnabled/);
     expect(read("app/staff/(app)/treatments/new/page.tsx")).toMatch(/isTreatmentRemoteWritePilotEnabled/);
     expect(read("app/staff/(app)/staff/page.tsx")).toMatch(/isStaffRemoteCreatePilotEnabled/);
+    expect(read("app/staff/(app)/staff/page.tsx")).toMatch(/isStaffRemoteWritePilotEnabled/);
+    expect(read("app/staff/(app)/staff/page.tsx")).not.toMatch(
+      /staff-remote-write-pilot|AuthenticatedStaffWriteStore|runAuthenticatedStaffWriteCreate/,
+    );
   });
 });

@@ -50,6 +50,8 @@ export interface StaffMembership {
   locationIds: string[];
   role: StaffRole;
   displayName: string;
+  phone?: string | null;
+  title?: string | null;
   isActive: boolean;
   createdAt: string;
 }

@@ -14,6 +14,7 @@ export type NavPermission =
   | "service.read"
   | "crm.read"
   | "report.read"
+  | "finance.read"
   | "staff.manage"
   | "settings.manage";
 
@@ -43,6 +44,11 @@ export interface NavigationItem {
   description?: string;
   /** Match nested paths under href (default true) */
   matchPrefix?: boolean;
+  /** Sidebar cluster, e.g. 財務 children under 銷售 */
+  cluster?: "finance";
+  clusterLabel?: string;
+  /** More hub shows only the cluster representative */
+  moreHubPrimary?: boolean;
 }
 
 export interface NavigationGroup {

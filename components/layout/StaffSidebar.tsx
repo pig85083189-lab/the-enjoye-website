@@ -7,6 +7,7 @@ import { StaffNavLink } from "@/components/navigation/StaffNavLink";
 import { OrgLocationSwitcher } from "@/components/navigation/OrgLocationSwitcher";
 import { signOutStaff } from "@/lib/staff-auth/sign-out";
 import {
+  clusterGroupItems,
   getVisibleNavigationItems,
   groupNavigationItems,
 } from "@/lib/navigation";
@@ -28,6 +29,7 @@ export function StaffSidebar({
     insights: true,
     team: true,
     system: true,
+    finance: true,
   });
 
   const grouped = useMemo(() => {
@@ -104,19 +106,63 @@ export function StaffSidebar({
               </button>
               {open ? (
                 <ul className="mt-1 space-y-1">
-                  {items.map((item) => {
-                    const Icon = item.icon;
+                  {clusterGroupItems(items).map((entry) => {
+                    if (entry.kind === "item") {
+                      const item = entry.item;
+                      const Icon = item.icon;
+                      return (
+                        <li key={item.id}>
+                          <StaffNavLink
+                            item={item}
+                            className="flex min-h-11 items-center gap-3 rounded-2xl px-3 text-[14px] font-medium transition-colors"
+                            activeClassName="bg-primary-light text-primary"
+                            inactiveClassName="text-secondary-text hover:bg-[#FAF7F5] hover:text-text"
+                          >
+                            <Icon className="h-4 w-4" aria-hidden />
+                            <span className="flex-1">{item.label}</span>
+                          </StaffNavLink>
+                        </li>
+                      );
+                    }
+                    const clusterOpen = openGroups[entry.cluster.id] ?? true;
                     return (
-                      <li key={item.id}>
-                        <StaffNavLink
-                          item={item}
-                          className="flex min-h-11 items-center gap-3 rounded-2xl px-3 text-[14px] font-medium transition-colors"
-                          activeClassName="bg-primary-light text-primary"
-                          inactiveClassName="text-secondary-text hover:bg-[#FAF7F5] hover:text-text"
+                      <li key={entry.cluster.id}>
+                        <button
+                          type="button"
+                          className="flex min-h-11 w-full items-center justify-between rounded-2xl px-3 text-left text-[14px] font-medium text-secondary-text hover:bg-[#FAF7F5] hover:text-text"
+                          aria-expanded={clusterOpen}
+                          onClick={() =>
+                            setOpenGroups((prev) => ({
+                              ...prev,
+                              [entry.cluster.id]: !clusterOpen,
+                            }))
+                          }
                         >
-                          <Icon className="h-4 w-4" aria-hidden />
-                          <span className="flex-1">{item.label}</span>
-                        </StaffNavLink>
+                          <span>{entry.cluster.label}</span>
+                          <ChevronDown
+                            className={cn(
+                              "h-4 w-4 transition-transform",
+                              clusterOpen ? "rotate-0" : "-rotate-90",
+                            )}
+                            aria-hidden
+                          />
+                        </button>
+                        {clusterOpen ? (
+                          <ul className="mt-0.5 space-y-1 border-l border-border ml-4 pl-1">
+                            {entry.cluster.items.map((child) => (
+                              <li key={child.id}>
+                                <StaffNavLink
+                                  item={child}
+                                  className="flex min-h-11 items-center rounded-2xl px-3 text-[13px] font-medium transition-colors"
+                                  activeClassName="bg-primary-light text-primary"
+                                  inactiveClassName="text-secondary-text hover:bg-[#FAF7F5] hover:text-text"
+                                >
+                                  {child.label}
+                                </StaffNavLink>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
                       </li>
                     );
                   })}

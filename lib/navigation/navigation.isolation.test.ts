@@ -60,8 +60,15 @@ describe("active route resolution", () => {
     expect(resolveActiveNavId("/staff/settings/locations")).toBe("settings");
   });
 
-  it("services catalog is its own nav item", () => {
-    expect(resolveActiveNavId("/staff/services")).toBe("services");
+  it("finance cluster is nested under sales and collapsed in More", () => {
+    expect(resolveActiveNavId("/staff/finance")).toBe("finance");
+    expect(resolveActiveNavId("/staff/finance/income")).toBe("finance-income");
+    expect(resolveActiveNavId("/staff/finance/expenses")).toBe("finance-expenses");
+    expect(resolveActiveNavId("/staff/finance/reports")).toBe("finance-reports");
+    const more = getMoreHubItems("OWNER").map((item) => item.id);
+    expect(more).toContain("finance");
+    expect(more).not.toContain("finance-income");
+    expect(getMobilePrimaryNavCount("OWNER")).toBeLessThanOrEqual(4);
   });
 
   it("more hub resolves as more", () => {
@@ -103,8 +110,10 @@ describe("role-aware visibility", () => {
     expect(ids).toContain("reports");
   });
 
-  it("hides Staff from MANAGER and every non-OWNER role", () => {
-    for (const role of ["MANAGER", "STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
+  it("shows Staff to OWNER and MANAGER and hides it from other roles", () => {
+    expect(getVisibleNavigationItems("OWNER").map((item) => item.id)).toContain("staff");
+    expect(getVisibleNavigationItems("MANAGER").map((item) => item.id)).toContain("staff");
+    for (const role of ["STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
       expect(getVisibleNavigationItems(role).map((item) => item.id)).not.toContain("staff");
     }
   });

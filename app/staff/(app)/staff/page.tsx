@@ -1,13 +1,18 @@
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
+import { StaffRoleDeniedPanel } from "@/features/staff/StaffRoleDeniedPanel";
 import { StaffWorkspacePage } from "@/features/staff/StaffWorkspacePage";
 import {
-  staffManagementForbiddenHref,
   staffManagementLoginHref,
   resolveStaffManagementAccess,
 } from "@/lib/staff/staff-management-access";
 import { isStaffRemoteCreatePilotEnabled } from "@/lib/staff/staff-remote-create-flag";
+import { isStaffRemoteWritePilotEnabled } from "@/lib/staff/staff-remote-write-flag";
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
+import {
+  isStaffInvitePilotEnabled,
+  isStaffInviteSendOpen,
+} from "@/lib/staff-auth/staff-invite-flag";
 
 export default async function StaffPage() {
   await connection();
@@ -21,10 +26,15 @@ export default async function StaffPage() {
     redirect(staffManagementLoginHref());
   }
   if (access !== "ok") {
-    redirect(staffManagementForbiddenHref());
+    return <StaffRoleDeniedPanel />;
   }
 
   return (
-    <StaffWorkspacePage staffRemoteCreatePilot={isStaffRemoteCreatePilotEnabled()} />
+    <StaffWorkspacePage
+      staffRemoteCreatePilot={isStaffRemoteCreatePilotEnabled()}
+      staffRemoteWritePilot={isStaffRemoteWritePilotEnabled()}
+      staffInvitePilot={isStaffInvitePilotEnabled()}
+      staffInviteSendOpen={isStaffInviteSendOpen()}
+    />
   );
 }
