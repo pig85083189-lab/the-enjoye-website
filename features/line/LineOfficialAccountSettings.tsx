@@ -285,7 +285,7 @@ export function LineOfficialAccountSettings({
           <Card padding="lg" className="space-y-3">
             <h2 className="text-[16px] font-semibold text-text">群發開關</h2>
             <p className="text-[13px] text-secondary-text">
-              即使店長開啟，Phase 1 仍不會實際呼叫 LINE Broadcast。系統不會顯示好友數或會員分群。
+              即使店長開啟，真實發送仍須伺服器開關。預設關閉，不會向好友發送，也不顯示好友數。
             </p>
             <p className="text-sm text-text">
               目前狀態：{account?.broadcastEnabled ? "店長已啟用（實際發送仍關閉）" : "已關閉"}

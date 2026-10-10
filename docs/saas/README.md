@@ -35,7 +35,7 @@ THE ENJOYE is the **first Organization tenant**, not the platform itself.
 | [entitlements.md](./entitlements.md) | Plans → entitlements (not `if plan === PRO`) |
 | [mvp-roadmap.md](./mvp-roadmap.md) | MVP CORE / NEXT / LATER + IA recommendation |
 | [navigation-ia.md](./navigation-ia.md) | Phase 4.7 Staff shell IA · routes · role visibility |
-| [line-official-account.md](./line-official-account.md) | Phase 1 LINE Official Account connect + text broadcast |
+| [line-official-account.md](./line-official-account.md) | Phase 1B LINE Official Account + real text broadcast (send closed) |
 | [calendar-ux.md](./calendar-ux.md) | Calendar desktop / tablet / mobile UX (4.8A–4.8B) |
 | [staff-scheduling.md](./staff-scheduling.md) | Phase 4.8B working hours, breaks, time off |
 | [availability-engine.md](./availability-engine.md) | Availability reasons, status blocking, override |

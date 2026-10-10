@@ -6,17 +6,24 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import {
   confirmLineBroadcastAction,
-  loadLineBroadcastsAction,
+  loadLineBroadcastPrepareAction,
   saveLineBroadcastDraftAction,
+  sendLineBroadcastAction,
 } from "@/lib/line/actions";
 import { newLineRequestId } from "@/lib/line/line-command";
 import { LINE_BROADCAST_TEXT_MAX } from "@/lib/line/line-flag";
+import { restoreLineBroadcastEditor, unknownLineQuota } from "@/lib/line/line-quota";
 import {
   canShowLineSettings,
   lineBroadcastApiResultLabel,
   lineBroadcastStatusLabel,
+  lineOfficialAccountNameLabel,
 } from "@/lib/line/line-visibility";
-import type { LineBroadcastPublic } from "@/lib/line/line-types";
+import type {
+  LineBroadcastPublic,
+  LineOfficialAccountPublic,
+  LineQuotaPublic,
+} from "@/lib/line/line-types";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 export function LineBroadcastCenter({
@@ -29,23 +36,55 @@ export function LineBroadcastCenter({
   const [requestId, setRequestId] = useState(() => newLineRequestId());
   const [broadcastId, setBroadcastId] = useState<string | undefined>();
   const [history, setHistory] = useState<LineBroadcastPublic[]>([]);
+  const [account, setAccount] = useState<LineOfficialAccountPublic | null>(null);
+  const [quota, setQuota] = useState<LineQuotaPublic>(() => unknownLineQuota());
+  const [sendOpen, setSendOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [realSendAck, setRealSendAck] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
   const allowed = canShowLineSettings(membership);
 
   const preview = useMemo(() => textBody.trim(), [textBody]);
+  const officialName = lineOfficialAccountNameLabel(account);
 
-  function reload() {
+  function applyPrepare(data: {
+    account: LineOfficialAccountPublic | null;
+    quota: LineQuotaPublic;
+    sendOpen: boolean;
+    broadcasts: LineBroadcastPublic[];
+  }) {
+    setAccount(data.account);
+    setQuota(data.quota);
+    setSendOpen(data.sendOpen);
+    setHistory(data.broadcasts);
+  }
+
+  function reload(restoreDraft: boolean) {
     startTransition(async () => {
-      const loaded = await loadLineBroadcastsAction(organization.id);
-      if (loaded.ok) setHistory(loaded.data ?? []);
+      const loaded = await loadLineBroadcastPrepareAction(organization.id);
+      if (!loaded.ok || !loaded.data) {
+        if (!loaded.ok) setError(loaded.message);
+        return;
+      }
+      applyPrepare(loaded.data);
+      if (!restoreDraft) return;
+      const restored = restoreLineBroadcastEditor({
+        history: loaded.data.broadcasts,
+        currentText: "",
+        currentRequestId: requestId,
+      });
+      if (restored.restored) {
+        setTextBody(restored.textBody);
+        setRequestId(restored.requestId);
+        setBroadcastId(restored.broadcastId);
+      }
     });
   }
 
   useEffect(() => {
-    if (allowed && connectionPilotEnabled) reload();
+    if (allowed && connectionPilotEnabled) reload(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowed, connectionPilotEnabled, organization.id]);
 
@@ -65,7 +104,7 @@ export function LineBroadcastCenter({
           LINE 群發中心
         </h1>
         <p className="text-sm text-secondary-text">
-          Phase 1 只支援官方帳號全好友文字 Broadcast。不會顯示好友數或假分群。
+          只支援官方帳號全好友文字 Broadcast。成功只代表 API 已接受，不估計好友數。
         </p>
         <Link href="/staff/settings/line" className="text-sm text-primary">
           LINE 官方帳號設定
@@ -109,7 +148,7 @@ export function LineBroadcastCenter({
                       setBroadcastId(saved.data.broadcastId);
                       setRequestId(saved.data.requestId);
                       setMessage(saved.message);
-                      reload();
+                      reload(false);
                     } else if (!saved.ok) {
                       setError(saved.message);
                     }
@@ -121,7 +160,11 @@ export function LineBroadcastCenter({
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => setConfirming(true)}
+                onClick={() => {
+                  setRealSendAck(false);
+                  setConfirming(true);
+                  reload(false);
+                }}
               >
                 預覽並確認
               </Button>
@@ -130,9 +173,15 @@ export function LineBroadcastCenter({
 
           <Card data-line-broadcast-preview padding="lg" className="space-y-3">
             <h2 className="text-[16px] font-semibold text-text">訊息預覽</h2>
+            <p className="text-[13px] text-secondary-text" data-line-oa-name>
+              官方帳號：{officialName}
+            </p>
             <div className="rounded-2xl bg-primary-light/50 px-4 py-3 text-[15px] whitespace-pre-wrap">
               {preview || "尚未輸入文字"}
             </div>
+            <p className="text-[12px] text-secondary-text" data-line-quota>
+              LINE 額度：{quota.label}
+            </p>
             <p className="text-[12px] text-secondary-text">
               發送對象：此官方帳號的全部好友。系統不估計送達人數。
             </p>
@@ -141,12 +190,27 @@ export function LineBroadcastCenter({
       )}
 
       {confirming ? (
-        <Card data-line-broadcast-confirm padding="lg" className="space-y-3">
+        <Card data-line-broadcast-confirm padding="lg" className="space-y-4">
           <p className="font-semibold text-text">確認發送？</p>
-          <p className="text-sm text-secondary-text">
-            Phase 1 不會呼叫 LINE Broadcast。確認後只會留下「未發送」紀錄，避免重複請求。
-          </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="rounded-2xl bg-primary-light/50 px-4 py-3 text-sm space-y-1">
+            <p data-line-confirm-oa>官方帳號：{officialName}</p>
+            <p data-line-confirm-quota>LINE 額度：{quota.label}</p>
+            <p>伺服器發送開關：{sendOpen ? "開啟" : "關閉（預設）"}</p>
+            <p>店長群發開關：{account?.broadcastEnabled ? "已啟用" : "未啟用"}</p>
+            <p>
+              連線狀態：
+              {account?.lastTestStatus === "ok" ? "已連線" : "尚未確認連線"}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-border px-4 py-3 text-[15px] whitespace-pre-wrap">
+            {preview || "尚未輸入文字"}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-text">練習確認</p>
+            <p className="text-sm text-secondary-text">
+              這一步不會呼叫 LINE Broadcast，只會留下「未發送」紀錄。
+            </p>
             <Button
               type="button"
               disabled={pending}
@@ -160,21 +224,72 @@ export function LineBroadcastCenter({
                     broadcastId,
                   });
                   setConfirming(false);
+                  setRealSendAck(false);
                   if (result.ok) {
                     setMessage(result.message);
                   } else {
                     setError(result.message);
                   }
-                  reload();
+                  reload(false);
                 });
               }}
             >
               確認（不會實際發送）
             </Button>
-            <Button type="button" variant="outline" onClick={() => setConfirming(false)}>
-              返回編輯
+          </div>
+
+          <div className="space-y-2 border-t border-border pt-4" data-line-broadcast-real-send>
+            <p className="text-sm font-medium text-text">真實發送</p>
+            <p className="text-sm text-secondary-text">
+              這不是練習按鈕。成功只顯示「API 已接受」，不代表全部好友已收到。逾時不會自動重送。
+            </p>
+            <label className="flex items-start gap-2 text-sm text-text">
+              <input
+                type="checkbox"
+                data-line-real-send-ack
+                className="mt-1"
+                checked={realSendAck}
+                onChange={(event) => setRealSendAck(event.target.checked)}
+              />
+              <span>
+                我了解這會向「{officialName}」的全部好友發送，且系統不會在逾時後自動重送。
+              </span>
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending || !realSendAck}
+              onClick={() => {
+                setError("");
+                startTransition(async () => {
+                  const result = await sendLineBroadcastAction({
+                    organizationId: organization.id,
+                    textBody,
+                    requestId,
+                    broadcastId,
+                    acknowledged: realSendAck,
+                  });
+                  setConfirming(false);
+                  setRealSendAck(false);
+                  if (result.ok) {
+                    setMessage(result.message);
+                    setTextBody("");
+                    setBroadcastId(undefined);
+                    setRequestId(newLineRequestId());
+                  } else {
+                    setError(result.message);
+                  }
+                  reload(false);
+                });
+              }}
+            >
+              確認真實發送
             </Button>
           </div>
+
+          <Button type="button" variant="ghost" onClick={() => setConfirming(false)}>
+            返回編輯
+          </Button>
         </Card>
       ) : null}
 
@@ -198,6 +313,7 @@ export function LineBroadcastCenter({
                 </p>
                 <p className="mt-1 text-[12px] text-secondary-text">
                   {lineBroadcastApiResultLabel(row.apiResult)} · {row.requestId}
+                  {row.errorMessage ? ` · ${row.errorMessage}` : ""}
                 </p>
               </li>
             ))}
@@ -205,9 +321,13 @@ export function LineBroadcastCenter({
         )}
       </Card>
 
-      {message ? <p className="text-[13px] text-[#5C7F66]">{message}</p> : null}
+      {message ? (
+        <p className="text-[13px] text-[#5C7F66]" data-line-broadcast-message>
+          {message}
+        </p>
+      ) : null}
       {error ? (
-        <p role="alert" className="text-[13px] text-danger">
+        <p role="alert" className="text-[13px] text-danger" data-line-broadcast-error>
           {error}
         </p>
       ) : null}

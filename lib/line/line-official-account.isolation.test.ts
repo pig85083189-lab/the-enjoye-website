@@ -11,22 +11,38 @@ import {
   PREVIEW_SUPABASE_HOST,
   PRODUCTION_SUPABASE_HOST,
 } from "@/lib/staff-auth/staff-invite-redirect";
-import { LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE } from "@/lib/persistence/schema-contract";
+import {
+  LINE_BROADCAST_REAL_SEND_MIGRATION_FILE,
+  LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE,
+} from "@/lib/persistence/schema-contract";
 import { STAFF_LINE_ROLES, resolveStaffRolePageAccess } from "@/lib/staff/staff-role-page-access";
 import {
+  CLAIM_LINE_BROADCAST_SEND_RPC,
+  COMPLETE_LINE_BROADCAST_SEND_RPC,
   evaluateLineBroadcastDraft,
   evaluateLineBroadcastEnable,
+  evaluateLineBroadcastRealSend,
   evaluateLineBroadcastSend,
   evaluateLineConnectionSave,
   evaluateLineConnectionTest,
   interpretLineBroadcastApiOutcome,
   LINE_BOT_INFO_PATH,
   LINE_BROADCAST_PATH,
+  LINE_QUOTA_CONSUMPTION_PATH,
+  LINE_QUOTA_PATH,
   MARK_LINE_BROADCAST_SEND_CLOSED_RPC,
   newLineRequestId,
   READ_LINE_SECRETS_RPC,
   type LineActor,
 } from "@/lib/line/line-command";
+import {
+  describeLineQuota,
+  latestRestorableLineDraft,
+  restoreLineBroadcastEditor,
+  unknownLineQuota,
+} from "@/lib/line/line-quota";
+import { fetchLineMessageQuota } from "@/lib/line/line-quota-adapter";
+import { runClaimedLineBroadcastSend } from "@/lib/line/line-send-pipeline";
 import {
   canEncryptLineCredentials,
   decryptLineCredential,
@@ -359,8 +375,221 @@ describe("LINE HTTP adapters", () => {
         return new Response("{}", { status: 200 });
       },
     });
-    expect(result).toEqual({ timedOut: false, httpOk: false, lineRequestId: null });
+    expect(result).toEqual({
+      timedOut: false,
+      httpOk: false,
+      lineRequestId: null,
+      httpStatus: null,
+    });
     expect(fetched).toBe(0);
+  });
+
+  it("broadcast adapter posts once with retry key when send is open in a mock", async () => {
+    let fetched = 0;
+    const result = await executeLineBroadcastHttp({
+      accessToken: "mock-token",
+      textBody: "hello",
+      requestId: "lbrq-req00000000001",
+      sendOpen: true,
+      fetchImpl: async (input, init) => {
+        fetched += 1;
+        expect(String(input)).toContain("/v2/bot/message/broadcast");
+        expect(init?.method).toBe("POST");
+        expect((init?.headers as Record<string, string>)["X-Line-Retry-Key"]).toBe(
+          "lbrq-req00000000001",
+        );
+        return new Response("{}", {
+          status: 200,
+          headers: { "x-line-request-id": "line-req-1" },
+        });
+      },
+    });
+    expect(result).toEqual({
+      timedOut: false,
+      httpOk: true,
+      lineRequestId: "line-req-1",
+      httpStatus: 200,
+    });
+    expect(fetched).toBe(1);
+  });
+});
+
+describe("LINE Phase 1B quota, claim, and draft restore", () => {
+  it("never invents remaining quota or friend counts", () => {
+    expect(unknownLineQuota().known).toBe(false);
+    expect(unknownLineQuota().remaining).toBeNull();
+    expect(unknownLineQuota().label).toMatch(/未知/);
+    expect(describeLineQuota({ type: "none", usage: 12 })).toMatchObject({
+      known: true,
+      remaining: null,
+      label: expect.stringMatching(/無上限/),
+    });
+    expect(describeLineQuota({ type: "limited", limit: 1000, usage: 700 })).toMatchObject({
+      known: true,
+      remaining: 300,
+    });
+    expect(describeLineQuota({ type: "limited", limit: 1000 }).known).toBe(false);
+    expect(JSON.stringify(describeLineQuota({ type: "limited", limit: 10, usage: 10 }))).not.toMatch(
+      /friend|follower|好友/,
+    );
+  });
+
+  it("quota adapter is read-only and unknown when LINE omits data", async () => {
+    expect(LINE_QUOTA_PATH).toBe("/v2/bot/message/quota");
+    expect(LINE_QUOTA_CONSUMPTION_PATH).toBe("/v2/bot/message/quota/consumption");
+    const called: string[] = [];
+    const quota = await fetchLineMessageQuota({
+      accessToken: "mock-token",
+      fetchImpl: async (input) => {
+        called.push(String(input));
+        return new Response("{}", { status: 503 });
+      },
+    });
+    expect(quota.known).toBe(false);
+    expect(quota.remaining).toBeNull();
+    expect(called.some((url) => url.includes("/message/quota"))).toBe(true);
+    expect(called.join("")).not.toContain("/message/broadcast");
+  });
+
+  it("refuses real send without ack, connection, quota, or Owner", () => {
+    const base = {
+      connectionPilotEnabled: true,
+      sendOpen: true,
+      ownerBroadcastEnabled: true,
+      organizationId: ORG_ENJOYE_ID,
+      actor: ownerActor(),
+      textBody: "週年活動通知",
+      existing: draftBroadcast(),
+      requestId: "lbrq-req00000000001",
+      acceptedToday: 0,
+      accountConnected: true,
+      acknowledged: true,
+    };
+    expect(
+      evaluateLineBroadcastRealSend({ ...base, acknowledged: false }),
+    ).toMatchObject({ ok: false, reason: "invalid_input" });
+    expect(
+      evaluateLineBroadcastRealSend({ ...base, accountConnected: false }),
+    ).toMatchObject({ ok: false, reason: "not_configured" });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...base,
+        lineQuota: describeLineQuota({ type: "limited", limit: 100, usage: 100 }),
+      }),
+    ).toMatchObject({ ok: false, reason: "quota_exceeded" });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...base,
+        actor: ownerActor({ role: "MANAGER" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...base,
+        organizationId: ORG_LUMIERE_ID,
+        existing: draftBroadcast({ organizationId: ORG_ENJOYE_ID }),
+        actor: ownerActor({ organizationId: ORG_LUMIERE_ID }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+  });
+
+  it("claims once, records API accepted, fail, and timeout without retry", async () => {
+    let sendCalls = 0;
+    const success = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => {
+        sendCalls += 1;
+        return {
+          timedOut: false,
+          httpOk: true,
+          lineRequestId: "line-1",
+          httpStatus: 200,
+        };
+      },
+      complete: async () => undefined,
+    });
+    expect(success).toMatchObject({ ok: true, apiResult: "accepted" });
+    expect(success.ok && success.message).toMatch(/API 已接受/);
+    expect(sendCalls).toBe(1);
+
+    const failed = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => ({
+        timedOut: false,
+        httpOk: false,
+        lineRequestId: null,
+        httpStatus: 429,
+      }),
+      complete: async () => undefined,
+    });
+    expect(failed).toMatchObject({ ok: false, reason: "error" });
+
+    const timedOut = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => ({
+        timedOut: true,
+        httpOk: false,
+        lineRequestId: null,
+        httpStatus: null,
+      }),
+      complete: async () => undefined,
+    });
+    expect(timedOut).toMatchObject({
+      ok: false,
+      reason: "pending_confirmation",
+    });
+
+    const duplicate = await runClaimedLineBroadcastSend({
+      claim: async () => ({
+        ok: false,
+        reason: "duplicate",
+        message: "這則訊息已經被 LINE API 接受，不會重送",
+      }),
+      send: async () => {
+        sendCalls += 1;
+        return {
+          timedOut: false,
+          httpOk: true,
+          lineRequestId: "x",
+          httpStatus: 200,
+        };
+      },
+      complete: async () => undefined,
+    });
+    expect(duplicate).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(sendCalls).toBe(1);
+  });
+
+  it("restores a saved draft after a simulated refresh", () => {
+    const history = [
+      draftBroadcast({
+        status: "accepted",
+        id: "lbr-old",
+        requestId: "lbrq-old",
+        textBody: "舊訊息",
+        createdAt: "2026-10-09T00:00:00.000Z",
+      }),
+      draftBroadcast({ textBody: "週年活動通知", requestId: "lbrq-req00000000001" }),
+    ];
+    expect(latestRestorableLineDraft(history)?.requestId).toBe("lbrq-req00000000001");
+    const first = restoreLineBroadcastEditor({
+      history,
+      currentText: "",
+      currentRequestId: "lbrq-newempty000001",
+    });
+    expect(first).toMatchObject({
+      restored: true,
+      textBody: "週年活動通知",
+      requestId: "lbrq-req00000000001",
+      broadcastId: "lbr-draft000000001",
+    });
+    const afterRefresh = restoreLineBroadcastEditor({
+      history,
+      currentText: "",
+      currentRequestId: "lbrq-afterrefresh0001",
+    });
+    expect(afterRefresh.requestId).toBe(first.requestId);
+    expect(afterRefresh.textBody).toBe(first.textBody);
   });
 });
 
@@ -495,7 +724,12 @@ describe("LINE source contracts", () => {
 
   it("never ships secrets or send adapters to the client UI", () => {
     expect(settingsUi).not.toMatch(/line-crypto|line-send-adapter|createServiceRoleClient/);
-    expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|createServiceRoleClient/);
+    expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-quota-adapter|createServiceRoleClient/);
+    expect(broadcastUi).toMatch(/確認（不會實際發送）/);
+    expect(broadcastUi).toMatch(/確認真實發送/);
+    expect(broadcastUi).toMatch(/data-line-broadcast-real-send/);
+    expect(broadcastUi).toMatch(/data-line-real-send-ack/);
+    expect(broadcastUi).toMatch(/restoreLineBroadcastEditor/);
     expect(settingsHub).toMatch(/data-line-settings-entry/);
     expect(settingsHub).not.toMatch(/channelAccessToken|channel_secret_cipher/);
     expect(settingsUi).toMatch(/data-line-settings-feedback/);
@@ -506,7 +740,9 @@ describe("LINE source contracts", () => {
     expect(crypto).toMatch(/aes-256-gcm/);
     expect(crypto).toMatch(/LINE credential crypto cannot run in the browser/);
     expect(send).toMatch(/X-Line-Retry-Key/);
-    expect(actions).not.toMatch(/executeLineBroadcastHttp/);
+    expect(actions).toMatch(/executeLineBroadcastHttp/);
+    expect(actions).toMatch(/CLAIM_LINE_BROADCAST_SEND_RPC|claim_line_broadcast_send/);
+    expect(actions).toMatch(/COMPLETE_LINE_BROADCAST_SEND_RPC|complete_line_broadcast_send/);
     expect(actions).toMatch(/LINE_BROADCAST_SEND_CLOSED_RPC|mark_line_broadcast_send_closed/);
     expect(actions).not.toMatch(/createServiceRoleClient/);
     expect(actions).toMatch(/OWNER_READ_LINE_TOKEN_CIPHER_RPC|owner_read_line_access_token_cipher/);
@@ -525,6 +761,9 @@ describe("LINE source contracts", () => {
     expect(PRODUCTION_SUPABASE_HOST).toBe("knccefcxncglgpmvgqlp.supabase.co");
     expect(PREVIEW_SUPABASE_HOST).toBe("bfzquejrtgqzzarhkiya.supabase.co");
     expect(source("lib/line/actions.ts")).not.toMatch(PRODUCTION_SUPABASE_HOST);
-    expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1/);
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1B/);
+    expect(source(LINE_BROADCAST_REAL_SEND_MIGRATION_FILE)).toMatch(CLAIM_LINE_BROADCAST_SEND_RPC);
+    expect(source(LINE_BROADCAST_REAL_SEND_MIGRATION_FILE)).toMatch(COMPLETE_LINE_BROADCAST_SEND_RPC);
+    expect(source(LINE_BROADCAST_REAL_SEND_MIGRATION_FILE)).not.toMatch(/friend_count|follower_count/);
   });
 });

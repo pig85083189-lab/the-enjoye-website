@@ -2,14 +2,18 @@
 
 import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import {
+  CLAIM_LINE_BROADCAST_SEND_RPC,
+  COMPLETE_LINE_BROADCAST_SEND_RPC,
   MARK_LINE_BROADCAST_SEND_CLOSED_RPC,
   OWNER_READ_LINE_TOKEN_CIPHER_RPC,
+  RECORD_LINE_BROADCAST_OWNER_EVENT_RPC,
   RECORD_LINE_CONNECTION_TEST_RPC,
   SET_LINE_BROADCAST_ENABLED_RPC,
   UPSERT_LINE_BROADCAST_DRAFT_RPC,
   UPSERT_LINE_CONNECTION_RPC,
   evaluateLineBroadcastDraft,
   evaluateLineBroadcastEnable,
+  evaluateLineBroadcastRealSend,
   evaluateLineBroadcastSend,
   evaluateLineConnectionSave,
   evaluateLineConnectionTest,
@@ -28,6 +32,10 @@ import {
   isLineBroadcastSendOpen,
   isLineConnectionPilotEnabled,
 } from "@/lib/line/line-flag";
+import { fetchLineMessageQuota } from "@/lib/line/line-quota-adapter";
+import { isLineOfficialAccountConnected, unknownLineQuota } from "@/lib/line/line-quota";
+import { executeLineBroadcastHttp } from "@/lib/line/line-send-adapter";
+import { runClaimedLineBroadcastSend } from "@/lib/line/line-send-pipeline";
 import {
   LINE_SETTINGS_LOAD_ERROR,
   LINE_SETTINGS_SAVE_ERROR,
@@ -44,6 +52,7 @@ import {
   readLineOfficialAccount,
 } from "@/lib/line/line-load";
 import type {
+  LineBroadcastPrepare,
   LineBroadcastPublic,
   LineDecisionReason,
   LineOfficialAccountPublic,
@@ -272,10 +281,55 @@ export async function setLineBroadcastEnabledAction(input: {
     return {
       ok: true,
       message: input.enabled
-        ? "已記錄店長啟用。Phase 1 仍不會實際發送 LINE 訊息。"
+        ? "已記錄店長啟用。真實發送仍須伺服器開關開啟後才會呼叫 LINE。"
         : "已關閉 LINE 群發",
     };
   }, LINE_SETTINGS_UNEXPECTED_ERROR);
+}
+
+async function readOwnerAccessTokenCipher(organizationId: string) {
+  const supabase = await createClient();
+  const secrets = await supabase.rpc(OWNER_READ_LINE_TOKEN_CIPHER_RPC, {
+    p_organization_id: organizationId,
+  });
+  const payload = secrets.data && typeof secrets.data === "object" ? secrets.data : null;
+  const cipher =
+    payload && "channel_access_token_cipher" in payload
+      ? String((payload as { channel_access_token_cipher?: unknown }).channel_access_token_cipher ?? "")
+      : "";
+  return { error: secrets.error, cipher };
+}
+
+async function loadLineQuotaForOwner(organizationId: string) {
+  const env = process.env;
+  if (!hasLineCredentialKey(env) || !canEncryptLineCredentials(env)) {
+    return unknownLineQuota("憑證金鑰未設定");
+  }
+  const secrets = await readOwnerAccessTokenCipher(organizationId);
+  if (secrets.error || !secrets.cipher.startsWith("v1.")) {
+    return unknownLineQuota();
+  }
+  const token = decryptLineCredential(secrets.cipher, env);
+  if (!token.ok) return unknownLineQuota();
+  return fetchLineMessageQuota({ accessToken: token.plaintext });
+}
+
+function parseClaimPayload(data: unknown): {
+  claimed: boolean;
+  broadcastId: string;
+  requestId: string;
+  reason: LineDecisionReason;
+  message: string;
+} {
+  const payload = Array.isArray(data) ? data[0] : data;
+  const row = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  return {
+    claimed: row.claimed === true,
+    broadcastId: String(row.broadcast_id ?? ""),
+    requestId: String(row.request_id ?? ""),
+    reason: (typeof row.reason === "string" ? row.reason : "error") as LineDecisionReason,
+    message: typeof row.message === "string" ? row.message : "無法鎖定這則發送",
+  };
 }
 
 export async function saveLineBroadcastDraftAction(input: {
@@ -284,37 +338,74 @@ export async function saveLineBroadcastDraftAction(input: {
   broadcastId?: string;
   requestId?: string;
 }): Promise<LineActionResult<{ broadcastId: string; requestId: string }>> {
-  const { actor } = await loadActor(input.organizationId);
-  const decision = evaluateLineBroadcastDraft({
-    connectionPilotEnabled: isLineConnectionPilotEnabled(),
-    organizationId: input.organizationId,
-    actor,
-    textBody: input.textBody,
-  });
-  if (!decision.ok) return decision;
-  const requestId = input.requestId?.startsWith("lbrq-")
-    ? input.requestId
-    : newLineRequestId();
-  const supabase = await createClient();
-  const saved = await supabase.rpc(UPSERT_LINE_BROADCAST_DRAFT_RPC, {
-    p_organization_id: input.organizationId,
-    p_broadcast_id: input.broadcastId ?? null,
-    p_request_id: requestId,
-    p_text_body: input.textBody,
-  });
-  const payload = Array.isArray(saved.data) ? saved.data[0] : saved.data;
-  const broadcastId =
-    payload && typeof payload === "object" && "broadcast_id" in payload
-      ? String((payload as { broadcast_id?: unknown }).broadcast_id ?? "")
-      : "";
-  if (saved.error || !broadcastId.startsWith("lbr-")) {
-    return { ok: false, reason: "error", message: "草稿寫入失敗" };
-  }
-  return {
-    ok: true,
-    message: "草稿已保存",
-    data: { broadcastId, requestId },
-  };
+  return runLineAction(async () => {
+    const { actor } = await loadActor(input.organizationId);
+    const decision = evaluateLineBroadcastDraft({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(),
+      organizationId: input.organizationId,
+      actor,
+      textBody: input.textBody,
+    });
+    if (!decision.ok) return decision;
+    const requestId = input.requestId?.startsWith("lbrq-")
+      ? input.requestId
+      : newLineRequestId();
+    const supabase = await createClient();
+    const saved = await supabase.rpc(UPSERT_LINE_BROADCAST_DRAFT_RPC, {
+      p_organization_id: input.organizationId,
+      p_broadcast_id: input.broadcastId ?? null,
+      p_request_id: requestId,
+      p_text_body: input.textBody,
+    });
+    const payload = Array.isArray(saved.data) ? saved.data[0] : saved.data;
+    const broadcastId =
+      payload && typeof payload === "object" && "broadcast_id" in payload
+        ? String((payload as { broadcast_id?: unknown }).broadcast_id ?? "")
+        : "";
+    if (saved.error || !broadcastId.startsWith("lbr-")) {
+      return { ok: false, reason: "error", message: "草稿寫入失敗" };
+    }
+    return {
+      ok: true,
+      message: "草稿已保存",
+      data: { broadcastId, requestId },
+    };
+  }, "草稿寫入失敗");
+}
+
+export async function loadLineBroadcastPrepareAction(
+  organizationId: string,
+): Promise<LineActionResult<LineBroadcastPrepare>> {
+  return runLineAction(async () => {
+    const { actor } = await loadActor(organizationId);
+    const gate = evaluateLineBroadcastDraft({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(),
+      organizationId,
+      actor,
+      textBody: "probe",
+    });
+    if (!gate.ok && gate.reason === "unauthorized") {
+      return { ok: false, reason: gate.reason, message: gate.message };
+    }
+    if (!isLineConnectionPilotEnabled()) {
+      return { ok: false, reason: "pilot_disabled", message: "LINE 串接尚未啟用" };
+    }
+    const account = await loadLineOfficialAccount(organizationId);
+    const broadcasts = await loadLineBroadcasts(organizationId);
+    const quota = account?.tokenConfigured
+      ? await loadLineQuotaForOwner(organizationId)
+      : unknownLineQuota("尚未保存 Channel Access Token");
+    return {
+      ok: true,
+      message: "ok",
+      data: {
+        account,
+        quota,
+        sendOpen: isLineBroadcastSendOpen(),
+        broadcasts,
+      },
+    };
+  }, "無法讀取群發準備資料");
 }
 
 export async function confirmLineBroadcastAction(input: {
@@ -376,4 +467,148 @@ export async function confirmLineBroadcastAction(input: {
     reason: "send_closed",
     message: "LINE 群發尚未開放實際發送",
   };
+}
+
+export async function sendLineBroadcastAction(input: {
+  organizationId: string;
+  textBody: string;
+  requestId: string;
+  broadcastId?: string;
+  acknowledged: boolean;
+}): Promise<LineActionResult> {
+  return runLineAction(async () => {
+    const { actor } = await loadActor(input.organizationId);
+    let existing =
+      (input.broadcastId
+        ? (await loadLineBroadcasts(input.organizationId)).find((row) => row.id === input.broadcastId)
+        : null) ?? (await loadLineBroadcastByRequestId(input.organizationId, input.requestId));
+    if (!existing) {
+      const drafted = await saveLineBroadcastDraftAction({
+        organizationId: input.organizationId,
+        textBody: input.textBody,
+        requestId: input.requestId,
+      });
+      if (drafted.ok && drafted.data) {
+        existing = await loadLineBroadcastByRequestId(
+          input.organizationId,
+          drafted.data.requestId,
+        );
+      }
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const broadcasts = await loadLineBroadcasts(input.organizationId);
+    const acceptedToday = countAcceptedBroadcastsOnDay(broadcasts, today);
+    const account = await loadLineOfficialAccount(input.organizationId);
+    const quota = account?.tokenConfigured
+      ? await loadLineQuotaForOwner(input.organizationId)
+      : unknownLineQuota();
+    const decision = evaluateLineBroadcastRealSend({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(),
+      sendOpen: isLineBroadcastSendOpen(),
+      ownerBroadcastEnabled: Boolean(account?.broadcastEnabled),
+      organizationId: input.organizationId,
+      actor,
+      textBody: input.textBody,
+      existing,
+      requestId: input.requestId,
+      acceptedToday,
+      accountConnected: isLineOfficialAccountConnected(account),
+      acknowledged: input.acknowledged,
+      lineQuota: quota,
+    });
+    if (!decision.ok) {
+      if (existing?.id) {
+        const supabase = await createClient();
+        await supabase.rpc(RECORD_LINE_BROADCAST_OWNER_EVENT_RPC, {
+          p_organization_id: input.organizationId,
+          p_broadcast_id: existing.id,
+          p_event_type: "send_refused",
+          p_detail: decision.message,
+        });
+      }
+      return decision;
+    }
+
+    const supabase = await createClient();
+    const pipeline = await runClaimedLineBroadcastSend({
+      claim: async () => {
+        const claimed = await supabase.rpc(CLAIM_LINE_BROADCAST_SEND_RPC, {
+          p_organization_id: input.organizationId,
+          p_broadcast_id: existing?.id ?? null,
+          p_request_id: decision.requestId,
+          p_text_body: input.textBody,
+        });
+        const parsed = parseClaimPayload(claimed.data);
+        if (claimed.error || !parsed.claimed || !parsed.broadcastId.startsWith("lbr-")) {
+          return {
+            ok: false,
+            reason: claimed.error ? "error" : parsed.reason,
+            message: claimed.error ? "無法鎖定這則發送" : parsed.message,
+          };
+        }
+        existing = {
+          ...(existing as LineBroadcastPublic),
+          id: parsed.broadcastId,
+          requestId: parsed.requestId || decision.requestId,
+        };
+        return {
+          ok: true,
+          broadcastId: parsed.broadcastId,
+          requestId: parsed.requestId || decision.requestId,
+        };
+      },
+      send: async () => {
+        if (!isLineBroadcastSendOpen()) {
+          return {
+            timedOut: false,
+            httpOk: false,
+            lineRequestId: null,
+            httpStatus: null,
+          };
+        }
+        const secrets = await readOwnerAccessTokenCipher(input.organizationId);
+        if (secrets.error || !secrets.cipher.startsWith("v1.")) {
+          throw new Error("missing-token");
+        }
+        const token = decryptLineCredential(secrets.cipher, process.env);
+        if (!token.ok) throw new Error("decrypt-failed");
+        return executeLineBroadcastHttp({
+          accessToken: token.plaintext,
+          textBody: input.textBody,
+          requestId: decision.requestId,
+          sendOpen: isLineBroadcastSendOpen(),
+        });
+      },
+      complete: async (outcome) => {
+        const status =
+          !isLineBroadcastSendOpen() && outcome.apiResult === "failed"
+            ? "send_closed"
+            : outcome.status;
+        const apiResult =
+          !isLineBroadcastSendOpen() && outcome.apiResult === "failed"
+            ? "send_closed"
+            : outcome.apiResult;
+        await supabase.rpc(COMPLETE_LINE_BROADCAST_SEND_RPC, {
+          p_organization_id: input.organizationId,
+          p_broadcast_id: existing?.id ?? "",
+          p_request_id: decision.requestId,
+          p_status: status,
+          p_api_result: apiResult,
+          p_line_request_id: outcome.lineRequestId,
+          p_error_message: outcome.message,
+        });
+      },
+    });
+
+    if (!isLineBroadcastSendOpen()) {
+      return {
+        ok: false,
+        reason: "send_closed",
+        message: "真實發送仍維持關閉。系統沒有呼叫 LINE Broadcast，也沒有向好友發送。",
+      };
+    }
+    return pipeline.ok
+      ? { ok: true, message: pipeline.message }
+      : { ok: false, reason: pipeline.reason, message: pipeline.message };
+  }, "真實發送失敗");
 }

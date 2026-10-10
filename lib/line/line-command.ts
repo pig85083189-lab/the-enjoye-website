@@ -8,11 +8,13 @@ import {
   LINE_BROADCAST_TEXT_MAX,
 } from "@/lib/line/line-flag";
 import { canManageLineOfficialAccount } from "@/lib/line/line-roles";
+import { lineQuotaBlocksSend } from "@/lib/line/line-quota";
 import type {
   LineApiResult,
   LineBroadcastPublic,
   LineBroadcastStatus,
   LineDecisionReason,
+  LineQuotaPublic,
 } from "@/lib/line/line-types";
 import type { StaffRole } from "@/types/saas";
 
@@ -21,11 +23,16 @@ export const SET_LINE_BROADCAST_ENABLED_RPC = "set_line_broadcast_enabled";
 export const RECORD_LINE_CONNECTION_TEST_RPC = "record_line_connection_test";
 export const UPSERT_LINE_BROADCAST_DRAFT_RPC = "upsert_line_broadcast_draft";
 export const MARK_LINE_BROADCAST_SEND_CLOSED_RPC = "mark_line_broadcast_send_closed";
+export const CLAIM_LINE_BROADCAST_SEND_RPC = "claim_line_broadcast_send";
+export const COMPLETE_LINE_BROADCAST_SEND_RPC = "complete_line_broadcast_send";
+export const RECORD_LINE_BROADCAST_OWNER_EVENT_RPC = "record_line_broadcast_owner_event";
 export const READ_LINE_SECRETS_RPC = "read_line_official_account_secrets";
 export const OWNER_READ_LINE_TOKEN_CIPHER_RPC = "owner_read_line_access_token_cipher";
 
 export const LINE_BOT_INFO_PATH = "/v2/bot/info";
 export const LINE_BROADCAST_PATH = "/v2/bot/message/broadcast";
+export const LINE_QUOTA_PATH = "/v2/bot/message/quota";
+export const LINE_QUOTA_CONSUMPTION_PATH = "/v2/bot/message/quota/consumption";
 export const LINE_API_ORIGIN = "https://api.line.me";
 
 export type LineActor = {
@@ -167,6 +174,8 @@ export function evaluateLineBroadcastSend(input: {
   requestId?: string | null;
   acceptedToday: number;
   dailyLimit?: number;
+  accountConnected?: boolean;
+  lineQuota?: LineQuotaPublic | null;
 }):
   | { ok: true; requestId: string }
   | { ok: false; reason: LineDecisionReason; message: string } {
@@ -200,6 +209,12 @@ export function evaluateLineBroadcastSend(input: {
   if (input.acceptedToday >= limit) {
     return refuse("quota_exceeded", "今日群發次數已達上限");
   }
+  if (input.sendOpen && input.accountConnected === false) {
+    return refuse("not_configured", "請先完成 LINE 官方帳號連線測試");
+  }
+  if (input.sendOpen && lineQuotaBlocksSend(input.lineQuota)) {
+    return refuse("quota_exceeded", "LINE 訊息額度不足");
+  }
   if (!input.ownerBroadcastEnabled) {
     return refuse("send_closed", "店長尚未啟用 LINE 群發");
   }
@@ -207,6 +222,32 @@ export function evaluateLineBroadcastSend(input: {
     return refuse("send_closed", "LINE 群發尚未開放實際發送");
   }
   return { ok: true, requestId };
+}
+
+export function evaluateLineBroadcastRealSend(input: {
+  connectionPilotEnabled: boolean;
+  sendOpen: boolean;
+  ownerBroadcastEnabled: boolean;
+  organizationId?: string | null;
+  actor: LineActor;
+  textBody?: string | null;
+  existing?: LineBroadcastPublic | null;
+  requestId?: string | null;
+  acceptedToday: number;
+  dailyLimit?: number;
+  accountConnected: boolean;
+  acknowledged: boolean;
+  lineQuota?: LineQuotaPublic | null;
+}):
+  | { ok: true; requestId: string }
+  | { ok: false; reason: LineDecisionReason; message: string } {
+  if (!input.acknowledged) {
+    return refuse("invalid_input", "請先勾選真實發送確認");
+  }
+  if (!input.accountConnected) {
+    return refuse("not_configured", "請先完成 LINE 官方帳號連線測試");
+  }
+  return evaluateLineBroadcastSend(input);
 }
 
 export function interpretLineBroadcastApiOutcome(input: {
@@ -225,7 +266,7 @@ export function interpretLineBroadcastApiOutcome(input: {
     return {
       apiResult: "accepted",
       status: "accepted",
-      message: "LINE API 已接受這則廣播，不代表每位好友都已收到",
+      message: "LINE API 已接受。不代表每位好友都已收到。",
     };
   }
   return {

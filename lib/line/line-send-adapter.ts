@@ -1,6 +1,6 @@
 /**
  * Server-only LINE broadcast adapter.
- * Phase 1 never performs HTTP broadcast. Timeout path must not retry.
+ * Phase 1B still defaults closed. Timeout path must not retry.
  */
 
 import {
@@ -14,7 +14,12 @@ export type LineBroadcastHttpResult = {
   timedOut: boolean;
   httpOk: boolean;
   lineRequestId: string | null;
+  httpStatus: number | null;
 };
+
+function closedResult(): LineBroadcastHttpResult {
+  return { timedOut: false, httpOk: false, lineRequestId: null, httpStatus: null };
+}
 
 export async function executeLineBroadcastHttp(input: {
   accessToken: string;
@@ -27,7 +32,7 @@ export async function executeLineBroadcastHttp(input: {
     throw new Error("LINE send adapter cannot run in the browser");
   }
   if (!(input.sendOpen ?? LINE_BROADCAST_SEND_OPEN)) {
-    return { timedOut: false, httpOk: false, lineRequestId: null };
+    return closedResult();
   }
   const fetchImpl = input.fetchImpl ?? fetch;
   const controller = new AbortController();
@@ -49,12 +54,13 @@ export async function executeLineBroadcastHttp(input: {
       timedOut: false,
       httpOk: response.ok,
       lineRequestId: response.headers.get("x-line-request-id"),
+      httpStatus: response.status,
     };
   } catch (error) {
     const timedOut =
       (error instanceof Error && error.name === "AbortError") ||
       /timeout|aborted/i.test(error instanceof Error ? error.message : "");
-    return { timedOut, httpOk: false, lineRequestId: null };
+    return { timedOut, httpOk: false, lineRequestId: null, httpStatus: null };
   } finally {
     clearTimeout(timer);
   }

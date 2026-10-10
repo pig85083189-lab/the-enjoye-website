@@ -1,7 +1,8 @@
-# LINE Official Account — Phase 1
+# LINE Official Account — Phase 1B
 
 Beauty OS SaaS 共用的 LINE 官方帳號串接與文字群發中心。  
-**Phase 1 不發送真實 Broadcast。** Production Supabase、Production 環境變數與 Production 部署保持不變。
+**Phase 1B 已接好真實 Broadcast 架構，但實際發送預設維持關閉。**  
+本階段只在 Preview 開發與驗證。Production Supabase、Production 環境變數與 Production 部署保持不變。
 
 ---
 
@@ -10,101 +11,107 @@ Beauty OS SaaS 共用的 LINE 官方帳號串接與文字群發中心。
 | 模組 | 沿用方式 |
 |------|----------|
 | Organization | 既有 `organizations.app_id`（`org-%`）當租戶鍵。不新增第二套 Organization。 |
-| Location | LINE 是店家層級官方帳號，不依分店複製連線。 |
-| Staff RBAC | 沿用 `staff_auth_memberships`。只有 active `OWNER` 可管理。 |
-| Supabase client/server | 一般讀取走 `createClient()`；密文解密走 `createServiceRoleClient()`，且先通過 Owner gate。 |
-| Settings | 設定分類仍只有「店家設定」啟用。LINE 是獨立頁 `/staff/settings/line` 與入口卡片。 |
-| Sidebar | 新增 Owner-only「LINE 群發」→ `/staff/line`。可見性不是授權。 |
-| RLS / migration | 接在 `20261008130000` 之後的 additive migration。不改寫已發布檔。 |
+| LINE 官方帳號 | 沿用 `line_official_accounts` / `line_official_account_secrets`。每店自己的 Channel Access Token。 |
+| 群發表 | 沿用 `line_broadcasts` / `line_broadcast_events`。不建平行發送系統。 |
+| Staff RBAC | 沿用 `staff_auth_memberships`。只有 active `OWNER` 可確認真實發送。 |
+| 加密憑證 | AES-256-GCM。Client 與 log 看不到 Secret / Token。 |
+| 發送 Adapter | `executeLineBroadcastHttp` 仍被 `LINE_BROADCAST_SEND_OPEN = false` 擋住。測試只走 mock。 |
+| LINE API | 連線測試 `GET /v2/bot/info`；額度 `GET /v2/bot/message/quota` + `/consumption`；Broadcast `POST /v2/bot/message/broadcast`（預設不呼叫）。 |
+| Preview | 憑證表在修 UI 後仍為 0 列，沒有可覆寫或誤用的真實 token。 |
 
-公開官網 CTA 仍使用既有 `lib/line.ts`（`NEXT_PUBLIC_LINE_URL`）。伺服器模組在 `lib/line/*`，**沒有** `lib/line/index.ts`，避免覆蓋公開 URL。
+公開官網 CTA 仍使用既有 `lib/line.ts`。伺服器模組在 `lib/line/*`，**沒有** `lib/line/index.ts`。
 
 ---
 
 ## B. 新增與修改檔案
 
-新增：
+Phase 1B 新增：
 
-- `supabase/migrations/20261010120000_line_official_account_foundation.sql`
-- `lib/line/*`（flag / roles / crypto / command / load / adapters / actions）
-- `features/line/LineOfficialAccountSettings.tsx`
-- `features/line/LineBroadcastCenter.tsx`
-- `app/staff/(app)/settings/line/page.tsx`
-- `app/staff/(app)/line/{layout,page}.tsx`
-- `lib/line/line-official-account.isolation.test.ts`
-- `docs/saas/line-official-account.md`
+- `supabase/migrations/20261010140000_line_broadcast_real_send.sql`
+- `lib/line/line-quota.ts`
+- `lib/line/line-quota-adapter.ts`
+- `lib/line/line-send-pipeline.ts`
 
 修改：
 
-- Settings hub 入口卡、Owner 導航、schema-contract、migration chain、RBAC / IA 文件
+- `lib/line/actions.ts`、`line-command.ts`、`line-send-adapter.ts`、`line-types.ts`、`line-visibility.ts`、`line-flag.ts`
+- `features/line/LineBroadcastCenter.tsx`、`LineOfficialAccountSettings.tsx`
+- isolation tests、schema-contract、migration chain、本文件
 
 ---
 
-## C. Supabase migration 設計
+## C. 真實發送架構
 
-Organization-scoped tables：
+流程維持 **Draft → Preview → Confirm → History**。
 
-| 表 | 內容 |
-|----|------|
-| `line_official_accounts` | Channel ID、token hint、測試狀態、店長群發開關。沒有密文。 |
-| `line_official_account_secrets` | AES-256-GCM 密文。`revoke all`；不 grant SELECT 給 `authenticated`。 |
-| `line_broadcasts` | 草稿 / 狀態 / `request_id`（`lbrq-%`）。`(organization_id, request_id)` unique。 |
-| `line_broadcast_events` | 稽核。可沒有 `broadcast_id`（連線測試、開關）。 |
+確認畫面有兩條分開的路，**沒有**把「確認（不會實際發送）」默默改成真送：
 
-RLS：`user_is_org_owner(organization_id)` = active Owner membership **且** `user_has_org_membership(organizations.id)`。  
-寫入走 SECURITY DEFINER RPC。`read_line_official_account_secrets` 不 grant 給 authenticated。
+1. **練習確認** → `confirmLineBroadcastAction` → `send_closed`，不呼叫 LINE。
+2. **真實發送** → 必須勾選「我了解這會向全部好友發送」→ `sendLineBroadcastAction`。
 
----
+真實發送伺服器端順序：
 
-## D. LINE 串接流程
+1. active OWNER、店家隔離、草稿文字、request ID（`lbrq-%`）
+2. 帳號已連線（token + 連線測試 ok）
+3. 店長已啟用 `broadcast_enabled`
+4. `LINE_BROADCAST_SEND_OPEN === true`
+5. 應用每日上限與（若已知）LINE 額度
+6. `claim_line_broadcast_send` 原子鎖定為 `sending`
+7. 解密該 Organization 自己的 Access Token
+8. `POST /v2/bot/message/broadcast`，`X-Line-Retry-Key = request_id`
+9. `complete_line_broadcast_send` 寫入結果與 audit
 
-1. Owner 在設定頁輸入 Channel ID / Secret / Access Token。
-2. Server Action 先決策，再以 `BEAUTY_OS_LINE_CREDENTIAL_KEY`（32-byte base64）加密。
-3. RPC 只寫入密文與 hint。一般 SELECT 看不到 Secret / Token。
-4. 「測試連線」由 Owner RPC 讀取 Access Token 密文（不回傳 Secret），伺服器解密後呼叫 `GET /v2/bot/info`。
-5. 連線測試**不會**呼叫 Broadcast，也**不會**對好友寄送訊息。
+成功文案只會是 **「LINE API 已接受」**。不宣稱全部好友已送達。
 
-Pilot：`BEAUTY_OS_LINE_CONNECTION_PILOT=1` 且已設定 Supabase URL / publishable key。未設則整個 UI fail-closed。
-
----
-
-## E. 群發流程與權限
-
-只支援官方帳號**全好友文字 Broadcast**。不顯示好友數或會員分群。
-
-1. Owner 編輯文字、預覽、保存草稿（`request_id` 可追蹤）。
-2. 確認發送時再次檢查：Owner、額度（每日 3）、重複 `request_id`、`pending_confirmation`。
-3. 實際發送有雙重關閉：
-   - 店長必須明確啟用 `broadcast_enabled`
-   - 應用常數 `LINE_BROADCAST_SEND_OPEN = false`
-4. Phase 1 confirm 只會留下 `send_closed`，**不呼叫** LINE Broadcast HTTP。
-5. 未來若開放發送：成功只記 **API accepted**；timeout 記 `pending_confirmation`，**不自動重送**。使用 `X-Line-Retry-Key = request_id`。
-
-頁面授權：`STAFF_LINE_ROLES = ["OWNER"]`。Manager 看得到設定、看不到 LINE 入口。
+本階段常數仍是 `LINE_BROADCAST_SEND_OPEN = false`，因此 Preview 會在第 4 步拒絕，記錄 `send_refused`，**不 claim、不解密發送、不打 Broadcast**。
 
 ---
 
-## F. 測試
+## D. 額度檢查與防重複
+
+額度：
+
+- 唯讀查詢 LINE `quota` 與 `quota/consumption`
+- 取得完整 limited 資料才計算剩餘
+- 失敗、缺資料、尚未保存 token → 顯示 **未知**
+- 不造好友數，不造剩餘額度
+
+防重複：
+
+- `(organization_id, request_id)` unique
+- `FOR UPDATE` 原子 claim；`accepted` / `sending` / `pending_confirmation` 不能再送
+- timeout / 例外 → `pending_confirmation`，**不自動重送**
+- 同一 pipeline 的 HTTP 最多一次
+
+---
+
+## E. 測試
 
 `lib/line/line-official-account.isolation.test.ts` 覆蓋：
 
-- flag / send 關閉
-- Owner-only 與跨店拒絕
-- 加解密與 hint
-- 額度、冪等、timeout 不重送
-- 連線測試走 `/v2/bot/info`
-- migration 不 grant 密文、不建假分群
-- Client UI 不引入 crypto / send / service role
-
-另更新 migration chain 與 navigation isolation。
+- 多租戶隔離與非 Owner
+- 重複發送、額度不足、API 失敗、timeout 不重送
+- 草稿保存後重新整理仍可讀取
+- send 關閉時 adapter 不打 HTTP
+- mock Broadcast / 唯讀 quota
+- Client 不引入 crypto / send / quota adapter
+- 「確認（不會實際發送）」與「確認真實發送」同時存在
 
 ---
 
-## G / H. 部署邊界
+## G / H. 部署邊界與首次真實發送驗收
 
 | 環境 | 狀態 |
 |------|------|
-| Preview | Ready：`https://the-enjoye-website-rknunheck-pig85083189-6631s-projects.vercel.app`。已套用 `20261010120000` 到 Preview Supabase `bfzquejrtgqzzarhkiya`。`BEAUTY_OS_LINE_CONNECTION_PILOT` 與憑證金鑰只加在此 feature branch 的 Preview。 |
-| Production | **未變**。Production 部署仍是先前 staff-auth release。Production Supabase `knccefcxncglgpmvgqlp` 沒有 LINE 表。Production 沒有 LINE env。 |
+| Preview | 只在此分支部署與套用 `20261010140000`。不打真實 Broadcast。 |
+| Production | **未變**。Production Supabase `knccefcxncglgpmvgqlp` 沒有 LINE 表。沒有 LINE env。不部署 Production。不合併 main。 |
 
-未登入的 Preview `/staff/line` 與 `/staff/settings/line` 會 307 到 staff login。Phase 1 沒有呼叫 LINE Broadcast。
+### 後續首次真實發送驗收（尚未授權，不要在本 PR 做）
+
+1. 使用**專用測試官方帳號**，禁止 THE ENJOYE 或任何已有真實好友的帳號。
+2. 只在 Preview 打開伺服器開關；Production 保持關閉。
+3. Owner 完成連線測試、啟用群發、確認額度不是未知且足夠。
+4. 用極短測試文字走「確認真實發送」，勾選知情同意。
+5. 預期：歷史顯示「LINE API 已接受」，audit 有 `send_claimed` + `api_accepted`。
+6. timeout 必須停在待確認，不得重送。
+7. 驗收後立刻把 `LINE_BROADCAST_SEND_OPEN` 關回 false。

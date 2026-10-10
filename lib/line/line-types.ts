@@ -31,6 +31,15 @@ export type LineOfficialAccountPublic = {
   lastTestMessage: string | null;
 };
 
+export type LineQuotaPublic = {
+  known: boolean;
+  type: "none" | "limited" | null;
+  limit: number | null;
+  usage: number | null;
+  remaining: number | null;
+  label: string;
+};
+
 export type LineBroadcastPublic = {
   id: string;
   organizationId: string;
@@ -43,6 +52,13 @@ export type LineBroadcastPublic = {
   createdAt: string;
   updatedAt: string;
   confirmedAt: string | null;
+};
+
+export type LineBroadcastPrepare = {
+  account: LineOfficialAccountPublic | null;
+  quota: LineQuotaPublic;
+  sendOpen: boolean;
+  broadcasts: LineBroadcastPublic[];
 };
 
 export type LineDecisionReason =

@@ -33,9 +33,16 @@ export function lineBroadcastStatusLabel(status: LineBroadcastStatus): string {
 }
 
 export function lineBroadcastApiResultLabel(result: string | null): string {
-  if (result === "accepted") return "API accepted（不代表每位好友已收到）";
+  if (result === "accepted") return "API 已接受（不代表每位好友已收到）";
   if (result === "pending_confirmation") return "待確認，不會自動重送";
   if (result === "send_closed") return "系統未呼叫 LINE 發送";
   if (result === "failed") return "API 拒絕";
   return "尚未發送";
+}
+
+export function lineOfficialAccountNameLabel(
+  account: { botDisplayName?: string | null } | null | undefined,
+): string {
+  const name = account?.botDisplayName?.trim();
+  return name || "未知（尚未完成連線測試）";
 }

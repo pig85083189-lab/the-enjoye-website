@@ -118,6 +118,6 @@ For first commercial MVP, enforce at least:
 - OWNER/MANAGER for settings & staff.manage
 - OWNER only for LINE Official Account credentials and text broadcast
 
-LINE Phase 1 reuses `staff_auth_memberships`. It does not add a second organization or staff-permission system. See [line-official-account.md](./line-official-account.md).  
+LINE Phase 1B reuses `staff_auth_memberships`. Only an active OWNER can confirm a real send. It does not add a second organization or staff-permission system. See [line-official-account.md](./line-official-account.md).  
 
 Fine-grained custom roles can wait until NEXT.

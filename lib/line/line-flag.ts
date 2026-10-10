@@ -10,7 +10,7 @@ import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 export const LINE_CREDENTIAL_KEY_ENV = "BEAUTY_OS_LINE_CREDENTIAL_KEY";
 export const LINE_CONNECTION_PILOT_ENV = "BEAUTY_OS_LINE_CONNECTION_PILOT";
 
-/** Phase 1: never call LINE Messaging broadcast. */
+/** Phase 1B: real send stays hardcoded closed. Do not flip on Preview. */
 export const LINE_BROADCAST_SEND_OPEN = false;
 
 export const LINE_BROADCAST_DAILY_LIMIT = 3;

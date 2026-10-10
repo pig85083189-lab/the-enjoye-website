@@ -75,6 +75,10 @@ export const STAFF_OPERATIONAL_CREATE_FIX_MIGRATION_FILE =
 export const LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE =
   "supabase/migrations/20261010120000_line_official_account_foundation.sql";
 
+/** LINE real-send claim / complete. Additive. Does not rewrite 120000. */
+export const LINE_BROADCAST_REAL_SEND_MIGRATION_FILE =
+  "supabase/migrations/20261010140000_line_broadcast_real_send.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",
