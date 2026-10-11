@@ -14,7 +14,11 @@ import {
 } from "@/lib/line/actions";
 import { newLineRequestId, newLineTestRequestId } from "@/lib/line/line-command";
 import { LINE_BROADCAST_TEXT_MAX } from "@/lib/line/line-flag";
-import { restoreLineBroadcastEditor, unknownLineQuota } from "@/lib/line/line-quota";
+import {
+  lineQuotaBlocksSend,
+  restoreLineBroadcastEditor,
+  unknownLineQuota,
+} from "@/lib/line/line-quota";
 import {
   canShowLineEngineerDiagnostics,
   canShowLineSettings,
@@ -22,6 +26,7 @@ import {
   lineBroadcastApiResultLabel,
   lineBroadcastConfirmStatusHint,
   lineBroadcastStatusLabel,
+  lineOfficialQuotaOwnerMessage,
   lineOfficialAccountNameLabel,
   lineOwnerRecipientLabel,
   lineTestPushDiagnosticLabel,
@@ -212,8 +217,22 @@ export function LineBroadcastCenter({
               {preview || "尚未輸入文字"}
             </div>
             <p className="text-[12px] text-secondary-text" data-line-quota>
-              LINE 額度：{quota.label}
+              LINE 額度：{lineOfficialQuotaOwnerMessage(quota, sendOpen)}
             </p>
+            {sendOpen && lineQuotaBlocksSend(quota) ? (
+              <p className="text-[12px] text-danger" data-line-quota-block>
+                已停止發送。請重新查詢額度後再確認。
+              </p>
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              data-line-quota-refresh
+              disabled={pending}
+              onClick={() => reload(false)}
+            >
+              重新查詢額度
+            </Button>
             <p className="text-[12px] text-secondary-text">
               發送對象：此官方帳號所有可接收訊息的好友。系統不估計好友數。
             </p>
@@ -256,6 +275,7 @@ export function LineBroadcastCenter({
                 sendOpen,
                 acknowledged: realSendAck,
                 pending,
+                quotaBlocked: sendOpen && lineQuotaBlocksSend(quota),
               })}
               onClick={() => {
                 if (
@@ -263,6 +283,7 @@ export function LineBroadcastCenter({
                     sendOpen,
                     acknowledged: realSendAck,
                     pending,
+                    quotaBlocked: sendOpen && lineQuotaBlocksSend(quota),
                   })
                 ) {
                   return;
@@ -285,6 +306,10 @@ export function LineBroadcastCenter({
                     setRequestId(newLineRequestId());
                   } else {
                     setError(result.message);
+                    if (result.reason !== "pending_confirmation") {
+                      setBroadcastId(undefined);
+                      setRequestId(newLineRequestId());
+                    }
                   }
                   reload(false);
                 });

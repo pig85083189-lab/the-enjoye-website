@@ -3,6 +3,7 @@ import { OWNER_READ_LINE_WEBHOOK_TOKEN_CIPHER_RPC } from "@/lib/line/line-comman
 import { decryptLineCredential } from "@/lib/line/line-crypto";
 import { lineWebhookPublicUrl } from "@/lib/line/line-webhook-url";
 import { isLineHttpErrorClass } from "@/lib/line/line-http-error";
+import { utcIsoToTaipeiLocal } from "@/lib/persistence/appointment-time";
 import type {
   LineBroadcastPublic,
   LineBroadcastStatus,
@@ -12,6 +13,14 @@ import type {
   LineTestSendPublic,
   LineWebhookPublicUrl,
 } from "@/lib/line/line-types";
+
+export const LINE_BROADCAST_QUOTA_TIMEZONE = "Asia/Taipei";
+
+const LEGACY_CLAIMED_BROADCAST_STATUSES = [
+  "accepted",
+  "sending",
+  "pending_confirmation",
+] as const;
 
 function asAccount(row: Record<string, unknown> | null): LineOfficialAccountPublic | null {
   if (!row) return null;
@@ -50,6 +59,7 @@ function asBroadcast(row: Record<string, unknown>): LineBroadcastPublic {
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
     confirmedAt: (row.confirmed_at as string | null) ?? null,
+    sendClaimedAt: (row.send_claimed_at as string | null) ?? null,
   };
 }
 
@@ -117,7 +127,7 @@ export async function loadLineBroadcasts(
   const { data, error } = await supabase
     .from("line_broadcasts")
     .select(
-      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,created_at,updated_at,confirmed_at",
+      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,http_status,error_class,created_at,updated_at,confirmed_at,send_claimed_at",
     )
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
@@ -134,7 +144,7 @@ export async function loadLineBroadcastByRequestId(
   const { data, error } = await supabase
     .from("line_broadcasts")
     .select(
-      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,created_at,updated_at,confirmed_at",
+      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,http_status,error_class,created_at,updated_at,confirmed_at,send_claimed_at",
     )
     .eq("organization_id", organizationId)
     .eq("request_id", requestId)
@@ -215,6 +225,33 @@ export async function loadLineWebhookPublicUrl(
   };
 }
 
+export function taipeiCalendarDate(instant: Date | string = new Date()): string {
+  const iso = instant instanceof Date ? instant.toISOString() : instant;
+  return utcIsoToTaipeiLocal(iso).dateYmd;
+}
+
+export function broadcastConsumesTaipeiDayQuota(
+  row: LineBroadcastPublic,
+  taipeiDay: string,
+): boolean {
+  if (row.sendClaimedAt) {
+    return taipeiCalendarDate(row.sendClaimedAt) === taipeiDay;
+  }
+  if (!(LEGACY_CLAIMED_BROADCAST_STATUSES as readonly string[]).includes(row.status)) {
+    return false;
+  }
+  const legacyAt = row.confirmedAt ?? row.createdAt;
+  return Boolean(legacyAt) && taipeiCalendarDate(legacyAt) === taipeiDay;
+}
+
+export function countClaimedBroadcastsOnTaipeiDay(
+  rows: LineBroadcastPublic[],
+  taipeiDay: string,
+): number {
+  return rows.filter((row) => broadcastConsumesTaipeiDayQuota(row, taipeiDay)).length;
+}
+
+/** Test-push helper. Official Broadcast uses countClaimedBroadcastsOnTaipeiDay. */
 export function countAcceptedBroadcastsOnDay(
   rows: LineBroadcastPublic[],
   dayIso: string,

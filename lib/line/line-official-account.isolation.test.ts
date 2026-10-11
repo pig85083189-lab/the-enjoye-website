@@ -21,11 +21,13 @@ import {
   LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE,
   LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE,
   LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE,
+  LINE_BROADCAST_CLAIM_SAFETY_MIGRATION_FILE,
 } from "@/lib/persistence/schema-contract";
 import { STAFF_LINE_ROLES, resolveStaffRolePageAccess } from "@/lib/staff/staff-role-page-access";
 import {
   CLAIM_LINE_BROADCAST_SEND_RPC,
   CLAIM_LINE_TEST_SEND_RPC,
+  FINALIZE_STALE_LINE_BROADCAST_SENDING_RPC,
   CLAIM_LINE_WEBHOOK_EVENT_RPC,
   COMPLETE_LINE_BROADCAST_SEND_RPC,
   CONSUME_LINE_OWNER_BIND_PUBLIC_RPC,
@@ -43,6 +45,8 @@ import {
   evaluateLineTestPushRequestReuse,
   evaluateLineTestPushRuntimeSwitch,
   evaluateLineTestPushSend,
+  evaluateStaleLineBroadcastSending,
+  applyLineBroadcastOrgClaimStep,
   interpretLineBroadcastApiOutcome,
   resolveLineTestPushRuntimeState,
   SET_LINE_TEST_PUSH_RUNTIME_OPEN_RPC,
@@ -80,6 +84,8 @@ import { lineWebhookPublicPath, lineWebhookPublicUrl } from "@/lib/line/line-web
 import {
   classifyLineHttpError,
   interpretLineTestPushApiOutcome,
+  isLineUnknownHttpOutcome,
+  lineBroadcastFailureMessage,
   persistableLineHttpErrorClass,
 } from "@/lib/line/line-http-error";
 import {
@@ -94,6 +100,8 @@ import { processLineWebhookBind } from "@/lib/line/line-webhook";
 import {
   describeLineQuota,
   latestRestorableLineDraft,
+  lineOfficialQuotaBlockMessage,
+  lineQuotaBlocksSend,
   restoreLineBroadcastEditor,
   unknownLineQuota,
 } from "@/lib/line/line-quota";
@@ -130,7 +138,12 @@ import {
   inspectLineBroadcastHttpRequest,
 } from "@/lib/line/line-send-adapter";
 import { fetchLineBotInfo } from "@/lib/line/line-connection-adapter";
-import { countAcceptedBroadcastsOnDay } from "@/lib/line/line-load";
+import {
+  countAcceptedBroadcastsOnDay,
+  countClaimedBroadcastsOnTaipeiDay,
+  LINE_BROADCAST_QUOTA_TIMEZONE,
+  taipeiCalendarDate,
+} from "@/lib/line/line-load";
 import {
   LINE_SETTINGS_LOAD_ERROR,
   LINE_SETTINGS_SAVE_ERROR,
@@ -146,6 +159,7 @@ import {
   isLineBroadcastConfirmSubmitEnabled,
   lineBroadcastApiResultLabel,
   lineBroadcastConfirmStatusHint,
+  lineOfficialQuotaOwnerMessage,
   lineTestPushDiagnosticLabel,
   lineTestPushDisplayedError,
 } from "@/lib/line/line-visibility";
@@ -882,6 +896,9 @@ describe("LINE connection and broadcast decisions", () => {
         "2026-10-10",
       ),
     ).toBe(1);
+    expect(LINE_BROADCAST_QUOTA_TIMEZONE).toBe("Asia/Taipei");
+    expect(taipeiCalendarDate("2026-10-10T15:59:00.000Z")).toBe("2026-10-10");
+    expect(taipeiCalendarDate("2026-10-10T16:01:00.000Z")).toBe("2026-10-11");
   });
 });
 
@@ -2241,5 +2258,763 @@ describe("LINE source contracts", () => {
       /LINE_BROADCAST_PATH = "\/v2\/bot\/message\/broadcast"/,
     );
     expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
+  });
+});
+
+describe("LINE Phase 1F broadcast safety acceptance", () => {
+  const sendBase = {
+    connectionPilotEnabled: true,
+    sendOpen: true,
+    ownerBroadcastEnabled: true,
+    organizationId: ORG_ENJOYE_ID,
+    actor: ownerActor(),
+    textBody: "週年活動通知",
+    existing: draftBroadcast(),
+    requestId: "lbrq-req00000000001",
+    acceptedToday: 0,
+    accountConnected: true,
+    acknowledged: true,
+  };
+
+  function claimBroadcastRow(
+    rows: Map<string, string>,
+    requestId: string,
+  ): { claimed: boolean; status: string; reason?: string } {
+    const status = rows.get(requestId) ?? "draft";
+    if (status === "accepted") return { claimed: false, status, reason: "duplicate" };
+    if (status === "pending_confirmation" || status === "sending") {
+      return { claimed: false, status, reason: "pending_confirmation" };
+    }
+    if (!["draft", "confirm_pending", "failed", "queued"].includes(status)) {
+      return { claimed: false, status, reason: "send_closed" };
+    }
+    rows.set(requestId, "sending");
+    return { claimed: true, status: "sending" };
+  }
+
+  it("keeps a normal Broadcast request on the official endpoint and UUID retry key", async () => {
+    const requestId = "lbrq-req00000000001";
+    let fetched = 0;
+    await executeLineBroadcastHttp({
+      accessToken: "mock-token",
+      textBody: "週年活動通知",
+      requestId,
+      sendOpen: true,
+      fetchImpl: async (input, init) => {
+        fetched += 1;
+        const inspection = inspectLineBroadcastHttpRequest(String(input), init);
+        expect(inspection).toMatchObject({
+          method: "POST",
+          path: "https://api.line.me/v2/bot/message/broadcast",
+          contentType: "application/json",
+          authorizationScheme: "Bearer",
+          retryKeyIsUuid: true,
+          retryKeyUsesInternalPrefix: false,
+          hasTo: false,
+          messageCount: 1,
+          firstMessageType: "text",
+        });
+        expect((init?.headers as Record<string, string>)["X-Line-Retry-Key"]).toBe(
+          lineRetryKeyFromRequestId(requestId),
+        );
+        expect(isLineRetryKey(lineRetryKeyFromRequestId(requestId))).toBe(true);
+        return new Response("{}", { status: 200, headers: { "x-line-request-id": "line-ok" } });
+      },
+    });
+    expect(fetched).toBe(1);
+    expect(LINE_BROADCAST_PATH).toBe("/v2/bot/message/broadcast");
+  });
+
+  it("refuses unauthenticated and non-Owner actors", () => {
+    expect(
+      resolveVerifiedLineOrganizationId({
+        requestedOrganizationId: ORG_ENJOYE_ID,
+        actor: ownerActor({ authUserId: null }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...sendBase,
+        actor: ownerActor({ role: "MANAGER" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...sendBase,
+        actor: ownerActor({ isActive: false }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(canManageLineOfficialAccount({ role: "OWNER", isActive: true })).toBe(true);
+    expect(canManageLineOfficialAccount({ role: "MANAGER", isActive: true })).toBe(false);
+    expect(
+      resolveStaffRolePageAccess({
+        authenticated: false,
+        role: "OWNER",
+        isActive: true,
+        allowedRoles: STAFF_LINE_ROLES,
+      }),
+    ).toBe("login");
+  });
+
+  it("refuses a different Organization even when the actor is an Owner", () => {
+    expect(
+      resolveVerifiedLineOrganizationId({
+        requestedOrganizationId: ORG_LUMIERE_ID,
+        actor: ownerActor(),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...sendBase,
+        organizationId: ORG_LUMIERE_ID,
+        actor: ownerActor({ organizationId: ORG_LUMIERE_ID }),
+        existing: draftBroadcast({ organizationId: ORG_ENJOYE_ID }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(canShowLineEngineerDiagnostics(ORG_ENJOYE_ID)).toBe(false);
+    expect(canShowLineEngineerDiagnostics(ORG_BEAUTY_OS_TEST_ID)).toBe(true);
+  });
+
+  it("refuses missing credentials, blank messages, and invalid drafts", () => {
+    expect(
+      evaluateLineBroadcastRealSend({ ...sendBase, accountConnected: false }),
+    ).toMatchObject({ ok: false, reason: "not_configured" });
+    expect(
+      evaluateLineConnectionSave({
+        connectionPilotEnabled: true,
+        encryptionReady: false,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        channelId: "1234567890",
+        channelSecret: "secret-value",
+        channelAccessToken: "token-value-123456",
+      }),
+    ).toMatchObject({ ok: false, reason: "not_configured" });
+    expect(
+      evaluateLineBroadcastDraft({
+        connectionPilotEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        textBody: "   ",
+      }),
+    ).toMatchObject({ ok: false, reason: "invalid_input" });
+    expect(
+      evaluateLineBroadcastRealSend({ ...sendBase, textBody: "" }),
+    ).toMatchObject({ ok: false, reason: "invalid_input" });
+  });
+
+  it("does not call LINE for blank text even when a mock send is open", async () => {
+    let fetched = 0;
+    const result = await executeLineBroadcastHttp({
+      accessToken: "mock-token",
+      textBody: "   ",
+      requestId: "lbrq-req00000000001",
+      sendOpen: true,
+      fetchImpl: async () => {
+        fetched += 1;
+        return new Response("{}", { status: 200 });
+      },
+    });
+    expect(fetched).toBe(0);
+    expect(result.localErrorClass).toBe("invalid_message");
+    expect(interpretLineBroadcastApiOutcome(result)).toMatchObject({
+      apiResult: "failed",
+      errorClass: "invalid_message",
+    });
+  });
+
+  it("blocks known exhausted quota and unknown or failed quota lookups", () => {
+    const unknown = unknownLineQuota("實際發送尚未開放，未查詢 LINE 額度");
+    const exhausted = describeLineQuota({ type: "limited", limit: 200, usage: 200 });
+    const unlimited = describeLineQuota({ type: "none", usage: 12 });
+    expect(lineQuotaBlocksSend(unknown)).toBe(true);
+    expect(lineQuotaBlocksSend(exhausted)).toBe(true);
+    expect(lineQuotaBlocksSend(unlimited)).toBe(false);
+    expect(unknown.known).toBe(false);
+    expect(unknown.remaining).toBeNull();
+    expect(lineOfficialQuotaBlockMessage(unknown)).toMatch(/無法確認 LINE 額度/);
+    expect(lineOfficialQuotaBlockMessage(exhausted)).toMatch(/額度不足/);
+    expect(
+      evaluateLineBroadcastRealSend({ ...sendBase, lineQuota: exhausted }),
+    ).toMatchObject({ ok: false, reason: "quota_exceeded" });
+    expect(evaluateLineBroadcastRealSend({ ...sendBase, lineQuota: unknown })).toMatchObject({
+      ok: false,
+      reason: "quota_exceeded",
+    });
+    expect(evaluateLineBroadcastRealSend({ ...sendBase, lineQuota: undefined })).toMatchObject({
+      ok: false,
+      reason: "quota_exceeded",
+    });
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        acceptedToday: LINE_BROADCAST_DAILY_LIMIT,
+      }),
+    ).toMatchObject({ ok: false, reason: "quota_exceeded" });
+  });
+
+  it("refuses the same requestId after accepted, pending, sending, or closed records", () => {
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        existing: draftBroadcast({ status: "accepted" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        existing: draftBroadcast({ status: "pending_confirmation" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "pending_confirmation" });
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        existing: draftBroadcast({ status: "sending" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "pending_confirmation" });
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        existing: draftBroadcast({ status: "send_closed" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        existing: draftBroadcast({ status: "canceled" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        existing: draftBroadcast({ status: "failed" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+  });
+
+  it("lets only one of two concurrent tabs claim the same requestId", async () => {
+    const rows = new Map<string, string>([["lbrq-req00000000001", "draft"]]);
+    const first = claimBroadcastRow(rows, "lbrq-req00000000001");
+    const second = claimBroadcastRow(rows, "lbrq-req00000000001");
+    expect(first).toEqual({ claimed: true, status: "sending" });
+    expect(second).toEqual({
+      claimed: false,
+      status: "sending",
+      reason: "pending_confirmation",
+    });
+
+    let sendCalls = 0;
+    const contested = await Promise.all([
+      runClaimedLineBroadcastSend({
+        claim: async () =>
+          first.claimed
+            ? { ok: true, broadcastId: "lbr-1", requestId: "lbrq-req00000000001" }
+            : { ok: false, reason: "pending_confirmation", message: "發送進行中" },
+        send: async () => {
+          sendCalls += 1;
+          return { timedOut: false, httpOk: true, lineRequestId: "line-1", httpStatus: 200 };
+        },
+        complete: async () => undefined,
+      }),
+      runClaimedLineBroadcastSend({
+        claim: async () =>
+          second.claimed
+            ? { ok: true, broadcastId: "lbr-1", requestId: "lbrq-req00000000001" }
+            : { ok: false, reason: "pending_confirmation", message: "發送進行中，請勿重複送出" },
+        send: async () => {
+          sendCalls += 1;
+          return { timedOut: false, httpOk: true, lineRequestId: "line-2", httpStatus: 200 };
+        },
+        complete: async () => undefined,
+      }),
+    ]);
+    expect(contested[0]).toMatchObject({ ok: true, apiResult: "accepted" });
+    expect(contested[1]).toMatchObject({ ok: false, reason: "pending_confirmation" });
+    expect(sendCalls).toBe(1);
+  });
+
+  it("classifies Broadcast HTTP 400 / 401 / 403 / 429 as failed and 500 as pending", () => {
+    expect(classifyLineHttpError({ httpStatus: 400 })).toBe("invalid_request");
+    expect(classifyLineHttpError({ httpStatus: 401 })).toBe("unauthorized");
+    expect(classifyLineHttpError({ httpStatus: 403 })).toBe("forbidden");
+    expect(classifyLineHttpError({ httpStatus: 429 })).toBe("quota_exceeded");
+    expect(isLineUnknownHttpOutcome(500)).toBe(true);
+    expect(
+      interpretLineBroadcastApiOutcome({ timedOut: false, httpOk: false, httpStatus: 400 }),
+    ).toMatchObject({
+      apiResult: "failed",
+      errorClass: "invalid_request",
+      message: lineBroadcastFailureMessage("invalid_request"),
+    });
+    expect(
+      interpretLineBroadcastApiOutcome({ timedOut: false, httpOk: false, httpStatus: 401 }),
+    ).toMatchObject({ apiResult: "failed", errorClass: "unauthorized" });
+    expect(
+      interpretLineBroadcastApiOutcome({ timedOut: false, httpOk: false, httpStatus: 403 }),
+    ).toMatchObject({ apiResult: "failed", errorClass: "forbidden" });
+    expect(
+      interpretLineBroadcastApiOutcome({ timedOut: false, httpOk: false, httpStatus: 429 }),
+    ).toMatchObject({ apiResult: "failed", errorClass: "quota_exceeded" });
+    expect(
+      interpretLineBroadcastApiOutcome({ timedOut: false, httpOk: false, httpStatus: 500 }),
+    ).toMatchObject({
+      apiResult: "pending_confirmation",
+      status: "pending_confirmation",
+      errorClass: "unknown",
+    });
+  });
+
+  it("records timeout and unknown LINE outcomes as pending and never retries them", async () => {
+    const timedOut = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => ({
+        timedOut: true,
+        httpOk: false,
+        lineRequestId: null,
+        httpStatus: null,
+      }),
+      complete: async () => undefined,
+    });
+    expect(timedOut).toMatchObject({
+      ok: false,
+      reason: "pending_confirmation",
+      apiResult: "pending_confirmation",
+    });
+    expect(timedOut.message).toMatch(/不會自動重送/);
+
+    const unknown = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => ({
+        timedOut: false,
+        httpOk: false,
+        lineRequestId: "line-500",
+        httpStatus: 500,
+      }),
+      complete: async () => undefined,
+    });
+    expect(unknown).toMatchObject({
+      ok: false,
+      reason: "pending_confirmation",
+      apiResult: "pending_confirmation",
+    });
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        existing: draftBroadcast({ status: "pending_confirmation" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "pending_confirmation" });
+  });
+
+  it("treats LINE accepted as API accepted only, not per-friend delivery", () => {
+    const accepted = interpretLineBroadcastApiOutcome({
+      timedOut: false,
+      httpOk: true,
+      lineRequestId: "line-ok",
+      httpStatus: 200,
+    });
+    expect(accepted).toMatchObject({ apiResult: "accepted", status: "accepted" });
+    expect(accepted.message).toMatch(/不代表每位好友都已收到/);
+    expect(lineBroadcastApiResultLabel("accepted")).toMatch(/不代表每位好友已收到/);
+  });
+
+  it("never calls Broadcast HTTP from any closed-send path", async () => {
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+    expect(isLineBroadcastSendOpen(previewEnv)).toBe(false);
+    expect(
+      isLineBroadcastSendOpen({
+        ...previewEnv,
+        BEAUTY_OS_LINE_BROADCAST_SEND_OPEN: "1",
+      }),
+    ).toBe(false);
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        sendOpen: false,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      isLineBroadcastConfirmSubmitEnabled({
+        sendOpen: false,
+        acknowledged: true,
+      }),
+    ).toBe(false);
+
+    let fetched = 0;
+    const closed = await executeLineBroadcastHttp({
+      accessToken: "mock-token",
+      textBody: "週年活動通知",
+      requestId: "lbrq-req00000000001",
+      sendOpen: false,
+      fetchImpl: async () => {
+        fetched += 1;
+        return new Response("{}", { status: 200 });
+      },
+    });
+    expect(fetched).toBe(0);
+    expect(closed.httpOk).toBe(false);
+
+    const pipeline = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () =>
+        executeLineBroadcastHttp({
+          accessToken: "mock-token",
+          textBody: "週年活動通知",
+          requestId: "lbrq-1",
+          sendOpen: LINE_BROADCAST_SEND_OPEN,
+          fetchImpl: async () => {
+            fetched += 1;
+            return new Response("{}", { status: 200 });
+          },
+        }),
+      complete: async () => undefined,
+    });
+    expect(fetched).toBe(0);
+    expect(pipeline).toMatchObject({ ok: false, apiResult: "failed" });
+
+    const actions = source("lib/line/actions.ts");
+    expect(actions).toMatch(/if \(!isLineBroadcastSendOpen\(\)\)/);
+    expect(actions).toMatch(/executeLineBroadcastHttp\(/);
+    expect(actions).toMatch(/sendOpen: isLineBroadcastSendOpen\(\)/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
+    expect(source("lib/line/line-flag.ts")).not.toMatch(/BEAUTY_OS_LINE_BROADCAST_SEND_OPEN/);
+    expect(source("lib/line/line-connection-adapter.ts")).not.toMatch(/\/message\/broadcast/);
+    expect(source("lib/line/line-quota-adapter.ts")).not.toMatch(/\/message\/broadcast/);
+    expect(source("lib/line/line-push-adapter.ts")).toMatch(/LINE_PUSH_PATH/);
+    expect(source("lib/line/line-push-adapter.ts")).not.toMatch(/LINE_BROADCAST_PATH/);
+  });
+});
+
+describe("LINE Phase 1F.1 broadcast claim safety", () => {
+  const sendBase = {
+    connectionPilotEnabled: true,
+    sendOpen: true,
+    ownerBroadcastEnabled: true,
+    organizationId: ORG_ENJOYE_ID,
+    actor: ownerActor(),
+    textBody: "週年活動通知",
+    existing: draftBroadcast(),
+    requestId: "lbrq-req00000000001",
+    acceptedToday: 0,
+    accountConnected: true,
+    acknowledged: true,
+    lineQuota: describeLineQuota({ type: "none", usage: 1 }),
+  };
+
+  it("serializes different requestIds and enforces the daily limit of 3", () => {
+    const state = { consumedToday: 0, rows: {} as Record<string, string> };
+    const first = applyLineBroadcastOrgClaimStep(state, "lbrq-aaa00000000001");
+    const second = applyLineBroadcastOrgClaimStep(state, "lbrq-bbb00000000002");
+    const third = applyLineBroadcastOrgClaimStep(state, "lbrq-ccc00000000003");
+    const fourth = applyLineBroadcastOrgClaimStep(state, "lbrq-ddd00000000004");
+    expect(first).toMatchObject({ claimed: true, consumedToday: 1 });
+    expect(second).toMatchObject({ claimed: true, consumedToday: 2 });
+    expect(third).toMatchObject({ claimed: true, consumedToday: 3 });
+    expect(fourth).toMatchObject({
+      claimed: false,
+      reason: "quota_exceeded",
+      consumedToday: 3,
+    });
+    expect(LINE_BROADCAST_DAILY_LIMIT).toBe(3);
+  });
+
+  it("refuses accepted, failed, pending, and sending requestIds", () => {
+    for (const status of ["accepted", "failed"] as const) {
+      expect(
+        applyLineBroadcastOrgClaimStep(
+          { consumedToday: 0, rows: { "lbrq-used0000000001": status } },
+          "lbrq-used0000000001",
+        ),
+      ).toMatchObject({ claimed: false, reason: "duplicate" });
+    }
+    for (const status of ["pending_confirmation", "sending"] as const) {
+      expect(
+        applyLineBroadcastOrgClaimStep(
+          { consumedToday: 0, rows: { "lbrq-used0000000001": status } },
+          "lbrq-used0000000001",
+        ),
+      ).toMatchObject({ claimed: false, reason: "pending_confirmation" });
+    }
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        existing: draftBroadcast({ status: "failed" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+  });
+
+  it("finalizes stale sending to pending_confirmation and never retries", () => {
+    const now = Date.parse("2026-10-11T07:00:00.000Z");
+    expect(
+      evaluateStaleLineBroadcastSending({
+        status: "sending",
+        updatedAt: "2026-10-11T06:59:50.000Z",
+        nowMs: now,
+      }),
+    ).toEqual({ finalize: false, reason: "in_flight" });
+    expect(
+      evaluateStaleLineBroadcastSending({
+        status: "sending",
+        updatedAt: "2026-10-11T06:59:20.000Z",
+        nowMs: now,
+      }),
+    ).toEqual({ finalize: true, reason: "stale" });
+    expect(
+      evaluateStaleLineBroadcastSending({
+        status: "accepted",
+        updatedAt: "2026-10-11T06:00:00.000Z",
+        nowMs: now,
+      }),
+    ).toEqual({ finalize: false, reason: "not_sending" });
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        existing: draftBroadcast({ status: "pending_confirmation" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "pending_confirmation" });
+  });
+
+  it("keeps HTTP 5xx and timeout as pending confirmation without a second send", async () => {
+    let sendCalls = 0;
+    const timedOut = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => {
+        sendCalls += 1;
+        return { timedOut: true, httpOk: false, lineRequestId: null, httpStatus: null };
+      },
+      complete: async () => undefined,
+    });
+    const unknown = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => {
+        sendCalls += 1;
+        return {
+          timedOut: false,
+          httpOk: false,
+          lineRequestId: "line-500",
+          httpStatus: 500,
+        };
+      },
+      complete: async () => undefined,
+    });
+    expect(timedOut).toMatchObject({
+      ok: false,
+      reason: "pending_confirmation",
+      apiResult: "pending_confirmation",
+    });
+    expect(unknown).toMatchObject({
+      ok: false,
+      reason: "pending_confirmation",
+      apiResult: "pending_confirmation",
+    });
+    expect(sendCalls).toBe(2);
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        existing: draftBroadcast({ status: "pending_confirmation" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "pending_confirmation" });
+  });
+
+  it("refuses official send when quota is unknown, failed, or exhausted", () => {
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...sendBase,
+        lineQuota: unknownLineQuota("查詢失敗"),
+      }),
+    ).toMatchObject({
+      ok: false,
+      reason: "quota_exceeded",
+      message: "無法確認 LINE 額度，已停止發送",
+    });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...sendBase,
+        lineQuota: describeLineQuota({ type: "limited", limit: 10, usage: 10 }),
+      }),
+    ).toMatchObject({
+      ok: false,
+      reason: "quota_exceeded",
+      message: "LINE 訊息額度不足，已停止發送",
+    });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...sendBase,
+        organizationId: ORG_LUMIERE_ID,
+        actor: ownerActor({ organizationId: ORG_LUMIERE_ID }),
+        existing: draftBroadcast(),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      lineOfficialQuotaOwnerMessage(unknownLineQuota("查詢失敗"), true),
+    ).toMatch(/無法確認 LINE 額度，已停止發送/);
+    expect(
+      isLineBroadcastConfirmSubmitEnabled({
+        sendOpen: true,
+        acknowledged: true,
+        quotaBlocked: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps Broadcast closed and documents the additive claim-safety contract", () => {
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+    expect(isLineBroadcastSendOpen(previewEnv)).toBe(false);
+    const sql = source(LINE_BROADCAST_CLAIM_SAFETY_MIGRATION_FILE);
+    expect(sql).toMatch(/from public\.line_official_accounts a/);
+    expect(sql).toMatch(/for update/);
+    const claimSql = sql.slice(sql.indexOf("create or replace function public.claim_line_broadcast_send"));
+    expect(claimSql.indexOf("from public.line_official_accounts a")).toBeLessThan(
+      claimSql.indexOf("v_consumed_today := public.line_broadcast_consumed_on_taipei_day"),
+    );
+    expect(sql).toMatch(/v_consumed_today >= 3/);
+    expect(sql).toMatch(/send_claimed_at/);
+    expect(sql).toMatch(/Asia\/Taipei/);
+    expect(sql).toMatch(/status in \('accepted', 'sending', 'pending_confirmation'\)/);
+    expect(sql).toMatch(/status not in \('draft', 'confirm_pending', 'queued'\)/);
+    expect(sql).toMatch(/v_row.status = 'failed'/);
+    expect(sql).toMatch(/http_status/);
+    expect(sql).toMatch(/error_class/);
+    expect(sql).toMatch(
+      /drop function if exists public\.complete_line_broadcast_send\(text, text, text, text, text, text, text\)/,
+    );
+    expect(sql).toMatch(FINALIZE_STALE_LINE_BROADCAST_SENDING_RPC);
+    expect(sql).toMatch(/interval '30 seconds'/);
+    expect(sql).toMatch(/pending_confirmation/);
+    expect(sql).not.toMatch(/grant execute on function public\.claim_line_broadcast_send[^;]+anon/);
+    expect(sql.replace(/^--.*$/gm, "")).not.toMatch(
+      /channel_secret|access_token|line_user_id|response_body/i,
+    );
+    expect(sql).not.toMatch(/friend_count|follower_count/);
+    expect(source("lib/line/actions.ts")).toMatch(/p_http_status/);
+    expect(source("lib/line/actions.ts")).toMatch(/p_error_class/);
+    expect(source("lib/line/actions.ts")).toMatch(/FINALIZE_STALE_LINE_BROADCAST_SENDING_RPC/);
+    expect(source("lib/line/actions.ts")).toMatch(/countClaimedBroadcastsOnTaipeiDay/);
+    expect(source("features/line/LineBroadcastCenter.tsx")).toMatch(/重新查詢額度/);
+    expect(source("features/line/LineBroadcastCenter.tsx")).toMatch(/data-line-quota-refresh/);
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1F\.1/);
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1F\.2/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
+    expect(source("lib/line/line-command.ts")).toMatch(/isLineUnknownHttpOutcome/);
+    expect(source("lib/line/line-send-adapter.ts")).toMatch(/invalid_message/);
+  });
+});
+
+describe("LINE Phase 1F.2 Taipei claim quota", () => {
+  it("counts immutable send_claimed_at on the Asia/Taipei day and ignores drafts", () => {
+    const rows = [
+      draftBroadcast({
+        id: "lbr-claim-2359",
+        status: "failed",
+        createdAt: "2026-10-10T01:00:00.000Z",
+        updatedAt: "2026-10-11T08:00:00.000Z",
+        confirmedAt: "2026-10-11T08:00:00.000Z",
+        sendClaimedAt: "2026-10-10T15:59:00.000Z",
+      }),
+      draftBroadcast({
+        id: "lbr-claim-0001",
+        requestId: "lbrq-req00000000002",
+        status: "accepted",
+        createdAt: "2026-10-10T01:00:00.000Z",
+        sendClaimedAt: "2026-10-10T16:01:00.000Z",
+      }),
+      draftBroadcast({
+        id: "lbr-draft-today",
+        requestId: "lbrq-req00000000003",
+        status: "draft",
+        createdAt: "2026-10-10T20:00:00.000Z",
+      }),
+    ];
+    expect(countClaimedBroadcastsOnTaipeiDay(rows, "2026-10-10")).toBe(1);
+    expect(countClaimedBroadcastsOnTaipeiDay(rows, "2026-10-11")).toBe(1);
+  });
+
+  it("does not count historical failed without send_claimed_at", () => {
+    expect(
+      countClaimedBroadcastsOnTaipeiDay(
+        [
+          draftBroadcast({
+            status: "failed",
+            createdAt: "2026-10-11T01:00:00.000Z",
+            confirmedAt: "2026-10-11T01:00:00.000Z",
+          }),
+          draftBroadcast({
+            id: "lbr-legacy-accepted",
+            requestId: "lbrq-req00000000002",
+            status: "accepted",
+            createdAt: "2026-10-10T20:00:00.000Z",
+            confirmedAt: "2026-10-11T01:00:00.000Z",
+          }),
+        ],
+        "2026-10-11",
+      ),
+    ).toBe(1);
+  });
+
+  it("attributes yesterday drafts to the claim day and keeps complete from changing the date", () => {
+    const claimed = draftBroadcast({
+      status: "sending",
+      createdAt: "2026-10-10T10:00:00.000Z",
+      confirmedAt: "2026-10-10T16:05:00.000Z",
+      sendClaimedAt: "2026-10-10T16:05:00.000Z",
+      updatedAt: "2026-10-10T16:05:00.000Z",
+    });
+    expect(countClaimedBroadcastsOnTaipeiDay([claimed], "2026-10-10")).toBe(0);
+    expect(countClaimedBroadcastsOnTaipeiDay([claimed], "2026-10-11")).toBe(1);
+    const afterComplete = {
+      ...claimed,
+      status: "accepted" as const,
+      updatedAt: "2026-10-11T08:00:00.000Z",
+    };
+    expect(countClaimedBroadcastsOnTaipeiDay([afterComplete], "2026-10-10")).toBe(0);
+    expect(countClaimedBroadcastsOnTaipeiDay([afterComplete], "2026-10-11")).toBe(1);
+  });
+
+  it("refuses a second claim after send_claimed_at is set", () => {
+    const state = {
+      consumedToday: 1,
+      rows: { "lbrq-used0000000001": "failed" },
+      claimedAt: { "lbrq-used0000000001": "2026-10-11T01:00:00.000Z" },
+    };
+    expect(
+      applyLineBroadcastOrgClaimStep(state, "lbrq-used0000000001"),
+    ).toMatchObject({ claimed: false, reason: "duplicate", consumedToday: 1 });
+    expect(
+      evaluateLineBroadcastSend({
+        connectionPilotEnabled: true,
+        sendOpen: true,
+        ownerBroadcastEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        textBody: "週年活動通知",
+        existing: draftBroadcast({
+          status: "draft",
+          sendClaimedAt: "2026-10-11T01:00:00.000Z",
+        }),
+        requestId: "lbrq-req00000000001",
+        acceptedToday: 0,
+        accountConnected: true,
+        lineQuota: describeLineQuota({ type: "none", usage: 1 }),
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+  });
+
+  it("prefers send_claimed_at when deciding stale sending", () => {
+    const now = Date.parse("2026-10-11T07:00:00.000Z");
+    expect(
+      evaluateStaleLineBroadcastSending({
+        status: "sending",
+        updatedAt: "2026-10-11T06:59:20.000Z",
+        sendClaimedAt: "2026-10-11T06:59:50.000Z",
+        nowMs: now,
+      }),
+    ).toEqual({ finalize: false, reason: "in_flight" });
+    expect(
+      evaluateStaleLineBroadcastSending({
+        status: "sending",
+        updatedAt: "2026-10-11T06:59:50.000Z",
+        sendClaimedAt: "2026-10-11T06:59:20.000Z",
+        nowMs: now,
+      }),
+    ).toEqual({ finalize: true, reason: "stale" });
   });
 });

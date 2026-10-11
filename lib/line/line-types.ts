@@ -87,6 +87,7 @@ export type LineBroadcastPublic = {
   createdAt: string;
   updatedAt: string;
   confirmedAt: string | null;
+  sendClaimedAt?: string | null;
 };
 
 export type LineWebhookPublicUrl = {

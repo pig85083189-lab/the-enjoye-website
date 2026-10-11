@@ -6,6 +6,7 @@ import {
   CLAIM_LINE_TEST_SEND_RPC,
   COMPLETE_LINE_BROADCAST_SEND_RPC,
   COMPLETE_LINE_TEST_SEND_RPC,
+  FINALIZE_STALE_LINE_BROADCAST_SENDING_RPC,
   MARK_LINE_BROADCAST_SEND_CLOSED_RPC,
   OWNER_READ_LINE_RECIPIENT_CIPHER_RPC,
   OWNER_READ_LINE_TOKEN_CIPHER_RPC,
@@ -30,6 +31,7 @@ import {
   evaluateLineTestPushEnable,
   evaluateLineTestPushRuntimeSwitch,
   evaluateLineTestPushSend,
+  evaluateStaleLineBroadcastSending,
   newLineRequestId,
   newLineTestRequestId,
   resolveLineTestPushRuntimeState,
@@ -74,7 +76,9 @@ import {
 } from "@/lib/line/line-settings-status";
 import {
   countAcceptedBroadcastsOnDay,
+  countClaimedBroadcastsOnTaipeiDay,
   loadLineBroadcastByRequestId,
+  taipeiCalendarDate,
   loadLineBroadcasts,
   loadLineOfficialAccount,
   loadLineOwnerRecipient,
@@ -362,6 +366,30 @@ async function loadLineQuotaForOwner(organizationId: string) {
   return fetchLineMessageQuota({ accessToken: token.plaintext });
 }
 
+async function finalizeStaleLineBroadcasts(
+  organizationId: string,
+  rows: LineBroadcastPublic[],
+): Promise<LineBroadcastPublic[]> {
+  const stale = rows.filter((row) =>
+    evaluateStaleLineBroadcastSending({
+      status: row.status,
+      updatedAt: row.updatedAt,
+      sendClaimedAt: row.sendClaimedAt,
+      confirmedAt: row.confirmedAt,
+    }).finalize,
+  );
+  if (stale.length === 0) return rows;
+  const supabase = await createClient();
+  for (const row of stale) {
+    await supabase.rpc(FINALIZE_STALE_LINE_BROADCAST_SENDING_RPC, {
+      p_organization_id: organizationId,
+      p_broadcast_id: row.id,
+      p_request_id: row.requestId,
+    });
+  }
+  return loadLineBroadcasts(organizationId);
+}
+
 function parseClaimPayload(data: unknown): {
   claimed: boolean;
   broadcastId: string;
@@ -441,7 +469,10 @@ export async function loadLineBroadcastPrepareAction(
       return { ok: false, reason: "pilot_disabled", message: "LINE 串接尚未啟用" };
     }
     const account = await loadLineOfficialAccount(scopedOrg);
-    const broadcasts = await loadLineBroadcasts(scopedOrg);
+    const broadcasts = await finalizeStaleLineBroadcasts(
+      scopedOrg,
+      await loadLineBroadcasts(scopedOrg),
+    );
     const quota =
       isLineBroadcastSendOpen() && account?.tokenConfigured
         ? await loadLineQuotaForOwner(scopedOrg)
@@ -493,8 +524,8 @@ export async function confirmLineBroadcastAction(input: {
       );
     }
   }
-  const today = new Date().toISOString().slice(0, 10);
-  const acceptedToday = countAcceptedBroadcastsOnDay(
+  const today = taipeiCalendarDate();
+  const acceptedToday = countClaimedBroadcastsOnTaipeiDay(
     await loadLineBroadcasts(organizationId),
     today,
   );
@@ -558,9 +589,18 @@ export async function sendLineBroadcastAction(input: {
         );
       }
     }
-    const today = new Date().toISOString().slice(0, 10);
-    const broadcasts = await loadLineBroadcasts(organizationId);
-    const acceptedToday = countAcceptedBroadcastsOnDay(broadcasts, today);
+    const today = taipeiCalendarDate();
+    const broadcasts = await finalizeStaleLineBroadcasts(
+      organizationId,
+      await loadLineBroadcasts(organizationId),
+    );
+    existing =
+      (existing?.id
+        ? broadcasts.find((row) => row.id === existing?.id)
+        : null) ??
+      broadcasts.find((row) => row.requestId === input.requestId) ??
+      existing;
+    const acceptedToday = countClaimedBroadcastsOnTaipeiDay(broadcasts, today);
     const account = await loadLineOfficialAccount(organizationId);
     const quota =
       isLineBroadcastSendOpen() && account?.tokenConfigured
@@ -660,6 +700,8 @@ export async function sendLineBroadcastAction(input: {
           p_api_result: apiResult,
           p_line_request_id: outcome.lineRequestId,
           p_error_message: outcome.message,
+          p_http_status: outcome.httpStatus,
+          p_error_class: persistableLineHttpErrorClass(outcome.errorClass),
         });
       },
     });

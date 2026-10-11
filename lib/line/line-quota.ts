@@ -59,7 +59,21 @@ export function isLineOfficialAccountConnected(
 }
 
 export function lineQuotaBlocksSend(quota: LineQuotaPublic | null | undefined): boolean {
-  return Boolean(quota?.known && quota.type === "limited" && quota.remaining === 0);
+  if (!quota?.known) return true;
+  if (quota.type === "none") return false;
+  if (quota.type === "limited") {
+    return typeof quota.remaining !== "number" || quota.remaining <= 0;
+  }
+  return true;
+}
+
+export function lineOfficialQuotaBlockMessage(
+  quota: LineQuotaPublic | null | undefined,
+): string {
+  if (quota?.known && quota.type === "limited") {
+    return "LINE 訊息額度不足，已停止發送";
+  }
+  return "無法確認 LINE 額度，已停止發送";
 }
 
 export function latestRestorableLineDraft<T extends { status: string; createdAt: string }>(

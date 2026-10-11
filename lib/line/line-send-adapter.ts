@@ -8,7 +8,7 @@ import {
   LINE_BROADCAST_PATH,
   interpretLineBroadcastApiOutcome,
 } from "@/lib/line/line-command";
-import { LINE_BROADCAST_SEND_OPEN } from "@/lib/line/line-flag";
+import { LINE_BROADCAST_SEND_OPEN, LINE_BROADCAST_TEXT_MAX } from "@/lib/line/line-flag";
 import {
   isLineRetryKey,
   lineRetryKeyFromRequestId,
@@ -80,6 +80,16 @@ export async function executeLineBroadcastHttp(input: {
   if (!(input.sendOpen ?? LINE_BROADCAST_SEND_OPEN)) {
     return closedResult();
   }
+  const text = input.textBody ?? "";
+  if (!text.trim() || text.length > LINE_BROADCAST_TEXT_MAX) {
+    return {
+      timedOut: false,
+      httpOk: false,
+      lineRequestId: null,
+      httpStatus: null,
+      localErrorClass: "invalid_message",
+    };
+  }
   const retryKey = lineRetryKeyFromRequestId(input.requestId);
   if (!isLineRetryKey(retryKey) || /^(ltsq-|lbrq-)/.test(retryKey)) {
     return {
@@ -103,7 +113,7 @@ export async function executeLineBroadcastHttp(input: {
         "X-Line-Retry-Key": retryKey,
       },
       body: JSON.stringify({
-        messages: [{ type: "text", text: input.textBody }],
+        messages: [{ type: "text", text }],
       }),
     });
     return {

@@ -80,6 +80,33 @@ export function classifyLineHttpError(input: {
   }
 }
 
+export function lineBroadcastFailureMessage(errorClass: LineHttpErrorClass): string {
+  switch (errorClass) {
+    case "invalid_request":
+      return "LINE API 拒絕這則廣播（請求不合法）。系統不會自動重送。";
+    case "invalid_recipient":
+      return "廣播收件設定不合法，系統沒有呼叫 LINE，也不會自動重送。";
+    case "invalid_message":
+      return "廣播文字不合法，系統沒有呼叫 LINE，也不會自動重送。";
+    case "invalid_retry_key":
+      return "Retry Key 格式不合法，系統沒有呼叫 LINE，也不會自動重送。";
+    case "unauthorized":
+      return "LINE API 拒絕這則廣播（未授權）。系統不會自動重送。";
+    case "forbidden":
+      return "LINE API 拒絕這則廣播（禁止存取）。系統不會自動重送。";
+    case "quota_exceeded":
+      return "LINE API 拒絕這則廣播（額度或頻率超限）。系統不會自動重送。";
+    case "timeout":
+      return "LINE API 逾時，系統已標記待確認，不會自動重送";
+    case "unknown":
+      return "LINE API 拒絕這則廣播。系統不會自動重送。";
+  }
+}
+
+export function isLineUnknownHttpOutcome(httpStatus?: number | null): boolean {
+  return typeof httpStatus === "number" && httpStatus >= 500;
+}
+
 export function lineTestPushFailureMessage(errorClass: LineHttpErrorClass): string {
   switch (errorClass) {
     case "invalid_request":

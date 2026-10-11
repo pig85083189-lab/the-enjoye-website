@@ -84,6 +84,7 @@ Webhook **不再使用** `SUPABASE_SERVICE_ROLE_KEY`。
 - Adapter 唯讀查詢 LINE `quota` 與 `quota/consumption`
 - 發送關閉時不解密、不使用真實 Channel Token 查額度
 - 不造好友數，不造剩餘額度
+- 正式群發在額度未知、查詢失敗或剩餘不足時一律拒絕；店長可重新查詢額度
 
 防重複：
 
@@ -216,6 +217,20 @@ Owner 立即停止後續新發送（不需重新部署）：
 確認頁只顯示官方帳號、全部好友、完整訊息、發送狀態與確認勾選。「確認發送」在 `LINE_BROADCAST_SEND_OPEN = false` 時必須 disabled，並提示目前為預覽版本。後端權限與防重送不變。
 
 單人測試 Push、Runtime Kill Switch、Webhook 綁定與內部 Request ID 只在 Beauty OS TEST 的「工程師診斷」顯示。一般店家看不到。伺服器 Owner / org 隔離 / claim / 防重送 / `LINE_BROADCAST_SEND_OPEN = false` 不變。
+
+### Phase 1F.1 — 正式群發安全修正
+
+`claim_line_broadcast_send` 在同一交易鎖定該店 `line_official_accounts`、計算當日 `accepted/sending/pending_confirmation`、再原子改 `sending`。每日上限仍是 3。`accepted` / `failed` / `pending_confirmation` / `sending` 的 `lbrq-` 不得重用。
+
+`complete_line_broadcast_send` 可寫入 `http_status` 與白名單 `error_class`，不存 LINE body 或 Token。HTTP 5xx 與 timeout 記 `pending_confirmation`，不自動重送。claim 後中斷超過 30 秒的 `sending` 只能由 `finalize_stale_line_broadcast_sending` 轉成 `pending_confirmation`。
+
+LINE 月額度未知、查詢失敗或剩餘不足時，伺服器拒絕正式群發。一般店長預覽顯示原因，並可「重新查詢額度」。確認頁流程不變。`LINE_BROADCAST_SEND_OPEN` 仍為 hardcoded false。`20261011020000_line_broadcast_claim_safety.sql` 已於 Phase 1F.6 套用到 Preview `bfzquejrtgqzzarhkiya`；Production 未套用。
+
+### Phase 1F.2 — 每日群發限額與 claim 時間
+
+每個 Organization 每日最多 3 次正式 Broadcast claim，日期以 `Asia/Taipei` 00:00 重置。成功 claim 會寫入不可變的 `send_claimed_at`，之後 4xx / 5xx / timeout / 伺服器中斷都不退還。草稿、預覽與尚未 claim 的 requestId 不消耗額度。同一店不同 requestId 並發時，先鎖定該店 `line_official_accounts` 再原子計數。
+
+新資料只依 `send_claimed_at` 的台北日計數，不依可變的 `updated_at`，也不因 complete / finalize 改狀態而換日。舊資料不回填 `send_claimed_at`。沒有該欄的 `accepted` / `sending` / `pending_confirmation` 才用 `confirmed_at`，再退回 `created_at`。歷史 `failed` 不推定曾發送，因此不計入舊額度。`complete_line_broadcast_send` 仍先建立 9 參數再 DROP 舊 7 參數，避免 overload。Preview 已套用；Production 未套用、不得重跑。
 
 ### 首次真實 Push 驗收（尚未授權，本階段不做）
 

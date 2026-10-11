@@ -10,12 +10,22 @@ import {
   LINE_TEST_PUSH_DAILY_LIMIT,
 } from "@/lib/line/line-flag";
 import { canManageLineOfficialAccount } from "@/lib/line/line-roles";
-import { lineQuotaBlocksSend } from "@/lib/line/line-quota";
+import {
+  classifyLineHttpError,
+  isLineHttpErrorClass,
+  isLineUnknownHttpOutcome,
+  lineBroadcastFailureMessage,
+} from "@/lib/line/line-http-error";
+import {
+  lineOfficialQuotaBlockMessage,
+  lineQuotaBlocksSend,
+} from "@/lib/line/line-quota";
 import type {
   LineApiResult,
   LineBroadcastPublic,
   LineBroadcastStatus,
   LineDecisionReason,
+  LineHttpErrorClass,
   LineOwnerRecipientPublic,
   LineQuotaPublic,
   LineTestSendPublic,
@@ -29,6 +39,8 @@ export const UPSERT_LINE_BROADCAST_DRAFT_RPC = "upsert_line_broadcast_draft";
 export const MARK_LINE_BROADCAST_SEND_CLOSED_RPC = "mark_line_broadcast_send_closed";
 export const CLAIM_LINE_BROADCAST_SEND_RPC = "claim_line_broadcast_send";
 export const COMPLETE_LINE_BROADCAST_SEND_RPC = "complete_line_broadcast_send";
+export const FINALIZE_STALE_LINE_BROADCAST_SENDING_RPC =
+  "finalize_stale_line_broadcast_sending";
 export const RECORD_LINE_BROADCAST_OWNER_EVENT_RPC = "record_line_broadcast_owner_event";
 export const READ_LINE_SECRETS_RPC = "read_line_official_account_secrets";
 export const OWNER_READ_LINE_TOKEN_CIPHER_RPC = "owner_read_line_access_token_cipher";
@@ -63,6 +75,23 @@ export const LINE_TEST_PUSH_CONSUMED_STATUSES = [
   "send_closed",
   "canceled",
 ] as const;
+
+export const LINE_BROADCAST_REUSABLE_STATUSES = [
+  "draft",
+  "confirm_pending",
+  "queued",
+] as const;
+
+export const LINE_BROADCAST_CONSUMED_STATUSES = [
+  "failed",
+  "accepted",
+  "pending_confirmation",
+  "sending",
+  "send_closed",
+  "canceled",
+] as const;
+
+export const LINE_BROADCAST_STALE_SENDING_SECONDS = 30;
 
 export const LINE_BOT_INFO_PATH = "/v2/bot/info";
 export const LINE_BROADCAST_PATH = "/v2/bot/message/broadcast";
@@ -259,8 +288,17 @@ export function evaluateLineBroadcastSend(input: {
   if (input.existing?.status === "accepted") {
     return refuse("duplicate", "這則訊息已經被 LINE API 接受，不會重送");
   }
+  if (input.existing?.status === "failed") {
+    return refuse("duplicate", "這則識別已使用過，不會重送。請用新的 requestId");
+  }
   if (input.existing?.status === "sending") {
     return refuse("pending_confirmation", "發送進行中，請勿重複送出");
+  }
+  if (input.existing?.status === "send_closed" || input.existing?.status === "canceled") {
+    return refuse("send_closed", "這則紀錄不能再發送");
+  }
+  if (input.existing?.sendClaimedAt) {
+    return refuse("duplicate", "這則識別已使用過，不會重送。請用新的 requestId");
   }
   const requestId = input.requestId?.trim() || input.existing?.requestId || "";
   if (!requestId.startsWith("lbrq-")) {
@@ -274,7 +312,7 @@ export function evaluateLineBroadcastSend(input: {
     return refuse("not_configured", "請先完成 LINE 官方帳號連線測試");
   }
   if (input.sendOpen && lineQuotaBlocksSend(input.lineQuota)) {
-    return refuse("quota_exceeded", "LINE 訊息額度不足");
+    return refuse("quota_exceeded", lineOfficialQuotaBlockMessage(input.lineQuota));
   }
   if (!input.ownerBroadcastEnabled) {
     return refuse("send_closed", "店長尚未啟用 LINE 群發");
@@ -315,18 +353,20 @@ export function interpretLineBroadcastApiOutcome(input: {
   timedOut: boolean;
   httpOk: boolean;
   lineRequestId?: string | null;
+  httpStatus?: number | null;
+  localErrorClass?: LineHttpErrorClass | null;
 }): {
   apiResult: LineApiResult;
   status: LineBroadcastStatus;
   message: string;
-  errorClass: null;
+  errorClass: LineHttpErrorClass | null;
 } {
   if (input.timedOut) {
     return {
       apiResult: "pending_confirmation",
       status: "pending_confirmation",
-      message: "LINE API 逾時，系統已標記待確認，不會自動重送",
-      errorClass: null,
+      message: lineBroadcastFailureMessage("timeout"),
+      errorClass: "timeout",
     };
   }
   if (input.httpOk) {
@@ -337,12 +377,120 @@ export function interpretLineBroadcastApiOutcome(input: {
       errorClass: null,
     };
   }
+  if (isLineUnknownHttpOutcome(input.httpStatus)) {
+    return {
+      apiResult: "pending_confirmation",
+      status: "pending_confirmation",
+      message: "LINE API 回傳未知結果，系統已標記待確認，不會自動重送",
+      errorClass: "unknown",
+    };
+  }
+  if (input.localErrorClass && isLineHttpErrorClass(input.localErrorClass)) {
+    return {
+      apiResult: "failed",
+      status: "failed",
+      message: lineBroadcastFailureMessage(input.localErrorClass),
+      errorClass: input.localErrorClass,
+    };
+  }
+  const errorClass = classifyLineHttpError({
+    timedOut: false,
+    httpStatus: input.httpStatus,
+  });
   return {
     apiResult: "failed",
     status: "failed",
-    message: "LINE API 拒絕這則廣播",
-    errorClass: null,
+    message: lineBroadcastFailureMessage(errorClass),
+    errorClass,
   };
+}
+
+export type LineBroadcastOrgClaimState = {
+  consumedToday: number;
+  rows: Record<string, string>;
+  claimedAt?: Record<string, string>;
+};
+
+/**
+ * Serialized per-organization Broadcast claim used by isolation tests.
+ * Mirrors claim_line_broadcast_send: org lock, daily count, immutable
+ * send_claimed_at, then status='sending'.
+ */
+export function applyLineBroadcastOrgClaimStep(
+  state: LineBroadcastOrgClaimState,
+  requestId: string,
+  dailyLimit = LINE_BROADCAST_DAILY_LIMIT,
+): {
+  claimed: boolean;
+  reason?: LineDecisionReason;
+  consumedToday: number;
+  status: string;
+} {
+  const status = state.rows[requestId] ?? "draft";
+  if (status === "accepted" || status === "failed" || state.claimedAt?.[requestId]) {
+    return {
+      claimed: false,
+      reason: "duplicate",
+      consumedToday: state.consumedToday,
+      status,
+    };
+  }
+  if (status === "pending_confirmation" || status === "sending") {
+    return {
+      claimed: false,
+      reason: "pending_confirmation",
+      consumedToday: state.consumedToday,
+      status,
+    };
+  }
+  if (!(LINE_BROADCAST_REUSABLE_STATUSES as readonly string[]).includes(status)) {
+    return {
+      claimed: false,
+      reason: "send_closed",
+      consumedToday: state.consumedToday,
+      status,
+    };
+  }
+  if (state.consumedToday >= dailyLimit) {
+    return {
+      claimed: false,
+      reason: "quota_exceeded",
+      consumedToday: state.consumedToday,
+      status,
+    };
+  }
+  state.rows[requestId] = "sending";
+  if (state.claimedAt) {
+    state.claimedAt[requestId] = new Date().toISOString();
+  }
+  state.consumedToday += 1;
+  return {
+    claimed: true,
+    consumedToday: state.consumedToday,
+    status: "sending",
+  };
+}
+
+export function evaluateStaleLineBroadcastSending(input: {
+  status: string;
+  updatedAt: string;
+  sendClaimedAt?: string | null;
+  confirmedAt?: string | null;
+  nowMs?: number;
+  staleAfterSeconds?: number;
+}): { finalize: boolean; reason: "in_flight" | "stale" | "not_sending" } {
+  if (input.status !== "sending") {
+    return { finalize: false, reason: "not_sending" };
+  }
+  const claimedIso = input.sendClaimedAt || input.confirmedAt || input.updatedAt;
+  const updated = Date.parse(claimedIso);
+  const now = input.nowMs ?? Date.now();
+  const staleAfter =
+    (input.staleAfterSeconds ?? LINE_BROADCAST_STALE_SENDING_SECONDS) * 1000;
+  if (!Number.isFinite(updated) || now - updated < staleAfter) {
+    return { finalize: false, reason: "in_flight" };
+  }
+  return { finalize: true, reason: "stale" };
 }
 
 export function newLineRequestId(random: () => string = () => crypto.randomUUID()): string {

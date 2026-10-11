@@ -58,8 +58,26 @@ export function isLineBroadcastConfirmSubmitEnabled(input: {
   sendOpen: boolean;
   acknowledged: boolean;
   pending?: boolean;
+  quotaBlocked?: boolean;
 }): boolean {
-  return !input.pending && input.sendOpen === true && input.acknowledged === true;
+  return (
+    !input.pending &&
+    input.sendOpen === true &&
+    input.acknowledged === true &&
+    input.quotaBlocked !== true
+  );
+}
+
+export function lineOfficialQuotaOwnerMessage(
+  quota: { known: boolean; type?: "none" | "limited" | null; remaining?: number | null; label: string },
+  sendOpen: boolean,
+): string {
+  if (!sendOpen) return quota.label;
+  if (!quota.known) return `無法確認 LINE 額度，已停止發送。${quota.label}`;
+  if (quota.type === "limited" && (quota.remaining == null || quota.remaining <= 0)) {
+    return `LINE 訊息額度不足，已停止發送。${quota.label}`;
+  }
+  return quota.label;
 }
 
 export function lineTestPushDisplayedError(message: string | null | undefined): string | null {
