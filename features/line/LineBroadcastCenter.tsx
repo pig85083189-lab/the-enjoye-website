@@ -10,6 +10,8 @@ import {
   saveLineBroadcastDraftAction,
   sendLineBroadcastAction,
   sendLineTestPushAction,
+  setLineTestPushEnabledAction,
+  setLineTestPushRuntimeOpenAction,
 } from "@/lib/line/actions";
 import { newLineRequestId, newLineTestRequestId } from "@/lib/line/line-command";
 import { LINE_BROADCAST_TEXT_MAX } from "@/lib/line/line-flag";
@@ -30,6 +32,7 @@ import type {
   LineQuotaPublic,
   LineTestSendPublic,
 } from "@/lib/line/line-types";
+import { ORG_BEAUTY_OS_TEST_ID } from "@/lib/tenant/constants";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 function lineTestSendHistoryMeta(row: LineTestSendPublic): string {
@@ -57,6 +60,7 @@ export function LineBroadcastCenter({
   const [recipient, setRecipient] = useState<LineOwnerRecipientPublic | null>(null);
   const [testSends, setTestSends] = useState<LineTestSendPublic[]>([]);
   const [testRequestId, setTestRequestId] = useState(() => newLineTestRequestId());
+  const [testTextBody, setTestTextBody] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [realSendAck, setRealSendAck] = useState(false);
   const [testAck, setTestAck] = useState(false);
@@ -129,7 +133,7 @@ export function LineBroadcastCenter({
           LINE 群發中心
         </h1>
         <p className="text-sm text-secondary-text">
-          只支援官方帳號全好友文字 Broadcast。成功只代表 API 已接受，不估計好友數。
+          單人測試 Push 與正式群發分開。測試只傳給已綁定的店長自己，不是全好友 Broadcast。
         </p>
         <Link href="/staff/settings/line" className="text-sm text-primary">
           LINE 官方帳號設定
@@ -141,9 +145,120 @@ export function LineBroadcastCenter({
           <p className="text-sm text-secondary-text">LINE 串接尚未在此環境啟用。</p>
         </Card>
       ) : (
+        <>
+        <Card padding="lg" className="space-y-4" data-line-test-push>
+          <h2 className="text-[16px] font-semibold text-text">單人測試 Push</h2>
+          <p className="text-sm text-secondary-text">
+            這不是群發。只傳給已驗證的店長 LINE。成功只代表 API 已接受。失敗不會自動重送。
+          </p>
+          <p className="text-sm text-secondary-text" data-line-test-env>
+            測試發送環境：{testPushOpen ? "允許" : "不允許"}
+          </p>
+          <p className="text-sm text-secondary-text" data-line-test-runtime>
+            伺服器總開關：{account?.testPushRuntimeOpen ? "開啟" : "關閉（預設）"}
+            。關閉後可立即停止後續新發送；已開始的 LINE HTTP 無法保證取消。
+          </p>
+          <p className="text-sm text-secondary-text">
+            店長測試開關：{account?.testPushEnabled ? "已啟用" : "未啟用"}
+          </p>
+          <p className="text-sm text-secondary-text" data-line-test-recipient>
+            收件者：{lineOwnerRecipientLabel(recipient)}
+          </p>
+          <textarea
+            data-line-test-editor
+            className="min-h-24 w-full rounded-2xl border border-border bg-surface px-4 py-3 text-[15px] outline-none"
+            maxLength={LINE_BROADCAST_TEXT_MAX}
+            value={testTextBody}
+            onChange={(event) => setTestTextBody(event.target.value)}
+            placeholder="BeautyOS TEST 2"
+          />
+          {organization.id === ORG_BEAUTY_OS_TEST_ID ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={() => {
+                  startTransition(async () => {
+                    const result = await setLineTestPushEnabledAction({
+                      organizationId: organization.id,
+                      enabled: !account?.testPushEnabled,
+                    });
+                    if (!result.ok) setError(result.message);
+                    else setMessage(result.message);
+                    reload(false);
+                  });
+                }}
+              >
+                {account?.testPushEnabled ? "關閉店長測試開關" : "開啟店長測試開關"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                data-line-test-runtime-switch
+                onClick={() => {
+                  startTransition(async () => {
+                    const result = await setLineTestPushRuntimeOpenAction({
+                      organizationId: organization.id,
+                      open: !account?.testPushRuntimeOpen,
+                    });
+                    if (!result.ok) setError(result.message);
+                    else setMessage(result.message);
+                    reload(false);
+                  });
+                }}
+              >
+                {account?.testPushRuntimeOpen
+                  ? "關閉伺服器總開關"
+                  : "開啟伺服器總開關"}
+              </Button>
+            </div>
+          ) : null}
+          <label className="flex items-start gap-2 text-sm text-text">
+            <input
+              type="checkbox"
+              data-line-test-send-ack
+              className="mt-1"
+              checked={testAck}
+              onChange={(event) => setTestAck(event.target.checked)}
+            />
+            <span>
+              我是店長，確認把這則測試訊息只發給已綁定的自己，且逾時不會自動重送。
+            </span>
+          </label>
+          <Button
+            type="button"
+            disabled={pending || !testAck}
+            onClick={() => {
+              setError("");
+              startTransition(async () => {
+                const result = await sendLineTestPushAction({
+                  organizationId: organization.id,
+                  textBody: testTextBody,
+                  requestId: testRequestId,
+                  acknowledged: testAck,
+                });
+                setTestAck(false);
+                setTestRequestId(newLineTestRequestId());
+                if (result.ok) {
+                  setMessage(result.message);
+                } else {
+                  setError(result.message);
+                }
+                reload(false);
+              });
+            }}
+          >
+            確認測試發送
+          </Button>
+          <Link href="/staff/settings/line" className="block text-sm text-primary">
+            前往綁定店長 LINE
+          </Link>
+        </Card>
         <div className="grid gap-4 min-[1200px]:grid-cols-2">
-          <Card padding="lg" className="space-y-4">
-            <h2 className="text-[16px] font-semibold text-text">文字訊息</h2>
+          <Card padding="lg" className="space-y-4" data-line-broadcast-editor-card>
+            <h2 className="text-[16px] font-semibold text-text">正式群發</h2>
             <textarea
               data-line-broadcast-editor
               className="min-h-40 w-full rounded-2xl border border-border bg-surface px-4 py-3 text-[15px] outline-none"
@@ -213,6 +328,7 @@ export function LineBroadcastCenter({
             </p>
           </Card>
         </div>
+        </>
       )}
 
       {confirming ? (
@@ -311,61 +427,6 @@ export function LineBroadcastCenter({
             >
               確認真實發送
             </Button>
-          </div>
-
-          <div className="space-y-2 border-t border-border pt-4" data-line-test-push>
-            <p className="text-sm font-medium text-text">發送測試給自己</p>
-            <p className="text-sm text-secondary-text">
-              使用 Push 傳給已驗證的店長 LINE，不是 Broadcast。環境允許：
-              {testPushOpen ? "開啟" : "關閉（預設）"}。伺服器總開關：
-              {account?.testPushRuntimeOpen ? "開啟" : "關閉（預設）"}。
-              關閉總開關可立即停止後續新發送；已開始的 LINE HTTP 無法保證取消。
-            </p>
-            <p className="text-sm text-secondary-text" data-line-test-recipient>
-              收件者：{lineOwnerRecipientLabel(recipient)}
-            </p>
-            <label className="flex items-start gap-2 text-sm text-text">
-              <input
-                type="checkbox"
-                data-line-test-send-ack
-                className="mt-1"
-                checked={testAck}
-                onChange={(event) => setTestAck(event.target.checked)}
-              />
-              <span>
-                我是店長，確認把這則測試訊息只發給已綁定的自己，且逾時不會自動重送。
-              </span>
-            </label>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={pending || !testAck}
-              onClick={() => {
-                setError("");
-                startTransition(async () => {
-                  const result = await sendLineTestPushAction({
-                    organizationId: organization.id,
-                    textBody,
-                    requestId: testRequestId,
-                    acknowledged: testAck,
-                  });
-                  setConfirming(false);
-                  setTestAck(false);
-                  setTestRequestId(newLineTestRequestId());
-                  if (result.ok) {
-                    setMessage(result.message);
-                  } else {
-                    setError(result.message);
-                  }
-                  reload(false);
-                });
-              }}
-            >
-              確認測試發送
-            </Button>
-            <Link href="/staff/settings/line" className="block text-sm text-primary">
-              前往綁定店長 LINE
-            </Link>
           </div>
 
           <Button type="button" variant="ghost" onClick={() => {

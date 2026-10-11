@@ -80,8 +80,16 @@ import { lineWebhookPublicPath, lineWebhookPublicUrl } from "@/lib/line/line-web
 import {
   classifyLineHttpError,
   interpretLineTestPushApiOutcome,
+  persistableLineHttpErrorClass,
 } from "@/lib/line/line-http-error";
-import { executeLineTestPushHttp } from "@/lib/line/line-push-adapter";
+import {
+  executeLineTestPushHttp,
+  inspectLineTestPushHttpRequest,
+} from "@/lib/line/line-push-adapter";
+import {
+  isLineRetryKey,
+  lineRetryKeyFromRequestId,
+} from "@/lib/line/line-retry-key";
 import { processLineWebhookBind } from "@/lib/line/line-webhook";
 import {
   describeLineQuota,
@@ -920,7 +928,13 @@ describe("LINE HTTP adapters", () => {
         expect(String(input)).toContain("/v2/bot/message/broadcast");
         expect(init?.method).toBe("POST");
         expect((init?.headers as Record<string, string>)["X-Line-Retry-Key"]).toBe(
-          "lbrq-req00000000001",
+          lineRetryKeyFromRequestId("lbrq-req00000000001"),
+        );
+        expect(isLineRetryKey((init?.headers as Record<string, string>)["X-Line-Retry-Key"])).toBe(
+          true,
+        );
+        expect((init?.headers as Record<string, string>)["X-Line-Retry-Key"]).not.toMatch(
+          /^(ltsq-|lbrq-)/,
         );
         return new Response("{}", {
           status: 200,
@@ -1300,6 +1314,104 @@ describe("LINE Phase 1C owner bind and test push", () => {
     expect(fetched).toBe(1);
   });
 
+  it("derives a UUID retry key and inspects official Push fields without leaking secrets", async () => {
+    const requestId = "ltsq-e8b96c6642874009";
+    const lineUserId = "U" + "b".repeat(32);
+    expect(isLineRetryKey(requestId)).toBe(false);
+    expect(isLineRetryKey(lineRetryKeyFromRequestId(requestId))).toBe(true);
+    expect(lineRetryKeyFromRequestId(requestId)).not.toBe(requestId);
+
+    let fetched = 0;
+    let inspection: ReturnType<typeof inspectLineTestPushHttpRequest> | null = null;
+    const result = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId,
+      textBody: "BeautyOS TEST 2",
+      requestId,
+      testPushOpen: true,
+      fetchImpl: async (input, init) => {
+        fetched += 1;
+        inspection = inspectLineTestPushHttpRequest(String(input), init);
+        expect((init?.headers as Record<string, string>)["X-Line-Retry-Key"]).toBe(
+          lineRetryKeyFromRequestId(requestId),
+        );
+        return new Response("{}", {
+          status: 200,
+          headers: { "x-line-request-id": "push-inspect" },
+        });
+      },
+    });
+    expect(result).toMatchObject({ httpOk: true, lineRequestId: "push-inspect" });
+    expect(fetched).toBe(1);
+    expect(inspection).toEqual({
+      method: "POST",
+      path: "https://api.line.me/v2/bot/message/push",
+      contentType: "application/json",
+      authorizationScheme: "Bearer",
+      retryKeyIsUuid: true,
+      retryKeyUsesInternalPrefix: false,
+      hasTo: true,
+      toIsLineUserId: true,
+      messageCount: 1,
+      firstMessageType: "text",
+      textLength: "BeautyOS TEST 2".length,
+    });
+    expect(JSON.stringify(inspection)).not.toMatch(/mock-token|Ubbbbbbbb|ltsq-|BeautyOS TEST 2/);
+  });
+
+  it("refuses invalid local Push fields without calling LINE and does not guess a LINE 400 subtype", async () => {
+    let fetched = 0;
+    const fetchImpl: typeof fetch = async () => {
+      fetched += 1;
+      return new Response("{}", { status: 200 });
+    };
+    const invalidMessage = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId: "U" + "a".repeat(32),
+      textBody: "   ",
+      requestId: "ltsq-req00000000001",
+      testPushOpen: true,
+      fetchImpl,
+    });
+    expect(invalidMessage).toMatchObject({
+      httpOk: false,
+      httpStatus: null,
+      localErrorClass: "invalid_message",
+    });
+    const invalidRecipient = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId: "not-a-line-user",
+      textBody: "BeautyOS TEST 2",
+      requestId: "ltsq-req00000000001",
+      testPushOpen: true,
+      fetchImpl,
+    });
+    expect(invalidRecipient).toMatchObject({
+      httpOk: false,
+      httpStatus: null,
+      localErrorClass: "invalid_recipient",
+    });
+    expect(fetched).toBe(0);
+    expect(interpretLineTestPushApiOutcome(invalidMessage).errorClass).toBe("invalid_message");
+    expect(interpretLineTestPushApiOutcome(invalidRecipient).errorClass).toBe("invalid_recipient");
+    expect(interpretLineTestPushApiOutcome(invalidMessage).message).toMatch(/沒有呼叫 LINE/);
+    expect(persistableLineHttpErrorClass("invalid_message")).toBe("invalid_request");
+    expect(persistableLineHttpErrorClass("invalid_recipient")).toBe("invalid_request");
+    expect(persistableLineHttpErrorClass("invalid_retry_key")).toBe("invalid_request");
+    expect(persistableLineHttpErrorClass("invalid_request")).toBe("invalid_request");
+    expect(
+      interpretLineTestPushApiOutcome({
+        timedOut: false,
+        httpOk: false,
+        httpStatus: 400,
+        lineRequestId: "line-400",
+      }),
+    ).toMatchObject({
+      errorClass: "invalid_request",
+      message: expect.stringMatching(/請求不合法/),
+    });
+  });
+
   it("classifies mock Push HTTP errors without reading LINE bodies or saying 廣播", async () => {
     const cases = [
       { status: 400, errorClass: "invalid_request" as const },
@@ -1396,7 +1508,7 @@ describe("LINE Phase 1C owner bind and test push", () => {
       {
         apiResult: "failed",
         status: "failed",
-        message: "LINE API 拒絕這則測試發送（未授權）",
+        message: "LINE API 拒絕這則測試發送（未授權）。系統不會自動重送。",
         lineRequestId: "line-401",
         httpStatus: 401,
         errorClass: "unauthorized",
@@ -1795,12 +1907,20 @@ describe("LINE source contracts", () => {
 
   it("never ships secrets or send adapters to the client UI", () => {
     expect(settingsUi).not.toMatch(/line-crypto|line-send-adapter|createServiceRoleClient/);
-    expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-quota-adapter|line-push-adapter|createServiceRoleClient/);
+    expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-quota-adapter|line-push-adapter|line-retry-key|createServiceRoleClient/);
     expect(broadcastUi).toMatch(/確認（不會實際發送）/);
     expect(broadcastUi).toMatch(/確認真實發送/);
     expect(broadcastUi).toMatch(/確認測試發送/);
+    expect(broadcastUi).toMatch(/單人測試 Push/);
+    expect(broadcastUi).toMatch(/正式群發/);
+    expect(broadcastUi).toMatch(/測試發送環境/);
     expect(broadcastUi).toMatch(/data-line-broadcast-real-send/);
     expect(broadcastUi).toMatch(/data-line-test-push/);
+    expect(broadcastUi).toMatch(/data-line-test-env/);
+    expect(broadcastUi).toMatch(/data-line-broadcast-editor-card/);
+    expect(broadcastUi.indexOf("data-line-test-push")).toBeLessThan(
+      broadcastUi.indexOf("data-line-broadcast-confirm"),
+    );
     expect(broadcastUi).toMatch(/data-line-real-send-ack/);
     expect(broadcastUi).toMatch(/restoreLineBroadcastEditor/);
     expect(settingsUi).toMatch(/data-line-owner-bind/);
@@ -1817,6 +1937,13 @@ describe("LINE source contracts", () => {
     expect(crypto).toMatch(/aes-256-gcm/);
     expect(crypto).toMatch(/LINE credential crypto cannot run in the browser/);
     expect(send).toMatch(/X-Line-Retry-Key/);
+    expect(source("lib/line/line-push-adapter.ts")).toMatch(/lineRetryKeyFromRequestId/);
+    expect(source("lib/line/line-push-adapter.ts")).not.toMatch(
+      /"X-Line-Retry-Key": input\.requestId/,
+    );
+    expect(source("lib/line/line-send-adapter.ts")).not.toMatch(
+      /"X-Line-Retry-Key": input\.requestId/,
+    );
     expect(actions).toMatch(/executeLineBroadcastHttp/);
     expect(actions).toMatch(/實際發送尚未開放，未查詢 LINE 額度/);
     expect(actions).toMatch(/CLAIM_LINE_BROADCAST_SEND_RPC|claim_line_broadcast_send/);

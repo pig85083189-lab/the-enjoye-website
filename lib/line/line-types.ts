@@ -21,9 +21,22 @@ export type LineHttpErrorClass =
   | "unauthorized"
   | "forbidden"
   | "invalid_request"
+  | "invalid_recipient"
+  | "invalid_message"
+  | "invalid_retry_key"
   | "quota_exceeded"
   | "timeout"
   | "unknown";
+
+/** Classes the current Preview complete RPC / check constraint will persist. */
+export const LINE_PERSISTED_HTTP_ERROR_CLASSES = [
+  "unauthorized",
+  "forbidden",
+  "invalid_request",
+  "quota_exceeded",
+  "timeout",
+  "unknown",
+] as const;
 
 export type LineOfficialAccountPublic = {
   organizationId: string;

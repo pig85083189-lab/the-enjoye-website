@@ -203,6 +203,12 @@ Owner 立即停止後續新發送（不需重新部署）：
    `select public.set_line_test_push_runtime_open('org-beauty-os-test', false);`
 3. 已開始的 LINE HTTP 無法保證取消。只能保證拒絕後續新發送。
 
+### Phase 1D.4 — Push Retry-Key 與單人測試操作
+
+`X-Line-Retry-Key` 必須是 hexadecimal UUID，不可把內部 `ltsq-` / `lbrq-` 識別碼直接送給 LINE。同一 requestId 會穩定對應同一 UUID，歷史失敗列不回寫、不自動重送。LINE HTTP 400 只記 `invalid_request`；本機預檢的 `invalid_recipient` / `invalid_message` / `invalid_retry_key` 在沒有 LINE 回應時才使用，寫入資料庫時仍對應 `invalid_request`。
+
+群發中心把「單人測試 Push」與「正式群發」分開。測試有獨立區塊與一次「確認測試發送」。伺服器 allowlist、Owner、已綁定收件者、每日額度、requestId 防重用與 Runtime Kill Switch 仍有效。Broadcast 維持 hardcoded false。
+
 ### 首次真實 Push 驗收（尚未授權，本階段不做）
 
 具備條件：

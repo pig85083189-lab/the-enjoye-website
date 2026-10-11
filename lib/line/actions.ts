@@ -57,7 +57,10 @@ import {
 } from "@/lib/line/line-flag";
 import { fetchLineMessageQuota } from "@/lib/line/line-quota-adapter";
 import { isLineOfficialAccountConnected, unknownLineQuota } from "@/lib/line/line-quota";
-import { interpretLineTestPushApiOutcome } from "@/lib/line/line-http-error";
+import {
+  interpretLineTestPushApiOutcome,
+  persistableLineHttpErrorClass,
+} from "@/lib/line/line-http-error";
 import { executeLineTestPushHttp } from "@/lib/line/line-push-adapter";
 import { executeLineBroadcastHttp } from "@/lib/line/line-send-adapter";
 import { runClaimedLineBroadcastSend } from "@/lib/line/line-send-pipeline";
@@ -1029,7 +1032,7 @@ export async function sendLineTestPushAction(input: {
           p_line_request_id: outcome.lineRequestId,
           p_error_message: outcome.message,
           p_http_status: outcome.httpStatus,
-          p_error_class: outcome.errorClass ?? null,
+          p_error_class: persistableLineHttpErrorClass(outcome.errorClass),
         });
       },
     });

@@ -9,12 +9,18 @@ import {
   interpretLineBroadcastApiOutcome,
 } from "@/lib/line/line-command";
 import { LINE_BROADCAST_SEND_OPEN } from "@/lib/line/line-flag";
+import {
+  isLineRetryKey,
+  lineRetryKeyFromRequestId,
+} from "@/lib/line/line-retry-key";
+import type { LineHttpErrorClass } from "@/lib/line/line-types";
 
 export type LineBroadcastHttpResult = {
   timedOut: boolean;
   httpOk: boolean;
   lineRequestId: string | null;
   httpStatus: number | null;
+  localErrorClass?: LineHttpErrorClass | null;
 };
 
 function closedResult(): LineBroadcastHttpResult {
@@ -34,6 +40,16 @@ export async function executeLineBroadcastHttp(input: {
   if (!(input.sendOpen ?? LINE_BROADCAST_SEND_OPEN)) {
     return closedResult();
   }
+  const retryKey = lineRetryKeyFromRequestId(input.requestId);
+  if (!isLineRetryKey(retryKey) || /^(ltsq-|lbrq-)/.test(retryKey)) {
+    return {
+      timedOut: false,
+      httpOk: false,
+      lineRequestId: null,
+      httpStatus: null,
+      localErrorClass: "invalid_retry_key",
+    };
+  }
   const fetchImpl = input.fetchImpl ?? fetch;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
@@ -44,7 +60,7 @@ export async function executeLineBroadcastHttp(input: {
       headers: {
         Authorization: `Bearer ${input.accessToken}`,
         "Content-Type": "application/json",
-        "X-Line-Retry-Key": input.requestId,
+        "X-Line-Retry-Key": retryKey,
       },
       body: JSON.stringify({
         messages: [{ type: "text", text: input.textBody }],
