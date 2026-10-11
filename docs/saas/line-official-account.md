@@ -211,7 +211,9 @@ Owner 立即停止後續新發送（不需重新部署）：
 
 ### Phase 1E — 全好友群發簡化
 
-一般店長只走「LINE 設定 → 建立群發 → 預覽 → 確認全好友群發 → 發送紀錄」。固定使用 `POST /v2/bot/message/broadcast`，不需要個別好友 User ID。成功只代表 LINE API 已接受。額度查不到就顯示未知，不虛構好友數。
+一般店長只走「LINE 設定 → 建立群發 → 預覽 → 確認發送 → 發送紀錄」。固定使用 `POST /v2/bot/message/broadcast`，不需要個別好友 User ID。成功只代表 LINE API 已接受。額度查不到就顯示未知，不虛構好友數。
+
+確認頁只顯示官方帳號、全部好友、完整訊息、發送狀態與確認勾選。「確認發送」在 `LINE_BROADCAST_SEND_OPEN = false` 時必須 disabled，並提示目前為預覽版本。後端權限與防重送不變。
 
 單人測試 Push、Runtime Kill Switch、Webhook 綁定與內部 Request ID 只在 Beauty OS TEST 的「工程師診斷」顯示。一般店家看不到。伺服器 Owner / org 隔離 / claim / 防重送 / `LINE_BROADCAST_SEND_OPEN = false` 不變。
 

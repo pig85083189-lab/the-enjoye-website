@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import {
-  confirmLineBroadcastAction,
   loadLineBroadcastPrepareAction,
   saveLineBroadcastDraftAction,
   sendLineBroadcastAction,
@@ -19,7 +18,9 @@ import { restoreLineBroadcastEditor, unknownLineQuota } from "@/lib/line/line-qu
 import {
   canShowLineEngineerDiagnostics,
   canShowLineSettings,
+  isLineBroadcastConfirmSubmitEnabled,
   lineBroadcastApiResultLabel,
+  lineBroadcastConfirmStatusHint,
   lineBroadcastStatusLabel,
   lineOfficialAccountNameLabel,
   lineOwnerRecipientLabel,
@@ -222,56 +223,21 @@ export function LineBroadcastCenter({
 
       {confirming ? (
         <Card data-line-broadcast-confirm padding="lg" className="space-y-4">
-          <p className="font-semibold text-text">確認全好友群發？</p>
+          <h2 className="text-[16px] font-semibold text-text">確認發送</h2>
           <div className="rounded-2xl bg-primary-light/50 px-4 py-3 text-sm space-y-1">
             <p data-line-confirm-oa>官方帳號：{officialName}</p>
-            <p data-line-confirm-quota>LINE 額度：{quota.label}</p>
-            <p>連線狀態：{account?.lastTestStatus === "ok" ? "已連線" : "尚未確認連線"}</p>
-            <p>群發準備：{account?.broadcastEnabled ? "已啟用" : "尚未啟用"}</p>
-            <p>實際發送：{sendOpen ? "已開放" : "尚未開放"}</p>
+            <p data-line-confirm-audience>發送對象：全部好友</p>
           </div>
-          <div className="rounded-2xl border border-border px-4 py-3 text-[15px] whitespace-pre-wrap">
+          <div
+            data-line-confirm-message
+            className="rounded-2xl border border-border px-4 py-3 text-[15px] whitespace-pre-wrap"
+          >
             {preview || "尚未輸入文字"}
           </div>
-          <p className="text-sm text-secondary-text">
-            確認後會向「{officialName}」的全部好友發送。成功只代表 LINE API 已接受，不代表每位好友都已收到。逾時不會自動重送。
+          <p className="text-sm text-secondary-text" data-line-confirm-status>
+            {lineBroadcastConfirmStatusHint(sendOpen)}
           </p>
-
-          {engineer ? (
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-text">練習確認</p>
-              <p className="text-sm text-secondary-text">
-                這一步不會呼叫 LINE Broadcast，只會留下「未發送」紀錄。
-              </p>
-              <Button
-                type="button"
-                disabled={pending}
-                onClick={() => {
-                  setError("");
-                  startTransition(async () => {
-                    const result = await confirmLineBroadcastAction({
-                      organizationId: organization.id,
-                      textBody,
-                      requestId,
-                      broadcastId,
-                    });
-                    setConfirming(false);
-                    setRealSendAck(false);
-                    if (result.ok) {
-                      setMessage(result.message);
-                    } else {
-                      setError(result.message);
-                    }
-                    reload(false);
-                  });
-                }}
-              >
-                確認（不會實際發送）
-              </Button>
-            </div>
-          ) : null}
-
-          <div className="space-y-2" data-line-broadcast-real-send>
+          <div className="space-y-3" data-line-broadcast-real-send>
             <label className="flex items-start gap-2 text-sm text-text">
               <input
                 type="checkbox"
@@ -279,15 +245,28 @@ export function LineBroadcastCenter({
                 className="mt-1"
                 checked={realSendAck}
                 onChange={(event) => setRealSendAck(event.target.checked)}
+                disabled={!sendOpen || pending}
               />
-              <span>
-                我了解這會向「{officialName}」的全部好友發送，且系統不會在逾時後自動重送。
-              </span>
+              <span>我確認訊息內容正確，並同意發送給全部好友。</span>
             </label>
             <Button
               type="button"
-              disabled={pending || !realSendAck}
+              data-line-confirm-submit
+              disabled={!isLineBroadcastConfirmSubmitEnabled({
+                sendOpen,
+                acknowledged: realSendAck,
+                pending,
+              })}
               onClick={() => {
+                if (
+                  !isLineBroadcastConfirmSubmitEnabled({
+                    sendOpen,
+                    acknowledged: realSendAck,
+                    pending,
+                  })
+                ) {
+                  return;
+                }
                 setError("");
                 startTransition(async () => {
                   const result = await sendLineBroadcastAction({
@@ -311,15 +290,15 @@ export function LineBroadcastCenter({
                 });
               }}
             >
-              確認全好友群發
+              確認發送
             </Button>
           </div>
-
           <Button
             type="button"
             variant="ghost"
             onClick={() => {
               setConfirming(false);
+              setRealSendAck(false);
             }}
           >
             返回編輯

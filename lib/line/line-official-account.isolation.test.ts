@@ -143,7 +143,9 @@ import {
 import {
   canShowLineEngineerDiagnostics,
   canShowLineSettings,
+  isLineBroadcastConfirmSubmitEnabled,
   lineBroadcastApiResultLabel,
+  lineBroadcastConfirmStatusHint,
   lineTestPushDiagnosticLabel,
   lineTestPushDisplayedError,
 } from "@/lib/line/line-visibility";
@@ -1916,7 +1918,7 @@ describe("LINE Phase 1E owner broadcast simplification", () => {
     const broadcastUi = source("features/line/LineBroadcastCenter.tsx");
     expect(broadcastUi).toMatch(/建立群發/);
     expect(broadcastUi).toMatch(/發送紀錄/);
-    expect(broadcastUi).toMatch(/確認全好友群發/);
+    expect(broadcastUi).toMatch(/確認發送/);
     expect(broadcastUi).toMatch(/data-line-engineer-diagnostics/);
     expect(settingsUi).toMatch(/LINE 設定/);
     expect(settingsUi.indexOf("Messaging API 憑證")).toBeLessThan(
@@ -1927,6 +1929,54 @@ describe("LINE Phase 1E owner broadcast simplification", () => {
     );
     expect(settingsUi).not.toMatch(/Retry-Key|lbrq-|ltsq-/);
     expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-push-adapter/);
+    expect(lineBroadcastConfirmStatusHint(false)).toBe(
+      "目前為預覽版本，尚未開放實際發送。",
+    );
+    expect(lineBroadcastConfirmStatusHint(true)).toBe(
+      "送出後無法撤回，請確認訊息內容正確。",
+    );
+    expect(
+      isLineBroadcastConfirmSubmitEnabled({
+        sendOpen: false,
+        acknowledged: true,
+        pending: false,
+      }),
+    ).toBe(false);
+    expect(
+      isLineBroadcastConfirmSubmitEnabled({
+        sendOpen: true,
+        acknowledged: false,
+        pending: false,
+      }),
+    ).toBe(false);
+    expect(
+      isLineBroadcastConfirmSubmitEnabled({
+        sendOpen: true,
+        acknowledged: true,
+        pending: true,
+      }),
+    ).toBe(false);
+    expect(
+      isLineBroadcastConfirmSubmitEnabled({
+        sendOpen: true,
+        acknowledged: true,
+        pending: false,
+      }),
+    ).toBe(true);
+    const confirmStart = broadcastUi.indexOf("data-line-broadcast-confirm");
+    const confirmEnd = broadcastUi.indexOf("data-line-broadcast-history");
+    const confirmUi = broadcastUi.slice(confirmStart, confirmEnd);
+    expect(confirmUi).toMatch(/確認發送/);
+    expect(confirmUi).toMatch(/發送對象：全部好友/);
+    expect(confirmUi).toMatch(/返回編輯/);
+    expect(confirmUi).toMatch(/data-line-confirm-submit/);
+    expect(confirmUi).toMatch(/isLineBroadcastConfirmSubmitEnabled/);
+    expect(confirmUi).not.toMatch(/群發準備|Runtime|Retry-Key|Request ID|連線狀態|LINE 額度/);
+    expect(broadcastUi).toMatch(/data-line-broadcast-editor-card/);
+    expect(broadcastUi).toMatch(/data-line-broadcast-preview/);
+    expect(broadcastUi).toMatch(/data-line-broadcast-history/);
+    expect(broadcastUi).toMatch(/保存草稿/);
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
   });
 });
 
@@ -1966,8 +2016,12 @@ describe("LINE source contracts", () => {
   it("never ships secrets or send adapters to the client UI", () => {
     expect(settingsUi).not.toMatch(/line-crypto|line-send-adapter|createServiceRoleClient/);
     expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-quota-adapter|line-push-adapter|line-retry-key|createServiceRoleClient/);
-    expect(broadcastUi).toMatch(/確認（不會實際發送）/);
-    expect(broadcastUi).toMatch(/確認全好友群發/);
+    expect(broadcastUi).toMatch(/確認發送/);
+    expect(broadcastUi).toMatch(/lineBroadcastConfirmStatusHint/);
+    expect(source("lib/line/line-visibility.ts")).toMatch(
+      /目前為預覽版本，尚未開放實際發送/,
+    );
+    expect(broadcastUi).toMatch(/我確認訊息內容正確，並同意發送給全部好友/);
     expect(broadcastUi).toMatch(/確認測試發送/);
     expect(broadcastUi).toMatch(/建立群發/);
     expect(broadcastUi).toMatch(/發送紀錄/);

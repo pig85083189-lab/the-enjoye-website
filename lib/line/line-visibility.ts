@@ -48,6 +48,20 @@ export function lineBroadcastApiResultLabel(result: string | null): string {
   return "尚未發送";
 }
 
+export function lineBroadcastConfirmStatusHint(sendOpen: boolean): string {
+  return sendOpen
+    ? "送出後無法撤回，請確認訊息內容正確。"
+    : "目前為預覽版本，尚未開放實際發送。";
+}
+
+export function isLineBroadcastConfirmSubmitEnabled(input: {
+  sendOpen: boolean;
+  acknowledged: boolean;
+  pending?: boolean;
+}): boolean {
+  return !input.pending && input.sendOpen === true && input.acknowledged === true;
+}
+
 export function lineTestPushDisplayedError(message: string | null | undefined): string | null {
   const text = message?.trim() ?? "";
   if (!text) return null;
