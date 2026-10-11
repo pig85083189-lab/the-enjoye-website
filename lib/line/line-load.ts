@@ -35,6 +35,7 @@ function asAccount(row: Record<string, unknown> | null): LineOfficialAccountPubl
     broadcastEnabled: Boolean(row.broadcast_enabled),
     testPushEnabled: Boolean(row.test_push_enabled),
     testPushRuntimeOpen: Boolean(row.test_push_runtime_open),
+    broadcastTestRuntimeOpen: Boolean(row.broadcast_test_runtime_open),
     lastTestedAt: (row.last_tested_at as string | null) ?? null,
     lastTestStatus: (row.last_test_status as LineConnectionTestStatus | null) ?? null,
     lastTestMessage: (row.last_test_message as string | null) ?? null,
@@ -88,6 +89,40 @@ export async function readLineTestPushRuntimeOpen(
   return { readOk: true, open: runtimeOpen, runtimeOpen };
 }
 
+export async function readLineBroadcastTestRuntimeOpen(
+  organizationId: string,
+): Promise<{ readOk: boolean; open: boolean; runtimeOpen: boolean | null }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("line_official_accounts")
+    .select("organization_id,broadcast_test_runtime_open")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error || !data) {
+    return { readOk: false, open: false, runtimeOpen: null };
+  }
+  const runtimeOpen = Boolean(
+    (data as { broadcast_test_runtime_open?: unknown }).broadcast_test_runtime_open,
+  );
+  return { readOk: true, open: runtimeOpen, runtimeOpen };
+}
+
+export async function readLineBroadcastOneshotPermit(
+  organizationId: string,
+): Promise<{ readOk: boolean; available: boolean }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("line_broadcast_oneshot_permits")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .is("consumed_at", null)
+    .maybeSingle();
+  if (error) {
+    return { readOk: false, available: false };
+  }
+  return { readOk: true, available: Boolean(data) };
+}
+
 export async function readLineOfficialAccount(
   organizationId: string,
 ): Promise<LineAccountRead> {
@@ -104,11 +139,15 @@ export async function readLineOfficialAccount(
     return { ok: true, account: null };
   }
   const runtime = await readLineTestPushRuntimeOpen(organizationId);
+  const broadcastRuntime = await readLineBroadcastTestRuntimeOpen(organizationId);
   return {
     ok: true,
     account: asAccount({
       ...(data as Record<string, unknown>),
       test_push_runtime_open: runtime.readOk ? runtime.runtimeOpen : false,
+      broadcast_test_runtime_open: broadcastRuntime.readOk
+        ? broadcastRuntime.runtimeOpen
+        : false,
     }),
   };
 }

@@ -22,6 +22,18 @@ export const LINE_BROADCAST_SEND_OPEN = false;
 /** Fail-closed marker. Do not flip. The only open path is the Preview allowlist. */
 export const LINE_TEST_PUSH_OPEN = false;
 
+/** Preview-only one-shot Broadcast. Never an env bypass for the global flag. */
+export const LINE_BROADCAST_ONESHOT_ALLOWED_ORG_ID = ORG_BEAUTY_OS_TEST_ID;
+export const LINE_BROADCAST_ONESHOT_CHANNEL_ID = "2009219238";
+export const LINE_BROADCAST_ONESHOT_BOT_DISPLAY_NAME = "ai";
+export const LINE_BROADCAST_ONESHOT_BOT_BASIC_ID = "@357gospk";
+export const LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST =
+  "bfzquejrtgqzzarhkiya.supabase.co";
+export const LINE_BROADCAST_ONESHOT_TEXT =
+  "【LINE 群發功能測試】\n這是一則系統功能測試訊息，無需回覆，謝謝。";
+export const LINE_BROADCAST_ONESHOT_TEXT_SHA256 =
+  "68ca91c946ed5b09a90884943fc96c653e7b5ad05d55dcdd7dece071e4a6315e";
+
 export const LINE_BROADCAST_DAILY_LIMIT = 3;
 export const LINE_TEST_PUSH_DAILY_LIMIT = 3;
 export const LINE_BROADCAST_TEXT_MAX = 5000;
@@ -49,6 +61,21 @@ export function isLineBroadcastSendOpen(
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
 ): boolean {
   return isLineConnectionPilotEnabled(env) && LINE_BROADCAST_SEND_OPEN;
+}
+
+export function isLineBroadcastOneshotEnvironmentOpen(
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+): boolean {
+  if ((env.VERCEL_ENV ?? "").trim() !== "preview") {
+    return false;
+  }
+  const raw = (env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+  if (!raw) return false;
+  try {
+    return new URL(raw).hostname === LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST;
+  } catch {
+    return false;
+  }
 }
 
 export function isLineTestPushOpen(

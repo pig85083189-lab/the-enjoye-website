@@ -49,6 +49,7 @@ export type LineOfficialAccountPublic = {
   broadcastEnabled: boolean;
   testPushEnabled: boolean;
   testPushRuntimeOpen: boolean;
+  broadcastTestRuntimeOpen: boolean;
   lastTestedAt: string | null;
   lastTestStatus: LineConnectionTestStatus | null;
   lastTestMessage: string | null;
@@ -99,6 +100,7 @@ export type LineBroadcastPrepare = {
   account: LineOfficialAccountPublic | null;
   quota: LineQuotaPublic;
   sendOpen: boolean;
+  oneshotActive: boolean;
   testPushOpen: boolean;
   broadcasts: LineBroadcastPublic[];
   testSends: LineTestSendPublic[];

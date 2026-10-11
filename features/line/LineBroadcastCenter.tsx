@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -13,7 +13,10 @@ import {
   setLineTestPushRuntimeOpenAction,
 } from "@/lib/line/actions";
 import { newLineRequestId, newLineTestRequestId } from "@/lib/line/line-command";
-import { LINE_BROADCAST_TEXT_MAX } from "@/lib/line/line-flag";
+import {
+  LINE_BROADCAST_ONESHOT_TEXT,
+  LINE_BROADCAST_TEXT_MAX,
+} from "@/lib/line/line-flag";
 import {
   lineQuotaBlocksSend,
   restoreLineBroadcastEditor,
@@ -62,6 +65,7 @@ export function LineBroadcastCenter({
   const [account, setAccount] = useState<LineOfficialAccountPublic | null>(null);
   const [quota, setQuota] = useState<LineQuotaPublic>(() => unknownLineQuota());
   const [sendOpen, setSendOpen] = useState(false);
+  const [oneshotActive, setOneshotActive] = useState(false);
   const [testPushOpen, setTestPushOpen] = useState(false);
   const [recipient, setRecipient] = useState<LineOwnerRecipientPublic | null>(null);
   const [testSends, setTestSends] = useState<LineTestSendPublic[]>([]);
@@ -76,13 +80,16 @@ export function LineBroadcastCenter({
   const allowed = canShowLineSettings(membership);
   const engineer = canShowLineEngineerDiagnostics(organization.id);
 
-  const preview = useMemo(() => textBody.trim(), [textBody]);
+  const preview = textBody;
   const officialName = lineOfficialAccountNameLabel(account);
+  const confirmSendOpen =
+    sendOpen && (!oneshotActive || textBody === LINE_BROADCAST_ONESHOT_TEXT);
 
   function applyPrepare(data: {
     account: LineOfficialAccountPublic | null;
     quota: LineQuotaPublic;
     sendOpen: boolean;
+    oneshotActive?: boolean;
     testPushOpen: boolean;
     broadcasts: LineBroadcastPublic[];
     testSends: LineTestSendPublic[];
@@ -91,6 +98,7 @@ export function LineBroadcastCenter({
     setAccount(data.account);
     setQuota(data.quota);
     setSendOpen(data.sendOpen);
+    setOneshotActive(Boolean(data.oneshotActive));
     setTestPushOpen(data.testPushOpen);
     setHistory(data.broadcasts);
     setTestSends(data.testSends);
@@ -254,7 +262,7 @@ export function LineBroadcastCenter({
             {preview || "尚未輸入文字"}
           </div>
           <p className="text-sm text-secondary-text" data-line-confirm-status>
-            {lineBroadcastConfirmStatusHint(sendOpen)}
+            {lineBroadcastConfirmStatusHint(confirmSendOpen)}
           </p>
           <div className="space-y-3" data-line-broadcast-real-send>
             <label className="flex items-start gap-2 text-sm text-text">
@@ -264,7 +272,7 @@ export function LineBroadcastCenter({
                 className="mt-1"
                 checked={realSendAck}
                 onChange={(event) => setRealSendAck(event.target.checked)}
-                disabled={!sendOpen || pending}
+                disabled={!confirmSendOpen || pending}
               />
               <span>我確認訊息內容正確，並同意發送給全部好友。</span>
             </label>
@@ -272,18 +280,18 @@ export function LineBroadcastCenter({
               type="button"
               data-line-confirm-submit
               disabled={!isLineBroadcastConfirmSubmitEnabled({
-                sendOpen,
+                sendOpen: confirmSendOpen,
                 acknowledged: realSendAck,
                 pending,
-                quotaBlocked: sendOpen && lineQuotaBlocksSend(quota),
+                quotaBlocked: confirmSendOpen && lineQuotaBlocksSend(quota),
               })}
               onClick={() => {
                 if (
                   !isLineBroadcastConfirmSubmitEnabled({
-                    sendOpen,
+                    sendOpen: confirmSendOpen,
                     acknowledged: realSendAck,
                     pending,
-                    quotaBlocked: sendOpen && lineQuotaBlocksSend(quota),
+                    quotaBlocked: confirmSendOpen && lineQuotaBlocksSend(quota),
                   })
                 ) {
                   return;

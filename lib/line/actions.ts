@@ -38,7 +38,10 @@ import {
   resolveVerifiedLineOrganizationId,
   type LineActor,
 } from "@/lib/line/line-command";
-import { fetchLineBotInfo } from "@/lib/line/line-connection-adapter";
+import {
+  fetchLineBotInfo,
+  verifyLineOneshotOfficialAccount,
+} from "@/lib/line/line-connection-adapter";
 import {
   canEncryptLineCredentials,
   decryptLineCredential,
@@ -57,6 +60,7 @@ import {
   isLineTestPushOpen,
   resolveLineTestPushTransport,
 } from "@/lib/line/line-flag";
+import { evaluateLineBroadcastOneshotPermit } from "@/lib/line/line-oneshot";
 import { fetchLineMessageQuota } from "@/lib/line/line-quota-adapter";
 import { isLineOfficialAccountConnected, unknownLineQuota } from "@/lib/line/line-quota";
 import {
@@ -85,6 +89,7 @@ import {
   loadLineTestSendByRequestId,
   loadLineTestSends,
   loadLineWebhookPublicUrl,
+  readLineBroadcastOneshotPermit,
   readLineOfficialAccount,
   readLineTestPushRuntimeOpen,
 } from "@/lib/line/line-load";
@@ -366,6 +371,51 @@ async function loadLineQuotaForOwner(organizationId: string) {
   return fetchLineMessageQuota({ accessToken: token.plaintext });
 }
 
+function evaluateStoredLineBroadcastOneshot(input: {
+  organizationId: string;
+  account: Awaited<ReturnType<typeof loadLineOfficialAccount>>;
+  permitAvailable: boolean;
+  textBody?: string | null;
+  requireText?: boolean;
+  requireIdentity?: boolean;
+  identity?: {
+    clientId?: string | null;
+    displayName?: string | null;
+    basicId?: string | null;
+  } | null;
+}) {
+  return evaluateLineBroadcastOneshotPermit({
+    env: process.env,
+    connectionPilotEnabled: isLineConnectionPilotEnabled(),
+    organizationId: input.organizationId,
+    channelId: input.account?.channelId,
+    botDisplayName: input.account?.botDisplayName,
+    botBasicId: input.account?.botBasicId,
+    textBody: input.textBody,
+    runtimeOpen: Boolean(input.account?.broadcastTestRuntimeOpen),
+    permitAvailable: input.permitAvailable,
+    requireText: input.requireText,
+    requireIdentity: input.requireIdentity,
+    identity: input.identity,
+  });
+}
+
+async function verifyStoredLineOneshotIdentity(organizationId: string) {
+  const env = process.env;
+  if (!hasLineCredentialKey(env) || !canEncryptLineCredentials(env)) {
+    return { ok: false as const, message: "LINE 憑證加密金鑰尚未設定" };
+  }
+  const secrets = await readOwnerAccessTokenCipher(organizationId);
+  if (secrets.error || !secrets.cipher.startsWith("v1.")) {
+    return { ok: false as const, message: "找不到已保存的 LINE 憑證" };
+  }
+  const token = decryptLineCredential(secrets.cipher, env);
+  if (!token.ok) {
+    return { ok: false as const, message: token.message };
+  }
+  return verifyLineOneshotOfficialAccount(token.plaintext);
+}
+
 async function finalizeStaleLineBroadcasts(
   organizationId: string,
   rows: LineBroadcastPublic[],
@@ -473,8 +523,18 @@ export async function loadLineBroadcastPrepareAction(
       scopedOrg,
       await loadLineBroadcasts(scopedOrg),
     );
+    const permit = await readLineBroadcastOneshotPermit(scopedOrg);
+    const oneshotUi = evaluateStoredLineBroadcastOneshot({
+      organizationId: scopedOrg,
+      account,
+      permitAvailable: permit.available,
+      requireText: false,
+      requireIdentity: false,
+    });
+    const oneshotActive = oneshotUi.ok;
+    const sendOpen = isLineBroadcastSendOpen() || oneshotActive;
     const quota =
-      isLineBroadcastSendOpen() && account?.tokenConfigured
+      sendOpen && account?.tokenConfigured
         ? await loadLineQuotaForOwner(scopedOrg)
         : unknownLineQuota(
             account?.tokenConfigured
@@ -487,7 +547,8 @@ export async function loadLineBroadcastPrepareAction(
       data: {
         account,
         quota,
-        sendOpen: isLineBroadcastSendOpen(),
+        sendOpen,
+        oneshotActive,
         testPushOpen: isLineTestPushOpen({ organizationId: scopedOrg }),
         broadcasts,
         testSends: await loadLineTestSends(scopedOrg),
@@ -530,10 +591,20 @@ export async function confirmLineBroadcastAction(input: {
     today,
   );
   const account = await loadLineOfficialAccount(organizationId);
+  const permit = await readLineBroadcastOneshotPermit(organizationId);
+  const oneshotLocal = evaluateStoredLineBroadcastOneshot({
+    organizationId,
+    account,
+    permitAvailable: permit.available,
+    textBody: input.textBody,
+    requireText: true,
+    requireIdentity: false,
+  });
+  const sendOpen = isLineBroadcastSendOpen() || oneshotLocal.ok;
   const decision = evaluateLineBroadcastSend({
     connectionPilotEnabled: isLineConnectionPilotEnabled(),
-    sendOpen: isLineBroadcastSendOpen(),
-    ownerBroadcastEnabled: Boolean(account?.broadcastEnabled),
+    sendOpen,
+    ownerBroadcastEnabled: Boolean(account?.broadcastEnabled) || oneshotLocal.ok,
     organizationId,
     actor,
     textBody: input.textBody,
@@ -602,14 +673,66 @@ export async function sendLineBroadcastAction(input: {
       existing;
     const acceptedToday = countClaimedBroadcastsOnTaipeiDay(broadcasts, today);
     const account = await loadLineOfficialAccount(organizationId);
+    const permit = await readLineBroadcastOneshotPermit(organizationId);
+    const oneshotLocal = evaluateStoredLineBroadcastOneshot({
+      organizationId,
+      account,
+      permitAvailable: permit.available,
+      textBody: input.textBody,
+      requireText: true,
+      requireIdentity: false,
+    });
+    let oneshotReady = false;
+    if (oneshotLocal.ok) {
+      const verifiedIdentity = await verifyStoredLineOneshotIdentity(organizationId);
+      if (!verifiedIdentity.ok) {
+        if (existing?.id) {
+          const supabase = await createClient();
+          await supabase.rpc(RECORD_LINE_BROADCAST_OWNER_EVENT_RPC, {
+            p_organization_id: organizationId,
+            p_broadcast_id: existing.id,
+            p_event_type: "send_refused",
+            p_detail: verifiedIdentity.message,
+          });
+        }
+        return {
+          ok: false,
+          reason: "not_configured",
+          message: verifiedIdentity.message,
+        };
+      }
+      const oneshotIdentified = evaluateStoredLineBroadcastOneshot({
+        organizationId,
+        account,
+        permitAvailable: permit.available,
+        textBody: input.textBody,
+        requireText: true,
+        requireIdentity: true,
+        identity: verifiedIdentity.identity,
+      });
+      if (!oneshotIdentified.ok) {
+        if (existing?.id) {
+          const supabase = await createClient();
+          await supabase.rpc(RECORD_LINE_BROADCAST_OWNER_EVENT_RPC, {
+            p_organization_id: organizationId,
+            p_broadcast_id: existing.id,
+            p_event_type: "send_refused",
+            p_detail: oneshotIdentified.message,
+          });
+        }
+        return oneshotIdentified;
+      }
+      oneshotReady = true;
+    }
+    const sendOpen = isLineBroadcastSendOpen() || oneshotReady;
     const quota =
-      isLineBroadcastSendOpen() && account?.tokenConfigured
+      sendOpen && account?.tokenConfigured
         ? await loadLineQuotaForOwner(organizationId)
         : unknownLineQuota("實際發送尚未開放，未查詢 LINE 額度");
     const decision = evaluateLineBroadcastRealSend({
       connectionPilotEnabled: isLineConnectionPilotEnabled(),
-      sendOpen: isLineBroadcastSendOpen(),
-      ownerBroadcastEnabled: Boolean(account?.broadcastEnabled),
+      sendOpen,
+      ownerBroadcastEnabled: Boolean(account?.broadcastEnabled) || oneshotReady,
       organizationId,
       actor,
       textBody: input.textBody,
@@ -662,7 +785,7 @@ export async function sendLineBroadcastAction(input: {
         };
       },
       send: async () => {
-        if (!isLineBroadcastSendOpen()) {
+        if (!sendOpen) {
           return {
             timedOut: false,
             httpOk: false,
@@ -680,16 +803,16 @@ export async function sendLineBroadcastAction(input: {
           accessToken: token.plaintext,
           textBody: input.textBody,
           requestId: decision.requestId,
-          sendOpen: isLineBroadcastSendOpen(),
+          sendOpen,
         });
       },
       complete: async (outcome) => {
         const status =
-          !isLineBroadcastSendOpen() && outcome.apiResult === "failed"
+          !sendOpen && outcome.apiResult === "failed"
             ? "send_closed"
             : outcome.status;
         const apiResult =
-          !isLineBroadcastSendOpen() && outcome.apiResult === "failed"
+          !sendOpen && outcome.apiResult === "failed"
             ? "send_closed"
             : outcome.apiResult;
         await supabase.rpc(COMPLETE_LINE_BROADCAST_SEND_RPC, {
@@ -706,7 +829,7 @@ export async function sendLineBroadcastAction(input: {
       },
     });
 
-    if (!isLineBroadcastSendOpen()) {
+    if (!sendOpen) {
       return {
         ok: false,
         reason: "send_closed",

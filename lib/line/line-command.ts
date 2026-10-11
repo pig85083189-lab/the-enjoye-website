@@ -98,7 +98,10 @@ export const LINE_BROADCAST_PATH = "/v2/bot/message/broadcast";
 export const LINE_PUSH_PATH = "/v2/bot/message/push";
 export const LINE_QUOTA_PATH = "/v2/bot/message/quota";
 export const LINE_QUOTA_CONSUMPTION_PATH = "/v2/bot/message/quota/consumption";
+export const LINE_OAUTH_VERIFY_PATH = "/v2/oauth/verify";
 export const LINE_API_ORIGIN = "https://api.line.me";
+export const SET_LINE_BROADCAST_TEST_RUNTIME_OPEN_RPC =
+  "set_line_broadcast_test_runtime_open";
 
 export type LineActor = {
   authUserId: string | null;

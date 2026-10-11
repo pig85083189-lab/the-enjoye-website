@@ -22,6 +22,7 @@ import {
   LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE,
   LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE,
   LINE_BROADCAST_CLAIM_SAFETY_MIGRATION_FILE,
+  LINE_BROADCAST_ONESHOT_PERMIT_MIGRATION_FILE,
 } from "@/lib/persistence/schema-contract";
 import { STAFF_LINE_ROLES, resolveStaffRolePageAccess } from "@/lib/staff/staff-role-page-access";
 import {
@@ -49,10 +50,12 @@ import {
   applyLineBroadcastOrgClaimStep,
   interpretLineBroadcastApiOutcome,
   resolveLineTestPushRuntimeState,
+  SET_LINE_BROADCAST_TEST_RUNTIME_OPEN_RPC,
   SET_LINE_TEST_PUSH_RUNTIME_OPEN_RPC,
   resolveVerifiedLineOrganizationId,
   LINE_BOT_INFO_PATH,
   LINE_BROADCAST_PATH,
+  LINE_OAUTH_VERIFY_PATH,
   LINE_PUSH_PATH,
   LINE_QUOTA_CONSUMPTION_PATH,
   LINE_QUOTA_PATH,
@@ -115,6 +118,7 @@ import {
 } from "@/lib/line/line-crypto";
 import {
   hasLineCredentialKey,
+  isLineBroadcastOneshotEnvironmentOpen,
   isLineBroadcastSendOpen,
   isLineConnectionPilotEnabled,
   isLineTestPushOpen,
@@ -122,6 +126,13 @@ import {
   LINE_BIND_MAX_ATTEMPTS,
   LINE_WEBHOOK_HOST_ENV,
   LINE_BROADCAST_DAILY_LIMIT,
+  LINE_BROADCAST_ONESHOT_ALLOWED_ORG_ID,
+  LINE_BROADCAST_ONESHOT_BOT_BASIC_ID,
+  LINE_BROADCAST_ONESHOT_BOT_DISPLAY_NAME,
+  LINE_BROADCAST_ONESHOT_CHANNEL_ID,
+  LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST,
+  LINE_BROADCAST_ONESHOT_TEXT,
+  LINE_BROADCAST_ONESHOT_TEXT_SHA256,
   LINE_BROADCAST_SEND_OPEN,
   LINE_TEST_PUSH_ALLOWED_ORG_ID,
   LINE_TEST_PUSH_DAILY_LIMIT,
@@ -137,7 +148,16 @@ import {
   executeLineBroadcastHttp,
   inspectLineBroadcastHttpRequest,
 } from "@/lib/line/line-send-adapter";
-import { fetchLineBotInfo } from "@/lib/line/line-connection-adapter";
+import {
+  fetchLineBotInfo,
+  fetchLineChannelTokenIdentity,
+  verifyLineOneshotOfficialAccount,
+} from "@/lib/line/line-connection-adapter";
+import {
+  applyLineBroadcastOneshotClaimStep,
+  evaluateLineBroadcastOneshotPermit,
+  lineBroadcastOneshotMessageSha256,
+} from "@/lib/line/line-oneshot";
 import {
   countAcceptedBroadcastsOnDay,
   countClaimedBroadcastsOnTaipeiDay,
@@ -1824,6 +1844,7 @@ describe("LINE settings status display", () => {
     broadcastEnabled: false,
     testPushEnabled: false,
     testPushRuntimeOpen: false,
+    broadcastTestRuntimeOpen: false,
     lastTestedAt: null,
     lastTestStatus: null,
     lastTestMessage: null,
@@ -2672,9 +2693,9 @@ describe("LINE Phase 1F broadcast safety acceptance", () => {
     expect(pipeline).toMatchObject({ ok: false, apiResult: "failed" });
 
     const actions = source("lib/line/actions.ts");
-    expect(actions).toMatch(/if \(!isLineBroadcastSendOpen\(\)\)/);
+    expect(actions).toMatch(/if \(!sendOpen\)/);
     expect(actions).toMatch(/executeLineBroadcastHttp\(/);
-    expect(actions).toMatch(/sendOpen: isLineBroadcastSendOpen\(\)/);
+    expect(actions).toMatch(/isLineBroadcastSendOpen\(\) \|\| oneshot/);
     expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
     expect(source("lib/line/line-flag.ts")).not.toMatch(/BEAUTY_OS_LINE_BROADCAST_SEND_OPEN/);
     expect(source("lib/line/line-connection-adapter.ts")).not.toMatch(/\/message\/broadcast/);
@@ -3016,5 +3037,332 @@ describe("LINE Phase 1F.2 Taipei claim quota", () => {
         nowMs: now,
       }),
     ).toEqual({ finalize: true, reason: "stale" });
+  });
+});
+
+describe("LINE Phase 1G.2 oneshot broadcast permit", () => {
+  const oneshotEnv = {
+    ...previewEnv,
+    VERCEL_ENV: "preview",
+  };
+  const oneshotBase = {
+    env: oneshotEnv,
+    connectionPilotEnabled: true,
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    channelId: LINE_BROADCAST_ONESHOT_CHANNEL_ID,
+    botDisplayName: LINE_BROADCAST_ONESHOT_BOT_DISPLAY_NAME,
+    botBasicId: LINE_BROADCAST_ONESHOT_BOT_BASIC_ID,
+    textBody: LINE_BROADCAST_ONESHOT_TEXT,
+    runtimeOpen: true,
+    permitAvailable: true,
+    requireText: true,
+    requireIdentity: false,
+  };
+  const sendBase = {
+    connectionPilotEnabled: true,
+    sendOpen: true,
+    ownerBroadcastEnabled: true,
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    actor: ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID }),
+    textBody: LINE_BROADCAST_ONESHOT_TEXT,
+    existing: draftBroadcast({
+      organizationId: ORG_BEAUTY_OS_TEST_ID,
+    }),
+    requestId: "lbrq-req00000000001",
+    acceptedToday: 0,
+    accountConnected: true,
+    acknowledged: true,
+    lineQuota: describeLineQuota({ type: "none", usage: 1 }),
+  };
+
+  it("keeps the global send flag closed and hashes the exact test text", () => {
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+    expect(isLineBroadcastSendOpen(oneshotEnv)).toBe(false);
+    expect(LINE_BROADCAST_ONESHOT_ALLOWED_ORG_ID).toBe(ORG_BEAUTY_OS_TEST_ID);
+    expect(LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST).toBe(PREVIEW_SUPABASE_HOST);
+    expect(lineBroadcastOneshotMessageSha256(LINE_BROADCAST_ONESHOT_TEXT)).toBe(
+      LINE_BROADCAST_ONESHOT_TEXT_SHA256,
+    );
+    expect(isLineBroadcastOneshotEnvironmentOpen(oneshotEnv)).toBe(true);
+    expect(
+      isLineBroadcastOneshotEnvironmentOpen({
+        ...oneshotEnv,
+        VERCEL_ENV: "production",
+      }),
+    ).toBe(false);
+    expect(
+      isLineBroadcastOneshotEnvironmentOpen({
+        ...oneshotEnv,
+        NEXT_PUBLIC_SUPABASE_URL: `https://${PRODUCTION_SUPABASE_HOST}`,
+      }),
+    ).toBe(false);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
+    expect(source("lib/line/line-flag.ts")).not.toMatch(/BEAUTY_OS_LINE_BROADCAST_SEND_OPEN/);
+  });
+
+  it("allows one successful claim then refuses the second", () => {
+    const state = {
+      runtimeOpen: true,
+      permitAvailable: true,
+      permitConsumed: false,
+      consumedToday: 0,
+      rows: {} as Record<string, string>,
+    };
+    const first = applyLineBroadcastOneshotClaimStep(state, {
+      organizationId: ORG_BEAUTY_OS_TEST_ID,
+      channelId: LINE_BROADCAST_ONESHOT_CHANNEL_ID,
+      botDisplayName: LINE_BROADCAST_ONESHOT_BOT_DISPLAY_NAME,
+      botBasicId: LINE_BROADCAST_ONESHOT_BOT_BASIC_ID,
+      textBody: LINE_BROADCAST_ONESHOT_TEXT,
+      requestId: "lbrq-aaa00000000001",
+      env: oneshotEnv,
+    });
+    const second = applyLineBroadcastOneshotClaimStep(state, {
+      organizationId: ORG_BEAUTY_OS_TEST_ID,
+      channelId: LINE_BROADCAST_ONESHOT_CHANNEL_ID,
+      botDisplayName: LINE_BROADCAST_ONESHOT_BOT_DISPLAY_NAME,
+      botBasicId: LINE_BROADCAST_ONESHOT_BOT_BASIC_ID,
+      textBody: LINE_BROADCAST_ONESHOT_TEXT,
+      requestId: "lbrq-bbb00000000002",
+      env: oneshotEnv,
+    });
+    expect(first).toMatchObject({
+      claimed: true,
+      permitConsumed: true,
+      consumedToday: 1,
+    });
+    expect(second).toMatchObject({
+      claimed: false,
+      reason: "send_closed",
+      permitConsumed: true,
+      consumedToday: 1,
+    });
+  });
+
+  it("refuses other org, channel, message, production, closed runtime, and identity mismatch", () => {
+    expect(
+      evaluateLineBroadcastOneshotPermit({
+        ...oneshotBase,
+        organizationId: ORG_ENJOYE_ID,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineBroadcastOneshotPermit({
+        ...oneshotBase,
+        channelId: "1234567890",
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineBroadcastOneshotPermit({
+        ...oneshotBase,
+        textBody: "另一則測試訊息",
+      }),
+    ).toMatchObject({ ok: false, reason: "invalid_input" });
+    expect(
+      evaluateLineBroadcastOneshotPermit({
+        ...oneshotBase,
+        textBody: `${LINE_BROADCAST_ONESHOT_TEXT} `,
+      }),
+    ).toMatchObject({ ok: false, reason: "invalid_input" });
+    expect(
+      evaluateLineBroadcastOneshotPermit({
+        ...oneshotBase,
+        textBody: LINE_BROADCAST_ONESHOT_TEXT.replace("\n", "\n\n"),
+      }),
+    ).toMatchObject({ ok: false, reason: "invalid_input" });
+    expect(
+      evaluateLineBroadcastOneshotPermit({
+        ...oneshotBase,
+        env: { ...oneshotEnv, VERCEL_ENV: "production" },
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineBroadcastOneshotPermit({
+        ...oneshotBase,
+        runtimeOpen: false,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineBroadcastOneshotPermit({
+        ...oneshotBase,
+        requireIdentity: true,
+        identity: {
+          clientId: "1234567890",
+          displayName: "ai",
+          basicId: "@357gospk",
+        },
+      }),
+    ).toMatchObject({ ok: false, reason: "not_configured" });
+    expect(evaluateLineBroadcastOneshotPermit(oneshotBase)).toEqual({ ok: true });
+    expect(
+      evaluateLineBroadcastOneshotPermit({
+        ...oneshotBase,
+        requireIdentity: true,
+        identity: {
+          clientId: LINE_BROADCAST_ONESHOT_CHANNEL_ID,
+          displayName: LINE_BROADCAST_ONESHOT_BOT_DISPLAY_NAME,
+          basicId: LINE_BROADCAST_ONESHOT_BOT_BASIC_ID,
+        },
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it("blocks unknown or exhausted LINE quota and does not auto-retry 5xx or timeout", async () => {
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...sendBase,
+        lineQuota: unknownLineQuota(),
+      }),
+    ).toMatchObject({ ok: false, reason: "quota_exceeded" });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...sendBase,
+        lineQuota: describeLineQuota({ type: "limited", limit: 10, usage: 10 }),
+      }),
+    ).toMatchObject({ ok: false, reason: "quota_exceeded" });
+
+    const timedOut = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => ({
+        timedOut: true,
+        httpOk: false,
+        lineRequestId: null,
+        httpStatus: null,
+      }),
+      complete: async () => undefined,
+    });
+    expect(timedOut).toMatchObject({
+      ok: false,
+      reason: "pending_confirmation",
+      apiResult: "pending_confirmation",
+    });
+    expect(
+      evaluateLineBroadcastSend({
+        ...sendBase,
+        existing: draftBroadcast({
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          status: "pending_confirmation",
+        }),
+      }),
+    ).toMatchObject({ ok: false, reason: "pending_confirmation" });
+
+    const unknown = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => ({
+        timedOut: false,
+        httpOk: false,
+        lineRequestId: "line-500",
+        httpStatus: 500,
+      }),
+      complete: async () => undefined,
+    });
+    expect(unknown).toMatchObject({
+      ok: false,
+      reason: "pending_confirmation",
+      apiResult: "pending_confirmation",
+    });
+  });
+
+  it("uses read-only LINE identity endpoints and never hits send APIs in mocks", async () => {
+    expect(LINE_OAUTH_VERIFY_PATH).toBe("/v2/oauth/verify");
+    const called: string[] = [];
+    const identity = await verifyLineOneshotOfficialAccount("mock-token", async (input) => {
+      called.push(String(input));
+      if (String(input).includes(LINE_BOT_INFO_PATH)) {
+        return new Response(
+          JSON.stringify({ displayName: "ai", basicId: "@357gospk" }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ client_id: "2009219238", scope: "message" }), {
+        status: 200,
+      });
+    });
+    expect(identity).toEqual({
+      ok: true,
+      identity: {
+        clientId: "2009219238",
+        displayName: "ai",
+        basicId: "@357gospk",
+      },
+    });
+    expect(called.some((url) => url.includes(LINE_OAUTH_VERIFY_PATH))).toBe(true);
+    expect(called.some((url) => url.includes(LINE_BOT_INFO_PATH))).toBe(true);
+    expect(called.join("")).not.toContain("/message/broadcast");
+    expect(called.join("")).not.toContain("/message/push");
+    expect(called.join("")).not.toContain("/message/multicast");
+
+    const token = await fetchLineChannelTokenIdentity("mock-token", async (input) => {
+      expect(String(input)).toContain(LINE_OAUTH_VERIFY_PATH);
+      return new Response(JSON.stringify({ client_id: "2009219238" }), { status: 200 });
+    });
+    expect(token).toEqual({ ok: true, clientId: "2009219238", scope: null });
+    expect(source("lib/line/line-connection-adapter.ts")).toMatch(/LINE_OAUTH_VERIFY_PATH/);
+    expect(source("lib/line/line-connection-adapter.ts")).not.toMatch(/\/message\/broadcast/);
+    expect(source("lib/line/line-connection-adapter.ts")).not.toMatch(/\/message\/push/);
+  });
+
+  it("keeps the Preview-only migration fail-closed and atomic on claim", () => {
+    const sql = source(LINE_BROADCAST_ONESHOT_PERMIT_MIGRATION_FILE);
+    expect(sql).toMatch(/broadcast_test_runtime_open boolean not null default false/);
+    expect(sql).toMatch(/create table if not exists public\.line_broadcast_oneshot_permits/);
+    expect(sql).toMatch(/organization_id = 'org-beauty-os-test'/);
+    expect(sql).toMatch(/channel_id = '2009219238'/);
+    expect(sql).toMatch(LINE_BROADCAST_ONESHOT_TEXT_SHA256);
+    expect(sql).toMatch(/for update/);
+    expect(sql.indexOf("line_broadcast_oneshot_permits p")).toBeLessThan(
+      sql.indexOf("status = 'sending'"),
+    );
+    expect(sql.indexOf("update public.line_broadcasts")).toBeLessThan(
+      sql.indexOf("update public.line_broadcast_oneshot_permits"),
+    );
+    expect(sql).toMatch(/oneshot permit already consumed/);
+    expect(sql).toMatch(SET_LINE_BROADCAST_TEST_RUNTIME_OPEN_RPC);
+    expect(sql).not.toMatch(/^\s*begin\s*;/im);
+    expect(sql).not.toMatch(/^\s*commit\s*;/im);
+    expect(sql).not.toMatch(/insert into public\.line_broadcast_oneshot_permits/i);
+    expect(sql).not.toMatch(/broadcast_test_runtime_open\s*=\s*true/);
+    expect(sql).toMatch(
+      /revoke all on function public\.claim_line_broadcast_send\(text, text, text, text\)\s+from public, anon/,
+    );
+    expect(sql).toMatch(
+      /grant execute on function public\.claim_line_broadcast_send\(text, text, text, text\)\s+to authenticated/,
+    );
+    expect(sql).not.toMatch(/grant execute on function public\.claim_line_broadcast_send[^;]+anon/);
+    expect(sql).not.toMatch(
+      /grant execute on function public\.set_line_broadcast_test_runtime_open[^;]+anon/,
+    );
+    expect(sql.replace(/^--.*$/gm, "")).not.toMatch(
+      /channel_secret|access_token|line_user_id|response_body/i,
+    );
+    const expectedSqlText = LINE_BROADCAST_ONESHOT_TEXT.replaceAll("\n", "\\n");
+    expect(sql).toContain(`v_expected_text text := E'${expectedSqlText}'`);
+    expect(sql).toContain(`v_expected_sha text := '${LINE_BROADCAST_ONESHOT_TEXT_SHA256}'`);
+    expect(source("lib/line/actions.ts")).toMatch(/evaluateLineBroadcastOneshotPermit/);
+    expect(source("lib/line/actions.ts")).toMatch(/verifyLineOneshotOfficialAccount/);
+    expect(source("lib/line/actions.ts")).toMatch(/readLineBroadcastOneshotPermit/);
+    const sendFn = source("lib/line/actions.ts").slice(
+      source("lib/line/actions.ts").indexOf("export async function sendLineBroadcastAction"),
+    );
+    expect(sendFn.indexOf("verifyStoredLineOneshotIdentity")).toBeGreaterThan(-1);
+    expect(sendFn.indexOf("verifyStoredLineOneshotIdentity")).toBeLessThan(
+      sendFn.indexOf("CLAIM_LINE_BROADCAST_SEND_RPC"),
+    );
+    expect(sendFn.indexOf("CLAIM_LINE_BROADCAST_SEND_RPC")).toBeLessThan(
+      sendFn.indexOf("executeLineBroadcastHttp"),
+    );
+    expect(source("features/line/LineBroadcastCenter.tsx")).toMatch(
+      /oneshotActive \|\| textBody === LINE_BROADCAST_ONESHOT_TEXT/,
+    );
+    expect(source("features/line/LineBroadcastCenter.tsx")).toMatch(
+      /const preview = textBody;/,
+    );
+    expect(source("features/line/LineBroadcastCenter.tsx")).not.toMatch(
+      /textBody\.trim\(\)/,
+    );
+    expect(source("features/line/LineBroadcastCenter.tsx")).toMatch(
+      /sendLineBroadcastAction\(\{[\s\S]*textBody,/,
+    );
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1G\.2/);
   });
 });

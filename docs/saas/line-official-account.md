@@ -232,6 +232,25 @@ LINE 月額度未知、查詢失敗或剩餘不足時，伺服器拒絕正式群
 
 新資料只依 `send_claimed_at` 的台北日計數，不依可變的 `updated_at`，也不因 complete / finalize 改狀態而換日。舊資料不回填 `send_claimed_at`。沒有該欄的 `accepted` / `sending` / `pending_confirmation` 才用 `confirmed_at`，再退回 `created_at`。歷史 `failed` 不推定曾發送，因此不計入舊額度。`complete_line_broadcast_send` 仍先建立 9 參數再 DROP 舊 7 參數，避免 overload。Preview 已套用；Production 未套用、不得重跑。
 
+### Phase 1G.2 — 一次性 Preview Broadcast 許可
+
+`LINE_BROADCAST_SEND_OPEN` 仍是 hardcoded `false`，沒有 env bypass。真實發送只走既有 `sendLineBroadcastAction` → `runClaimedLineBroadcastSend` → `executeLineBroadcastHttp`。
+
+一次性許可必須同時成立：
+
+1. `VERCEL_ENV=preview`
+2. `NEXT_PUBLIC_SUPABASE_URL` host 為 Preview `bfzquejrtgqzzarhkiya.supabase.co`
+3. `organizationId === org-beauty-os-test`
+4. 已存 Channel ID `2009219238`、官方帳號 `ai`、Basic ID `@357gospk`
+5. 訊息與指定測試全文完全一致
+6. `broadcast_test_runtime_open` 為 true（預設 false）
+7. 有一筆未消耗的 `line_broadcast_oneshot_permits`
+8. 發送前以既有憑證解密，呼叫唯讀 `GET /v2/oauth/verify` 與 `GET /v2/bot/info` 再核對 Channel / 帳號
+
+`claim_line_broadcast_send` 在同一交易鎖定店家列與未消耗 permit；成功 stamp `send_claimed_at` 後原子消耗 permit。消耗失敗會 raise 以回滾 claim。其他 Organization 與 Production 一律拒絕。Migration `20261011140000_line_broadcast_oneshot_permit.sql` 不插入 permit、不開啟 runtime gate；已於 Phase 1G.4 套用 Preview `bfzquejrtgqzzarhkiya`，禁止套用 Production。
+
+每日 3 次、Owner、requestId 去重、LINE 月額度未知/不足拒絕、timeout / HTTP 5xx 記 `pending_confirmation` 且不自動重送，全部保留。
+
 ### 首次真實 Push 驗收（尚未授權，本階段不做）
 
 具備條件：

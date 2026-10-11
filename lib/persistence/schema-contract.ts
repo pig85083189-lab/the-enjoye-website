@@ -103,6 +103,10 @@ export const LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE =
 export const LINE_BROADCAST_CLAIM_SAFETY_MIGRATION_FILE =
   "supabase/migrations/20261011020000_line_broadcast_claim_safety.sql";
 
+/** LINE Preview-only one-shot Broadcast permit + runtime gate. Additive. Do not apply on Production. */
+export const LINE_BROADCAST_ONESHOT_PERMIT_MIGRATION_FILE =
+  "supabase/migrations/20261011140000_line_broadcast_oneshot_permit.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",
@@ -114,6 +118,7 @@ export const LINE_TABLES = [
   "line_test_sends",
   "line_webhook_public_tokens",
   "line_webhook_events",
+  "line_broadcast_oneshot_permits",
 ] as const;
 
 /** Must never appear as stored columns (second books). */

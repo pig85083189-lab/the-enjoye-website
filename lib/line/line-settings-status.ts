@@ -175,6 +175,7 @@ export function publicAccountAfterSave(input: {
     broadcastEnabled: input.previous?.broadcastEnabled ?? false,
     testPushEnabled: input.previous?.testPushEnabled ?? false,
     testPushRuntimeOpen: input.previous?.testPushRuntimeOpen ?? false,
+    broadcastTestRuntimeOpen: input.previous?.broadcastTestRuntimeOpen ?? false,
     lastTestedAt: input.previous?.lastTestedAt ?? null,
     lastTestStatus: input.previous?.lastTestStatus ?? null,
     lastTestMessage: input.previous?.lastTestMessage ?? null,
