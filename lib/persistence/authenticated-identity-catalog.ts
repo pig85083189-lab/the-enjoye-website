@@ -90,9 +90,13 @@ function toScoped(row: { id: string; app_id: string | null; organization_id: str
  * Load identity mappings for the currently authenticated session.
  * Does not hardcode organization / location UUIDs.
  * Does not treat profiles.id as operational staff id.
+ * One Auth user may hold one active membership per organization.
+ * Same-org duplicate memberships stay ambiguous. Cross-org rows require
+ * organizationAppId so THE ENJOYE data is never loaded for another store.
  */
 export async function loadAuthenticatedIdentityCatalog(
   client: IdentitySupabaseClient,
+  organizationAppId?: string | null,
 ): Promise<LoadedAuthenticatedIdentity> {
   const session = await client.auth.getUser();
   if (session.error) {
@@ -112,20 +116,26 @@ export async function loadAuthenticatedIdentityCatalog(
     )
   ).filter((row) => row.is_active && row.auth_user_id === authUserId);
 
-  if (memberships.length === 0) {
+  const scoped = organizationAppId
+    ? memberships.filter((row) => row.organization_id === organizationAppId)
+    : memberships;
+
+  if (scoped.length === 0) {
     throw new IdentityCatalogError(
       "missing_membership",
-      "No authenticated staff_auth_memberships row for this Auth user",
+      organizationAppId
+        ? "No authenticated staff_auth_memberships row for this Auth user and organization"
+        : "No authenticated staff_auth_memberships row for this Auth user",
     );
   }
-  if (memberships.length > 1) {
+  if (scoped.length > 1) {
     throw new IdentityCatalogError(
       "ambiguous_membership",
       "Authenticated membership mapping is ambiguous",
     );
   }
 
-  const membership = memberships[0]!;
+  const membership = scoped[0]!;
   if (isAuthUuid(membership.user_id) || membership.user_id === authUserId) {
     throw new IdentityCatalogError(
       "invalid_operational_staff",

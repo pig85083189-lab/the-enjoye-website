@@ -232,7 +232,10 @@ export function CalendarPage({
     null,
   );
   const [blockedMsg, setBlockedMsg] = useState<string | null>(null);
-  const remoteWrite = useCalendarRemoteWrite(appointmentRemoteWritePilot);
+  const remoteWrite = useCalendarRemoteWrite(
+    appointmentRemoteWritePilot,
+    organization.id,
+  );
   const createSurface = resolveCalendarCreateSurface({
     calendarRemoteReadPilot,
     appointmentRemoteWritePilot,

@@ -58,6 +58,19 @@ describe("active route resolution", () => {
     expect(resolveActiveNavId("/staff/settings")).toBe("settings");
     expect(resolveActiveNavId("/staff/settings/organization")).toBe("settings");
     expect(resolveActiveNavId("/staff/settings/locations")).toBe("settings");
+    expect(resolveActiveNavId("/staff/settings/line")).toBe("settings");
+  });
+
+  it("LINE broadcast center is a system route for owners", () => {
+    expect(resolveActiveNavId("/staff/line")).toBe("line");
+    expect(isNavItemVisibleForRole(NAVIGATION_ITEMS.find((i) => i.id === "line")!, "OWNER")).toBe(
+      true,
+    );
+    for (const role of ["MANAGER", "STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
+      expect(isNavItemVisibleForRole(NAVIGATION_ITEMS.find((i) => i.id === "line")!, role)).toBe(
+        false,
+      );
+    }
   });
 
   it("finance cluster is nested under sales and collapsed in More", () => {

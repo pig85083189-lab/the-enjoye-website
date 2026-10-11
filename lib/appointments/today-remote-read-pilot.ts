@@ -35,7 +35,10 @@ export async function listRemoteTodayAppointmentsByLocation(
   client: IdentitySupabaseClient,
 ): Promise<ScheduleAppointment[]> {
   const range = todayRemoteQueryRangeFromInstant(now);
-  const persistence = await createAuthenticatedAppointmentReadPersistence(client);
+  const persistence = await createAuthenticatedAppointmentReadPersistence(
+    client,
+    organizationId,
+  );
   return persistence.appointments.listByLocationAndRange({
     organizationId,
     locationAppId,

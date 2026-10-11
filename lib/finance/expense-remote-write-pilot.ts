@@ -122,9 +122,10 @@ export function createAuthenticatedExpenseWrite(
 export async function createAuthenticatedExpenseWritePersistence(
   client: ExpenseWriteClient,
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+  organizationAppId?: string | null,
 ): Promise<AuthenticatedExpenseWritePersistence> {
   assertExpenseWritePilot(env);
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   return {
     identity,
     expenses: new AuthenticatedExpenseStore(client),
@@ -139,7 +140,11 @@ export async function runAuthenticatedExpenseCreate(
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
 ): Promise<Expense> {
   assertExpenseWritePilot(env);
-  const persistence = await createAuthenticatedExpenseWritePersistence(client, env);
+  const persistence = await createAuthenticatedExpenseWritePersistence(
+    client,
+    env,
+    input.organizationId,
+  );
   assertOrganizationBoundary(persistence.identity, input.organizationId);
   assertCanCreateExpense(persistence.identity);
   assertOperationalStaffId(persistence.identity.operationalStaffId);

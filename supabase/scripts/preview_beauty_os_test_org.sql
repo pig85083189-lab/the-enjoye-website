@@ -1,0 +1,61 @@
+-- Preview-only. Do not apply to Production.
+-- Creates org-beauty-os-test + one location + Owner membership for the
+-- Auth user already bound to mem-enjoye-owner / staff-001.
+--
+-- Do not guess the Owner UID. Resolve it at apply time:
+--   select auth_user_id
+--   from public.staff_auth_memberships
+--   where id = 'mem-enjoye-owner'
+--     and user_id = 'staff-001'
+--     and organization_id = 'org-the-enjoye'
+--     and role = 'OWNER'
+--     and is_active = true;
+--
+-- Does not copy, decrypt, or delete THE ENJOYE LINE credentials.
+-- Does not insert LINE rows. Does not change THE ENJOYE operational tables.
+
+-- begin;
+--
+-- insert into public.organizations (
+--   name, slug, app_id, timezone, currency, locale, status
+-- ) values (
+--   'Beauty OS TEST',
+--   'beauty-os-test',
+--   'org-beauty-os-test',
+--   'Asia/Taipei',
+--   'TWD',
+--   'zh-TW',
+--   'TRIAL'
+-- );
+--
+-- insert into public.locations (
+--   organization_id, app_id, name, code, timezone, is_primary, is_active
+-- )
+-- select o.id, 'loc-beauty-os-test-main', 'Beauty OS TEST 主店', 'TEST-MAIN',
+--        'Asia/Taipei', true, true
+-- from public.organizations o
+-- where o.app_id = 'org-beauty-os-test';
+--
+-- insert into public.staff_auth_memberships (
+--   id, user_id, auth_user_id, organization_id, role, display_name, is_active
+-- )
+-- select
+--   'mem-beauty-os-test-owner',
+--   'staff-001',
+--   m.auth_user_id,
+--   'org-beauty-os-test',
+--   'OWNER',
+--   '測試帳號',
+--   true
+-- from public.staff_auth_memberships m
+-- where m.id = 'mem-enjoye-owner'
+--   and m.user_id = 'staff-001'
+--   and m.organization_id = 'org-the-enjoye'
+--   and m.role = 'OWNER'
+--   and m.is_active = true
+--   and m.auth_user_id is not null;
+--
+-- insert into public.staff_auth_membership_locations (membership_id, location_id)
+-- values ('mem-beauty-os-test-owner', 'loc-beauty-os-test-main');
+--
+-- commit;

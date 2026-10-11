@@ -18,7 +18,6 @@ import type {
   IdentitySupabaseClient,
 } from "@/lib/persistence/authenticated-identity-catalog";
 import { getPersistenceDriver } from "@/lib/persistence/driver";
-import { UnmappedIdentityError } from "@/lib/persistence/identity-errors";
 import { getServicesForOrganization } from "@/lib/services/store";
 import { ORG_ENJOYE_ID } from "@/lib/tenant/constants";
 
@@ -232,9 +231,10 @@ describe("Service remote read pilot", () => {
       }),
     );
     expect(rows.map((row) => row.id)).toEqual([SVC_APP_ID]);
-    await expect(listRemotePilotServices("org-unrelated", ownerClient())).rejects.toBeInstanceOf(
-      UnmappedIdentityError,
-    );
+    await expect(listRemotePilotServices("org-unrelated", ownerClient())).rejects.toMatchObject({
+      name: "IdentityCatalogError",
+      reason: "missing_membership",
+    });
     await expect(
       listRemotePilotServices(
         ORG_APP,

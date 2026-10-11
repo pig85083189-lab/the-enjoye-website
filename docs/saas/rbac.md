@@ -115,6 +115,9 @@ For first commercial MVP, enforce at least:
 
 - membership active  
 - location assignment for appointment/treatment/checkout writes  
-- OWNER/MANAGER for settings & staff.manage  
+- OWNER/MANAGER for settings & staff.manage
+- OWNER only for LINE Official Account credentials and text broadcast
+
+LINE Phase 1D reuses `staff_auth_memberships`. Only an active OWNER can issue the webhook URL, bind a test recipient, and confirm a test Push or real send. See [line-official-account.md](./line-official-account.md).  
 
 Fine-grained custom roles can wait until NEXT.

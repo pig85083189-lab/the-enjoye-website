@@ -11,15 +11,18 @@ import type {
   CustomerNote,
 } from "@/types/customer";
 import {
+  LOC_BEAUTY_OS_TEST_PRIMARY_ID,
   LOC_ENJOYE_PRIMARY_ID,
   LOC_ENJOYE_SECONDARY_ID,
   LOC_LUMIERE_PRIMARY_ID,
+  MEMBERSHIP_BEAUTY_OS_TEST_OWNER_ID,
   MEMBERSHIP_ENJOYE_OWNER_ID,
   MEMBERSHIP_ENJOYE_STAFF_AMY_ID,
   MEMBERSHIP_ENJOYE_STAFF_ANAN_ID,
   MEMBERSHIP_ENJOYE_STAFF_XIAOMEI_ID,
   MEMBERSHIP_LUMIERE_STAFF_ID,
   MEMBERSHIP_LUMIERE_THERAPIST_ID,
+  ORG_BEAUTY_OS_TEST_ID,
   ORG_ENJOYE_ID,
   ORG_LUMIERE_ID,
 } from "@/lib/tenant/constants";
@@ -56,6 +59,18 @@ export const SEED_ORGANIZATIONS: Organization[] = [
     locale: "zh-TW",
     status: "TRIAL",
     createdAt: "2026-08-01T00:00:00+08:00",
+    updatedAt: now,
+  },
+  {
+    id: ORG_BEAUTY_OS_TEST_ID,
+    name: "Beauty OS TEST",
+    slug: "beauty-os-test",
+    logoUrl: null,
+    timezone: "Asia/Taipei",
+    currency: "TWD",
+    locale: "zh-TW",
+    status: "TRIAL",
+    createdAt: "2026-10-10T00:00:00+08:00",
     updatedAt: now,
   },
 ];
@@ -98,6 +113,17 @@ export const SEED_LOCATIONS: Location[] = [
     isPrimary: true,
     isActive: true,
     createdAt: "2026-08-01T00:00:00+08:00",
+    updatedAt: now,
+  },
+  {
+    id: LOC_BEAUTY_OS_TEST_PRIMARY_ID,
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    name: "Beauty OS TEST 主店",
+    code: "TEST-MAIN",
+    timezone: "Asia/Taipei",
+    isPrimary: true,
+    isActive: true,
+    createdAt: "2026-10-10T00:00:00+08:00",
     updatedAt: now,
   },
 ];
@@ -165,6 +191,16 @@ export const SEED_MEMBERSHIPS: StaffMembership[] = [
     isActive: true,
     createdAt: "2026-08-01T00:00:00+08:00",
   },
+  {
+    id: MEMBERSHIP_BEAUTY_OS_TEST_OWNER_ID,
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    userId: "staff-001",
+    locationIds: [LOC_BEAUTY_OS_TEST_PRIMARY_ID],
+    role: "OWNER",
+    displayName: "測試帳號",
+    isActive: true,
+    createdAt: "2026-10-10T00:00:00+08:00",
+  },
 ];
 
 export const SEED_SUBSCRIPTIONS: OrganizationSubscription[] = [
@@ -180,6 +216,13 @@ export const SEED_SUBSCRIPTIONS: OrganizationSubscription[] = [
     planId: "FREE_TRIAL",
     status: "TRIALING",
     trialEndsAt: "2026-10-01T23:59:59+08:00",
+    currentPeriodEndsAt: null,
+  },
+  {
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    planId: "FREE_TRIAL",
+    status: "TRIALING",
+    trialEndsAt: null,
     currentPeriodEndsAt: null,
   },
 ];

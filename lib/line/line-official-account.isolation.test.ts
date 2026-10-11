@@ -1,0 +1,2245 @@
+// @vitest-environment node
+import { createHmac } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import {
+  MEMBERSHIP_ENJOYE_OWNER_ID,
+  ORG_BEAUTY_OS_TEST_ID,
+  ORG_ENJOYE_ID,
+  ORG_LUMIERE_ID,
+} from "@/lib/tenant/constants";
+import {
+  PREVIEW_SUPABASE_HOST,
+  PRODUCTION_SUPABASE_HOST,
+} from "@/lib/staff-auth/staff-invite-redirect";
+import {
+  LINE_BROADCAST_REAL_SEND_MIGRATION_FILE,
+  LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE,
+  LINE_OWNER_TEST_PUSH_MIGRATION_FILE,
+  LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE,
+  LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE,
+  LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE,
+  LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE,
+} from "@/lib/persistence/schema-contract";
+import { STAFF_LINE_ROLES, resolveStaffRolePageAccess } from "@/lib/staff/staff-role-page-access";
+import {
+  CLAIM_LINE_BROADCAST_SEND_RPC,
+  CLAIM_LINE_TEST_SEND_RPC,
+  CLAIM_LINE_WEBHOOK_EVENT_RPC,
+  COMPLETE_LINE_BROADCAST_SEND_RPC,
+  CONSUME_LINE_OWNER_BIND_PUBLIC_RPC,
+  CONSUME_LINE_OWNER_BIND_RPC,
+  READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC,
+  evaluateLineBroadcastDraft,
+  evaluateLineBroadcastEnable,
+  evaluateLineBroadcastRealSend,
+  evaluateLineBroadcastSend,
+  evaluateLineConnectionSave,
+  evaluateLineConnectionTest,
+  evaluateLineOwnerBindStart,
+  applyLineTestPushRuntimeLockStep,
+  evaluateLineTestPushClaimQuota,
+  evaluateLineTestPushRequestReuse,
+  evaluateLineTestPushRuntimeSwitch,
+  evaluateLineTestPushSend,
+  interpretLineBroadcastApiOutcome,
+  resolveLineTestPushRuntimeState,
+  SET_LINE_TEST_PUSH_RUNTIME_OPEN_RPC,
+  resolveVerifiedLineOrganizationId,
+  LINE_BOT_INFO_PATH,
+  LINE_BROADCAST_PATH,
+  LINE_PUSH_PATH,
+  LINE_QUOTA_CONSUMPTION_PATH,
+  LINE_QUOTA_PATH,
+  MARK_LINE_BROADCAST_SEND_CLOSED_RPC,
+  newLineRequestId,
+  newLineTestRequestId,
+  READ_LINE_CHANNEL_SECRET_CIPHER_RPC,
+  READ_LINE_SECRETS_RPC,
+  type LineActor,
+} from "@/lib/line/line-command";
+import {
+  hashLineBindCode,
+  hashLineWebhookPublicToken,
+  isLineUserId,
+  isLineWebhookPublicToken,
+  normalizeLineBindCode,
+  selectLineWebhookBindCandidate,
+  verifyLineWebhookSignature,
+} from "@/lib/line/line-bind";
+import {
+  evaluateLineBindAttempt,
+  evaluateLineWebhookEventClaim,
+} from "@/lib/line/line-webhook-limits";
+import {
+  evaluateLineWebhookAdmission,
+  evaluateLineWebhookHostAccess,
+} from "@/lib/line/line-webhook-host";
+import { lineWebhookPublicPath, lineWebhookPublicUrl } from "@/lib/line/line-webhook-url";
+import {
+  classifyLineHttpError,
+  interpretLineTestPushApiOutcome,
+  persistableLineHttpErrorClass,
+} from "@/lib/line/line-http-error";
+import {
+  executeLineTestPushHttp,
+  inspectLineTestPushHttpRequest,
+} from "@/lib/line/line-push-adapter";
+import {
+  isLineRetryKey,
+  lineRetryKeyFromRequestId,
+} from "@/lib/line/line-retry-key";
+import { processLineWebhookBind } from "@/lib/line/line-webhook";
+import {
+  describeLineQuota,
+  latestRestorableLineDraft,
+  restoreLineBroadcastEditor,
+  unknownLineQuota,
+} from "@/lib/line/line-quota";
+import { fetchLineMessageQuota } from "@/lib/line/line-quota-adapter";
+import { runClaimedLineBroadcastSend } from "@/lib/line/line-send-pipeline";
+import {
+  canEncryptLineCredentials,
+  decryptLineCredential,
+  encryptLineCredential,
+  tokenHintFromAccessToken,
+} from "@/lib/line/line-crypto";
+import {
+  hasLineCredentialKey,
+  isLineBroadcastSendOpen,
+  isLineConnectionPilotEnabled,
+  isLineTestPushOpen,
+  LINE_BIND_CODE_TTL_MINUTES,
+  LINE_BIND_MAX_ATTEMPTS,
+  LINE_WEBHOOK_HOST_ENV,
+  LINE_BROADCAST_DAILY_LIMIT,
+  LINE_BROADCAST_SEND_OPEN,
+  LINE_TEST_PUSH_ALLOWED_ORG_ID,
+  LINE_TEST_PUSH_DAILY_LIMIT,
+  LINE_TEST_PUSH_OPEN,
+  LINE_TEST_PUSH_OPEN_ENV,
+  LINE_TEST_PUSH_ORG_ENV,
+  LINE_CONNECTION_PILOT_ENV,
+  LINE_CREDENTIAL_KEY_ENV,
+  resolveLineTestPushTransport,
+} from "@/lib/line/line-flag";
+import { canManageLineOfficialAccount } from "@/lib/line/line-roles";
+import {
+  executeLineBroadcastHttp,
+  inspectLineBroadcastHttpRequest,
+} from "@/lib/line/line-send-adapter";
+import { fetchLineBotInfo } from "@/lib/line/line-connection-adapter";
+import { countAcceptedBroadcastsOnDay } from "@/lib/line/line-load";
+import {
+  LINE_SETTINGS_LOAD_ERROR,
+  LINE_SETTINGS_SAVE_ERROR,
+  LINE_SETTINGS_SAVE_SUCCESS,
+  applyLineSettingsLoadResult,
+  applyLineSettingsSaveResult,
+  describeLineSettingsStatus,
+  publicAccountAfterSave,
+} from "@/lib/line/line-settings-status";
+import {
+  canShowLineEngineerDiagnostics,
+  canShowLineSettings,
+  isLineBroadcastConfirmSubmitEnabled,
+  lineBroadcastApiResultLabel,
+  lineBroadcastConfirmStatusHint,
+  lineTestPushDiagnosticLabel,
+  lineTestPushDisplayedError,
+} from "@/lib/line/line-visibility";
+import type { LineBroadcastPublic, LineOfficialAccountPublic } from "@/lib/line/line-types";
+
+const ROOT = process.cwd();
+const AUTH_OWNER = "496f2538-8759-4038-b033-bc367e930cab";
+
+function source(rel: string): string {
+  return readFileSync(path.join(ROOT, rel), "utf8");
+}
+
+function ownerActor(over: Partial<LineActor> = {}): LineActor {
+  return {
+    authUserId: AUTH_OWNER,
+    role: "OWNER",
+    isActive: true,
+    organizationId: ORG_ENJOYE_ID,
+    userId: "staff-001",
+    ...over,
+  };
+}
+
+function draftBroadcast(over: Partial<LineBroadcastPublic> = {}): LineBroadcastPublic {
+  return {
+    id: "lbr-draft000000001",
+    organizationId: ORG_ENJOYE_ID,
+    status: "draft",
+    textBody: "週年活動通知",
+    requestId: "lbrq-req00000000001",
+    lineRequestId: null,
+    apiResult: null,
+    errorMessage: null,
+    createdAt: "2026-10-10T00:00:00.000Z",
+    updatedAt: "2026-10-10T00:00:00.000Z",
+    confirmedAt: null,
+    ...over,
+  };
+}
+
+const previewEnv = {
+  [LINE_CONNECTION_PILOT_ENV]: "1",
+  NEXT_PUBLIC_SUPABASE_URL: `https://${PREVIEW_SUPABASE_HOST}`,
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
+};
+
+const previewAllowlistEnv = {
+  ...previewEnv,
+  [LINE_TEST_PUSH_OPEN_ENV]: "1",
+  [LINE_TEST_PUSH_ORG_ENV]: ORG_BEAUTY_OS_TEST_ID,
+  VERCEL_ENV: "preview",
+};
+
+describe("LINE Phase 1 flags", () => {
+  it("keeps connection pilot and send path fail-closed", () => {
+    expect(LINE_CONNECTION_PILOT_ENV).toBe("BEAUTY_OS_LINE_CONNECTION_PILOT");
+    expect(LINE_CREDENTIAL_KEY_ENV).toBe("BEAUTY_OS_LINE_CREDENTIAL_KEY");
+    expect(LINE_TEST_PUSH_OPEN_ENV).toBe("BEAUTY_OS_LINE_TEST_PUSH_OPEN");
+    expect(LINE_TEST_PUSH_ORG_ENV).toBe("BEAUTY_OS_LINE_TEST_PUSH_ORG");
+    expect(LINE_TEST_PUSH_ALLOWED_ORG_ID).toBe(ORG_BEAUTY_OS_TEST_ID);
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+    expect(LINE_TEST_PUSH_OPEN).toBe(false);
+    expect(LINE_BROADCAST_DAILY_LIMIT).toBe(3);
+    expect(LINE_TEST_PUSH_DAILY_LIMIT).toBe(3);
+    expect(LINE_BIND_CODE_TTL_MINUTES).toBe(10);
+    expect(LINE_BIND_MAX_ATTEMPTS).toBe(5);
+    expect(LINE_WEBHOOK_HOST_ENV).toBe("BEAUTY_OS_LINE_WEBHOOK_HOST");
+    expect(isLineConnectionPilotEnabled({})).toBe(false);
+    expect(isLineConnectionPilotEnabled({ [LINE_CONNECTION_PILOT_ENV]: "1" })).toBe(false);
+    expect(isLineConnectionPilotEnabled(previewEnv)).toBe(true);
+    expect(isLineBroadcastSendOpen(previewEnv)).toBe(false);
+    expect(
+      isLineBroadcastSendOpen({
+        ...previewEnv,
+        BEAUTY_OS_LINE_BROADCAST_SEND_OPEN: "1",
+      }),
+    ).toBe(false);
+    expect(isLineTestPushOpen({ env: previewEnv })).toBe(false);
+    expect(isLineTestPushOpen({ organizationId: ORG_BEAUTY_OS_TEST_ID, env: previewEnv })).toBe(
+      false,
+    );
+    expect(hasLineCredentialKey({})).toBe(false);
+  });
+});
+
+describe("LINE Phase 1D Preview test-push allowlist", () => {
+  const testRecipient = {
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    bound: true,
+    hint: "••••fc8c",
+    bindMethod: "webhook_code" as const,
+    boundAt: "2026-10-10T07:44:49.000Z",
+  };
+
+  it("opens only for Preview + exact Beauty OS TEST allowlist", () => {
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: previewAllowlistEnv,
+      }),
+    ).toBe(true);
+    expect(
+      resolveLineTestPushTransport({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: previewAllowlistEnv,
+      }),
+    ).toEqual({ open: true, organizationId: ORG_BEAUTY_OS_TEST_ID });
+    expect(
+      evaluateLineTestPushSend({
+        connectionPilotEnabled: true,
+        testPushOpen: isLineTestPushOpen({
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          env: previewAllowlistEnv,
+        }),
+        ownerTestPushEnabled: true,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID }),
+        textBody: "測試",
+        existing: draftBroadcast({
+          id: "lts-draft000000001",
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          requestId: "ltsq-req00000000001",
+        }),
+        requestId: "ltsq-req00000000001",
+        acceptedToday: 0,
+        accountConnected: true,
+        acknowledged: true,
+        recipient: testRecipient,
+        runtimeReadOk: true,
+        runtimeOpen: true,
+      }),
+    ).toMatchObject({ ok: true, requestId: "ltsq-req00000000001" });
+  });
+
+  it("refuses THE ENJOYE, other orgs, Production, and missing or wrong env", () => {
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_ENJOYE_ID,
+        env: previewAllowlistEnv,
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_LUMIERE_ID,
+        env: previewAllowlistEnv,
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, VERCEL_ENV: "production" },
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, [LINE_TEST_PUSH_OPEN_ENV]: undefined },
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, [LINE_TEST_PUSH_OPEN_ENV]: "true" },
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, [LINE_TEST_PUSH_ORG_ENV]: ORG_ENJOYE_ID },
+      }),
+    ).toBe(false);
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, [LINE_CONNECTION_PILOT_ENV]: undefined },
+      }),
+    ).toBe(false);
+    expect(
+      resolveLineTestPushTransport({
+        organizationId: ORG_ENJOYE_ID,
+        env: previewAllowlistEnv,
+      }),
+    ).toEqual({ open: false });
+    expect(
+      resolveLineTestPushTransport({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, VERCEL_ENV: "production" },
+      }),
+    ).toEqual({ open: false });
+  });
+
+  it("refuses client-chosen foreign orgs and unbound or non-owner actors", () => {
+    expect(
+      resolveVerifiedLineOrganizationId({
+        requestedOrganizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({ organizationId: ORG_ENJOYE_ID }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      resolveVerifiedLineOrganizationId({
+        requestedOrganizationId: ORG_ENJOYE_ID,
+        actor: ownerActor({ organizationId: ORG_ENJOYE_ID }),
+      }),
+    ).toMatchObject({ ok: true, organizationId: ORG_ENJOYE_ID });
+    expect(
+      resolveVerifiedLineOrganizationId({
+        requestedOrganizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          role: "MANAGER",
+        }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineTestPushSend({
+        connectionPilotEnabled: true,
+        testPushOpen: true,
+        ownerTestPushEnabled: true,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID }),
+        textBody: "測試",
+        requestId: "ltsq-req00000000001",
+        acceptedToday: 0,
+        accountConnected: true,
+        acknowledged: true,
+        recipient: null,
+      }),
+    ).toMatchObject({ ok: false, reason: "not_configured" });
+  });
+
+  it("does not decrypt recipients or call LINE when the transport is closed", () => {
+    expect(
+      resolveLineTestPushTransport({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: previewEnv,
+      }).open,
+    ).toBe(false);
+    const actions = source("lib/line/actions.ts");
+    const testPush = actions.slice(actions.indexOf("export async function sendLineTestPushAction"));
+    expect(actions).toMatch(/loadVerifiedLineOrganization/);
+    expect(testPush).toMatch(/resolveLineTestPushTransport/);
+    expect(testPush).toMatch(/if \(!transport\.open\)/);
+    expect(testPush.indexOf("if (!transport.open)")).toBeGreaterThan(
+      testPush.indexOf("resolveLineTestPushTransport"),
+    );
+    expect(testPush.indexOf("OWNER_READ_LINE_RECIPIENT_CIPHER_RPC")).toBeGreaterThan(
+      testPush.indexOf("if (!transport.open)"),
+    );
+    expect(testPush.indexOf("decryptLineCredential")).toBeGreaterThan(
+      testPush.indexOf("if (!transport.open)"),
+    );
+    expect(testPush.indexOf("executeLineTestPushHttp")).toBeGreaterThan(
+      testPush.indexOf("if (!transport.open)"),
+    );
+  });
+});
+
+describe("LINE Phase 1D.1 requestId anti-reuse and runtime kill switch", () => {
+  const testRecipient = {
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    bound: true,
+    hint: "••••fc8c",
+    bindMethod: "webhook_code" as const,
+    boundAt: "2026-10-10T07:44:49.000Z",
+  };
+  const reusableDraft = draftBroadcast({
+    id: "lts-draft000000001",
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    requestId: "ltsq-req00000000001",
+  });
+  const sendBase = {
+    connectionPilotEnabled: true,
+    testPushOpen: true,
+    ownerTestPushEnabled: true,
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    actor: ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID }),
+    textBody: "第二次測試",
+    existing: reusableDraft,
+    requestId: "ltsq-req00000000001",
+    acceptedToday: 0,
+    accountConnected: true,
+    acknowledged: true,
+    recipient: testRecipient,
+    runtimeReadOk: true,
+    runtimeOpen: true,
+  };
+
+  it("refuses a failed requestId and accepts a new unused requestId", () => {
+    expect(
+      evaluateLineTestPushRequestReuse({
+        existing: draftBroadcast({
+          id: "lts-failed00000001",
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          requestId: "ltsq-reqfailed00001",
+          status: "failed",
+        }),
+        requestId: "ltsq-reqfailed00001",
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
+      evaluateLineTestPushSend({
+        ...sendBase,
+        existing: draftBroadcast({
+          id: "lts-failed00000001",
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          requestId: "ltsq-reqfailed00001",
+          status: "failed",
+        }),
+        requestId: "ltsq-reqfailed00001",
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
+      evaluateLineTestPushSend({
+        ...sendBase,
+        existing: draftBroadcast({
+          id: "lts-draft000000002",
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          requestId: "ltsq-reqnew00000002",
+        }),
+        requestId: "ltsq-reqnew00000002",
+      }),
+    ).toMatchObject({ ok: true, requestId: "ltsq-reqnew00000002" });
+    expect(newLineTestRequestId(() => "bbbbbbbb-cccc-dddd-eeee-ffffffffffff")).not.toBe(
+      "ltsq-reqfailed00001",
+    );
+  });
+
+  it("does not call LINE when the kill switch is closed or unread", async () => {
+    expect(
+      resolveLineTestPushRuntimeState({
+        readOk: true,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        runtimeOpen: false,
+      }),
+    ).toEqual({ readOk: true, open: false });
+    expect(
+      resolveLineTestPushRuntimeState({
+        readOk: false,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        runtimeOpen: true,
+      }),
+    ).toEqual({ readOk: false, open: false });
+    expect(
+      evaluateLineTestPushSend({ ...sendBase, runtimeOpen: false }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineTestPushSend({ ...sendBase, runtimeReadOk: false, runtimeOpen: true }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+
+    let fetched = 0;
+    const closed = await runClaimedLineBroadcastSend({
+      claim: async () => ({
+        ok: false,
+        reason: "send_closed",
+        message: "測試發送總開關已關閉",
+      }),
+      send: async () => {
+        fetched += 1;
+        return { timedOut: false, httpOk: true, lineRequestId: "leak", httpStatus: 200 };
+      },
+      complete: async () => undefined,
+    });
+    expect(closed).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(fetched).toBe(0);
+
+    const unread = await runClaimedLineBroadcastSend({
+      claim: async () => ({
+        ok: false,
+        reason: "send_closed",
+        message: "無法確認測試發送總開關，已拒絕發送",
+      }),
+      send: async () => {
+        fetched += 1;
+        return { timedOut: false, httpOk: true, lineRequestId: "leak", httpStatus: 200 };
+      },
+      complete: async () => undefined,
+    });
+    expect(unread).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(fetched).toBe(0);
+
+    const actions = source("lib/line/actions.ts");
+    const testPush = actions.slice(actions.indexOf("export async function sendLineTestPushAction"));
+    const load = source("lib/line/line-load.ts");
+    expect(testPush).toMatch(/readLineOfficialAccount/);
+    expect(testPush).toMatch(/readLineTestPushRuntimeOpen/);
+    expect(testPush).toMatch(/無法確認測試發送總開關，已拒絕發送/);
+    expect(testPush.indexOf("無法確認測試發送總開關，已拒絕發送")).toBeLessThan(
+      testPush.indexOf("CLAIM_LINE_TEST_SEND_RPC"),
+    );
+    expect(testPush.indexOf("readLineTestPushRuntimeOpen")).toBeLessThan(
+      testPush.indexOf("CLAIM_LINE_TEST_SEND_RPC"),
+    );
+    expect(testPush.indexOf("CLAIM_LINE_TEST_SEND_RPC")).toBeLessThan(
+      testPush.indexOf("executeLineTestPushHttp"),
+    );
+    expect(load).toMatch(/LINE_ACCOUNT_PUBLIC_COLUMNS/);
+    expect(load).toMatch(/readLineTestPushRuntimeOpen/);
+    expect(load).not.toMatch(
+      /LINE_ACCOUNT_PUBLIC_COLUMNS =\s*"[^"]*test_push_runtime_open/,
+    );
+  });
+
+  it("serializes close and claim so a closed switch cannot be bypassed", () => {
+    const closeFirst = { runtimeOpen: true, claimed: false };
+    expect(applyLineTestPushRuntimeLockStep(closeFirst, "close")).toEqual({
+      ok: true,
+      claimed: false,
+      runtimeOpen: false,
+    });
+    expect(applyLineTestPushRuntimeLockStep(closeFirst, "claim")).toEqual({
+      ok: false,
+      claimed: false,
+      runtimeOpen: false,
+    });
+
+    const claimFirst = { runtimeOpen: true, claimed: false };
+    expect(applyLineTestPushRuntimeLockStep(claimFirst, "claim")).toEqual({
+      ok: true,
+      claimed: true,
+      runtimeOpen: true,
+    });
+    expect(applyLineTestPushRuntimeLockStep(claimFirst, "close")).toEqual({
+      ok: true,
+      claimed: true,
+      runtimeOpen: false,
+    });
+
+    const sql = source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE);
+    expect(sql).toMatch(/test_push_runtime_open/);
+    expect(sql).toMatch(/for update/);
+    expect(sql.indexOf("test_push_runtime_open")).toBeLessThan(
+      sql.indexOf("status = 'sending'"),
+    );
+    expect(sql).toMatch(/v_runtime_open/);
+    expect(sql).toMatch(/set_line_test_push_runtime_open/);
+    expect(sql).toMatch(/from public\.line_official_accounts a/);
+  });
+
+  it("keeps organization isolation, Production refuse, and Broadcast closed", () => {
+    expect(
+      resolveLineTestPushRuntimeState({
+        readOk: true,
+        organizationId: ORG_ENJOYE_ID,
+        runtimeOpen: true,
+      }),
+    ).toEqual({ readOk: true, open: false });
+    expect(
+      evaluateLineTestPushSend({
+        ...sendBase,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor({ organizationId: ORG_ENJOYE_ID }),
+        existing: draftBroadcast({
+          id: "lts-draft000000001",
+          organizationId: ORG_ENJOYE_ID,
+          requestId: "ltsq-req00000000001",
+        }),
+        recipient: { ...testRecipient, organizationId: ORG_ENJOYE_ID },
+        runtimeOpen: true,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineTestPushRuntimeSwitch({
+        connectionPilotEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor({ organizationId: ORG_ENJOYE_ID }),
+        open: true,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineTestPushRuntimeSwitch({
+        connectionPilotEnabled: true,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID }),
+        open: true,
+        vercelEnv: "production",
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, VERCEL_ENV: "production" },
+      }),
+    ).toBe(false);
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+    expect(isLineBroadcastSendOpen(previewAllowlistEnv)).toBe(false);
+    expect(
+      evaluateLineTestPushRuntimeSwitch({
+        connectionPilotEnabled: true,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID }),
+        open: true,
+        vercelEnv: "preview",
+      }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("does not leak Secret, Token, or User ID in 1D.1 surfaces", () => {
+    const sql = source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE);
+    const actions = source("lib/line/actions.ts");
+    const settings = source("features/line/LineOfficialAccountSettings.tsx");
+    const ui = source("features/line/LineBroadcastCenter.tsx");
+    expect(sql.replace(/^--.*$/gm, "")).not.toMatch(
+      /channel_secret|access_token|line_user_id|response_body/i,
+    );
+    expect(actions).toMatch(/SET_LINE_TEST_PUSH_RUNTIME_OPEN_RPC/);
+    expect(actions).not.toMatch(/export async function setLineTestPushRuntimeOpenAction\([^)]*token/i);
+    expect(settings).toMatch(/data-line-test-runtime-switch/);
+    expect(settings).toMatch(/setLineTestPushRuntimeOpenAction/);
+    expect(settings).not.toMatch(
+      /setLineTestPushRuntimeOpenAction\([\s\S]{0,200}channelAccessToken|lineUserId/,
+    );
+    expect(ui).toMatch(/setTestRequestId\(newLineTestRequestId\(\)\)/);
+    expect(ui.indexOf("setTestRequestId(newLineTestRequestId())")).toBeGreaterThan(
+      ui.indexOf("sendLineTestPushAction"),
+    );
+    expect(ui).not.toMatch(/U[0-9a-f]{32}|channel-secret|access-token/i);
+    expect(JSON.stringify(publicAccountAfterSave({
+      organizationId: ORG_BEAUTY_OS_TEST_ID,
+      channelId: "2009219238",
+      tokenHint: "••••lFU=",
+    }))).not.toMatch(/secret-value|token-value|plaintext|U[0-9a-f]{32}/i);
+  });
+});
+
+describe("LINE Phase 1 RBAC reuses existing membership", () => {
+  it("is Owner-only and hides from other roles", () => {
+    expect(STAFF_LINE_ROLES).toEqual(["OWNER"]);
+    expect(canManageLineOfficialAccount({ role: "OWNER", isActive: true })).toBe(true);
+    expect(canShowLineSettings({ role: "OWNER", isActive: true })).toBe(true);
+    for (const role of ["MANAGER", "STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
+      expect(canManageLineOfficialAccount({ role, isActive: true })).toBe(false);
+      expect(canShowLineSettings({ role, isActive: true })).toBe(false);
+    }
+    expect(
+      resolveStaffRolePageAccess({
+        authenticated: true,
+        role: "MANAGER",
+        isActive: true,
+        allowedRoles: STAFF_LINE_ROLES,
+      }),
+    ).toBe("forbidden");
+    expect(MEMBERSHIP_ENJOYE_OWNER_ID).toMatch(/enjoye/);
+  });
+
+  it("refuses another organization and inactive memberships", () => {
+    const save = evaluateLineConnectionSave({
+      connectionPilotEnabled: true,
+      encryptionReady: true,
+      organizationId: ORG_LUMIERE_ID,
+      actor: ownerActor(),
+      channelId: "1234567890",
+      channelSecret: "secret-value",
+      channelAccessToken: "token-value-123456",
+    });
+    expect(save).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineBroadcastDraft({
+        connectionPilotEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor({ isActive: false }),
+        textBody: "hello",
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+  });
+});
+
+describe("LINE credential vault", () => {
+  const env = {
+    [LINE_CREDENTIAL_KEY_ENV]: Buffer.alloc(32, 7).toString("base64"),
+  };
+
+  it("encrypts with AES-256-GCM and never stores plaintext", () => {
+    expect(canEncryptLineCredentials(env)).toBe(true);
+    const secret = "channel-secret-plain";
+    const packed = encryptLineCredential(secret, env);
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    expect(packed.cipher.startsWith("v1.")).toBe(true);
+    expect(packed.cipher).not.toContain(secret);
+    const opened = decryptLineCredential(packed.cipher, env);
+    expect(opened).toEqual({ ok: true, plaintext: secret });
+    expect(tokenHintFromAccessToken("abcdefghijklmnop1234")).toBe("••••1234");
+    expect(tokenHintFromAccessToken("abcdefghijklmnop1234")).not.toContain("abcdefghijklmnop");
+  });
+});
+
+describe("LINE connection and broadcast decisions", () => {
+  it("requires valid channel credentials before save", () => {
+    expect(
+      evaluateLineConnectionSave({
+        connectionPilotEnabled: true,
+        encryptionReady: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        channelId: "abc",
+        channelSecret: "secret-value",
+        channelAccessToken: "token-value-123456",
+      }),
+    ).toMatchObject({ ok: false, reason: "invalid_input" });
+    expect(
+      evaluateLineConnectionSave({
+        connectionPilotEnabled: true,
+        encryptionReady: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        channelId: "1234567890",
+        channelSecret: "secret-value",
+        channelAccessToken: "token-value-123456",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it("tests connection only after credentials exist", () => {
+    expect(
+      evaluateLineConnectionTest({
+        connectionPilotEnabled: true,
+        encryptionReady: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        secretConfigured: false,
+        tokenConfigured: false,
+      }),
+    ).toMatchObject({ ok: false, reason: "not_configured" });
+  });
+
+  it("keeps send closed even after Owner enable", () => {
+    expect(
+      evaluateLineBroadcastEnable({
+        connectionPilotEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        enabled: true,
+        tokenConfigured: true,
+      }),
+    ).toEqual({ ok: true });
+    const closed = evaluateLineBroadcastSend({
+      connectionPilotEnabled: true,
+      sendOpen: false,
+      ownerBroadcastEnabled: true,
+      organizationId: ORG_ENJOYE_ID,
+      actor: ownerActor(),
+      textBody: "週年活動通知",
+      existing: draftBroadcast(),
+      requestId: "lbrq-req00000000001",
+      acceptedToday: 0,
+    });
+    expect(closed).toMatchObject({ ok: false, reason: "send_closed" });
+  });
+
+  it("does not invent friend segments and enforces quota plus idempotency", () => {
+    expect(
+      evaluateLineBroadcastDraft({
+        connectionPilotEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        textBody: "",
+      }),
+    ).toMatchObject({ ok: false, reason: "invalid_input" });
+    expect(
+      evaluateLineBroadcastSend({
+        connectionPilotEnabled: true,
+        sendOpen: true,
+        ownerBroadcastEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        textBody: "週年活動通知",
+        existing: draftBroadcast({ status: "accepted" }),
+        requestId: "lbrq-req00000000001",
+        acceptedToday: 0,
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
+      evaluateLineBroadcastSend({
+        connectionPilotEnabled: true,
+        sendOpen: true,
+        ownerBroadcastEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        textBody: "週年活動通知",
+        existing: draftBroadcast({ status: "pending_confirmation" }),
+        requestId: "lbrq-req00000000001",
+        acceptedToday: 0,
+      }),
+    ).toMatchObject({ ok: false, reason: "pending_confirmation" });
+    expect(
+      evaluateLineBroadcastSend({
+        connectionPilotEnabled: true,
+        sendOpen: true,
+        ownerBroadcastEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        textBody: "週年活動通知",
+        existing: draftBroadcast(),
+        requestId: "lbrq-req00000000001",
+        acceptedToday: LINE_BROADCAST_DAILY_LIMIT,
+      }),
+    ).toMatchObject({ ok: false, reason: "quota_exceeded" });
+    expect(
+      evaluateLineBroadcastSend({
+        connectionPilotEnabled: true,
+        sendOpen: true,
+        ownerBroadcastEnabled: true,
+        organizationId: ORG_LUMIERE_ID,
+        actor: ownerActor({ organizationId: ORG_LUMIERE_ID }),
+        textBody: "週年活動通知",
+        existing: draftBroadcast(),
+        requestId: "lbrq-req00000000001",
+        acceptedToday: 0,
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+  });
+
+  it("records LINE timeout as pending confirmation and accepted as API accepted only", () => {
+    expect(interpretLineBroadcastApiOutcome({ timedOut: true, httpOk: false })).toMatchObject({
+      apiResult: "pending_confirmation",
+      status: "pending_confirmation",
+    });
+    expect(interpretLineBroadcastApiOutcome({ timedOut: false, httpOk: true })).toMatchObject({
+      apiResult: "accepted",
+      status: "accepted",
+    });
+    expect(lineBroadcastApiResultLabel("accepted")).toMatch(/不代表每位好友已收到/);
+    expect(newLineRequestId(() => "aaaaaaaa-bbbb-cccc-dddd-eeeeffffffffffff")).toMatch(/^lbrq-/);
+    expect(
+      countAcceptedBroadcastsOnDay(
+        [
+          draftBroadcast({ status: "accepted", createdAt: "2026-10-10T01:00:00.000Z" }),
+          draftBroadcast({
+            id: "lbr-other",
+            status: "draft",
+            createdAt: "2026-10-10T02:00:00.000Z",
+          }),
+        ],
+        "2026-10-10",
+      ),
+    ).toBe(1);
+  });
+});
+
+describe("LINE HTTP adapters", () => {
+  it("connection test uses bot info and never broadcasts", async () => {
+    expect(LINE_BOT_INFO_PATH).toBe("/v2/bot/info");
+    expect(LINE_BROADCAST_PATH).toBe("/v2/bot/message/broadcast");
+    const called: string[] = [];
+    const result = await fetchLineBotInfo("token", async (input) => {
+      called.push(String(input));
+      return new Response(JSON.stringify({ displayName: "Demo OA", basicId: "@demo" }), {
+        status: 200,
+      });
+    });
+    expect(result).toEqual({ ok: true, displayName: "Demo OA", basicId: "@demo" });
+    expect(called[0]).toContain("/v2/bot/info");
+    expect(called.join("")).not.toContain("/message/broadcast");
+  });
+
+  it("broadcast adapter does not call LINE when send is closed", async () => {
+    let fetched = 0;
+    const result = await executeLineBroadcastHttp({
+      accessToken: "token",
+      textBody: "hello",
+      requestId: "lbrq-req00000000001",
+      sendOpen: false,
+      fetchImpl: async () => {
+        fetched += 1;
+        return new Response("{}", { status: 200 });
+      },
+    });
+    expect(result).toEqual({
+      timedOut: false,
+      httpOk: false,
+      lineRequestId: null,
+      httpStatus: null,
+    });
+    expect(fetched).toBe(0);
+  });
+
+  it("broadcast adapter posts once with retry key when send is open in a mock", async () => {
+    let fetched = 0;
+    const result = await executeLineBroadcastHttp({
+      accessToken: "mock-token",
+      textBody: "hello",
+      requestId: "lbrq-req00000000001",
+      sendOpen: true,
+      fetchImpl: async (input, init) => {
+        fetched += 1;
+        expect(String(input)).toContain("/v2/bot/message/broadcast");
+        expect(init?.method).toBe("POST");
+        expect((init?.headers as Record<string, string>)["X-Line-Retry-Key"]).toBe(
+          lineRetryKeyFromRequestId("lbrq-req00000000001"),
+        );
+        expect(isLineRetryKey((init?.headers as Record<string, string>)["X-Line-Retry-Key"])).toBe(
+          true,
+        );
+        expect((init?.headers as Record<string, string>)["X-Line-Retry-Key"]).not.toMatch(
+          /^(ltsq-|lbrq-)/,
+        );
+        const inspection = inspectLineBroadcastHttpRequest(String(input), init);
+        expect(inspection).toEqual({
+          method: "POST",
+          path: "https://api.line.me/v2/bot/message/broadcast",
+          contentType: "application/json",
+          authorizationScheme: "Bearer",
+          retryKeyIsUuid: true,
+          retryKeyUsesInternalPrefix: false,
+          hasTo: false,
+          messageCount: 1,
+          firstMessageType: "text",
+          textLength: "hello".length,
+        });
+        expect(JSON.stringify(inspection)).not.toMatch(/mock-token|to":/);
+        expect(String(init?.body)).not.toMatch(/"to"/);
+        return new Response("{}", {
+          status: 200,
+          headers: { "x-line-request-id": "line-req-1" },
+        });
+      },
+    });
+    expect(result).toEqual({
+      timedOut: false,
+      httpOk: true,
+      lineRequestId: "line-req-1",
+      httpStatus: 200,
+    });
+    expect(fetched).toBe(1);
+  });
+});
+
+describe("LINE Phase 1B quota, claim, and draft restore", () => {
+  it("never invents remaining quota or friend counts", () => {
+    expect(unknownLineQuota().known).toBe(false);
+    expect(unknownLineQuota().remaining).toBeNull();
+    expect(unknownLineQuota().label).toMatch(/未知/);
+    expect(describeLineQuota({ type: "none", usage: 12 })).toMatchObject({
+      known: true,
+      remaining: null,
+      label: expect.stringMatching(/無上限/),
+    });
+    expect(describeLineQuota({ type: "limited", limit: 1000, usage: 700 })).toMatchObject({
+      known: true,
+      remaining: 300,
+    });
+    expect(describeLineQuota({ type: "limited", limit: 1000 }).known).toBe(false);
+    expect(JSON.stringify(describeLineQuota({ type: "limited", limit: 10, usage: 10 }))).not.toMatch(
+      /friend|follower|好友/,
+    );
+  });
+
+  it("quota adapter is read-only and unknown when LINE omits data", async () => {
+    expect(LINE_QUOTA_PATH).toBe("/v2/bot/message/quota");
+    expect(LINE_QUOTA_CONSUMPTION_PATH).toBe("/v2/bot/message/quota/consumption");
+    const called: string[] = [];
+    const quota = await fetchLineMessageQuota({
+      accessToken: "mock-token",
+      fetchImpl: async (input) => {
+        called.push(String(input));
+        return new Response("{}", { status: 503 });
+      },
+    });
+    expect(quota.known).toBe(false);
+    expect(quota.remaining).toBeNull();
+    expect(called.some((url) => url.includes("/message/quota"))).toBe(true);
+    expect(called.join("")).not.toContain("/message/broadcast");
+  });
+
+  it("refuses real send without ack, connection, quota, or Owner", () => {
+    const base = {
+      connectionPilotEnabled: true,
+      sendOpen: true,
+      ownerBroadcastEnabled: true,
+      organizationId: ORG_ENJOYE_ID,
+      actor: ownerActor(),
+      textBody: "週年活動通知",
+      existing: draftBroadcast(),
+      requestId: "lbrq-req00000000001",
+      acceptedToday: 0,
+      accountConnected: true,
+      acknowledged: true,
+    };
+    expect(
+      evaluateLineBroadcastRealSend({ ...base, acknowledged: false }),
+    ).toMatchObject({ ok: false, reason: "invalid_input" });
+    expect(
+      evaluateLineBroadcastRealSend({ ...base, accountConnected: false }),
+    ).toMatchObject({ ok: false, reason: "not_configured" });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...base,
+        lineQuota: describeLineQuota({ type: "limited", limit: 100, usage: 100 }),
+      }),
+    ).toMatchObject({ ok: false, reason: "quota_exceeded" });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...base,
+        actor: ownerActor({ role: "MANAGER" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineBroadcastRealSend({
+        ...base,
+        organizationId: ORG_LUMIERE_ID,
+        existing: draftBroadcast({ organizationId: ORG_ENJOYE_ID }),
+        actor: ownerActor({ organizationId: ORG_LUMIERE_ID }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+  });
+
+  it("claims once, records API accepted, fail, and timeout without retry", async () => {
+    let sendCalls = 0;
+    const success = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => {
+        sendCalls += 1;
+        return {
+          timedOut: false,
+          httpOk: true,
+          lineRequestId: "line-1",
+          httpStatus: 200,
+        };
+      },
+      complete: async () => undefined,
+    });
+    expect(success).toMatchObject({ ok: true, apiResult: "accepted" });
+    expect(success.ok && success.message).toMatch(/API 已接受/);
+    expect(sendCalls).toBe(1);
+
+    const failed = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => ({
+        timedOut: false,
+        httpOk: false,
+        lineRequestId: null,
+        httpStatus: 429,
+      }),
+      complete: async () => undefined,
+    });
+    expect(failed).toMatchObject({ ok: false, reason: "error" });
+
+    const timedOut = await runClaimedLineBroadcastSend({
+      claim: async () => ({ ok: true, broadcastId: "lbr-1", requestId: "lbrq-1" }),
+      send: async () => ({
+        timedOut: true,
+        httpOk: false,
+        lineRequestId: null,
+        httpStatus: null,
+      }),
+      complete: async () => undefined,
+    });
+    expect(timedOut).toMatchObject({
+      ok: false,
+      reason: "pending_confirmation",
+    });
+
+    const duplicate = await runClaimedLineBroadcastSend({
+      claim: async () => ({
+        ok: false,
+        reason: "duplicate",
+        message: "這則訊息已經被 LINE API 接受，不會重送",
+      }),
+      send: async () => {
+        sendCalls += 1;
+        return {
+          timedOut: false,
+          httpOk: true,
+          lineRequestId: "x",
+          httpStatus: 200,
+        };
+      },
+      complete: async () => undefined,
+    });
+    expect(duplicate).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(sendCalls).toBe(1);
+  });
+
+  it("restores a saved draft after a simulated refresh", () => {
+    const history = [
+      draftBroadcast({
+        status: "accepted",
+        id: "lbr-old",
+        requestId: "lbrq-old",
+        textBody: "舊訊息",
+        createdAt: "2026-10-09T00:00:00.000Z",
+      }),
+      draftBroadcast({ textBody: "週年活動通知", requestId: "lbrq-req00000000001" }),
+    ];
+    expect(latestRestorableLineDraft(history)?.requestId).toBe("lbrq-req00000000001");
+    const first = restoreLineBroadcastEditor({
+      history,
+      currentText: "",
+      currentRequestId: "lbrq-newempty000001",
+    });
+    expect(first).toMatchObject({
+      restored: true,
+      textBody: "週年活動通知",
+      requestId: "lbrq-req00000000001",
+      broadcastId: "lbr-draft000000001",
+    });
+    const afterRefresh = restoreLineBroadcastEditor({
+      history,
+      currentText: "",
+      currentRequestId: "lbrq-afterrefresh0001",
+    });
+    expect(afterRefresh.requestId).toBe(first.requestId);
+    expect(afterRefresh.textBody).toBe(first.textBody);
+  });
+});
+
+describe("LINE Phase 1C owner bind and test push", () => {
+  const recipient = {
+    organizationId: ORG_ENJOYE_ID,
+    bound: true,
+    hint: "••••abcd",
+    bindMethod: "webhook_code" as const,
+    boundAt: "2026-10-10T00:00:00.000Z",
+  };
+
+  it("verifies webhook signature and rejects unsigned or cross-org codes", async () => {
+    const secret = "channel-secret";
+    const rawBody = JSON.stringify({
+      events: [{ type: "message", source: { type: "user", userId: "U" + "a".repeat(32) }, message: { type: "text", text: "ABCDEF12" } }],
+    });
+    const signature = (await import("node:crypto"))
+      .createHmac("sha256", secret)
+      .update(rawBody)
+      .digest("base64");
+    expect(verifyLineWebhookSignature({ rawBody, channelSecret: secret, signature })).toBe(true);
+    expect(verifyLineWebhookSignature({ rawBody, channelSecret: secret, signature: "nope" })).toBe(false);
+    expect(isLineUserId("U" + "a".repeat(32))).toBe(true);
+    expect(isLineUserId("console-admin-id")).toBe(false);
+    expect(normalizeLineBindCode("ab cd ef 12")).toBe("ABCDEF12");
+    expect(hashLineBindCode(ORG_ENJOYE_ID, "ABCDEF12")).not.toBe(
+      hashLineBindCode(ORG_LUMIERE_ID, "ABCDEF12"),
+    );
+    expect(
+      selectLineWebhookBindCandidate([
+        { sourceType: "group", userId: "U" + "a".repeat(32), text: "ABCDEF12" },
+      ]),
+    ).toBeNull();
+    const bound = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature,
+      channelSecret: secret,
+      encryptUserId: (userId) => ({ cipher: `v1.${userId.slice(-4)}`, keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(bound).toMatchObject({ ok: true, bound: true });
+    const forged = await processLineWebhookBind({
+      organizationId: ORG_LUMIERE_ID,
+      rawBody,
+      signature,
+      channelSecret: "other-secret",
+      encryptUserId: () => ({ cipher: "v1.x", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(forged).toMatchObject({ ok: false, reason: "unauthorized" });
+  });
+
+  it("refuses unauthorized recipients, missing ack, duplicates, and concurrent pending", () => {
+    const base = {
+      connectionPilotEnabled: true,
+      testPushOpen: true,
+      ownerTestPushEnabled: true,
+      organizationId: ORG_ENJOYE_ID,
+      actor: ownerActor(),
+      textBody: "測試給自己",
+      existing: draftBroadcast({ id: "lts-draft000000001", requestId: "ltsq-req00000000001" }),
+      requestId: "ltsq-req00000000001",
+      acceptedToday: 0,
+      accountConnected: true,
+      acknowledged: true,
+      recipient,
+    };
+    expect(evaluateLineOwnerBindStart({
+      connectionPilotEnabled: true,
+      organizationId: ORG_ENJOYE_ID,
+      actor: ownerActor({ role: "MANAGER" }),
+      secretConfigured: true,
+    })).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(evaluateLineTestPushSend({ ...base, acknowledged: false })).toMatchObject({
+      ok: false,
+      reason: "invalid_input",
+    });
+    expect(evaluateLineTestPushSend({ ...base, recipient: null })).toMatchObject({
+      ok: false,
+      reason: "not_configured",
+    });
+    expect(
+      evaluateLineTestPushSend({
+        ...base,
+        recipient: { ...recipient, organizationId: ORG_LUMIERE_ID },
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineTestPushSend({
+        ...base,
+        existing: draftBroadcast({
+          id: "lts-1",
+          requestId: "ltsq-req00000000001",
+          status: "accepted",
+        }),
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
+      evaluateLineTestPushSend({
+        ...base,
+        existing: draftBroadcast({
+          id: "lts-1",
+          requestId: "ltsq-req00000000001",
+          status: "sending",
+        }),
+      }),
+    ).toMatchObject({ ok: false, reason: "pending_confirmation" });
+    expect(
+      evaluateLineTestPushSend({
+        ...base,
+        existing: draftBroadcast({
+          id: "lts-1",
+          requestId: "ltsq-req00000000001",
+          status: "failed",
+        }),
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
+      evaluateLineTestPushSend({ ...base, testPushOpen: false }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineTestPushSend({
+        ...base,
+        actor: ownerActor({ role: "MANAGER" }),
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineTestPushSend({
+        ...base,
+        existing: draftBroadcast({
+          id: "lts-1",
+          requestId: "ltsq-req00000000001",
+          status: "accepted",
+        }),
+        requestId: "ltsq-req00000000001",
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
+      evaluateLineTestPushSend({ ...base, acceptedToday: LINE_TEST_PUSH_DAILY_LIMIT }),
+    ).toMatchObject({ ok: false, reason: "quota_exceeded" });
+    expect(evaluateLineTestPushClaimQuota({ consumedToday: 3 })).toMatchObject({
+      ok: false,
+      reason: "quota_exceeded",
+    });
+    expect(evaluateLineTestPushClaimQuota({ consumedToday: 2 })).toMatchObject({ ok: true });
+    expect(newLineTestRequestId(() => "aaaaaaaa-bbbb-cccc-dddd-eeeeffffffffffff")).toMatch(/^ltsq-/);
+  });
+
+  it("test push adapter uses Push not Broadcast and stays closed by default", async () => {
+    expect(LINE_PUSH_PATH).toBe("/v2/bot/message/push");
+    let fetched = 0;
+    const closed = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId: "U" + "a".repeat(32),
+      textBody: "hello",
+      requestId: "ltsq-req00000000001",
+      testPushOpen: false,
+      fetchImpl: async () => {
+        fetched += 1;
+        return new Response("{}", { status: 200 });
+      },
+    });
+    expect(closed.httpOk).toBe(false);
+    expect(fetched).toBe(0);
+    const opened = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId: "U" + "a".repeat(32),
+      textBody: "hello",
+      requestId: "ltsq-req00000000001",
+      testPushOpen: true,
+      fetchImpl: async (input) => {
+        fetched += 1;
+        expect(String(input)).toContain("/v2/bot/message/push");
+        expect(String(input)).not.toContain("/message/broadcast");
+        return new Response("{}", {
+          status: 200,
+          headers: { "x-line-request-id": "push-1" },
+        });
+      },
+    });
+    expect(opened).toMatchObject({ httpOk: true, lineRequestId: "push-1" });
+    expect(fetched).toBe(1);
+  });
+
+  it("derives a UUID retry key and inspects official Push fields without leaking secrets", async () => {
+    const requestId = "ltsq-e8b96c6642874009";
+    const lineUserId = "U" + "b".repeat(32);
+    expect(isLineRetryKey(requestId)).toBe(false);
+    expect(isLineRetryKey(lineRetryKeyFromRequestId(requestId))).toBe(true);
+    expect(lineRetryKeyFromRequestId(requestId)).not.toBe(requestId);
+
+    let fetched = 0;
+    let inspection: ReturnType<typeof inspectLineTestPushHttpRequest> | null = null;
+    const result = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId,
+      textBody: "BeautyOS TEST 2",
+      requestId,
+      testPushOpen: true,
+      fetchImpl: async (input, init) => {
+        fetched += 1;
+        inspection = inspectLineTestPushHttpRequest(String(input), init);
+        expect((init?.headers as Record<string, string>)["X-Line-Retry-Key"]).toBe(
+          lineRetryKeyFromRequestId(requestId),
+        );
+        return new Response("{}", {
+          status: 200,
+          headers: { "x-line-request-id": "push-inspect" },
+        });
+      },
+    });
+    expect(result).toMatchObject({ httpOk: true, lineRequestId: "push-inspect" });
+    expect(fetched).toBe(1);
+    expect(inspection).toEqual({
+      method: "POST",
+      path: "https://api.line.me/v2/bot/message/push",
+      contentType: "application/json",
+      authorizationScheme: "Bearer",
+      retryKeyIsUuid: true,
+      retryKeyUsesInternalPrefix: false,
+      hasTo: true,
+      toIsLineUserId: true,
+      messageCount: 1,
+      firstMessageType: "text",
+      textLength: "BeautyOS TEST 2".length,
+    });
+    expect(JSON.stringify(inspection)).not.toMatch(/mock-token|Ubbbbbbbb|ltsq-|BeautyOS TEST 2/);
+  });
+
+  it("refuses invalid local Push fields without calling LINE and does not guess a LINE 400 subtype", async () => {
+    let fetched = 0;
+    const fetchImpl: typeof fetch = async () => {
+      fetched += 1;
+      return new Response("{}", { status: 200 });
+    };
+    const invalidMessage = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId: "U" + "a".repeat(32),
+      textBody: "   ",
+      requestId: "ltsq-req00000000001",
+      testPushOpen: true,
+      fetchImpl,
+    });
+    expect(invalidMessage).toMatchObject({
+      httpOk: false,
+      httpStatus: null,
+      localErrorClass: "invalid_message",
+    });
+    const invalidRecipient = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId: "not-a-line-user",
+      textBody: "BeautyOS TEST 2",
+      requestId: "ltsq-req00000000001",
+      testPushOpen: true,
+      fetchImpl,
+    });
+    expect(invalidRecipient).toMatchObject({
+      httpOk: false,
+      httpStatus: null,
+      localErrorClass: "invalid_recipient",
+    });
+    expect(fetched).toBe(0);
+    expect(interpretLineTestPushApiOutcome(invalidMessage).errorClass).toBe("invalid_message");
+    expect(interpretLineTestPushApiOutcome(invalidRecipient).errorClass).toBe("invalid_recipient");
+    expect(interpretLineTestPushApiOutcome(invalidMessage).message).toMatch(/沒有呼叫 LINE/);
+    expect(persistableLineHttpErrorClass("invalid_message")).toBe("invalid_request");
+    expect(persistableLineHttpErrorClass("invalid_recipient")).toBe("invalid_request");
+    expect(persistableLineHttpErrorClass("invalid_retry_key")).toBe("invalid_request");
+    expect(persistableLineHttpErrorClass("invalid_request")).toBe("invalid_request");
+    expect(
+      interpretLineTestPushApiOutcome({
+        timedOut: false,
+        httpOk: false,
+        httpStatus: 400,
+        lineRequestId: "line-400",
+      }),
+    ).toMatchObject({
+      errorClass: "invalid_request",
+      message: expect.stringMatching(/請求不合法/),
+    });
+  });
+
+  it("classifies mock Push HTTP errors without reading LINE bodies or saying 廣播", async () => {
+    const cases = [
+      { status: 400, errorClass: "invalid_request" as const },
+      { status: 401, errorClass: "unauthorized" as const },
+      { status: 403, errorClass: "forbidden" as const },
+      { status: 429, errorClass: "quota_exceeded" as const },
+      { status: 500, errorClass: "unknown" as const },
+      { status: 503, errorClass: "unknown" as const },
+    ];
+    for (const item of cases) {
+      expect(classifyLineHttpError({ httpStatus: item.status })).toBe(item.errorClass);
+      const http = await executeLineTestPushHttp({
+        accessToken: "mock-token",
+        lineUserId: "U" + "a".repeat(32),
+        textBody: "hello",
+        requestId: "ltsq-req00000000001",
+        testPushOpen: true,
+        fetchImpl: async () =>
+          new Response(`SECRET_BODY token=xxx user=Usecret`, {
+            status: item.status,
+            headers: { "x-line-request-id": `line-${item.status}` },
+          }),
+      });
+      expect(http).toEqual({
+        timedOut: false,
+        httpOk: false,
+        lineRequestId: `line-${item.status}`,
+        httpStatus: item.status,
+      });
+      expect(JSON.stringify(http)).not.toMatch(/SECRET_BODY|token=xxx|Usecret/);
+      const outcome = interpretLineTestPushApiOutcome(http);
+      expect(outcome).toMatchObject({
+        apiResult: "failed",
+        status: "failed",
+        errorClass: item.errorClass,
+      });
+      expect(outcome.message).not.toMatch(/廣播/);
+      expect(lineTestPushDisplayedError(outcome.message)).not.toMatch(/廣播/);
+    }
+
+    const timedOut = await executeLineTestPushHttp({
+      accessToken: "mock-token",
+      lineUserId: "U" + "a".repeat(32),
+      textBody: "hello",
+      requestId: "ltsq-req00000000001",
+      testPushOpen: true,
+      fetchImpl: async () => {
+        const error = new Error("The operation was aborted");
+        error.name = "AbortError";
+        throw error;
+      },
+    });
+    expect(timedOut).toEqual({
+      timedOut: true,
+      httpOk: false,
+      lineRequestId: null,
+      httpStatus: null,
+    });
+    expect(interpretLineTestPushApiOutcome(timedOut)).toMatchObject({
+      apiResult: "pending_confirmation",
+      status: "pending_confirmation",
+      errorClass: "timeout",
+    });
+    expect(interpretLineTestPushApiOutcome(timedOut).message).not.toMatch(/廣播/);
+    expect(lineTestPushDisplayedError("LINE API 拒絕這則廣播")).toBe(
+      "LINE API 拒絕這則測試發送",
+    );
+    expect(lineTestPushDiagnosticLabel({ httpStatus: 401, errorClass: "unauthorized" })).toBe(
+      "HTTP 401 · unauthorized",
+    );
+  });
+
+  it("records Push diagnostics through the claim pipeline without retrying", async () => {
+    const completed: Array<{
+      httpStatus: number | null;
+      errorClass?: string | null;
+      message: string;
+    }> = [];
+    const failed = await runClaimedLineBroadcastSend({
+      interpret: interpretLineTestPushApiOutcome,
+      claim: async () => ({ ok: true, broadcastId: "lts-1", requestId: "ltsq-1" }),
+      send: async () => ({
+        timedOut: false,
+        httpOk: false,
+        lineRequestId: "line-401",
+        httpStatus: 401,
+      }),
+      complete: async (outcome) => {
+        completed.push(outcome);
+      },
+    });
+    expect(failed).toMatchObject({ ok: false, reason: "error" });
+    expect(completed).toEqual([
+      {
+        apiResult: "failed",
+        status: "failed",
+        message: "LINE API 拒絕這則測試發送（未授權）。系統不會自動重送。",
+        lineRequestId: "line-401",
+        httpStatus: 401,
+        errorClass: "unauthorized",
+      },
+    ]);
+    expect(completed[0]?.message).not.toMatch(/廣播/);
+  });
+});
+
+describe("LINE Phase 1D webhook least privilege", () => {
+  const secret = "channel-secret";
+  const userId = "U" + "a".repeat(32);
+
+  function signedBody(body: unknown, channelSecret = secret) {
+    const rawBody = JSON.stringify(body);
+    return {
+      rawBody,
+      signature: createHmac("sha256", channelSecret).update(rawBody).digest("base64"),
+    };
+  }
+
+  it("scopes webhook tokens per organization and keeps the path token-gated", () => {
+    const token = "a".repeat(43);
+    expect(isLineWebhookPublicToken(token)).toBe(true);
+    expect(isLineWebhookPublicToken("short")).toBe(false);
+    expect(hashLineWebhookPublicToken(ORG_ENJOYE_ID, token)).not.toBe(
+      hashLineWebhookPublicToken(ORG_LUMIERE_ID, token),
+    );
+    expect(lineWebhookPublicPath(ORG_ENJOYE_ID, token)).toContain(`/api/line/webhook/${ORG_ENJOYE_ID}/`);
+    expect(
+      lineWebhookPublicUrl(ORG_ENJOYE_ID, token, {
+        VERCEL_BRANCH_URL: "preview.example.test",
+      }),
+    ).toBe(`https://preview.example.test/api/line/webhook/${ORG_ENJOYE_ID}/${token}`);
+    expect(
+      lineWebhookPublicUrl(ORG_ENJOYE_ID, token, {
+        [LINE_WEBHOOK_HOST_ENV]: "hooks-preview.example.test",
+        VERCEL_BRANCH_URL: "staff-preview.example.test",
+      }),
+    ).toBe(`https://hooks-preview.example.test/api/line/webhook/${ORG_ENJOYE_ID}/${token}`);
+  });
+
+  it("keeps staff off a dedicated webhook host and rejects bad tokens, signatures, and forgeries", async () => {
+    const webhookEnv = { [LINE_WEBHOOK_HOST_ENV]: "hooks-preview.example.test" };
+    expect(
+      evaluateLineWebhookHostAccess({
+        host: "hooks-preview.example.test",
+        pathname: "/staff/settings/line",
+        env: webhookEnv,
+      }),
+    ).toMatchObject({ allow: false, reason: "not_webhook_path" });
+    expect(
+      evaluateLineWebhookHostAccess({
+        host: "staff-preview.example.test",
+        pathname: `/api/line/webhook/${ORG_ENJOYE_ID}/${"a".repeat(43)}`,
+        env: webhookEnv,
+      }),
+    ).toMatchObject({ allow: false, reason: "wrong_host" });
+    expect(
+      evaluateLineWebhookHostAccess({
+        host: "hooks-preview.example.test",
+        pathname: `/api/line/webhook/${ORG_ENJOYE_ID}/${"a".repeat(43)}`,
+        env: webhookEnv,
+      }),
+    ).toMatchObject({ allow: true });
+    expect(
+      evaluateLineWebhookAdmission({
+        organizationId: ORG_ENJOYE_ID,
+        publicToken: "short",
+      }),
+    ).toMatchObject({ allow: false, reason: "invalid_input" });
+    expect(
+      evaluateLineWebhookAdmission({
+        organizationId: "not-an-org",
+        publicToken: "a".repeat(43),
+      }),
+    ).toMatchObject({ allow: false, reason: "invalid_input" });
+
+    const forgedGroup = signedBody({
+      events: [
+        {
+          type: "message",
+          webhookEventId: "evt-group-1",
+          source: { type: "group", userId, groupId: "Cgroup" },
+          message: { type: "text", text: "ABCDEF12" },
+        },
+      ],
+    });
+    let consumed = 0;
+    const group = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody: forgedGroup.rawBody,
+      signature: forgedGroup.signature,
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => {
+        consumed += 1;
+        return { bound: true };
+      },
+    });
+    expect(group).toMatchObject({ ok: true, bound: false });
+    expect(consumed).toBe(0);
+
+    const fakeUser = signedBody({
+      events: [
+        {
+          type: "message",
+          webhookEventId: "evt-fake-user",
+          source: { type: "user", userId: "console-admin-id" },
+          message: { type: "text", text: "ABCDEF12" },
+        },
+      ],
+    });
+    const fake = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody: fakeUser.rawBody,
+      signature: fakeUser.signature,
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => {
+        consumed += 1;
+        return { bound: true };
+      },
+    });
+    expect(fake).toMatchObject({ ok: true, bound: false });
+    expect(consumed).toBe(0);
+
+    const { rawBody, signature } = signedBody({
+      events: [
+        {
+          type: "message",
+          source: { type: "user", userId },
+          message: { type: "text", text: "ABCDEF12" },
+        },
+      ],
+    });
+    const badSig = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature: "Zm9yZ2Vk",
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(badSig).toMatchObject({ ok: false, reason: "unauthorized" });
+    const missingSecret = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature,
+      channelSecret: null,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(missingSecret).toMatchObject({ ok: false, reason: "unauthorized" });
+  });
+
+  it("rejects expired codes, burns after 5 attempts, and dedups webhook events", async () => {
+    const codeHash = hashLineBindCode(ORG_ENJOYE_ID, "ABCDEF12");
+    expect(
+      evaluateLineBindAttempt({
+        nowMs: 20,
+        expiresAtMs: 10,
+        failedAttempts: 0,
+        codeHash,
+        providedHash: codeHash,
+      }),
+    ).toMatchObject({ ok: false, reason: "expired", burn: true });
+    const fourth = evaluateLineBindAttempt({
+      nowMs: 1,
+      expiresAtMs: 10,
+      failedAttempts: 3,
+      codeHash,
+      providedHash: "nope",
+    });
+    expect(fourth).toMatchObject({ ok: false, reason: "invalid_input", nextAttempts: 4, burn: false });
+    expect(
+      evaluateLineBindAttempt({
+        nowMs: 1,
+        expiresAtMs: 10,
+        failedAttempts: 4,
+        codeHash,
+        providedHash: "nope",
+      }),
+    ).toMatchObject({ ok: false, reason: "attempt_limited", nextAttempts: 5, burn: true });
+    expect(
+      evaluateLineWebhookEventClaim({ seenEventIds: new Set(["evt-1"]), eventId: "evt-1" }),
+    ).toMatchObject({ accept: false, duplicate: true });
+
+    const seen = new Set<string>();
+    const { rawBody, signature } = signedBody({
+      events: [
+        {
+          type: "message",
+          webhookEventId: "evt-dup-1",
+          deliveryContext: { isRedelivery: false },
+          source: { type: "user", userId },
+          message: { type: "text", text: "ABCDEF12" },
+        },
+      ],
+    });
+    const consumeCalls: string[] = [];
+    const first = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature,
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      claimEvent: async (eventId) => {
+        if (seen.has(eventId)) return { duplicate: true };
+        seen.add(eventId);
+        return { duplicate: false };
+      },
+      consume: async () => {
+        consumeCalls.push("first");
+        return { bound: true };
+      },
+    });
+    const replay = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature,
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      claimEvent: async (eventId) => ({ duplicate: seen.has(eventId) }),
+      consume: async () => {
+        consumeCalls.push("replay");
+        return { bound: true };
+      },
+    });
+    expect(first).toMatchObject({ ok: true, bound: true });
+    expect(replay).toMatchObject({ ok: true, bound: false, duplicate: true });
+    expect(consumeCalls).toEqual(["first"]);
+
+    const expired = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature,
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: false, reason: "expired" }),
+    });
+    expect(expired).toMatchObject({ ok: true, bound: false });
+
+    const isolated = await processLineWebhookBind({
+      organizationId: ORG_LUMIERE_ID,
+      rawBody,
+      signature,
+      channelSecret: "other-secret",
+      encryptUserId: () => ({ cipher: "v1.x", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(isolated).toMatchObject({ ok: false, reason: "unauthorized" });
+
+    const failed = await processLineWebhookBind({
+      organizationId: ORG_ENJOYE_ID,
+      rawBody,
+      signature: "forged",
+      channelSecret: secret,
+      encryptUserId: () => ({ cipher: "v1.abcd", keyId: "line-cred-v1" }),
+      consume: async () => ({ bound: true }),
+    });
+    expect(failed).toMatchObject({ ok: false, reason: "unauthorized" });
+  });
+});
+
+describe("LINE settings status display", () => {
+  const savedAccount: LineOfficialAccountPublic = {
+    organizationId: ORG_ENJOYE_ID,
+    channelId: "1650000000",
+    botDisplayName: null,
+    botBasicId: null,
+    tokenHint: "••••1234",
+    secretConfigured: true,
+    tokenConfigured: true,
+    broadcastEnabled: false,
+    testPushEnabled: false,
+    testPushRuntimeOpen: false,
+    lastTestedAt: null,
+    lastTestStatus: null,
+    lastTestMessage: null,
+  };
+
+  it("shows loading, unset, saved, and load-failed states without secrets", () => {
+    expect(describeLineSettingsStatus({ loadState: "loading", account: null }).statusLabel).toBe(
+      "正在讀取 LINE 設定…",
+    );
+    expect(describeLineSettingsStatus({ loadState: "ready", account: null })).toMatchObject({
+      credentialState: "unset",
+      statusLabel: "尚未保存 LINE 官方帳號憑證",
+      secretLabel: "未設定",
+      tokenLabel: "未設定",
+    });
+    const saved = describeLineSettingsStatus({ loadState: "ready", account: savedAccount });
+    expect(saved.credentialState).toBe("saved");
+    expect(saved.channelIdLabel).toBe("1650000000");
+    expect(saved.secretLabel).toBe("Secret 已設定");
+    expect(saved.tokenLabel).toBe("Token 已設定 ••••1234");
+    expect(JSON.stringify(saved)).not.toMatch(/channel-secret|access-token|plaintext/i);
+    expect(
+      describeLineSettingsStatus({ loadState: "load_failed", account: null }).statusLabel,
+    ).toBe(LINE_SETTINGS_LOAD_ERROR);
+  });
+
+  it("keeps a later save from being overwritten by a stale load", () => {
+    const stale = applyLineSettingsLoadResult({
+      generation: 1,
+      currentGeneration: 2,
+      ok: true,
+      account: null,
+    });
+    expect(stale.ignored).toBe(true);
+    const failed = applyLineSettingsLoadResult({
+      generation: 3,
+      currentGeneration: 3,
+      ok: false,
+    });
+    expect(failed).toMatchObject({
+      ignored: false,
+      loadState: "load_failed",
+      feedback: { kind: "error", message: LINE_SETTINGS_LOAD_ERROR },
+    });
+    const success = applyLineSettingsSaveResult({
+      generation: 4,
+      currentGeneration: 4,
+      ok: true,
+      message: LINE_SETTINGS_SAVE_SUCCESS,
+      account: savedAccount,
+    });
+    expect(success).toMatchObject({
+      ignored: false,
+      clearSecrets: true,
+      account: savedAccount,
+      feedback: { kind: "success", message: LINE_SETTINGS_SAVE_SUCCESS },
+    });
+    const saveFailed = applyLineSettingsSaveResult({
+      generation: 5,
+      currentGeneration: 5,
+      ok: false,
+      message: LINE_SETTINGS_SAVE_ERROR,
+    });
+    expect(saveFailed.feedback).toEqual({
+      kind: "error",
+      message: LINE_SETTINGS_SAVE_ERROR,
+    });
+    expect(saveFailed.clearSecrets).toBe(false);
+  });
+
+  it("rebuilds a public saved snapshot without secret or token plaintext", () => {
+    const snapshot = publicAccountAfterSave({
+      organizationId: ORG_ENJOYE_ID,
+      channelId: "1650000000",
+      tokenHint: "••••9876",
+    });
+    expect(snapshot).toMatchObject({
+      channelId: "1650000000",
+      secretConfigured: true,
+      tokenConfigured: true,
+      tokenHint: "••••9876",
+    });
+    expect(JSON.stringify(snapshot)).not.toMatch(/secret-value|token-value|plaintext/i);
+  });
+});
+
+describe("LINE Phase 1E owner broadcast simplification", () => {
+  it("keeps Broadcast isolated from Push and hides engineer tools from regular orgs", () => {
+    expect(LINE_BROADCAST_PATH).toBe("/v2/bot/message/broadcast");
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+    expect(isLineBroadcastSendOpen()).toBe(false);
+    expect(canShowLineEngineerDiagnostics(ORG_BEAUTY_OS_TEST_ID)).toBe(true);
+    expect(canShowLineEngineerDiagnostics(ORG_ENJOYE_ID)).toBe(false);
+    expect(
+      evaluateLineBroadcastRealSend({
+        connectionPilotEnabled: true,
+        sendOpen: false,
+        ownerBroadcastEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        textBody: "全好友通知",
+        requestId: "lbrq-req00000000001",
+        acceptedToday: 0,
+        accountConnected: true,
+        acknowledged: true,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    const settingsUi = source("features/line/LineOfficialAccountSettings.tsx");
+    const broadcastUi = source("features/line/LineBroadcastCenter.tsx");
+    expect(broadcastUi).toMatch(/建立群發/);
+    expect(broadcastUi).toMatch(/發送紀錄/);
+    expect(broadcastUi).toMatch(/確認發送/);
+    expect(broadcastUi).toMatch(/data-line-engineer-diagnostics/);
+    expect(settingsUi).toMatch(/LINE 設定/);
+    expect(settingsUi.indexOf("Messaging API 憑證")).toBeLessThan(
+      settingsUi.indexOf("data-line-engineer-diagnostics"),
+    );
+    expect(broadcastUi.indexOf("data-line-broadcast-history")).toBeLessThan(
+      broadcastUi.indexOf("data-line-engineer-diagnostics"),
+    );
+    expect(settingsUi).not.toMatch(/Retry-Key|lbrq-|ltsq-/);
+    expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-push-adapter/);
+    expect(lineBroadcastConfirmStatusHint(false)).toBe(
+      "目前為預覽版本，尚未開放實際發送。",
+    );
+    expect(lineBroadcastConfirmStatusHint(true)).toBe(
+      "送出後無法撤回，請確認訊息內容正確。",
+    );
+    expect(
+      isLineBroadcastConfirmSubmitEnabled({
+        sendOpen: false,
+        acknowledged: true,
+        pending: false,
+      }),
+    ).toBe(false);
+    expect(
+      isLineBroadcastConfirmSubmitEnabled({
+        sendOpen: true,
+        acknowledged: false,
+        pending: false,
+      }),
+    ).toBe(false);
+    expect(
+      isLineBroadcastConfirmSubmitEnabled({
+        sendOpen: true,
+        acknowledged: true,
+        pending: true,
+      }),
+    ).toBe(false);
+    expect(
+      isLineBroadcastConfirmSubmitEnabled({
+        sendOpen: true,
+        acknowledged: true,
+        pending: false,
+      }),
+    ).toBe(true);
+    const confirmStart = broadcastUi.indexOf("data-line-broadcast-confirm");
+    const confirmEnd = broadcastUi.indexOf("data-line-broadcast-history");
+    const confirmUi = broadcastUi.slice(confirmStart, confirmEnd);
+    expect(confirmUi).toMatch(/確認發送/);
+    expect(confirmUi).toMatch(/發送對象：全部好友/);
+    expect(confirmUi).toMatch(/返回編輯/);
+    expect(confirmUi).toMatch(/data-line-confirm-submit/);
+    expect(confirmUi).toMatch(/isLineBroadcastConfirmSubmitEnabled/);
+    expect(confirmUi).not.toMatch(/群發準備|Runtime|Retry-Key|Request ID|連線狀態|LINE 額度/);
+    expect(broadcastUi).toMatch(/data-line-broadcast-editor-card/);
+    expect(broadcastUi).toMatch(/data-line-broadcast-preview/);
+    expect(broadcastUi).toMatch(/data-line-broadcast-history/);
+    expect(broadcastUi).toMatch(/保存草稿/);
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+  });
+});
+
+describe("LINE source contracts", () => {
+  const migration = source(LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE);
+  const actions = source("lib/line/actions.ts");
+  const settingsUi = source("features/line/LineOfficialAccountSettings.tsx");
+  const broadcastUi = source("features/line/LineBroadcastCenter.tsx");
+  const settingsHub = source("features/settings/SettingsWorkspacePage.tsx");
+  const crypto = source("lib/line/line-crypto.ts");
+  const send = source("lib/line/line-send-adapter.ts");
+
+  it("keeps secrets off authenticated SELECT and reuses membership Owner checks", () => {
+    expect(migration).toMatch(/create table if not exists public\.line_official_accounts/);
+    expect(migration).toMatch(/create table if not exists public\.line_official_account_secrets/);
+    expect(migration).toMatch(/create table if not exists public\.line_broadcasts/);
+    expect(migration).toMatch(/create table if not exists public\.line_broadcast_events/);
+    expect(migration).toMatch(/user_is_org_owner/);
+    expect(migration).toMatch(/staff_auth_memberships/);
+    expect(migration).toMatch(/user_has_org_membership/);
+    expect(migration).toMatch(/revoke all on public\.line_official_account_secrets/);
+    expect(migration).not.toMatch(/grant select on public\.line_official_account_secrets/);
+    expect(migration).toMatch(
+      new RegExp(`revoke all on function public\\.${READ_LINE_SECRETS_RPC}`),
+    );
+    expect(migration).not.toMatch(
+      new RegExp(`grant execute on function public\\.${READ_LINE_SECRETS_RPC}`),
+    );
+    expect(migration).toMatch(/owner_read_line_access_token_cipher/);
+    expect(migration).toMatch(/grant execute on function public\.owner_read_line_access_token_cipher/);
+    expect(migration).not.toMatch(/friend_count|follower_count|segment_id|audience_id/);
+    expect(migration).not.toMatch(/create table if not exists public\.organizations/);
+    expect(migration).toMatch(/line_broadcasts_one_request_per_org/);
+    expect(migration).toMatch(MARK_LINE_BROADCAST_SEND_CLOSED_RPC);
+  });
+
+  it("never ships secrets or send adapters to the client UI", () => {
+    expect(settingsUi).not.toMatch(/line-crypto|line-send-adapter|createServiceRoleClient/);
+    expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-quota-adapter|line-push-adapter|line-retry-key|createServiceRoleClient/);
+    expect(broadcastUi).toMatch(/確認發送/);
+    expect(broadcastUi).toMatch(/lineBroadcastConfirmStatusHint/);
+    expect(source("lib/line/line-visibility.ts")).toMatch(
+      /目前為預覽版本，尚未開放實際發送/,
+    );
+    expect(broadcastUi).toMatch(/我確認訊息內容正確，並同意發送給全部好友/);
+    expect(broadcastUi).toMatch(/確認測試發送/);
+    expect(broadcastUi).toMatch(/建立群發/);
+    expect(broadcastUi).toMatch(/發送紀錄/);
+    expect(broadcastUi).toMatch(/單人測試 Push/);
+    expect(broadcastUi).toMatch(/測試發送環境/);
+    expect(broadcastUi).toMatch(/data-line-broadcast-real-send/);
+    expect(broadcastUi).toMatch(/data-line-test-push/);
+    expect(broadcastUi).toMatch(/data-line-test-env/);
+    expect(broadcastUi).toMatch(/data-line-broadcast-editor-card/);
+    expect(broadcastUi).toMatch(/data-line-broadcast-history/);
+    expect(broadcastUi).toMatch(/data-line-engineer-diagnostics/);
+    expect(broadcastUi.indexOf("data-line-broadcast-editor-card")).toBeLessThan(
+      broadcastUi.indexOf("data-line-engineer-diagnostics"),
+    );
+    expect(settingsUi).toMatch(/data-line-engineer-diagnostics/);
+    expect(broadcastUi).toMatch(/data-line-real-send-ack/);
+    expect(broadcastUi).toMatch(/restoreLineBroadcastEditor/);
+    expect(settingsUi).toMatch(/data-line-owner-bind/);
+    expect(settingsUi).toMatch(/data-line-webhook-url/);
+    expect(settingsUi).toMatch(/禁止改 THE ENJOYE/);
+    expect(settingsUi).not.toMatch(/lineUserId|channelAdminUserId|管理者 User ID/);
+    expect(settingsHub).toMatch(/data-line-settings-entry/);
+    expect(settingsHub).not.toMatch(/channelAccessToken|channel_secret_cipher/);
+    expect(settingsUi).toMatch(/data-line-settings-feedback/);
+    expect(settingsUi).toMatch(/data-line-settings-status/);
+    expect(settingsUi).toMatch(/catch \{/);
+    expect(settingsUi).toMatch(/generationRef/);
+    expect(settingsUi).not.toMatch(/refresh\(\)/);
+    expect(crypto).toMatch(/aes-256-gcm/);
+    expect(crypto).toMatch(/LINE credential crypto cannot run in the browser/);
+    expect(send).toMatch(/X-Line-Retry-Key/);
+    expect(source("lib/line/line-push-adapter.ts")).toMatch(/lineRetryKeyFromRequestId/);
+    expect(source("lib/line/line-push-adapter.ts")).not.toMatch(
+      /"X-Line-Retry-Key": input\.requestId/,
+    );
+    expect(source("lib/line/line-send-adapter.ts")).not.toMatch(
+      /"X-Line-Retry-Key": input\.requestId/,
+    );
+    expect(actions).toMatch(/executeLineBroadcastHttp/);
+    expect(actions).toMatch(/實際發送尚未開放，未查詢 LINE 額度/);
+    expect(actions).toMatch(/CLAIM_LINE_BROADCAST_SEND_RPC|claim_line_broadcast_send/);
+    expect(actions).toMatch(/COMPLETE_LINE_BROADCAST_SEND_RPC|complete_line_broadcast_send/);
+    expect(actions).toMatch(/LINE_BROADCAST_SEND_CLOSED_RPC|mark_line_broadcast_send_closed/);
+    expect(actions).not.toMatch(/createServiceRoleClient/);
+    expect(actions).toMatch(/OWNER_READ_LINE_TOKEN_CIPHER_RPC|owner_read_line_access_token_cipher/);
+    expect(actions).toMatch(/channel_access_token_cipher/);
+    expect(actions).not.toMatch(/console\.(log|info|debug|error|warn)\(/);
+    expect(source("lib/line/line-connection-adapter.ts")).not.toMatch(/console\.(log|info|debug)/);
+    expect(existsSync(path.join(ROOT, "lib/line.ts"))).toBe(true);
+    expect(existsSync(path.join(ROOT, "lib/line/index.ts"))).toBe(false);
+  });
+
+  it("does not change Production hosts or invent a second RBAC", () => {
+    expect(source("lib/line/line-roles.ts")).toMatch(/staff_auth_memberships|OWNER/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_TEST_PUSH_OPEN = false/);
+    expect(actions).toMatch(/sendLineTestPushAction|evaluateLineTestPushSend/);
+    expect(actions).not.toMatch(
+      /export async function sendLineTestPushAction\(input: \{[^}]*lineUserId/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/route.ts")).not.toMatch(
+      /createServiceRoleClient|x-line-signature/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).toMatch(
+      /x-line-signature/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).toMatch(
+      /request\.text\(\)/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).toMatch(
+      "READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC",
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).not.toMatch(
+      /createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY|access_token/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).not.toMatch(
+      /console\.(log|info|debug)/,
+    );
+    expect(source("proxy.ts")).toMatch(/evaluateLineWebhookHostAccess/);
+    expect(source("proxy.ts")).toMatch(/\/staff\/:path\*/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_WEBHOOK_HOST_ENV/);
+    expect(source("lib/supabase/anon.ts")).toMatch(/publishableKey/);
+    expect(source("lib/supabase/anon.ts")).not.toMatch(/SERVICE_ROLE|serviceRole/);
+    expect(source("app/staff/(app)/settings/line/page.tsx")).toMatch(/STAFF_LINE_ROLES/);
+    expect(source("app/staff/(app)/line/layout.tsx")).toMatch(/STAFF_LINE_ROLES/);
+    expect(PRODUCTION_SUPABASE_HOST).toBe("knccefcxncglgpmvgqlp.supabase.co");
+    expect(PREVIEW_SUPABASE_HOST).toBe("bfzquejrtgqzzarhkiya.supabase.co");
+    expect(source("lib/line/actions.ts")).not.toMatch(PRODUCTION_SUPABASE_HOST);
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1B/);
+    expect(source(LINE_BROADCAST_REAL_SEND_MIGRATION_FILE)).toMatch(CLAIM_LINE_BROADCAST_SEND_RPC);
+    expect(source(LINE_BROADCAST_REAL_SEND_MIGRATION_FILE)).toMatch(COMPLETE_LINE_BROADCAST_SEND_RPC);
+    expect(source(LINE_BROADCAST_REAL_SEND_MIGRATION_FILE)).not.toMatch(/friend_count|follower_count/);
+    expect(source(LINE_OWNER_TEST_PUSH_MIGRATION_FILE)).toMatch(CLAIM_LINE_TEST_SEND_RPC);
+    expect(source(LINE_OWNER_TEST_PUSH_MIGRATION_FILE)).toMatch(CONSUME_LINE_OWNER_BIND_RPC);
+    expect(source(LINE_OWNER_TEST_PUSH_MIGRATION_FILE)).toMatch(
+      new RegExp(`revoke all on function public\\.${READ_LINE_CHANNEL_SECRET_CIPHER_RPC}`),
+    );
+    expect(source(LINE_OWNER_TEST_PUSH_MIGRATION_FILE)).not.toMatch(
+      new RegExp(`grant execute on function public\\.${READ_LINE_CHANNEL_SECRET_CIPHER_RPC}`),
+    );
+    expect(source(LINE_OWNER_TEST_PUSH_MIGRATION_FILE)).not.toMatch(/friend_count|console_admin/);
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(
+      READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC,
+    );
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(CLAIM_LINE_WEBHOOK_EVENT_RPC);
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(
+      CONSUME_LINE_OWNER_BIND_PUBLIC_RPC,
+    );
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(
+      /grant execute on function public\.read_line_webhook_channel_secret_cipher/,
+    );
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).not.toMatch(
+      /grant execute on function public\.read_line_channel_secret_cipher/,
+    );
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).not.toMatch(
+      /channel_access_token_cipher/,
+    );
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(/failed_attempts/);
+    expect(source(LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE)).toMatch(/v_attempts >= 5/);
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(CLAIM_LINE_TEST_SEND_RPC);
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(
+      /from public\.line_official_accounts a/,
+    );
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(/for update/);
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(/quota_exceeded/);
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(
+      /status in \('accepted', 'sending', 'pending_confirmation'\)/,
+    );
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).toMatch(/v_consumed_today >= 3/);
+    expect(source(LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE)).not.toMatch(
+      /grant execute on function public\.claim_line_test_send[^;]+anon/,
+    );
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).toMatch(/http_status/);
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).toMatch(/error_class/);
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).toMatch(
+      /unauthorized[\s\S]*forbidden[\s\S]*invalid_request[\s\S]*quota_exceeded[\s\S]*timeout[\s\S]*unknown/,
+    );
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).toMatch(
+      /complete_line_test_send/,
+    );
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).not.toMatch(
+      /claim_line_test_send/,
+    );
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).toMatch(/status = 'sending'/);
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).not.toMatch(
+      /ltsq-[0-9a-f]{16}/,
+    );
+    expect(
+      source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE).replace(/^--.*$/gm, ""),
+    ).not.toMatch(/channel_secret|access_token|line_user_id|response_body/i);
+    expect(source(LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE)).not.toMatch(
+      /update public\.line_test_sends[\s\S]*http_status = \d+/,
+    );
+    expect(source("lib/line/line-push-adapter.ts")).not.toMatch(/response\.(text|json|blob)\(/);
+    expect(source("lib/line/actions.ts")).toMatch(/interpretLineTestPushApiOutcome/);
+    expect(source("lib/line/actions.ts")).toMatch(/p_http_status/);
+    expect(source("lib/line/actions.ts")).toMatch(/p_error_class/);
+    expect(source("features/line/LineBroadcastCenter.tsx")).toMatch(
+      /lineTestSendHistoryMeta|lineTestPushDisplayedError/,
+    );
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_TEST_PUSH_OPEN = false/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_TEST_PUSH_OPEN_ENV/);
+    expect(source("lib/line/line-flag.ts")).not.toMatch(/BEAUTY_OS_LINE_BROADCAST_SEND_OPEN/);
+    expect(source("lib/line/line-flag.ts")).toMatch(
+      /isLineBroadcastSendOpen\([\s\S]*LINE_BROADCAST_SEND_OPEN/,
+    );
+    expect(source("lib/line/actions.ts")).toMatch(/loadVerifiedLineOrganization/);
+    expect(source("lib/line/actions.ts")).toMatch(/sendLineBroadcastAction/);
+    expect(source("lib/line/actions.ts")).toMatch(/sendLineTestPushAction/);
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1D/);
+    expect(source("docs/saas/line-official-account.md")).toMatch(/不得修改 THE ENJOYE 現有官方帳號的 Webhook/);
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).toMatch(
+      /test_push_runtime_open boolean not null default false/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).toMatch(
+      SET_LINE_TEST_PUSH_RUNTIME_OPEN_RPC,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).toMatch(
+      /status in \('failed', 'send_closed', 'canceled'\)/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).toMatch(
+      /status not in \('draft', 'confirm_pending', 'queued'\)/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).not.toMatch(
+      /status not in \('draft', 'confirm_pending', 'failed', 'queued'\)/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).toMatch(
+      /p_organization_id is distinct from 'org-beauty-os-test'/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).not.toMatch(
+      /grant execute on function public\.claim_line_test_send[^;]+anon/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).not.toMatch(
+      /grant execute on function public\.set_line_test_push_runtime_open[^;]+anon/,
+    );
+    expect(
+      source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE).replace(/^--.*$/gm, ""),
+    ).not.toMatch(/channel_secret|access_token|line_user_id|response_body/i);
+    expect(source("features/line/LineBroadcastCenter.tsx")).toMatch(
+      /setTestRequestId\(newLineTestRequestId\(\)\)/,
+    );
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Runtime Kill Switch/);
+    expect(source("docs/saas/line-official-account.md")).toMatch(
+      /已開始的 LINE HTTP 無法保證取消/,
+    );
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1E/);
+    expect(source("lib/line/line-visibility.ts")).toMatch(/canShowLineEngineerDiagnostics/);
+    expect(canShowLineEngineerDiagnostics(ORG_BEAUTY_OS_TEST_ID)).toBe(true);
+    expect(canShowLineEngineerDiagnostics(ORG_ENJOYE_ID)).toBe(false);
+    expect(canShowLineEngineerDiagnostics(ORG_LUMIERE_ID)).toBe(false);
+    expect(broadcastUi).toMatch(/canShowLineEngineerDiagnostics/);
+    expect(settingsUi).toMatch(/canShowLineEngineerDiagnostics/);
+    expect(source("lib/line/line-send-adapter.ts")).toMatch(/inspectLineBroadcastHttpRequest/);
+    expect(source("lib/line/line-send-adapter.ts")).toMatch(/LINE_BROADCAST_PATH/);
+    expect(source("lib/line/line-command.ts")).toMatch(
+      /LINE_BROADCAST_PATH = "\/v2\/bot\/message\/broadcast"/,
+    );
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
+  });
+});

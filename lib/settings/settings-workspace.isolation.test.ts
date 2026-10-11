@@ -275,6 +275,8 @@ describe("P–T chrome and source contract", () => {
     );
     expect(page).toMatch(/updateOrganizationLocal/);
     expect(page).toMatch(/data-settings-workspace/);
+    expect(page).toMatch(/data-line-settings-entry/);
+    expect(page).not.toMatch(/channel_secret_cipher|channelAccessToken/);
     expect(page).toMatch(/取消變更/);
     expect(page).toMatch(/儲存變更/);
     expect(page).not.toMatch(/type=["']file["']|更換 Logo/);

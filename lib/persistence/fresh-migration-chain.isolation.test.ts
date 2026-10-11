@@ -39,6 +39,13 @@ const EXPECTED_CHAIN = [
   "20261007150000_staff_operational_create_fix.sql",
   "20261008120000_staff_login_invite_foundation.sql",
   "20261008130000_staff_login_invite_create.sql",
+  "20261010120000_line_official_account_foundation.sql",
+  "20261010140000_line_broadcast_real_send.sql",
+  "20261010160000_line_owner_test_push.sql",
+  "20261010180000_line_webhook_least_privilege.sql",
+  "20261010190000_line_test_push_claim_daily_quota.sql",
+  "20261010200000_line_test_push_error_diagnostics.sql",
+  "20261011010000_line_test_push_runtime_kill_switch.sql",
 ] as const;
 
 function read(rel: string): string {

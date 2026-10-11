@@ -10,7 +10,6 @@ import {
   type IdentityQueryBuilder,
   type IdentityQueryResult,
 } from "@/lib/persistence/authenticated-identity-catalog";
-import { UnmappedIdentityError } from "@/lib/persistence/identity-errors";
 import {
   STAFF_OPERATIONAL_CREATE_FIX_MIGRATION_FILE,
   STAFF_OPERATIONAL_CREATE_MIGRATION_FILE,
@@ -399,7 +398,10 @@ describe("staff operational remote write", () => {
         }),
         WRITE_ON,
       ),
-    ).rejects.toBeInstanceOf(UnmappedIdentityError);
+    ).rejects.toMatchObject({
+      name: "IdentityCatalogError",
+      reason: "missing_membership",
+    });
     await expect(
       runAuthenticatedStaffWriteCreate(
         fakeClient({ userId: AUTH_OWNER, tables: validTables() }),

@@ -81,8 +81,9 @@ function assertCanManageServices(identity: LoadedAuthenticatedIdentity): void {
 
 export async function createAuthenticatedServiceWritePersistence(
   client: ServiceWriteClient,
+  organizationAppId?: string | null,
 ): Promise<AuthenticatedServiceWritePersistence> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   return {
     identity,
     services: new ServiceRemoteAdapter(
@@ -103,7 +104,10 @@ export async function runAuthenticatedServiceWriteCreate(
   if (!isServiceRemoteWritePilotEnabled(env)) {
     throw new ServiceWritePilotOffError();
   }
-  const persistence = await createAuthenticatedServiceWritePersistence(client);
+  const persistence = await createAuthenticatedServiceWritePersistence(
+    client,
+    input.organizationId,
+  );
   assertOrganizationBoundary(persistence.identity, input.organizationId);
   persistence.identity.mapper.requireOperationalStaffId(
     persistence.identity.organizationAppId,

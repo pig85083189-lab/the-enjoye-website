@@ -71,6 +71,47 @@ export const STAFF_OPERATIONAL_CREATE_MIGRATION_FILE =
 export const STAFF_OPERATIONAL_CREATE_FIX_MIGRATION_FILE =
   "supabase/migrations/20261007150000_staff_operational_create_fix.sql";
 
+/** LINE Official Account foundation. Additive. Secrets have no authenticated grants. */
+export const LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE =
+  "supabase/migrations/20261010120000_line_official_account_foundation.sql";
+
+/** LINE real-send claim / complete. Additive. Does not rewrite 120000. */
+export const LINE_BROADCAST_REAL_SEND_MIGRATION_FILE =
+  "supabase/migrations/20261010140000_line_broadcast_real_send.sql";
+
+/** LINE Owner test-push bind. Additive. Does not rewrite 120000 / 140000. */
+export const LINE_OWNER_TEST_PUSH_MIGRATION_FILE =
+  "supabase/migrations/20261010160000_line_owner_test_push.sql";
+
+/** LINE webhook least privilege. Additive. Does not rewrite 120000 / 140000 / 160000. */
+export const LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE =
+  "supabase/migrations/20261010180000_line_webhook_least_privilege.sql";
+
+/** LINE test-push claim daily quota. Additive. Does not rewrite 160000 / 180000. */
+export const LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE =
+  "supabase/migrations/20261010190000_line_test_push_claim_daily_quota.sql";
+
+/** LINE test-push HTTP status / error-class diagnostics. Additive. Does not rewrite 190000. */
+export const LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE =
+  "supabase/migrations/20261010200000_line_test_push_error_diagnostics.sql";
+
+/** LINE test-push requestId anti-reuse + Preview runtime kill switch. Additive. Do not apply on Production. */
+export const LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE =
+  "supabase/migrations/20261011010000_line_test_push_runtime_kill_switch.sql";
+
+export const LINE_TABLES = [
+  "line_official_accounts",
+  "line_official_account_secrets",
+  "line_broadcasts",
+  "line_broadcast_events",
+  "line_owner_recipients",
+  "line_owner_recipient_secrets",
+  "line_owner_bind_challenges",
+  "line_test_sends",
+  "line_webhook_public_tokens",
+  "line_webhook_events",
+] as const;
+
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [
   "remaining_sessions",

@@ -73,8 +73,9 @@ function asServiceReadClient(
 
 export async function createAuthenticatedCommerceReadPersistence(
   client: IdentitySupabaseClient,
+  organizationAppId?: string | null,
 ) {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   const appointments = new AuthenticatedAppointmentReadStore(client);
   return {
     identity,
@@ -112,7 +113,7 @@ export async function listRemoteCommerceCheckoutCandidates(
 ): Promise<CommerceCheckoutCandidate[]> {
   requirePilot(env);
   assertCommerceCheckoutReadRole(input.actor);
-  const persistence = await createAuthenticatedCommerceReadPersistence(client);
+  const persistence = await createAuthenticatedCommerceReadPersistence(client, organizationId);
   persistence.identity.mapper.resolveOrganizationDbId(organizationId);
 
   const [appointments, treatments, customers, services] = await Promise.all([
@@ -159,7 +160,7 @@ export async function getRemoteCommerceCheckoutCandidate(
 ): Promise<CommerceCheckoutCandidate | undefined> {
   requirePilot(env);
   assertCommerceCheckoutReadRole(input.actor);
-  const persistence = await createAuthenticatedCommerceReadPersistence(client);
+  const persistence = await createAuthenticatedCommerceReadPersistence(client, organizationId);
   persistence.identity.mapper.resolveOrganizationDbId(organizationId);
 
   const appointment = await persistence.appointments.get(organizationId, appointmentId);
@@ -200,7 +201,7 @@ export async function listRemoteCommerceTransactions(
   customers: Array<{ id: string; name: string; phone: string }>;
 }> {
   requirePilot(env);
-  const persistence = await createAuthenticatedCommerceReadPersistence(client);
+  const persistence = await createAuthenticatedCommerceReadPersistence(client, organizationId);
   persistence.identity.mapper.resolveOrganizationDbId(organizationId);
   const customers = (await persistence.customers.list({ organizationId })).map((row) => ({
     id: row.id,
