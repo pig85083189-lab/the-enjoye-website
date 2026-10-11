@@ -190,6 +190,19 @@ Staff git 分支網域與單一 Preview URL 仍 302 SSO。Production 別名沒�
 
 `claim_line_test_send` 在同一交易鎖定該店 `line_official_accounts`、計算當日 `accepted/sending/pending_confirmation`、再原子改 `sending`。每日上限 3。
 
+### Phase 1D.1 — requestId 防重用與 Runtime Kill Switch
+
+失敗 / 已接受 / 待確認 / 發送中的 `ltsq-` **不得重用**。claim RPC 拒絕這些狀態；UI 在成功或失敗後都會改發新的 requestId。歷史失敗列不回寫。
+
+Preview-only 伺服器總開關是 `line_official_accounts.test_push_runtime_open`，預設 `false`。每次 claim 都在同一列 `FOR UPDATE` 下重讀。查詢失敗或不是 `org-beauty-os-test` 一律拒絕。Production 永遠禁止。Broadcast 仍 hardcoded false。前端參數不能繞過。
+
+Owner 立即停止後續新發送（不需重新部署）：
+
+1. Preview 先套用 `20261011010000_line_test_push_runtime_kill_switch.sql`（需另一次授權）。
+2. 在 Beauty OS TEST 的 `/staff/settings/line` 按「立即關閉測試發送總開關」，或在 Preview SQL 執行  
+   `select public.set_line_test_push_runtime_open('org-beauty-os-test', false);`
+3. 已開始的 LINE HTTP 無法保證取消。只能保證拒絕後續新發送。
+
 ### 首次真實 Push 驗收（尚未授權，本階段不做）
 
 具備條件：

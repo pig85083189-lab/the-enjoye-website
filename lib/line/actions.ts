@@ -14,6 +14,7 @@ import {
   RECORD_LINE_CONNECTION_TEST_RPC,
   SET_LINE_BROADCAST_ENABLED_RPC,
   SET_LINE_TEST_PUSH_ENABLED_RPC,
+  SET_LINE_TEST_PUSH_RUNTIME_OPEN_RPC,
   START_LINE_OWNER_BIND_RPC,
   UNBIND_LINE_OWNER_RECIPIENT_RPC,
   UPSERT_LINE_BROADCAST_DRAFT_RPC,
@@ -27,9 +28,11 @@ import {
   evaluateLineConnectionTest,
   evaluateLineOwnerBindStart,
   evaluateLineTestPushEnable,
+  evaluateLineTestPushRuntimeSwitch,
   evaluateLineTestPushSend,
   newLineRequestId,
   newLineTestRequestId,
+  resolveLineTestPushRuntimeState,
   resolveVerifiedLineOrganizationId,
   type LineActor,
 } from "@/lib/line/line-command";
@@ -800,6 +803,39 @@ export async function unbindLineOwnerRecipientAction(input: {
   }, "無法解除綁定");
 }
 
+export async function setLineTestPushRuntimeOpenAction(input: {
+  organizationId: string;
+  open: boolean;
+}): Promise<LineActionResult> {
+  return runLineAction(async () => {
+    const verified = await loadVerifiedLineOrganization(input.organizationId);
+    if (!verified.ok) return verified;
+    const { actor, organizationId } = verified;
+    const decision = evaluateLineTestPushRuntimeSwitch({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(),
+      organizationId,
+      actor,
+      open: input.open,
+      vercelEnv: process.env.VERCEL_ENV,
+    });
+    if (!decision.ok) return decision;
+    const supabase = await createClient();
+    const updated = await supabase.rpc(SET_LINE_TEST_PUSH_RUNTIME_OPEN_RPC, {
+      p_organization_id: organizationId,
+      p_open: input.open,
+    });
+    if (updated.error) {
+      return { ok: false, reason: "error", message: "無法更新測試發送總開關" };
+    }
+    return {
+      ok: true,
+      message: input.open
+        ? "已開啟 Preview 測試發送總開關。後續新發送仍須環境允許，且僅限 Beauty OS TEST。"
+        : "已關閉測試發送總開關。後續新發送會被拒絕。已開始的 LINE HTTP 無法保證取消。",
+    };
+  }, LINE_SETTINGS_UNEXPECTED_ERROR);
+}
+
 export async function setLineTestPushEnabledAction(input: {
   organizationId: string;
   enabled: boolean;
@@ -870,7 +906,20 @@ export async function sendLineTestPushAction(input: {
       await loadLineTestSends(organizationId),
       today,
     );
-    const account = await loadLineOfficialAccount(organizationId);
+    const accountRead = await readLineOfficialAccount(organizationId);
+    if (!accountRead.ok) {
+      return {
+        ok: false,
+        reason: "send_closed",
+        message: "無法確認測試發送總開關，已拒絕發送",
+      };
+    }
+    const account = accountRead.account;
+    const runtime = resolveLineTestPushRuntimeState({
+      readOk: true,
+      organizationId,
+      runtimeOpen: account?.testPushRuntimeOpen,
+    });
     const recipient = await loadLineOwnerRecipient(organizationId);
     const decision = evaluateLineTestPushSend({
       connectionPilotEnabled: isLineConnectionPilotEnabled(),
@@ -885,6 +934,8 @@ export async function sendLineTestPushAction(input: {
       accountConnected: isLineOfficialAccountConnected(account),
       acknowledged: input.acknowledged,
       recipient,
+      runtimeReadOk: runtime.readOk,
+      runtimeOpen: runtime.open,
     });
     if (!decision.ok) {
       if (existing?.id) {

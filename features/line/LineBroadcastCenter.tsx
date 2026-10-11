@@ -316,8 +316,10 @@ export function LineBroadcastCenter({
           <div className="space-y-2 border-t border-border pt-4" data-line-test-push>
             <p className="text-sm font-medium text-text">發送測試給自己</p>
             <p className="text-sm text-secondary-text">
-              使用 Push 傳給已驗證的店長 LINE，不是 Broadcast。伺服器開關：
-              {testPushOpen ? "開啟" : "關閉（預設）"}。
+              使用 Push 傳給已驗證的店長 LINE，不是 Broadcast。環境允許：
+              {testPushOpen ? "開啟" : "關閉（預設）"}。伺服器總開關：
+              {account?.testPushRuntimeOpen ? "開啟" : "關閉（預設）"}。
+              關閉總開關可立即停止後續新發送；已開始的 LINE HTTP 無法保證取消。
             </p>
             <p className="text-sm text-secondary-text" data-line-test-recipient>
               收件者：{lineOwnerRecipientLabel(recipient)}
@@ -349,9 +351,9 @@ export function LineBroadcastCenter({
                   });
                   setConfirming(false);
                   setTestAck(false);
+                  setTestRequestId(newLineTestRequestId());
                   if (result.ok) {
                     setMessage(result.message);
-                    setTestRequestId(newLineTestRequestId());
                   } else {
                     setError(result.message);
                   }

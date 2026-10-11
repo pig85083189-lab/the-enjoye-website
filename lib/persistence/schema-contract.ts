@@ -95,6 +95,10 @@ export const LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE =
 export const LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE =
   "supabase/migrations/20261010200000_line_test_push_error_diagnostics.sql";
 
+/** LINE test-push requestId anti-reuse + Preview runtime kill switch. Additive. Do not apply on Production. */
+export const LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE =
+  "supabase/migrations/20261011010000_line_test_push_runtime_kill_switch.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",

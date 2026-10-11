@@ -12,6 +12,7 @@ import {
   saveLineOfficialAccountAction,
   setLineBroadcastEnabledAction,
   setLineTestPushEnabledAction,
+  setLineTestPushRuntimeOpenAction,
   startLineOwnerBindAction,
   testLineOfficialAccountAction,
   unbindLineOwnerRecipientAction,
@@ -34,6 +35,7 @@ import type {
   LineOwnerRecipientPublic,
   LineWebhookPublicUrl,
 } from "@/lib/line/line-types";
+import { ORG_BEAUTY_OS_TEST_ID } from "@/lib/tenant/constants";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 const fieldClass =
@@ -563,9 +565,56 @@ export function LineOfficialAccountSettings({
               >
                 {account?.testPushEnabled ? "關閉測試發送" : "店長啟用測試發送"}
               </Button>
+              {organization.id === ORG_BEAUTY_OS_TEST_ID ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  data-line-test-runtime-switch
+                  onClick={() => {
+                    const generation = ++generationRef.current;
+                    setBusy(true);
+                    void (async () => {
+                      try {
+                        const result = await setLineTestPushRuntimeOpenAction({
+                          organizationId: organization.id,
+                          open: !account?.testPushRuntimeOpen,
+                        });
+                        if (generation !== generationRef.current) return;
+                        setBindFeedback(
+                          result.ok
+                            ? { kind: "success", message: result.message }
+                            : { kind: "error", message: result.message },
+                        );
+                        if (result.ok) {
+                          setAccount((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  testPushRuntimeOpen: !current.testPushRuntimeOpen,
+                                }
+                              : current,
+                          );
+                        }
+                      } catch {
+                        if (generation !== generationRef.current) return;
+                        setBindFeedback(lineActionCaughtError(LINE_SETTINGS_UNEXPECTED_ERROR));
+                      } finally {
+                        if (generation === generationRef.current) setBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  {account?.testPushRuntimeOpen
+                    ? "立即關閉測試發送總開關"
+                    : "開啟測試發送總開關（預設關閉）"}
+                </Button>
+              ) : null}
             </div>
             <p className="text-[12px] text-secondary-text">
               測試發送開關與正式群發開關分開。兩者預設都關閉，不會呼叫 Push 或 Broadcast。
+              Beauty OS TEST 的伺服器總開關可立即停止後續新發送，不需重新部署。
+              已開始的 LINE HTTP 無法保證取消。
             </p>
             <Feedback feedback={bindFeedback} testId="bind" />
           </Card>

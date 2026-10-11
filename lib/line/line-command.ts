@@ -6,6 +6,7 @@
 import {
   LINE_BROADCAST_DAILY_LIMIT,
   LINE_BROADCAST_TEXT_MAX,
+  LINE_TEST_PUSH_ALLOWED_ORG_ID,
   LINE_TEST_PUSH_DAILY_LIMIT,
 } from "@/lib/line/line-flag";
 import { canManageLineOfficialAccount } from "@/lib/line/line-roles";
@@ -43,9 +44,25 @@ export const CONSUME_LINE_OWNER_BIND_PUBLIC_RPC = "consume_line_owner_bind_chall
 export const UNBIND_LINE_OWNER_RECIPIENT_RPC = "unbind_line_owner_recipient";
 export const OWNER_READ_LINE_RECIPIENT_CIPHER_RPC = "owner_read_line_recipient_user_id_cipher";
 export const SET_LINE_TEST_PUSH_ENABLED_RPC = "set_line_test_push_enabled";
+export const SET_LINE_TEST_PUSH_RUNTIME_OPEN_RPC = "set_line_test_push_runtime_open";
 export const UPSERT_LINE_TEST_SEND_DRAFT_RPC = "upsert_line_test_send_draft";
 export const CLAIM_LINE_TEST_SEND_RPC = "claim_line_test_send";
 export const COMPLETE_LINE_TEST_SEND_RPC = "complete_line_test_send";
+
+export const LINE_TEST_PUSH_REUSABLE_STATUSES = [
+  "draft",
+  "confirm_pending",
+  "queued",
+] as const;
+
+export const LINE_TEST_PUSH_CONSUMED_STATUSES = [
+  "failed",
+  "accepted",
+  "pending_confirmation",
+  "sending",
+  "send_closed",
+  "canceled",
+] as const;
 
 export const LINE_BOT_INFO_PATH = "/v2/bot/info";
 export const LINE_BROADCAST_PATH = "/v2/bot/message/broadcast";
@@ -361,6 +378,106 @@ export function evaluateLineOwnerBindStart(input: {
   return { ok: true };
 }
 
+export function resolveLineTestPushRuntimeState(input: {
+  readOk: boolean;
+  organizationId?: string | null;
+  runtimeOpen?: boolean | null;
+}): { readOk: boolean; open: boolean } {
+  if (!input.readOk) {
+    return { readOk: false, open: false };
+  }
+  const organizationId = (input.organizationId ?? "").trim();
+  if (organizationId !== LINE_TEST_PUSH_ALLOWED_ORG_ID) {
+    return { readOk: true, open: false };
+  }
+  return { readOk: true, open: input.runtimeOpen === true };
+}
+
+export function evaluateLineTestPushRuntimeSwitch(input: {
+  connectionPilotEnabled: boolean;
+  organizationId?: string | null;
+  actor: LineActor;
+  open: boolean;
+  vercelEnv?: string | null;
+}): LineDecision {
+  if (!input.connectionPilotEnabled) {
+    return refuse("pilot_disabled", "LINE 串接尚未啟用");
+  }
+  const owner = requireOwner(input.actor, input.organizationId);
+  if (!owner.ok) return owner;
+  if ((input.vercelEnv ?? "").trim() === "production") {
+    return refuse("send_closed", "Production 永遠禁止測試 Push");
+  }
+  if (input.open && input.organizationId !== LINE_TEST_PUSH_ALLOWED_ORG_ID) {
+    return refuse("send_closed", "測試發送總開關只能在 Beauty OS TEST 開啟");
+  }
+  return { ok: true };
+}
+
+export function evaluateLineTestPushRequestReuse(input: {
+  existing?: LineTestSendPublic | null;
+  requestId?: string | null;
+}):
+  | { ok: true; requestId: string }
+  | { ok: false; reason: LineDecisionReason; message: string } {
+  const requestId = input.requestId?.trim() || input.existing?.requestId || "";
+  if (!requestId.startsWith("ltsq-")) {
+    return refuse("invalid_input", "缺少可追蹤的測試發送識別");
+  }
+  const existing = input.existing;
+  if (!existing) {
+    return { ok: true, requestId };
+  }
+  if (existing.requestId && existing.requestId !== requestId) {
+    return refuse("invalid_input", "發送識別不一致");
+  }
+  if (existing.status === "accepted") {
+    return refuse("duplicate", "這則測試已經被 LINE API 接受，不會重送");
+  }
+  if (existing.status === "pending_confirmation" || existing.status === "sending") {
+    return refuse("pending_confirmation", "上一則測試結果待確認，系統不會自動重送");
+  }
+  if (
+    existing.status === "failed" ||
+    existing.status === "send_closed" ||
+    existing.status === "canceled" ||
+    (LINE_TEST_PUSH_CONSUMED_STATUSES as readonly string[]).includes(existing.status)
+  ) {
+    return refuse("duplicate", "這則測試識別已使用過，不會重送。請用新的 requestId");
+  }
+  if ((LINE_TEST_PUSH_REUSABLE_STATUSES as readonly string[]).includes(existing.status)) {
+    return { ok: true, requestId };
+  }
+  return refuse("send_closed", "這則測試不能再發送");
+}
+
+export type LineTestPushRuntimeLockState = {
+  runtimeOpen: boolean;
+  claimed: boolean;
+};
+
+/**
+ * Serialized close/claim protocol used by isolation tests.
+ * Mirrors claim_line_test_send: both actions take the same org row lock,
+ * so a close cannot race past an in-progress claim, and a later claim
+ * must see the closed flag. In-flight HTTP after claimed=true cannot
+ * be cancelled.
+ */
+export function applyLineTestPushRuntimeLockStep(
+  state: LineTestPushRuntimeLockState,
+  action: "close" | "claim",
+): { ok: boolean; claimed: boolean; runtimeOpen: boolean } {
+  if (action === "close") {
+    state.runtimeOpen = false;
+    return { ok: true, claimed: state.claimed, runtimeOpen: false };
+  }
+  if (!state.runtimeOpen) {
+    return { ok: false, claimed: false, runtimeOpen: false };
+  }
+  state.claimed = true;
+  return { ok: true, claimed: true, runtimeOpen: true };
+}
+
 export function evaluateLineTestPushEnable(input: {
   connectionPilotEnabled: boolean;
   organizationId?: string | null;
@@ -393,6 +510,8 @@ export function evaluateLineTestPushSend(input: {
   accountConnected: boolean;
   acknowledged: boolean;
   recipient?: LineOwnerRecipientPublic | null;
+  runtimeReadOk?: boolean;
+  runtimeOpen?: boolean;
 }):
   | { ok: true; requestId: string }
   | { ok: false; reason: LineDecisionReason; message: string } {
@@ -418,19 +537,11 @@ export function evaluateLineTestPushSend(input: {
   if (input.existing && input.existing.organizationId !== input.organizationId) {
     return refuse("unauthorized", "不能發送其他店家的測試訊息");
   }
-  if (input.existing?.status === "pending_confirmation") {
-    return refuse("pending_confirmation", "上一則測試結果待確認，系統不會自動重送");
-  }
-  if (input.existing?.status === "accepted") {
-    return refuse("duplicate", "這則測試已經被 LINE API 接受，不會重送");
-  }
-  if (input.existing?.status === "sending") {
-    return refuse("pending_confirmation", "測試發送進行中，請勿重複送出");
-  }
-  const requestId = input.requestId?.trim() || input.existing?.requestId || "";
-  if (!requestId.startsWith("ltsq-")) {
-    return refuse("invalid_input", "缺少可追蹤的測試發送識別");
-  }
+  const reuse = evaluateLineTestPushRequestReuse({
+    existing: input.existing,
+    requestId: input.requestId,
+  });
+  if (!reuse.ok) return reuse;
   const limit = input.dailyLimit ?? LINE_TEST_PUSH_DAILY_LIMIT;
   if (input.acceptedToday >= limit) {
     return refuse("quota_exceeded", "今日測試發送次數已達上限");
@@ -441,5 +552,19 @@ export function evaluateLineTestPushSend(input: {
   if (!input.testPushOpen) {
     return refuse("send_closed", "測試發送尚未開放實際 Push");
   }
-  return { ok: true, requestId };
+  if (input.runtimeReadOk === false) {
+    return refuse("send_closed", "無法確認測試發送總開關，已拒絕發送");
+  }
+  if (input.runtimeOpen !== true) {
+    return refuse("send_closed", "測試發送總開關已關閉");
+  }
+  const runtime = resolveLineTestPushRuntimeState({
+    readOk: true,
+    organizationId: input.organizationId,
+    runtimeOpen: input.runtimeOpen,
+  });
+  if (!runtime.readOk || !runtime.open) {
+    return refuse("send_closed", "測試發送總開關已關閉");
+  }
+  return { ok: true, requestId: reuse.requestId };
 }

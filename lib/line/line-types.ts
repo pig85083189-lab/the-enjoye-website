@@ -35,6 +35,7 @@ export type LineOfficialAccountPublic = {
   tokenConfigured: boolean;
   broadcastEnabled: boolean;
   testPushEnabled: boolean;
+  testPushRuntimeOpen: boolean;
   lastTestedAt: string | null;
   lastTestStatus: LineConnectionTestStatus | null;
   lastTestMessage: string | null;

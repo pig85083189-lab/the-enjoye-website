@@ -25,6 +25,7 @@ function asAccount(row: Record<string, unknown> | null): LineOfficialAccountPubl
     tokenConfigured: Boolean(row.token_configured),
     broadcastEnabled: Boolean(row.broadcast_enabled),
     testPushEnabled: Boolean(row.test_push_enabled),
+    testPushRuntimeOpen: Boolean(row.test_push_runtime_open),
     lastTestedAt: (row.last_tested_at as string | null) ?? null,
     lastTestStatus: (row.last_test_status as LineConnectionTestStatus | null) ?? null,
     lastTestMessage: (row.last_test_message as string | null) ?? null,
@@ -63,7 +64,7 @@ export async function readLineOfficialAccount(
   const { data, error } = await supabase
     .from("line_official_accounts")
     .select(
-      "organization_id,channel_id,bot_display_name,bot_basic_id,token_hint,secret_configured,token_configured,broadcast_enabled,test_push_enabled,last_tested_at,last_test_status,last_test_message",
+      "organization_id,channel_id,bot_display_name,bot_basic_id,token_hint,secret_configured,token_configured,broadcast_enabled,test_push_enabled,test_push_runtime_open,last_tested_at,last_test_status,last_test_message",
     )
     .eq("organization_id", organizationId)
     .maybeSingle();

@@ -174,6 +174,7 @@ export function publicAccountAfterSave(input: {
     tokenConfigured: true,
     broadcastEnabled: input.previous?.broadcastEnabled ?? false,
     testPushEnabled: input.previous?.testPushEnabled ?? false,
+    testPushRuntimeOpen: input.previous?.testPushRuntimeOpen ?? false,
     lastTestedAt: input.previous?.lastTestedAt ?? null,
     lastTestStatus: input.previous?.lastTestStatus ?? null,
     lastTestMessage: input.previous?.lastTestMessage ?? null,

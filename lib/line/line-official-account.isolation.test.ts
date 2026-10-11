@@ -19,6 +19,7 @@ import {
   LINE_OWNER_TEST_PUSH_MIGRATION_FILE,
   LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE,
   LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE,
+  LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE,
   LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE,
 } from "@/lib/persistence/schema-contract";
 import { STAFF_LINE_ROLES, resolveStaffRolePageAccess } from "@/lib/staff/staff-role-page-access";
@@ -37,9 +38,14 @@ import {
   evaluateLineConnectionSave,
   evaluateLineConnectionTest,
   evaluateLineOwnerBindStart,
+  applyLineTestPushRuntimeLockStep,
   evaluateLineTestPushClaimQuota,
+  evaluateLineTestPushRequestReuse,
+  evaluateLineTestPushRuntimeSwitch,
   evaluateLineTestPushSend,
   interpretLineBroadcastApiOutcome,
+  resolveLineTestPushRuntimeState,
+  SET_LINE_TEST_PUSH_RUNTIME_OPEN_RPC,
   resolveVerifiedLineOrganizationId,
   LINE_BOT_INFO_PATH,
   LINE_BROADCAST_PATH,
@@ -254,6 +260,8 @@ describe("LINE Phase 1D Preview test-push allowlist", () => {
         accountConnected: true,
         acknowledged: true,
         recipient: testRecipient,
+        runtimeReadOk: true,
+        runtimeOpen: true,
       }),
     ).toMatchObject({ ok: true, requestId: "ltsq-req00000000001" });
   });
@@ -378,6 +386,263 @@ describe("LINE Phase 1D Preview test-push allowlist", () => {
     expect(testPush.indexOf("executeLineTestPushHttp")).toBeGreaterThan(
       testPush.indexOf("if (!transport.open)"),
     );
+  });
+});
+
+describe("LINE Phase 1D.1 requestId anti-reuse and runtime kill switch", () => {
+  const testRecipient = {
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    bound: true,
+    hint: "••••fc8c",
+    bindMethod: "webhook_code" as const,
+    boundAt: "2026-10-10T07:44:49.000Z",
+  };
+  const reusableDraft = draftBroadcast({
+    id: "lts-draft000000001",
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    requestId: "ltsq-req00000000001",
+  });
+  const sendBase = {
+    connectionPilotEnabled: true,
+    testPushOpen: true,
+    ownerTestPushEnabled: true,
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    actor: ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID }),
+    textBody: "第二次測試",
+    existing: reusableDraft,
+    requestId: "ltsq-req00000000001",
+    acceptedToday: 0,
+    accountConnected: true,
+    acknowledged: true,
+    recipient: testRecipient,
+    runtimeReadOk: true,
+    runtimeOpen: true,
+  };
+
+  it("refuses a failed requestId and accepts a new unused requestId", () => {
+    expect(
+      evaluateLineTestPushRequestReuse({
+        existing: draftBroadcast({
+          id: "lts-failed00000001",
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          requestId: "ltsq-reqfailed00001",
+          status: "failed",
+        }),
+        requestId: "ltsq-reqfailed00001",
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
+      evaluateLineTestPushSend({
+        ...sendBase,
+        existing: draftBroadcast({
+          id: "lts-failed00000001",
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          requestId: "ltsq-reqfailed00001",
+          status: "failed",
+        }),
+        requestId: "ltsq-reqfailed00001",
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
+      evaluateLineTestPushSend({
+        ...sendBase,
+        existing: draftBroadcast({
+          id: "lts-draft000000002",
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          requestId: "ltsq-reqnew00000002",
+        }),
+        requestId: "ltsq-reqnew00000002",
+      }),
+    ).toMatchObject({ ok: true, requestId: "ltsq-reqnew00000002" });
+    expect(newLineTestRequestId(() => "bbbbbbbb-cccc-dddd-eeee-ffffffffffff")).not.toBe(
+      "ltsq-reqfailed00001",
+    );
+  });
+
+  it("does not call LINE when the kill switch is closed or unread", async () => {
+    expect(
+      resolveLineTestPushRuntimeState({
+        readOk: true,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        runtimeOpen: false,
+      }),
+    ).toEqual({ readOk: true, open: false });
+    expect(
+      resolveLineTestPushRuntimeState({
+        readOk: false,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        runtimeOpen: true,
+      }),
+    ).toEqual({ readOk: false, open: false });
+    expect(
+      evaluateLineTestPushSend({ ...sendBase, runtimeOpen: false }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineTestPushSend({ ...sendBase, runtimeReadOk: false, runtimeOpen: true }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+
+    let fetched = 0;
+    const closed = await runClaimedLineBroadcastSend({
+      claim: async () => ({
+        ok: false,
+        reason: "send_closed",
+        message: "測試發送總開關已關閉",
+      }),
+      send: async () => {
+        fetched += 1;
+        return { timedOut: false, httpOk: true, lineRequestId: "leak", httpStatus: 200 };
+      },
+      complete: async () => undefined,
+    });
+    expect(closed).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(fetched).toBe(0);
+
+    const unread = await runClaimedLineBroadcastSend({
+      claim: async () => ({
+        ok: false,
+        reason: "send_closed",
+        message: "無法確認測試發送總開關，已拒絕發送",
+      }),
+      send: async () => {
+        fetched += 1;
+        return { timedOut: false, httpOk: true, lineRequestId: "leak", httpStatus: 200 };
+      },
+      complete: async () => undefined,
+    });
+    expect(unread).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(fetched).toBe(0);
+
+    const actions = source("lib/line/actions.ts");
+    const testPush = actions.slice(actions.indexOf("export async function sendLineTestPushAction"));
+    expect(testPush).toMatch(/readLineOfficialAccount/);
+    expect(testPush).toMatch(/無法確認測試發送總開關，已拒絕發送/);
+    expect(testPush.indexOf("無法確認測試發送總開關，已拒絕發送")).toBeLessThan(
+      testPush.indexOf("CLAIM_LINE_TEST_SEND_RPC"),
+    );
+    expect(testPush.indexOf("CLAIM_LINE_TEST_SEND_RPC")).toBeLessThan(
+      testPush.indexOf("executeLineTestPushHttp"),
+    );
+  });
+
+  it("serializes close and claim so a closed switch cannot be bypassed", () => {
+    const closeFirst = { runtimeOpen: true, claimed: false };
+    expect(applyLineTestPushRuntimeLockStep(closeFirst, "close")).toEqual({
+      ok: true,
+      claimed: false,
+      runtimeOpen: false,
+    });
+    expect(applyLineTestPushRuntimeLockStep(closeFirst, "claim")).toEqual({
+      ok: false,
+      claimed: false,
+      runtimeOpen: false,
+    });
+
+    const claimFirst = { runtimeOpen: true, claimed: false };
+    expect(applyLineTestPushRuntimeLockStep(claimFirst, "claim")).toEqual({
+      ok: true,
+      claimed: true,
+      runtimeOpen: true,
+    });
+    expect(applyLineTestPushRuntimeLockStep(claimFirst, "close")).toEqual({
+      ok: true,
+      claimed: true,
+      runtimeOpen: false,
+    });
+
+    const sql = source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE);
+    expect(sql).toMatch(/test_push_runtime_open/);
+    expect(sql).toMatch(/for update/);
+    expect(sql.indexOf("test_push_runtime_open")).toBeLessThan(
+      sql.indexOf("status = 'sending'"),
+    );
+    expect(sql).toMatch(/v_runtime_open/);
+    expect(sql).toMatch(/set_line_test_push_runtime_open/);
+    expect(sql).toMatch(/from public\.line_official_accounts a/);
+  });
+
+  it("keeps organization isolation, Production refuse, and Broadcast closed", () => {
+    expect(
+      resolveLineTestPushRuntimeState({
+        readOk: true,
+        organizationId: ORG_ENJOYE_ID,
+        runtimeOpen: true,
+      }),
+    ).toEqual({ readOk: true, open: false });
+    expect(
+      evaluateLineTestPushSend({
+        ...sendBase,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor({ organizationId: ORG_ENJOYE_ID }),
+        existing: draftBroadcast({
+          id: "lts-draft000000001",
+          organizationId: ORG_ENJOYE_ID,
+          requestId: "ltsq-req00000000001",
+        }),
+        recipient: { ...testRecipient, organizationId: ORG_ENJOYE_ID },
+        runtimeOpen: true,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineTestPushRuntimeSwitch({
+        connectionPilotEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor({ organizationId: ORG_ENJOYE_ID }),
+        open: true,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineTestPushRuntimeSwitch({
+        connectionPilotEnabled: true,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID }),
+        open: true,
+        vercelEnv: "production",
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      isLineTestPushOpen({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        env: { ...previewAllowlistEnv, VERCEL_ENV: "production" },
+      }),
+    ).toBe(false);
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+    expect(isLineBroadcastSendOpen(previewAllowlistEnv)).toBe(false);
+    expect(
+      evaluateLineTestPushRuntimeSwitch({
+        connectionPilotEnabled: true,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        actor: ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID }),
+        open: true,
+        vercelEnv: "preview",
+      }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("does not leak Secret, Token, or User ID in 1D.1 surfaces", () => {
+    const sql = source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE);
+    const actions = source("lib/line/actions.ts");
+    const settings = source("features/line/LineOfficialAccountSettings.tsx");
+    const ui = source("features/line/LineBroadcastCenter.tsx");
+    expect(sql.replace(/^--.*$/gm, "")).not.toMatch(
+      /channel_secret|access_token|line_user_id|response_body/i,
+    );
+    expect(actions).toMatch(/SET_LINE_TEST_PUSH_RUNTIME_OPEN_RPC/);
+    expect(actions).not.toMatch(/export async function setLineTestPushRuntimeOpenAction\([^)]*token/i);
+    expect(settings).toMatch(/data-line-test-runtime-switch/);
+    expect(settings).toMatch(/setLineTestPushRuntimeOpenAction/);
+    expect(settings).not.toMatch(
+      /setLineTestPushRuntimeOpenAction\([\s\S]{0,200}channelAccessToken|lineUserId/,
+    );
+    expect(ui).toMatch(/setTestRequestId\(newLineTestRequestId\(\)\)/);
+    expect(ui.indexOf("setTestRequestId(newLineTestRequestId())")).toBeGreaterThan(
+      ui.indexOf("sendLineTestPushAction"),
+    );
+    expect(ui).not.toMatch(/U[0-9a-f]{32}|channel-secret|access-token/i);
+    expect(JSON.stringify(publicAccountAfterSave({
+      organizationId: ORG_BEAUTY_OS_TEST_ID,
+      channelId: "2009219238",
+      tokenHint: "••••lFU=",
+    }))).not.toMatch(/secret-value|token-value|plaintext|U[0-9a-f]{32}/i);
   });
 });
 
@@ -949,6 +1214,16 @@ describe("LINE Phase 1C owner bind and test push", () => {
       }),
     ).toMatchObject({ ok: false, reason: "pending_confirmation" });
     expect(
+      evaluateLineTestPushSend({
+        ...base,
+        existing: draftBroadcast({
+          id: "lts-1",
+          requestId: "ltsq-req00000000001",
+          status: "failed",
+        }),
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(
       evaluateLineTestPushSend({ ...base, testPushOpen: false }),
     ).toMatchObject({ ok: false, reason: "send_closed" });
     expect(
@@ -1388,6 +1663,7 @@ describe("LINE settings status display", () => {
     tokenConfigured: true,
     broadcastEnabled: false,
     testPushEnabled: false,
+    testPushRuntimeOpen: false,
     lastTestedAt: null,
     lastTestStatus: null,
     lastTestMessage: null,
@@ -1665,5 +1941,39 @@ describe("LINE source contracts", () => {
     expect(source("lib/line/actions.ts")).toMatch(/sendLineTestPushAction/);
     expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1D/);
     expect(source("docs/saas/line-official-account.md")).toMatch(/不得修改 THE ENJOYE 現有官方帳號的 Webhook/);
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).toMatch(
+      /test_push_runtime_open boolean not null default false/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).toMatch(
+      SET_LINE_TEST_PUSH_RUNTIME_OPEN_RPC,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).toMatch(
+      /status in \('failed', 'send_closed', 'canceled'\)/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).toMatch(
+      /status not in \('draft', 'confirm_pending', 'queued'\)/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).not.toMatch(
+      /status not in \('draft', 'confirm_pending', 'failed', 'queued'\)/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).toMatch(
+      /p_organization_id is distinct from 'org-beauty-os-test'/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).not.toMatch(
+      /grant execute on function public\.claim_line_test_send[^;]+anon/,
+    );
+    expect(source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE)).not.toMatch(
+      /grant execute on function public\.set_line_test_push_runtime_open[^;]+anon/,
+    );
+    expect(
+      source(LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE).replace(/^--.*$/gm, ""),
+    ).not.toMatch(/channel_secret|access_token|line_user_id|response_body/i);
+    expect(source("features/line/LineBroadcastCenter.tsx")).toMatch(
+      /setTestRequestId\(newLineTestRequestId\(\)\)/,
+    );
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Runtime Kill Switch/);
+    expect(source("docs/saas/line-official-account.md")).toMatch(
+      /已開始的 LINE HTTP 無法保證取消/,
+    );
   });
 });
