@@ -125,7 +125,10 @@ import {
   resolveLineTestPushTransport,
 } from "@/lib/line/line-flag";
 import { canManageLineOfficialAccount } from "@/lib/line/line-roles";
-import { executeLineBroadcastHttp } from "@/lib/line/line-send-adapter";
+import {
+  executeLineBroadcastHttp,
+  inspectLineBroadcastHttpRequest,
+} from "@/lib/line/line-send-adapter";
 import { fetchLineBotInfo } from "@/lib/line/line-connection-adapter";
 import { countAcceptedBroadcastsOnDay } from "@/lib/line/line-load";
 import {
@@ -138,6 +141,7 @@ import {
   publicAccountAfterSave,
 } from "@/lib/line/line-settings-status";
 import {
+  canShowLineEngineerDiagnostics,
   canShowLineSettings,
   lineBroadcastApiResultLabel,
   lineTestPushDiagnosticLabel,
@@ -936,6 +940,21 @@ describe("LINE HTTP adapters", () => {
         expect((init?.headers as Record<string, string>)["X-Line-Retry-Key"]).not.toMatch(
           /^(ltsq-|lbrq-)/,
         );
+        const inspection = inspectLineBroadcastHttpRequest(String(input), init);
+        expect(inspection).toEqual({
+          method: "POST",
+          path: "https://api.line.me/v2/bot/message/broadcast",
+          contentType: "application/json",
+          authorizationScheme: "Bearer",
+          retryKeyIsUuid: true,
+          retryKeyUsesInternalPrefix: false,
+          hasTo: false,
+          messageCount: 1,
+          firstMessageType: "text",
+          textLength: "hello".length,
+        });
+        expect(JSON.stringify(inspection)).not.toMatch(/mock-token|to":/);
+        expect(String(init?.body)).not.toMatch(/"to"/);
         return new Response("{}", {
           status: 200,
           headers: { "x-line-request-id": "line-req-1" },
@@ -1872,6 +1891,45 @@ describe("LINE settings status display", () => {
   });
 });
 
+describe("LINE Phase 1E owner broadcast simplification", () => {
+  it("keeps Broadcast isolated from Push and hides engineer tools from regular orgs", () => {
+    expect(LINE_BROADCAST_PATH).toBe("/v2/bot/message/broadcast");
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+    expect(isLineBroadcastSendOpen()).toBe(false);
+    expect(canShowLineEngineerDiagnostics(ORG_BEAUTY_OS_TEST_ID)).toBe(true);
+    expect(canShowLineEngineerDiagnostics(ORG_ENJOYE_ID)).toBe(false);
+    expect(
+      evaluateLineBroadcastRealSend({
+        connectionPilotEnabled: true,
+        sendOpen: false,
+        ownerBroadcastEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: ownerActor(),
+        textBody: "全好友通知",
+        requestId: "lbrq-req00000000001",
+        acceptedToday: 0,
+        accountConnected: true,
+        acknowledged: true,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    const settingsUi = source("features/line/LineOfficialAccountSettings.tsx");
+    const broadcastUi = source("features/line/LineBroadcastCenter.tsx");
+    expect(broadcastUi).toMatch(/建立群發/);
+    expect(broadcastUi).toMatch(/發送紀錄/);
+    expect(broadcastUi).toMatch(/確認全好友群發/);
+    expect(broadcastUi).toMatch(/data-line-engineer-diagnostics/);
+    expect(settingsUi).toMatch(/LINE 設定/);
+    expect(settingsUi.indexOf("Messaging API 憑證")).toBeLessThan(
+      settingsUi.indexOf("data-line-engineer-diagnostics"),
+    );
+    expect(broadcastUi.indexOf("data-line-broadcast-history")).toBeLessThan(
+      broadcastUi.indexOf("data-line-engineer-diagnostics"),
+    );
+    expect(settingsUi).not.toMatch(/Retry-Key|lbrq-|ltsq-/);
+    expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-push-adapter/);
+  });
+});
+
 describe("LINE source contracts", () => {
   const migration = source(LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE);
   const actions = source("lib/line/actions.ts");
@@ -1909,18 +1967,22 @@ describe("LINE source contracts", () => {
     expect(settingsUi).not.toMatch(/line-crypto|line-send-adapter|createServiceRoleClient/);
     expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-quota-adapter|line-push-adapter|line-retry-key|createServiceRoleClient/);
     expect(broadcastUi).toMatch(/確認（不會實際發送）/);
-    expect(broadcastUi).toMatch(/確認真實發送/);
+    expect(broadcastUi).toMatch(/確認全好友群發/);
     expect(broadcastUi).toMatch(/確認測試發送/);
+    expect(broadcastUi).toMatch(/建立群發/);
+    expect(broadcastUi).toMatch(/發送紀錄/);
     expect(broadcastUi).toMatch(/單人測試 Push/);
-    expect(broadcastUi).toMatch(/正式群發/);
     expect(broadcastUi).toMatch(/測試發送環境/);
     expect(broadcastUi).toMatch(/data-line-broadcast-real-send/);
     expect(broadcastUi).toMatch(/data-line-test-push/);
     expect(broadcastUi).toMatch(/data-line-test-env/);
     expect(broadcastUi).toMatch(/data-line-broadcast-editor-card/);
-    expect(broadcastUi.indexOf("data-line-test-push")).toBeLessThan(
-      broadcastUi.indexOf("data-line-broadcast-confirm"),
+    expect(broadcastUi).toMatch(/data-line-broadcast-history/);
+    expect(broadcastUi).toMatch(/data-line-engineer-diagnostics/);
+    expect(broadcastUi.indexOf("data-line-broadcast-editor-card")).toBeLessThan(
+      broadcastUi.indexOf("data-line-engineer-diagnostics"),
     );
+    expect(settingsUi).toMatch(/data-line-engineer-diagnostics/);
     expect(broadcastUi).toMatch(/data-line-real-send-ack/);
     expect(broadcastUi).toMatch(/restoreLineBroadcastEditor/);
     expect(settingsUi).toMatch(/data-line-owner-bind/);
@@ -2112,5 +2174,18 @@ describe("LINE source contracts", () => {
     expect(source("docs/saas/line-official-account.md")).toMatch(
       /已開始的 LINE HTTP 無法保證取消/,
     );
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1E/);
+    expect(source("lib/line/line-visibility.ts")).toMatch(/canShowLineEngineerDiagnostics/);
+    expect(canShowLineEngineerDiagnostics(ORG_BEAUTY_OS_TEST_ID)).toBe(true);
+    expect(canShowLineEngineerDiagnostics(ORG_ENJOYE_ID)).toBe(false);
+    expect(canShowLineEngineerDiagnostics(ORG_LUMIERE_ID)).toBe(false);
+    expect(broadcastUi).toMatch(/canShowLineEngineerDiagnostics/);
+    expect(settingsUi).toMatch(/canShowLineEngineerDiagnostics/);
+    expect(source("lib/line/line-send-adapter.ts")).toMatch(/inspectLineBroadcastHttpRequest/);
+    expect(source("lib/line/line-send-adapter.ts")).toMatch(/LINE_BROADCAST_PATH/);
+    expect(source("lib/line/line-command.ts")).toMatch(
+      /LINE_BROADCAST_PATH = "\/v2\/bot\/message\/broadcast"/,
+    );
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
   });
 });

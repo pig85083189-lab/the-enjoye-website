@@ -356,12 +356,12 @@ export function SettingsWorkspacePage() {
           padding="lg"
           className="mt-4 min-w-0 space-y-2 shadow-none"
         >
-          <h2 className="text-[16px] font-semibold text-text">LINE 官方帳號</h2>
+          <h2 className="text-[16px] font-semibold text-text">LINE 設定</h2>
           <p className="text-[13px] leading-6 text-secondary-text">
-            為此店家連接 Messaging API，並管理文字群發。憑證只存在伺服器。
+            為此店家連接官方帳號，再建立全好友群發。憑證只存在伺服器。
           </p>
           <Link href="/staff/settings/line" className="inline-flex min-h-11 items-center text-sm text-primary">
-            管理 LINE 官方帳號
+            前往 LINE 設定
           </Link>
         </Card>
       ) : null}

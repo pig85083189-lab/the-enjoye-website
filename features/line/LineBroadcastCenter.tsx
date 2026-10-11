@@ -17,6 +17,7 @@ import { newLineRequestId, newLineTestRequestId } from "@/lib/line/line-command"
 import { LINE_BROADCAST_TEXT_MAX } from "@/lib/line/line-flag";
 import { restoreLineBroadcastEditor, unknownLineQuota } from "@/lib/line/line-quota";
 import {
+  canShowLineEngineerDiagnostics,
   canShowLineSettings,
   lineBroadcastApiResultLabel,
   lineBroadcastStatusLabel,
@@ -32,7 +33,6 @@ import type {
   LineQuotaPublic,
   LineTestSendPublic,
 } from "@/lib/line/line-types";
-import { ORG_BEAUTY_OS_TEST_ID } from "@/lib/tenant/constants";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 function lineTestSendHistoryMeta(row: LineTestSendPublic): string {
@@ -68,6 +68,7 @@ export function LineBroadcastCenter({
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
   const allowed = canShowLineSettings(membership);
+  const engineer = canShowLineEngineerDiagnostics(organization.id);
 
   const preview = useMemo(() => textBody.trim(), [textBody]);
   const officialName = lineOfficialAccountNameLabel(account);
@@ -130,13 +131,13 @@ export function LineBroadcastCenter({
       <header className="space-y-1">
         <p className="text-[11px] tracking-[0.18em] text-secondary-text">Beauty OS</p>
         <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">
-          LINE 群發中心
+          LINE 群發
         </h1>
         <p className="text-sm text-secondary-text">
-          單人測試 Push 與正式群發分開。測試只傳給已綁定的店長自己，不是全好友 Broadcast。
+          編輯訊息、預覽後確認，會發送給此官方帳號所有可接收訊息的好友。
         </p>
         <Link href="/staff/settings/line" className="text-sm text-primary">
-          LINE 官方帳號設定
+          LINE 設定
         </Link>
       </header>
 
@@ -145,34 +146,245 @@ export function LineBroadcastCenter({
           <p className="text-sm text-secondary-text">LINE 串接尚未在此環境啟用。</p>
         </Card>
       ) : (
-        <>
-        <Card padding="lg" className="space-y-4" data-line-test-push>
-          <h2 className="text-[16px] font-semibold text-text">單人測試 Push</h2>
+        <div className="grid gap-4 min-[1200px]:grid-cols-2">
+          <Card padding="lg" className="space-y-4" data-line-broadcast-editor-card>
+            <h2 className="text-[16px] font-semibold text-text">建立群發</h2>
+            <textarea
+              data-line-broadcast-editor
+              className="min-h-40 w-full rounded-2xl border border-border bg-surface px-4 py-3 text-[15px] outline-none"
+              maxLength={LINE_BROADCAST_TEXT_MAX}
+              value={textBody}
+              onChange={(event) => setTextBody(event.target.value)}
+              placeholder="輸入要群發給全部好友的文字"
+            />
+            <p className="text-[12px] text-secondary-text">
+              {textBody.length} / {LINE_BROADCAST_TEXT_MAX}
+              {engineer ? ` · 識別 ${requestId}` : ""}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={() => {
+                  setError("");
+                  startTransition(async () => {
+                    const saved = await saveLineBroadcastDraftAction({
+                      organizationId: organization.id,
+                      textBody,
+                      broadcastId,
+                      requestId,
+                    });
+                    if (saved.ok && saved.data) {
+                      setBroadcastId(saved.data.broadcastId);
+                      setRequestId(saved.data.requestId);
+                      setMessage(saved.message);
+                      reload(false);
+                    } else if (!saved.ok) {
+                      setError(saved.message);
+                    }
+                  });
+                }}
+              >
+                保存草稿
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setRealSendAck(false);
+                  setConfirming(true);
+                  reload(false);
+                }}
+              >
+                預覽並確認
+              </Button>
+            </div>
+          </Card>
+
+          <Card data-line-broadcast-preview padding="lg" className="space-y-3">
+            <h2 className="text-[16px] font-semibold text-text">訊息預覽</h2>
+            <p className="text-[13px] text-secondary-text" data-line-oa-name>
+              官方帳號：{officialName}
+            </p>
+            <div className="rounded-2xl bg-primary-light/50 px-4 py-3 text-[15px] whitespace-pre-wrap">
+              {preview || "尚未輸入文字"}
+            </div>
+            <p className="text-[12px] text-secondary-text" data-line-quota>
+              LINE 額度：{quota.label}
+            </p>
+            <p className="text-[12px] text-secondary-text">
+              發送對象：此官方帳號所有可接收訊息的好友。系統不估計好友數。
+            </p>
+          </Card>
+        </div>
+      )}
+
+      {confirming ? (
+        <Card data-line-broadcast-confirm padding="lg" className="space-y-4">
+          <p className="font-semibold text-text">確認全好友群發？</p>
+          <div className="rounded-2xl bg-primary-light/50 px-4 py-3 text-sm space-y-1">
+            <p data-line-confirm-oa>官方帳號：{officialName}</p>
+            <p data-line-confirm-quota>LINE 額度：{quota.label}</p>
+            <p>連線狀態：{account?.lastTestStatus === "ok" ? "已連線" : "尚未確認連線"}</p>
+            <p>群發準備：{account?.broadcastEnabled ? "已啟用" : "尚未啟用"}</p>
+            <p>實際發送：{sendOpen ? "已開放" : "尚未開放"}</p>
+          </div>
+          <div className="rounded-2xl border border-border px-4 py-3 text-[15px] whitespace-pre-wrap">
+            {preview || "尚未輸入文字"}
+          </div>
           <p className="text-sm text-secondary-text">
-            這不是群發。只傳給已驗證的店長 LINE。成功只代表 API 已接受。失敗不會自動重送。
+            確認後會向「{officialName}」的全部好友發送。成功只代表 LINE API 已接受，不代表每位好友都已收到。逾時不會自動重送。
           </p>
-          <p className="text-sm text-secondary-text" data-line-test-env>
-            測試發送環境：{testPushOpen ? "允許" : "不允許"}
-          </p>
-          <p className="text-sm text-secondary-text" data-line-test-runtime>
-            伺服器總開關：{account?.testPushRuntimeOpen ? "開啟" : "關閉（預設）"}
-            。關閉後可立即停止後續新發送；已開始的 LINE HTTP 無法保證取消。
-          </p>
+
+          {engineer ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-text">練習確認</p>
+              <p className="text-sm text-secondary-text">
+                這一步不會呼叫 LINE Broadcast，只會留下「未發送」紀錄。
+              </p>
+              <Button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  setError("");
+                  startTransition(async () => {
+                    const result = await confirmLineBroadcastAction({
+                      organizationId: organization.id,
+                      textBody,
+                      requestId,
+                      broadcastId,
+                    });
+                    setConfirming(false);
+                    setRealSendAck(false);
+                    if (result.ok) {
+                      setMessage(result.message);
+                    } else {
+                      setError(result.message);
+                    }
+                    reload(false);
+                  });
+                }}
+              >
+                確認（不會實際發送）
+              </Button>
+            </div>
+          ) : null}
+
+          <div className="space-y-2" data-line-broadcast-real-send>
+            <label className="flex items-start gap-2 text-sm text-text">
+              <input
+                type="checkbox"
+                data-line-real-send-ack
+                className="mt-1"
+                checked={realSendAck}
+                onChange={(event) => setRealSendAck(event.target.checked)}
+              />
+              <span>
+                我了解這會向「{officialName}」的全部好友發送，且系統不會在逾時後自動重送。
+              </span>
+            </label>
+            <Button
+              type="button"
+              disabled={pending || !realSendAck}
+              onClick={() => {
+                setError("");
+                startTransition(async () => {
+                  const result = await sendLineBroadcastAction({
+                    organizationId: organization.id,
+                    textBody,
+                    requestId,
+                    broadcastId,
+                    acknowledged: realSendAck,
+                  });
+                  setConfirming(false);
+                  setRealSendAck(false);
+                  if (result.ok) {
+                    setMessage(result.message);
+                    setTextBody("");
+                    setBroadcastId(undefined);
+                    setRequestId(newLineRequestId());
+                  } else {
+                    setError(result.message);
+                  }
+                  reload(false);
+                });
+              }}
+            >
+              確認全好友群發
+            </Button>
+          </div>
+
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setConfirming(false);
+            }}
+          >
+            返回編輯
+          </Button>
+        </Card>
+      ) : null}
+
+      <Card padding="lg" className="space-y-3" data-line-broadcast-history>
+        <h2 className="text-[16px] font-semibold text-text">發送紀錄</h2>
+        {history.length === 0 ? (
+          <p className="text-sm text-secondary-text">還沒有草稿或發送紀錄。</p>
+        ) : (
+          <ul className="space-y-2">
+            {history.map((row) => (
+              <li
+                key={row.id}
+                className="rounded-2xl border border-border px-4 py-3"
+                data-line-broadcast-row={row.id}
+              >
+                <p className="text-sm font-medium text-text">
+                  {lineBroadcastStatusLabel(row.status)}
+                </p>
+                <p className="mt-1 text-[13px] whitespace-pre-wrap text-secondary-text">
+                  {row.textBody}
+                </p>
+                <p className="mt-1 text-[12px] text-secondary-text">
+                  {lineBroadcastApiResultLabel(row.apiResult)}
+                  {engineer ? ` · ${row.requestId}` : ""}
+                  {row.errorMessage ? ` · ${row.errorMessage}` : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {engineer ? (
+        <Card padding="lg" className="space-y-4" data-line-engineer-diagnostics>
+          <h2 className="text-[16px] font-semibold text-text">工程師診斷</h2>
           <p className="text-sm text-secondary-text">
-            店長測試開關：{account?.testPushEnabled ? "已啟用" : "未啟用"}
+            此區塊只在 Beauty OS TEST 顯示，不是一般店長操作。單人測試 Push 不是全好友 Broadcast。
           </p>
-          <p className="text-sm text-secondary-text" data-line-test-recipient>
-            收件者：{lineOwnerRecipientLabel(recipient)}
-          </p>
-          <textarea
-            data-line-test-editor
-            className="min-h-24 w-full rounded-2xl border border-border bg-surface px-4 py-3 text-[15px] outline-none"
-            maxLength={LINE_BROADCAST_TEXT_MAX}
-            value={testTextBody}
-            onChange={(event) => setTestTextBody(event.target.value)}
-            placeholder="BeautyOS TEST 2"
-          />
-          {organization.id === ORG_BEAUTY_OS_TEST_ID ? (
+          <div data-line-test-push className="space-y-3">
+            <p className="text-sm font-medium text-text">單人測試 Push</p>
+            <p className="text-sm text-secondary-text" data-line-test-env>
+              測試發送環境：{testPushOpen ? "允許" : "不允許"}
+            </p>
+            <p className="text-sm text-secondary-text" data-line-test-runtime>
+              伺服器總開關：{account?.testPushRuntimeOpen ? "開啟" : "關閉（預設）"}
+              。關閉後可立即停止後續新發送；已開始的 LINE HTTP 無法保證取消。
+            </p>
+            <p className="text-sm text-secondary-text">
+              店長測試開關：{account?.testPushEnabled ? "已啟用" : "未啟用"}
+            </p>
+            <p className="text-sm text-secondary-text" data-line-test-recipient>
+              收件者：{lineOwnerRecipientLabel(recipient)}
+            </p>
+            <textarea
+              data-line-test-editor
+              className="min-h-24 w-full rounded-2xl border border-border bg-surface px-4 py-3 text-[15px] outline-none"
+              maxLength={LINE_BROADCAST_TEXT_MAX}
+              value={testTextBody}
+              onChange={(event) => setTestTextBody(event.target.value)}
+              placeholder="BeautyOS TEST 2"
+            />
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -209,215 +421,37 @@ export function LineBroadcastCenter({
                   });
                 }}
               >
-                {account?.testPushRuntimeOpen
-                  ? "關閉伺服器總開關"
-                  : "開啟伺服器總開關"}
+                {account?.testPushRuntimeOpen ? "關閉伺服器總開關" : "開啟伺服器總開關"}
               </Button>
             </div>
-          ) : null}
-          <label className="flex items-start gap-2 text-sm text-text">
-            <input
-              type="checkbox"
-              data-line-test-send-ack
-              className="mt-1"
-              checked={testAck}
-              onChange={(event) => setTestAck(event.target.checked)}
-            />
-            <span>
-              我是店長，確認把這則測試訊息只發給已綁定的自己，且逾時不會自動重送。
-            </span>
-          </label>
-          <Button
-            type="button"
-            disabled={pending || !testAck}
-            onClick={() => {
-              setError("");
-              startTransition(async () => {
-                const result = await sendLineTestPushAction({
-                  organizationId: organization.id,
-                  textBody: testTextBody,
-                  requestId: testRequestId,
-                  acknowledged: testAck,
-                });
-                setTestAck(false);
-                setTestRequestId(newLineTestRequestId());
-                if (result.ok) {
-                  setMessage(result.message);
-                } else {
-                  setError(result.message);
-                }
-                reload(false);
-              });
-            }}
-          >
-            確認測試發送
-          </Button>
-          <Link href="/staff/settings/line" className="block text-sm text-primary">
-            前往綁定店長 LINE
-          </Link>
-        </Card>
-        <div className="grid gap-4 min-[1200px]:grid-cols-2">
-          <Card padding="lg" className="space-y-4" data-line-broadcast-editor-card>
-            <h2 className="text-[16px] font-semibold text-text">正式群發</h2>
-            <textarea
-              data-line-broadcast-editor
-              className="min-h-40 w-full rounded-2xl border border-border bg-surface px-4 py-3 text-[15px] outline-none"
-              maxLength={LINE_BROADCAST_TEXT_MAX}
-              value={textBody}
-              onChange={(event) => setTextBody(event.target.value)}
-              placeholder="輸入要群發給全部好友的文字"
-            />
-            <p className="text-[12px] text-secondary-text">
-              {textBody.length} / {LINE_BROADCAST_TEXT_MAX} · 識別 {requestId}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={pending}
-                onClick={() => {
-                  setError("");
-                  startTransition(async () => {
-                    const saved = await saveLineBroadcastDraftAction({
-                      organizationId: organization.id,
-                      textBody,
-                      broadcastId,
-                      requestId,
-                    });
-                    if (saved.ok && saved.data) {
-                      setBroadcastId(saved.data.broadcastId);
-                      setRequestId(saved.data.requestId);
-                      setMessage(saved.message);
-                      reload(false);
-                    } else if (!saved.ok) {
-                      setError(saved.message);
-                    }
-                  });
-                }}
-              >
-                保存草稿
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setRealSendAck(false);
-                  setTestAck(false);
-                  setConfirming(true);
-                  reload(false);
-                }}
-              >
-                預覽並確認
-              </Button>
-            </div>
-          </Card>
-
-          <Card data-line-broadcast-preview padding="lg" className="space-y-3">
-            <h2 className="text-[16px] font-semibold text-text">訊息預覽</h2>
-            <p className="text-[13px] text-secondary-text" data-line-oa-name>
-              官方帳號：{officialName}
-            </p>
-            <div className="rounded-2xl bg-primary-light/50 px-4 py-3 text-[15px] whitespace-pre-wrap">
-              {preview || "尚未輸入文字"}
-            </div>
-            <p className="text-[12px] text-secondary-text" data-line-quota>
-              LINE 額度：{quota.label}
-            </p>
-            <p className="text-[12px] text-secondary-text">
-              發送對象：此官方帳號的全部好友。系統不估計送達人數。
-            </p>
-          </Card>
-        </div>
-        </>
-      )}
-
-      {confirming ? (
-        <Card data-line-broadcast-confirm padding="lg" className="space-y-4">
-          <p className="font-semibold text-text">確認發送？</p>
-          <div className="rounded-2xl bg-primary-light/50 px-4 py-3 text-sm space-y-1">
-            <p data-line-confirm-oa>官方帳號：{officialName}</p>
-            <p data-line-confirm-quota>LINE 額度：{quota.label}</p>
-            <p>伺服器發送開關：{sendOpen ? "開啟" : "關閉（預設）"}</p>
-            <p>店長群發開關：{account?.broadcastEnabled ? "已啟用" : "未啟用"}</p>
-            <p>
-              連線狀態：
-              {account?.lastTestStatus === "ok" ? "已連線" : "尚未確認連線"}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-border px-4 py-3 text-[15px] whitespace-pre-wrap">
-            {preview || "尚未輸入文字"}
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-text">練習確認</p>
-            <p className="text-sm text-secondary-text">
-              這一步不會呼叫 LINE Broadcast，只會留下「未發送」紀錄。
-            </p>
-            <Button
-              type="button"
-              disabled={pending}
-              onClick={() => {
-                setError("");
-                startTransition(async () => {
-                  const result = await confirmLineBroadcastAction({
-                    organizationId: organization.id,
-                    textBody,
-                    requestId,
-                    broadcastId,
-                  });
-                  setConfirming(false);
-                  setRealSendAck(false);
-                  if (result.ok) {
-                    setMessage(result.message);
-                  } else {
-                    setError(result.message);
-                  }
-                  reload(false);
-                });
-              }}
-            >
-              確認（不會實際發送）
-            </Button>
-          </div>
-
-          <div className="space-y-2 border-t border-border pt-4" data-line-broadcast-real-send>
-            <p className="text-sm font-medium text-text">真實發送</p>
-            <p className="text-sm text-secondary-text">
-              這不是練習按鈕。成功只顯示「API 已接受」，不代表全部好友已收到。逾時不會自動重送。
-            </p>
             <label className="flex items-start gap-2 text-sm text-text">
               <input
                 type="checkbox"
-                data-line-real-send-ack
+                data-line-test-send-ack
                 className="mt-1"
-                checked={realSendAck}
-                onChange={(event) => setRealSendAck(event.target.checked)}
+                checked={testAck}
+                onChange={(event) => setTestAck(event.target.checked)}
               />
               <span>
-                我了解這會向「{officialName}」的全部好友發送，且系統不會在逾時後自動重送。
+                我是店長，確認把這則測試訊息只發給已綁定的自己，且逾時不會自動重送。
               </span>
             </label>
             <Button
               type="button"
-              variant="outline"
-              disabled={pending || !realSendAck}
+              disabled={pending || !testAck}
               onClick={() => {
                 setError("");
                 startTransition(async () => {
-                  const result = await sendLineBroadcastAction({
+                  const result = await sendLineTestPushAction({
                     organizationId: organization.id,
-                    textBody,
-                    requestId,
-                    broadcastId,
-                    acknowledged: realSendAck,
+                    textBody: testTextBody,
+                    requestId: testRequestId,
+                    acknowledged: testAck,
                   });
-                  setConfirming(false);
-                  setRealSendAck(false);
+                  setTestAck(false);
+                  setTestRequestId(newLineTestRequestId());
                   if (result.ok) {
                     setMessage(result.message);
-                    setTextBody("");
-                    setBroadcastId(undefined);
-                    setRequestId(newLineRequestId());
                   } else {
                     setError(result.message);
                   }
@@ -425,69 +459,33 @@ export function LineBroadcastCenter({
                 });
               }}
             >
-              確認真實發送
+              確認測試發送
             </Button>
           </div>
-
-          <Button type="button" variant="ghost" onClick={() => {
-            setConfirming(false);
-            setTestAck(false);
-          }}>
-            返回編輯
-          </Button>
+          <div className="space-y-3" data-line-test-history>
+            <h3 className="text-sm font-medium text-text">測試發送紀錄</h3>
+            {testSends.length === 0 ? (
+              <p className="text-sm text-secondary-text">還沒有測試發送紀錄。</p>
+            ) : (
+              <ul className="space-y-2">
+                {testSends.map((row) => (
+                  <li key={row.id} className="rounded-2xl border border-border px-4 py-3">
+                    <p className="text-sm font-medium text-text">
+                      {lineBroadcastStatusLabel(row.status)}
+                    </p>
+                    <p className="mt-1 text-[13px] whitespace-pre-wrap text-secondary-text">
+                      {row.textBody}
+                    </p>
+                    <p className="mt-1 text-[12px] text-secondary-text">
+                      {lineTestSendHistoryMeta(row)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </Card>
       ) : null}
-
-      <Card padding="lg" className="space-y-3" data-line-test-history>
-        <h2 className="text-[16px] font-semibold text-text">測試發送紀錄</h2>
-        {testSends.length === 0 ? (
-          <p className="text-sm text-secondary-text">還沒有測試發送紀錄。</p>
-        ) : (
-          <ul className="space-y-2">
-            {testSends.map((row) => (
-              <li key={row.id} className="rounded-2xl border border-border px-4 py-3">
-                <p className="text-sm font-medium text-text">
-                  {lineBroadcastStatusLabel(row.status)}
-                </p>
-                <p className="mt-1 text-[13px] whitespace-pre-wrap text-secondary-text">
-                  {row.textBody}
-                </p>
-                <p className="mt-1 text-[12px] text-secondary-text">
-                  {lineTestSendHistoryMeta(row)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      <Card padding="lg" className="space-y-3">
-        <h2 className="text-[16px] font-semibold text-text">歷史紀錄</h2>
-        {history.length === 0 ? (
-          <p className="text-sm text-secondary-text">還沒有草稿或發送紀錄。</p>
-        ) : (
-          <ul className="space-y-2">
-            {history.map((row) => (
-              <li
-                key={row.id}
-                className="rounded-2xl border border-border px-4 py-3"
-                data-line-broadcast-row={row.id}
-              >
-                <p className="text-sm font-medium text-text">
-                  {lineBroadcastStatusLabel(row.status)}
-                </p>
-                <p className="mt-1 text-[13px] whitespace-pre-wrap text-secondary-text">
-                  {row.textBody}
-                </p>
-                <p className="mt-1 text-[12px] text-secondary-text">
-                  {lineBroadcastApiResultLabel(row.apiResult)} · {row.requestId}
-                  {row.errorMessage ? ` · ${row.errorMessage}` : ""}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
 
       {message ? (
         <p className="text-[13px] text-[#5C7F66]" data-line-broadcast-message>

@@ -1,5 +1,6 @@
 import { canManageLineOfficialAccount } from "@/lib/line/line-roles";
 import type { LineBroadcastStatus } from "@/lib/line/line-types";
+import { ORG_BEAUTY_OS_TEST_ID } from "@/lib/tenant/constants";
 import type { StaffRole } from "@/types/saas";
 
 export function canShowLineSettings(actor: {
@@ -7,6 +8,13 @@ export function canShowLineSettings(actor: {
   isActive?: boolean;
 } | null | undefined): boolean {
   return canManageLineOfficialAccount(actor);
+}
+
+/** Engineer-only LINE tools. Regular store owners never see this surface. */
+export function canShowLineEngineerDiagnostics(
+  organizationId?: string | null,
+): boolean {
+  return organizationId === ORG_BEAUTY_OS_TEST_ID;
 }
 
 export function lineBroadcastStatusLabel(status: LineBroadcastStatus): string {

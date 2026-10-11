@@ -209,6 +209,12 @@ Owner 立即停止後續新發送（不需重新部署）：
 
 群發中心把「單人測試 Push」與「正式群發」分開。測試有獨立區塊與一次「確認測試發送」。伺服器 allowlist、Owner、已綁定收件者、每日額度、requestId 防重用與 Runtime Kill Switch 仍有效。Broadcast 維持 hardcoded false。
 
+### Phase 1E — 全好友群發簡化
+
+一般店長只走「LINE 設定 → 建立群發 → 預覽 → 確認全好友群發 → 發送紀錄」。固定使用 `POST /v2/bot/message/broadcast`，不需要個別好友 User ID。成功只代表 LINE API 已接受。額度查不到就顯示未知，不虛構好友數。
+
+單人測試 Push、Runtime Kill Switch、Webhook 綁定與內部 Request ID 只在 Beauty OS TEST 的「工程師診斷」顯示。一般店家看不到。伺服器 Owner / org 隔離 / claim / 防重送 / `LINE_BROADCAST_SEND_OPEN = false` 不變。
+
 ### 首次真實 Push 驗收（尚未授權，本階段不做）
 
 具備條件：

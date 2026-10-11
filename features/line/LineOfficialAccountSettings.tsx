@@ -29,13 +29,16 @@ import {
   type LineActionFeedback,
   type LineSettingsLoadState,
 } from "@/lib/line/line-settings-status";
-import { canShowLineSettings, lineOwnerRecipientLabel } from "@/lib/line/line-visibility";
+import {
+  canShowLineEngineerDiagnostics,
+  canShowLineSettings,
+  lineOwnerRecipientLabel,
+} from "@/lib/line/line-visibility";
 import type {
   LineOfficialAccountPublic,
   LineOwnerRecipientPublic,
   LineWebhookPublicUrl,
 } from "@/lib/line/line-types";
-import { ORG_BEAUTY_OS_TEST_ID } from "@/lib/tenant/constants";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 const fieldClass =
@@ -96,6 +99,7 @@ export function LineOfficialAccountSettings({
   const generationRef = useRef(0);
 
   const allowed = canShowLineSettings(membership);
+  const engineer = canShowLineEngineerDiagnostics(organization.id);
   const status = useMemo(
     () => describeLineSettingsStatus({ loadState, account }),
     [loadState, account],
@@ -119,23 +123,25 @@ export function LineOfficialAccountSettings({
         setAccount(next.account);
         if (next.account?.channelId) setChannelId(next.account.channelId);
         if (next.feedback.kind !== "idle") setCredentialFeedback(next.feedback);
-        const prepared = await loadLineBroadcastPrepareAction(organization.id);
-        if (generation === generationRef.current && prepared.ok && prepared.data) {
-          setRecipient(prepared.data.recipient ?? null);
-          setWebhook(prepared.data.webhook ?? null);
-          if (prepared.data.account) setAccount(prepared.data.account);
-        }
-        if (
-          generation === generationRef.current &&
-          loaded.ok &&
-          loaded.data?.secretConfigured &&
-          !(prepared.ok && prepared.data?.webhook)
-        ) {
-          const ensured = await ensureLineWebhookPublicUrlAction({
-            organizationId: organization.id,
-          });
-          if (generation === generationRef.current && ensured.ok && ensured.data) {
-            setWebhook(ensured.data);
+        if (canShowLineEngineerDiagnostics(organization.id)) {
+          const prepared = await loadLineBroadcastPrepareAction(organization.id);
+          if (generation === generationRef.current && prepared.ok && prepared.data) {
+            setRecipient(prepared.data.recipient ?? null);
+            setWebhook(prepared.data.webhook ?? null);
+            if (prepared.data.account) setAccount(prepared.data.account);
+          }
+          if (
+            generation === generationRef.current &&
+            loaded.ok &&
+            loaded.data?.secretConfigured &&
+            !(prepared.ok && prepared.data?.webhook)
+          ) {
+            const ensured = await ensureLineWebhookPublicUrlAction({
+              organizationId: organization.id,
+            });
+            if (generation === generationRef.current && ensured.ok && ensured.data) {
+              setWebhook(ensured.data);
+            }
           }
         }
       } catch {
@@ -162,10 +168,10 @@ export function LineOfficialAccountSettings({
       <header className="space-y-1">
         <p className="text-[11px] tracking-[0.18em] text-secondary-text">Beauty OS</p>
         <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">
-          LINE 官方帳號
+          LINE 設定
         </h1>
         <p className="text-sm text-secondary-text">
-          為 {organization.name} 連接 Messaging API。憑證只存在伺服器，不會進入瀏覽器 Bundle。
+          第一次為 {organization.name} 填入 Channel ID 與 Channel Access Token。憑證只存在伺服器，畫面不會再顯示明文。
         </p>
         <Link href="/staff/settings" className="text-sm text-primary">
           返回設定
@@ -182,7 +188,7 @@ export function LineOfficialAccountSettings({
             <div>
               <h2 className="text-[16px] font-semibold text-text">Messaging API 憑證</h2>
               <p className="mt-1 text-[13px] text-secondary-text">
-                Channel Secret 與 Access Token 會先加密再寫入資料庫。一般查詢看不到明文。
+                必要的串接資訊會先加密再寫入資料庫。已保存後不必每次重填。
               </p>
             </div>
             <div
@@ -269,7 +275,10 @@ export function LineOfficialAccountSettings({
                         setChannelAccessToken("");
                       }
                       setCredentialFeedback(next.feedback);
-                      if (next.account?.secretConfigured) {
+                      if (
+                        next.account?.secretConfigured &&
+                        canShowLineEngineerDiagnostics(organization.id)
+                      ) {
                         const ensured = await ensureLineWebhookPublicUrlAction({
                           organizationId: organization.id,
                         });
@@ -329,12 +338,12 @@ export function LineOfficialAccountSettings({
           </Card>
 
           <Card padding="lg" className="space-y-3">
-            <h2 className="text-[16px] font-semibold text-text">群發開關</h2>
+            <h2 className="text-[16px] font-semibold text-text">群發準備</h2>
             <p className="text-[13px] text-secondary-text">
-              即使店長開啟，真實發送仍須伺服器開關。預設關閉，不會向好友發送，也不顯示好友數。
+              店長啟用後，仍須伺服器開放才會真正發送。目前實際發送維持關閉，也不估計好友數。
             </p>
             <p className="text-sm text-text">
-              目前狀態：{account?.broadcastEnabled ? "店長已啟用（實際發送仍關閉）" : "已關閉"}
+              目前狀態：{account?.broadcastEnabled ? "已啟用（實際發送尚未開放）" : "尚未啟用"}
             </p>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -376,14 +385,15 @@ export function LineOfficialAccountSettings({
                 {account?.broadcastEnabled ? "關閉群發" : "店長啟用群發"}
               </Button>
               <Link href="/staff/line" className="inline-flex min-h-11 items-center text-sm text-primary">
-                前往群發中心
+                前往建立群發
               </Link>
             </div>
             <Feedback feedback={broadcastFeedback} testId="broadcast" />
           </Card>
 
-          <Card data-line-owner-bind padding="lg" className="space-y-3">
-            <h2 className="text-[16px] font-semibold text-text">測試收件者綁定</h2>
+          {engineer ? (
+          <Card data-line-owner-bind data-line-engineer-diagnostics padding="lg" className="space-y-3">
+            <h2 className="text-[16px] font-semibold text-text">工程師診斷</h2>
             <p className="text-[13px] text-secondary-text">
               店長用自己的 LINE 把驗證碼傳給本官方帳號。系統用 Webhook 簽章確認身分，不能手填
               User ID，也不能使用 Developers Console 的管理者 ID。
@@ -565,7 +575,7 @@ export function LineOfficialAccountSettings({
               >
                 {account?.testPushEnabled ? "關閉測試發送" : "店長啟用測試發送"}
               </Button>
-              {organization.id === ORG_BEAUTY_OS_TEST_ID ? (
+              {engineer ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -618,6 +628,7 @@ export function LineOfficialAccountSettings({
             </p>
             <Feedback feedback={bindFeedback} testId="bind" />
           </Card>
+          ) : null}
         </>
       )}
     </div>

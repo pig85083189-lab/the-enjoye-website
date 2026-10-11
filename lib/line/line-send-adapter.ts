@@ -15,6 +15,46 @@ import {
 } from "@/lib/line/line-retry-key";
 import type { LineHttpErrorClass } from "@/lib/line/line-types";
 
+export type LineBroadcastHttpInspection = {
+  method: string | undefined;
+  path: string;
+  contentType: string | undefined;
+  authorizationScheme: "Bearer" | "missing";
+  retryKeyIsUuid: boolean;
+  retryKeyUsesInternalPrefix: boolean;
+  hasTo: boolean;
+  messageCount: number;
+  firstMessageType: string | null;
+  textLength: number;
+};
+
+export function inspectLineBroadcastHttpRequest(
+  url: string,
+  init?: RequestInit,
+): LineBroadcastHttpInspection {
+  const headers = (init?.headers ?? {}) as Record<string, string>;
+  const retryKey = headers["X-Line-Retry-Key"] ?? "";
+  let body: { to?: unknown; messages?: Array<{ type?: unknown; text?: unknown }> } = {};
+  try {
+    body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as typeof body;
+  } catch {
+    body = {};
+  }
+  const first = Array.isArray(body.messages) ? body.messages[0] : undefined;
+  return {
+    method: init?.method,
+    path: url,
+    contentType: headers["Content-Type"],
+    authorizationScheme: headers.Authorization?.startsWith("Bearer ") ? "Bearer" : "missing",
+    retryKeyIsUuid: isLineRetryKey(retryKey),
+    retryKeyUsesInternalPrefix: /^(ltsq-|lbrq-)/.test(retryKey),
+    hasTo: typeof body.to === "string" ? body.to.length > 0 : Boolean(body.to),
+    messageCount: Array.isArray(body.messages) ? body.messages.length : 0,
+    firstMessageType: typeof first?.type === "string" ? first.type : null,
+    textLength: typeof first?.text === "string" ? first.text.length : 0,
+  };
+}
+
 export type LineBroadcastHttpResult = {
   timedOut: boolean;
   httpOk: boolean;
