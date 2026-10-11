@@ -514,13 +514,23 @@ describe("LINE Phase 1D.1 requestId anti-reuse and runtime kill switch", () => {
 
     const actions = source("lib/line/actions.ts");
     const testPush = actions.slice(actions.indexOf("export async function sendLineTestPushAction"));
+    const load = source("lib/line/line-load.ts");
     expect(testPush).toMatch(/readLineOfficialAccount/);
+    expect(testPush).toMatch(/readLineTestPushRuntimeOpen/);
     expect(testPush).toMatch(/無法確認測試發送總開關，已拒絕發送/);
     expect(testPush.indexOf("無法確認測試發送總開關，已拒絕發送")).toBeLessThan(
       testPush.indexOf("CLAIM_LINE_TEST_SEND_RPC"),
     );
+    expect(testPush.indexOf("readLineTestPushRuntimeOpen")).toBeLessThan(
+      testPush.indexOf("CLAIM_LINE_TEST_SEND_RPC"),
+    );
     expect(testPush.indexOf("CLAIM_LINE_TEST_SEND_RPC")).toBeLessThan(
       testPush.indexOf("executeLineTestPushHttp"),
+    );
+    expect(load).toMatch(/LINE_ACCOUNT_PUBLIC_COLUMNS/);
+    expect(load).toMatch(/readLineTestPushRuntimeOpen/);
+    expect(load).not.toMatch(
+      /LINE_ACCOUNT_PUBLIC_COLUMNS =\s*"[^"]*test_push_runtime_open/,
     );
   });
 

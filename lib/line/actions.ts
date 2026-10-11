@@ -79,6 +79,7 @@ import {
   loadLineTestSends,
   loadLineWebhookPublicUrl,
   readLineOfficialAccount,
+  readLineTestPushRuntimeOpen,
 } from "@/lib/line/line-load";
 import type {
   LineBroadcastPrepare,
@@ -915,10 +916,11 @@ export async function sendLineTestPushAction(input: {
       };
     }
     const account = accountRead.account;
+    const runtimeRead = await readLineTestPushRuntimeOpen(organizationId);
     const runtime = resolveLineTestPushRuntimeState({
-      readOk: true,
+      readOk: runtimeRead.readOk,
       organizationId,
-      runtimeOpen: account?.testPushRuntimeOpen,
+      runtimeOpen: runtimeRead.open,
     });
     const recipient = await loadLineOwnerRecipient(organizationId);
     const decision = evaluateLineTestPushSend({

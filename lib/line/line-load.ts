@@ -57,21 +57,50 @@ export type LineAccountRead =
   | { ok: true; account: LineOfficialAccountPublic | null }
   | { ok: false; message: string };
 
+const LINE_ACCOUNT_PUBLIC_COLUMNS =
+  "organization_id,channel_id,bot_display_name,bot_basic_id,token_hint,secret_configured,token_configured,broadcast_enabled,test_push_enabled,last_tested_at,last_test_status,last_test_message";
+
+export async function readLineTestPushRuntimeOpen(
+  organizationId: string,
+): Promise<{ readOk: boolean; open: boolean; runtimeOpen: boolean | null }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("line_official_accounts")
+    .select("organization_id,test_push_runtime_open")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error || !data) {
+    return { readOk: false, open: false, runtimeOpen: null };
+  }
+  const runtimeOpen = Boolean(
+    (data as { test_push_runtime_open?: unknown }).test_push_runtime_open,
+  );
+  return { readOk: true, open: runtimeOpen, runtimeOpen };
+}
+
 export async function readLineOfficialAccount(
   organizationId: string,
 ): Promise<LineAccountRead> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("line_official_accounts")
-    .select(
-      "organization_id,channel_id,bot_display_name,bot_basic_id,token_hint,secret_configured,token_configured,broadcast_enabled,test_push_enabled,test_push_runtime_open,last_tested_at,last_test_status,last_test_message",
-    )
+    .select(LINE_ACCOUNT_PUBLIC_COLUMNS)
     .eq("organization_id", organizationId)
     .maybeSingle();
   if (error) {
     return { ok: false, message: "無法讀取 LINE 官方帳號設定" };
   }
-  return { ok: true, account: asAccount((data as Record<string, unknown> | null) ?? null) };
+  if (!data) {
+    return { ok: true, account: null };
+  }
+  const runtime = await readLineTestPushRuntimeOpen(organizationId);
+  return {
+    ok: true,
+    account: asAccount({
+      ...(data as Record<string, unknown>),
+      test_push_runtime_open: runtime.readOk ? runtime.runtimeOpen : false,
+    }),
+  };
 }
 
 export async function loadLineOfficialAccount(
