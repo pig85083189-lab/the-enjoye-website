@@ -4,6 +4,7 @@ import {
   Flower2,
   Landmark,
   LayoutDashboard,
+  Megaphone,
   Package,
   PiggyBank,
   Receipt,
@@ -243,6 +244,18 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     description: "店家與分店設定",
     requiredPermissions: ["settings.manage"],
     roles: ["OWNER", "MANAGER"],
+  },
+  {
+    id: "line-automations",
+    label: "LINE 自動推播",
+    href: "/staff/line/automations",
+    icon: Megaphone,
+    group: "system",
+    status: "ready",
+    badge: "NEW",
+    description: "自動推播規則設定與訊息預覽（尚未正式發送）",
+    requiredPermissions: ["settings.manage"],
+    roles: ["OWNER"],
   },
 ];
 
