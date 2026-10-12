@@ -34,9 +34,11 @@ import {
 import {
   LINE_ONESHOT_PROBE_FRIEND_COUNT_LABEL,
   LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL,
+  LINE_ONESHOT_PROBE_WRONG_ORG_HINT,
+  canOfferLineOneshotProbeOrganizationSwitch,
   canShowLineEngineerDiagnostics,
-  canShowLineOneshotReadOnlyProbe,
   canShowLineSettings,
+  lineOneshotProbeSettingsVisibility,
   lineOneshotProbeQuotaLimitLabel,
   lineOneshotProbeQuotaRemainingLabel,
   lineOneshotProbeQuotaUsageLabel,
@@ -49,6 +51,7 @@ import type {
   LineOwnerRecipientPublic,
   LineWebhookPublicUrl,
 } from "@/lib/line/line-types";
+import { ORG_BEAUTY_OS_TEST_ID } from "@/lib/tenant/constants";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 const fieldClass =
@@ -88,7 +91,8 @@ export function LineOfficialAccountSettings({
 }: {
   connectionPilotEnabled: boolean;
 }) {
-  const { organization, membership } = useOrganization();
+  const { organization, organizations, membership, switchOrganization } =
+    useOrganization();
   const [account, setAccount] = useState<LineOfficialAccountPublic | null>(null);
   const [loadState, setLoadState] = useState<LineSettingsLoadState>(
     connectionPilotEnabled ? "loading" : "idle",
@@ -123,7 +127,13 @@ export function LineOfficialAccountSettings({
 
   const allowed = canShowLineSettings(membership);
   const engineer = canShowLineEngineerDiagnostics(organization.id);
-  const oneshotProbeVisible = canShowLineOneshotReadOnlyProbe(organization.id);
+  const oneshotProbeVisible = lineOneshotProbeSettingsVisibility({
+    organizationId: organization.id,
+  });
+  const offerProbeOrgSwitch = canOfferLineOneshotProbeOrganizationSwitch({
+    currentOrganizationId: organization.id,
+    accessibleOrganizationIds: organizations.map((org) => org.id),
+  });
   const status = useMemo(
     () => describeLineSettingsStatus({ loadState, account }),
     [loadState, account],
@@ -194,8 +204,11 @@ export function LineOfficialAccountSettings({
         <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">
           LINE 設定
         </h1>
-        <p className="text-sm text-secondary-text">
-          第一次為 {organization.name} 填入 Channel ID 與 Channel Access Token。憑證只存在伺服器，畫面不會再顯示明文。
+        <p
+          data-line-settings-organization={organization.id}
+          className="text-sm text-secondary-text"
+        >
+          目前組織：{organization.name}。第一次填入 Channel ID 與 Channel Access Token。憑證只存在伺服器，畫面不會再顯示明文。
         </p>
         <Link href="/staff/settings" className="text-sm text-primary">
           返回設定
@@ -414,6 +427,25 @@ export function LineOfficialAccountSettings({
             </div>
             <Feedback feedback={broadcastFeedback} testId="broadcast" />
           </Card>
+
+          {offerProbeOrgSwitch ? (
+            <Card data-line-oneshot-probe-org-hint padding="lg" className="space-y-3">
+              <h2 className="text-[16px] font-semibold text-text">檢查 LINE 連線與額度</h2>
+              <p className="text-[13px] text-secondary-text">{LINE_ONESHOT_PROBE_WRONG_ORG_HINT}</p>
+              <p className="text-sm text-text">目前組織：{organization.name}</p>
+              <Button
+                type="button"
+                variant="outline"
+                data-line-oneshot-probe-org-switch
+                disabled={busy}
+                onClick={() => {
+                  switchOrganization(ORG_BEAUTY_OS_TEST_ID);
+                }}
+              >
+                切換到 Beauty OS TEST
+              </Button>
+            </Card>
+          ) : null}
 
           {oneshotProbeVisible ? (
             <Card data-line-oneshot-probe padding="lg" className="space-y-3">

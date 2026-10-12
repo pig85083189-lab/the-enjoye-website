@@ -186,9 +186,12 @@ import {
   publicAccountAfterSave,
 } from "@/lib/line/line-settings-status";
 import {
+  LINE_ONESHOT_PROBE_WRONG_ORG_HINT,
+  canOfferLineOneshotProbeOrganizationSwitch,
   canShowLineEngineerDiagnostics,
   canShowLineOneshotReadOnlyProbe,
   canShowLineSettings,
+  lineOneshotProbeSettingsVisibility,
   isLineBroadcastConfirmSubmitEnabled,
   lineBroadcastApiResultLabel,
   lineBroadcastConfirmStatusHint,
@@ -3494,6 +3497,46 @@ describe("LINE Phase 1G.7 Preview Owner-only read-only probe", () => {
     expect(isLineBroadcastSendOpen(previewAllowlistEnv)).toBe(false);
     expect(canShowLineOneshotReadOnlyProbe(ORG_BEAUTY_OS_TEST_ID)).toBe(true);
     expect(canShowLineOneshotReadOnlyProbe(ORG_ENJOYE_ID)).toBe(false);
+    expect(
+      lineOneshotProbeSettingsVisibility({
+        organizationId: ORG_ENJOYE_ID,
+        broadcastEnabled: true,
+        sendOpen: true,
+        oneshotActive: true,
+        testPushRuntimeOpen: true,
+        broadcastTestRuntimeOpen: true,
+        vercelEnv: "preview",
+      }),
+    ).toBe(false);
+    expect(
+      lineOneshotProbeSettingsVisibility({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        broadcastEnabled: false,
+        sendOpen: false,
+        oneshotActive: false,
+        testPushRuntimeOpen: false,
+        broadcastTestRuntimeOpen: false,
+        vercelEnv: "production",
+      }),
+    ).toBe(true);
+    expect(
+      canOfferLineOneshotProbeOrganizationSwitch({
+        currentOrganizationId: ORG_ENJOYE_ID,
+        accessibleOrganizationIds: [ORG_ENJOYE_ID, ORG_BEAUTY_OS_TEST_ID],
+      }),
+    ).toBe(true);
+    expect(
+      canOfferLineOneshotProbeOrganizationSwitch({
+        currentOrganizationId: ORG_BEAUTY_OS_TEST_ID,
+        accessibleOrganizationIds: [ORG_ENJOYE_ID, ORG_BEAUTY_OS_TEST_ID],
+      }),
+    ).toBe(false);
+    expect(
+      canOfferLineOneshotProbeOrganizationSwitch({
+        currentOrganizationId: ORG_ENJOYE_ID,
+        accessibleOrganizationIds: [ORG_ENJOYE_ID],
+      }),
+    ).toBe(false);
   });
 
   it("refuses channel mismatch, invalid token, timeout, and incomplete identity", async () => {
@@ -3637,8 +3680,16 @@ describe("LINE Phase 1G.7 Preview Owner-only read-only probe", () => {
     expect(settingsUi).toMatch(/檢查 LINE 連線與額度/);
     expect(settingsUi).toMatch(/probeLineOneshotReadOnlyAction/);
     expect(settingsUi).toMatch(/LINE_ONESHOT_PROBE_FRIEND_COUNT_LABEL/);
-    expect(settingsUi).toMatch(/canShowLineOneshotReadOnlyProbe/);
-    const probeStart = settingsUi.indexOf("data-line-oneshot-probe");
+    expect(settingsUi).toMatch(/lineOneshotProbeSettingsVisibility/);
+    expect(settingsUi).toMatch(/data-line-settings-organization/);
+    expect(settingsUi).toMatch(/data-line-oneshot-probe-org-hint/);
+    expect(settingsUi).toMatch(/LINE_ONESHOT_PROBE_WRONG_ORG_HINT/);
+    expect(LINE_ONESHOT_PROBE_WRONG_ORG_HINT).toMatch(/Beauty OS TEST/);
+    expect(LINE_ONESHOT_PROBE_WRONG_ORG_HINT).toMatch(/不依賴群發開關/);
+    expect(settingsUi).not.toMatch(
+      /oneshotProbeVisible\s*=\s*[^\n]*(sendOpen|broadcastEnabled|oneshotActive|VERCEL_ENV)/,
+    );
+    const probeStart = settingsUi.indexOf("data-line-oneshot-probe ");
     const probeEnd = settingsUi.indexOf("data-line-owner-bind", probeStart);
     const probeUi = settingsUi.slice(probeStart, probeEnd === -1 ? undefined : probeEnd);
     expect(probeUi).toMatch(/檢查 LINE 連線與額度/);
@@ -3703,6 +3754,31 @@ describe("LINE Phase 1G.7 Preview Owner-only read-only probe", () => {
       ok: false,
       message: "LINE Token 驗證回應無法解析",
     });
+  });
+});
+
+describe("LINE Phase 1G.12 preview oneshot authorized send", () => {
+  it("keeps the Preview TEST route gated and does not open the global send flag", () => {
+    const route = source("app/api/line/oneshot-broadcast/route.ts");
+    const runner = source("lib/line/line-oneshot-authorized-send.ts");
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+    expect(source("lib/line/line-flag.ts")).toMatch(/LINE_BROADCAST_SEND_OPEN = false/);
+    expect(runner).toMatch(/LINE_BROADCAST_SEND_OPEN !== false/);
+    expect(runner).toMatch(/evaluateLineBroadcastOneshotPermit/);
+    expect(runner).toMatch(/verifyLineOneshotOfficialAccount/);
+    expect(runner).toMatch(/fetchLineMessageQuota/);
+    expect(runner).toMatch(/CLAIM_LINE_BROADCAST_SEND_RPC/);
+    expect(runner).toMatch(/executeLineBroadcastHttp/);
+    const claimAt = runner.indexOf("CLAIM_LINE_BROADCAST_SEND_RPC,");
+    const sendAt = runner.indexOf("executeLineBroadcastHttp({");
+    expect(claimAt).toBeGreaterThan(-1);
+    expect(sendAt).toBeGreaterThan(claimAt);
+    expect(route).toMatch(/VERCEL_ENV/);
+    expect(route).toMatch(/LINE_BROADCAST_ONESHOT_ALLOWED_ORG_ID/);
+    expect(route).toMatch(/isLineBroadcastOneshotText/);
+    expect(route).toMatch(/executeAuthorizedPreviewOneshotBroadcast/);
+    expect(route).not.toMatch(/LINE_BROADCAST_SEND_OPEN = true/);
+    expect(runner).not.toMatch(/LINE_BROADCAST_SEND_OPEN = true/);
   });
 });
 

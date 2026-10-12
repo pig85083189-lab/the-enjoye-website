@@ -27,6 +27,36 @@ export function canShowLineOneshotReadOnlyProbe(
   return canShowLineEngineerDiagnostics(organizationId);
 }
 
+export const LINE_ONESHOT_PROBE_WRONG_ORG_HINT =
+  "檢查 LINE 連線與額度只在 Beauty OS TEST 顯示。請先切換組織。此檢查不依賴群發開關。";
+
+/**
+ * Settings-card visibility is organization-id only.
+ * sendOpen / broadcast_enabled / oneshot / runtime / VERCEL_ENV must not hide the card.
+ */
+export function lineOneshotProbeSettingsVisibility(input: {
+  organizationId?: string | null;
+  broadcastEnabled?: boolean;
+  sendOpen?: boolean;
+  oneshotActive?: boolean;
+  testPushRuntimeOpen?: boolean;
+  broadcastTestRuntimeOpen?: boolean;
+  vercelEnv?: string | null;
+}): boolean {
+  return canShowLineOneshotReadOnlyProbe(input.organizationId);
+}
+
+/** Offer a TEST switch only when the actor already has that organization. */
+export function canOfferLineOneshotProbeOrganizationSwitch(input: {
+  currentOrganizationId?: string | null;
+  accessibleOrganizationIds?: readonly (string | null | undefined)[];
+}): boolean {
+  if (canShowLineOneshotReadOnlyProbe(input.currentOrganizationId)) return false;
+  return (input.accessibleOrganizationIds ?? []).some((id) =>
+    canShowLineOneshotReadOnlyProbe(id),
+  );
+}
+
 export function lineBroadcastStatusLabel(status: LineBroadcastStatus): string {
   switch (status) {
     case "draft":
