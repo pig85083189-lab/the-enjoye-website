@@ -114,6 +114,8 @@ export type LineBroadcastPrepare = {
   quota: LineQuotaPublic;
   sendOpen: boolean;
   oneshotActive: boolean;
+  formalActive?: boolean;
+  formalMessage?: string | null;
   testPushOpen: boolean;
   broadcasts: LineBroadcastPublic[];
   testSends: LineTestSendPublic[];

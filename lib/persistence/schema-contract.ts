@@ -107,6 +107,10 @@ export const LINE_BROADCAST_CLAIM_SAFETY_MIGRATION_FILE =
 export const LINE_BROADCAST_ONESHOT_PERMIT_MIGRATION_FILE =
   "supabase/migrations/20261011140000_line_broadcast_oneshot_permit.sql";
 
+/** LINE Preview-only Channel lock + cross-org daily count. Additive. Do not apply on Production. */
+export const LINE_BROADCAST_CHANNEL_LOCK_MIGRATION_FILE =
+  "supabase/migrations/20261012120000_line_broadcast_channel_lock.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",

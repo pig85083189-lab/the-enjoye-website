@@ -6,6 +6,7 @@ import {
   CLAIM_LINE_TEST_SEND_RPC,
   COMPLETE_LINE_BROADCAST_SEND_RPC,
   COMPLETE_LINE_TEST_SEND_RPC,
+  FINALIZE_STALE_LINE_BROADCAST_SENDING_FOR_CHANNEL_RPC,
   FINALIZE_STALE_LINE_BROADCAST_SENDING_RPC,
   MARK_LINE_BROADCAST_SEND_CLOSED_RPC,
   OWNER_READ_LINE_RECIPIENT_CIPHER_RPC,
@@ -55,11 +56,14 @@ import {
 } from "@/lib/line/line-webhook-url";
 import {
   hasLineCredentialKey,
+  isLineBroadcastFormalOpen,
   isLineBroadcastSendOpen,
   isLineConnectionPilotEnabled,
   isLineTestPushOpen,
   resolveLineTestPushTransport,
 } from "@/lib/line/line-flag";
+import { lineBroadcastClaimRpcPayload } from "@/lib/line/line-channel-lock";
+import { evaluateLineBroadcastFormalReadiness } from "@/lib/line/line-formal";
 import { evaluateLineBroadcastOneshotPermit } from "@/lib/line/line-oneshot";
 import {
   evaluateLineOneshotReadOnlyProbe,
@@ -94,6 +98,8 @@ import {
   loadLineTestSendByRequestId,
   loadLineTestSends,
   loadLineWebhookPublicUrl,
+  readLineBroadcastChannelUsage,
+  readLineBroadcastFormalRuntimeOpen,
   readLineBroadcastOneshotPermit,
   readLineOfficialAccount,
   readLineTestPushRuntimeOpen,
@@ -463,6 +469,17 @@ async function finalizeStaleLineBroadcasts(
   organizationId: string,
   rows: LineBroadcastPublic[],
 ): Promise<LineBroadcastPublic[]> {
+  const supabase = await createClient();
+  const channel = await supabase.rpc(FINALIZE_STALE_LINE_BROADCAST_SENDING_FOR_CHANNEL_RPC, {
+    p_organization_id: organizationId,
+  });
+  const channelFinalized =
+    !channel.error &&
+    Number(
+      (channel.data && typeof channel.data === "object"
+        ? (channel.data as { finalized_count?: unknown }).finalized_count
+        : 0) ?? 0,
+    ) > 0;
   const stale = rows.filter((row) =>
     evaluateStaleLineBroadcastSending({
       status: row.status,
@@ -471,8 +488,7 @@ async function finalizeStaleLineBroadcasts(
       confirmedAt: row.confirmedAt,
     }).finalize,
   );
-  if (stale.length === 0) return rows;
-  const supabase = await createClient();
+  if (stale.length === 0 && !channelFinalized) return rows;
   for (const row of stale) {
     await supabase.rpc(FINALIZE_STALE_LINE_BROADCAST_SENDING_RPC, {
       p_organization_id: organizationId,
@@ -575,7 +591,27 @@ export async function loadLineBroadcastPrepareAction(
       requireIdentity: false,
     });
     const oneshotActive = oneshotUi.ok;
-    const sendOpen = isLineBroadcastSendOpen() || oneshotActive;
+    const channelUsage = await readLineBroadcastChannelUsage(scopedOrg);
+    const formalRuntime = await readLineBroadcastFormalRuntimeOpen(scopedOrg);
+    const formalUi = evaluateLineBroadcastFormalReadiness({
+      connectionPilotEnabled: isLineConnectionPilotEnabled(),
+      organizationId: scopedOrg,
+      actor,
+      account,
+      ownerBroadcastEnabled: Boolean(account?.broadcastEnabled),
+      accountConnected: isLineOfficialAccountConnected(account),
+      peerUsageKnown: channelUsage.readOk,
+      peerAcceptedToday: channelUsage.peerConsumedToday,
+      acceptedToday: channelUsage.orgConsumedToday,
+      peers: channelUsage.peerOrganizationIds.map((organizationId) => ({
+        organizationId,
+        channelId: channelUsage.channelId,
+      })),
+      formalRuntimeOpen: formalRuntime.readOk && formalRuntime.open,
+      requireIdentity: false,
+    });
+    const formalActive = !oneshotActive && formalUi.ok;
+    const sendOpen = isLineBroadcastSendOpen() || oneshotActive || formalActive;
     const quota =
       sendOpen && account?.tokenConfigured
         ? await loadLineQuotaForOwner(scopedOrg)
@@ -592,6 +628,8 @@ export async function loadLineBroadcastPrepareAction(
         quota,
         sendOpen,
         oneshotActive,
+        formalActive,
+        formalMessage: formalActive ? "正式群發檢查已通過" : formalUi.ok ? null : formalUi.message,
         testPushOpen: isLineTestPushOpen({ organizationId: scopedOrg }),
         broadcasts,
         testSends: await loadLineTestSends(scopedOrg),
@@ -714,9 +752,12 @@ export async function sendLineBroadcastAction(input: {
         : null) ??
       broadcasts.find((row) => row.requestId === input.requestId) ??
       existing;
-    const acceptedToday = countClaimedBroadcastsOnTaipeiDay(broadcasts, today);
+    const orgAcceptedToday = countClaimedBroadcastsOnTaipeiDay(broadcasts, today);
+    const channelUsage = await readLineBroadcastChannelUsage(organizationId);
+    const acceptedToday = channelUsage.readOk ? channelUsage.consumedToday : orgAcceptedToday;
     const account = await loadLineOfficialAccount(organizationId);
     const permit = await readLineBroadcastOneshotPermit(organizationId);
+    const formalRuntime = await readLineBroadcastFormalRuntimeOpen(organizationId);
     const oneshotLocal = evaluateStoredLineBroadcastOneshot({
       organizationId,
       account,
@@ -767,7 +808,88 @@ export async function sendLineBroadcastAction(input: {
       }
       oneshotReady = true;
     }
-    const sendOpen = isLineBroadcastSendOpen() || oneshotReady;
+    let formalReady = false;
+    if (!oneshotReady && isLineBroadcastFormalOpen({ organizationId })) {
+      const formalLocal = evaluateLineBroadcastFormalReadiness({
+        connectionPilotEnabled: isLineConnectionPilotEnabled(),
+        organizationId,
+        actor,
+        account,
+        ownerBroadcastEnabled: Boolean(account?.broadcastEnabled),
+        accountConnected: isLineOfficialAccountConnected(account),
+        peerUsageKnown: channelUsage.readOk,
+        peerAcceptedToday: channelUsage.peerConsumedToday,
+        acceptedToday: orgAcceptedToday,
+        peers: channelUsage.peerOrganizationIds.map((peerOrganizationId) => ({
+          organizationId: peerOrganizationId,
+          channelId: channelUsage.channelId,
+        })),
+        formalRuntimeOpen: formalRuntime.readOk && formalRuntime.open,
+        requireIdentity: false,
+      });
+      if (!formalLocal.ok) {
+        if (existing?.id) {
+          const supabase = await createClient();
+          await supabase.rpc(RECORD_LINE_BROADCAST_OWNER_EVENT_RPC, {
+            p_organization_id: organizationId,
+            p_broadcast_id: existing.id,
+            p_event_type: "send_refused",
+            p_detail: formalLocal.message,
+          });
+        }
+        return formalLocal;
+      }
+      const verifiedIdentity = await verifyStoredLineOneshotIdentity(organizationId);
+      if (!verifiedIdentity.ok) {
+        if (existing?.id) {
+          const supabase = await createClient();
+          await supabase.rpc(RECORD_LINE_BROADCAST_OWNER_EVENT_RPC, {
+            p_organization_id: organizationId,
+            p_broadcast_id: existing.id,
+            p_event_type: "send_refused",
+            p_detail: verifiedIdentity.message,
+          });
+        }
+        return {
+          ok: false,
+          reason: "not_configured",
+          message: verifiedIdentity.message,
+        };
+      }
+      const formalIdentified = evaluateLineBroadcastFormalReadiness({
+        connectionPilotEnabled: isLineConnectionPilotEnabled(),
+        organizationId,
+        actor,
+        account,
+        ownerBroadcastEnabled: Boolean(account?.broadcastEnabled),
+        accountConnected: isLineOfficialAccountConnected(account),
+        peerUsageKnown: channelUsage.readOk,
+        peerAcceptedToday: channelUsage.peerConsumedToday,
+        acceptedToday: orgAcceptedToday,
+        peers: channelUsage.peerOrganizationIds.map((peerOrganizationId) => ({
+          organizationId: peerOrganizationId,
+          channelId: channelUsage.channelId,
+        })),
+        formalRuntimeOpen: formalRuntime.readOk && formalRuntime.open,
+        requireIdentity: true,
+        identity: verifiedIdentity.identity,
+      });
+      if (!formalIdentified.ok) {
+        if (existing?.id) {
+          const supabase = await createClient();
+          await supabase.rpc(RECORD_LINE_BROADCAST_OWNER_EVENT_RPC, {
+            p_organization_id: organizationId,
+            p_broadcast_id: existing.id,
+            p_event_type: "send_refused",
+            p_detail: formalIdentified.message,
+          });
+        }
+        return formalIdentified;
+      }
+      formalReady = true;
+    }
+    const sendOpen = isLineBroadcastSendOpen() || oneshotReady || formalReady;
+    const quotaCheckedAt = new Date().toISOString();
     const quota =
       sendOpen && account?.tokenConfigured
         ? await loadLineQuotaForOwner(organizationId)
@@ -803,10 +925,15 @@ export async function sendLineBroadcastAction(input: {
     const pipeline = await runClaimedLineBroadcastSend({
       claim: async () => {
         const claimed = await supabase.rpc(CLAIM_LINE_BROADCAST_SEND_RPC, {
-          p_organization_id: organizationId,
-          p_broadcast_id: existing?.id ?? null,
-          p_request_id: decision.requestId,
-          p_text_body: input.textBody,
+          ...lineBroadcastClaimRpcPayload({
+            organizationId,
+            broadcastId: existing?.id ?? null,
+            requestId: decision.requestId,
+            textBody: input.textBody,
+            sendMode: oneshotReady ? "oneshot" : "formal",
+            quota,
+            quotaCheckedAt,
+          }),
         });
         const parsed = parseClaimPayload(claimed.data);
         if (claimed.error || !parsed.claimed || !parsed.broadcastId.startsWith("lbr-")) {

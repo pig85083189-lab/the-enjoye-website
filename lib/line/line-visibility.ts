@@ -94,6 +94,20 @@ export function lineBroadcastConfirmStatusHint(sendOpen: boolean): string {
     : "目前為預覽版本，尚未開放實際發送。";
 }
 
+export function lineBroadcastFormalStatusHint(input: {
+  oneshotActive: boolean;
+  formalActive: boolean;
+  formalMessage?: string | null;
+}): string {
+  if (input.oneshotActive) {
+    return "目前為 Beauty OS TEST 一次性測試路徑，不是日常正式群發。";
+  }
+  if (input.formalActive) {
+    return "正式群發檢查已通過。LINE API 接受不代表每位好友都已收到。";
+  }
+  return input.formalMessage || "正式群發尚未開放。確認發送前必須通過店家、官方帳號與額度檢查。";
+}
+
 export function isLineBroadcastConfirmSubmitEnabled(input: {
   sendOpen: boolean;
   acknowledged: boolean;

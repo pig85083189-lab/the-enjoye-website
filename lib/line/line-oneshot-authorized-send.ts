@@ -3,10 +3,12 @@
  * Reuses claim + executeLineBroadcastHttp. Does not flip LINE_BROADCAST_SEND_OPEN.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { lineBroadcastClaimRpcPayload, parseLineBroadcastChannelUsage } from "@/lib/line/line-channel-lock";
 import {
   CLAIM_LINE_BROADCAST_SEND_RPC,
   COMPLETE_LINE_BROADCAST_SEND_RPC,
   OWNER_READ_LINE_TOKEN_CIPHER_RPC,
+  READ_LINE_BROADCAST_CHANNEL_USAGE_RPC,
   evaluateLineBroadcastRealSend,
   type LineActor,
 } from "@/lib/line/line-command";
@@ -229,6 +231,7 @@ export async function executeAuthorizedPreviewOneshotBroadcast(input: {
     return blocked(oneshotIdentified.reason, oneshotIdentified.message);
   }
 
+  const quotaCheckedAt = new Date().toISOString();
   const quota = await fetchLineMessageQuota({ accessToken: token.plaintext });
   const historyRead = await input.supabase
     .from("line_broadcasts")
@@ -242,7 +245,14 @@ export async function executeAuthorizedPreviewOneshotBroadcast(input: {
   const existing =
     broadcasts.find((row) => row.requestId === input.requestId) ??
     null;
-  const acceptedToday = countClaimedBroadcastsOnTaipeiDay(broadcasts, taipeiCalendarDate());
+  const orgAcceptedToday = countClaimedBroadcastsOnTaipeiDay(broadcasts, taipeiCalendarDate());
+  const channelUsageRead = await input.supabase.rpc(READ_LINE_BROADCAST_CHANNEL_USAGE_RPC, {
+    p_organization_id: input.organizationId,
+  });
+  const channelUsage = parseLineBroadcastChannelUsage(
+    channelUsageRead.error ? null : channelUsageRead.data,
+  );
+  const acceptedToday = channelUsage.readOk ? channelUsage.consumedToday : orgAcceptedToday;
   const sendOpen = isLineBroadcastSendOpen() || true;
   const decision = evaluateLineBroadcastRealSend({
     connectionPilotEnabled: isLineConnectionPilotEnabled(),
@@ -269,10 +279,15 @@ export async function executeAuthorizedPreviewOneshotBroadcast(input: {
   const pipeline = await runClaimedLineBroadcastSend({
     claim: async () => {
       const claimed = await input.supabase.rpc(CLAIM_LINE_BROADCAST_SEND_RPC, {
-        p_organization_id: input.organizationId,
-        p_broadcast_id: existing?.id ?? null,
-        p_request_id: decision.requestId,
-        p_text_body: input.textBody,
+        ...lineBroadcastClaimRpcPayload({
+          organizationId: input.organizationId,
+          broadcastId: existing?.id ?? null,
+          requestId: decision.requestId,
+          textBody: input.textBody,
+          sendMode: "oneshot",
+          quota,
+          quotaCheckedAt,
+        }),
       });
       const parsed = parseClaimPayload(claimed.data);
       if (claimed.error || !parsed.claimed || !parsed.broadcastId.startsWith("lbr-")) {

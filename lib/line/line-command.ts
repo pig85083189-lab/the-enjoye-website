@@ -102,6 +102,12 @@ export const LINE_OAUTH_VERIFY_PATH = "/v2/oauth/verify";
 export const LINE_API_ORIGIN = "https://api.line.me";
 export const SET_LINE_BROADCAST_TEST_RUNTIME_OPEN_RPC =
   "set_line_broadcast_test_runtime_open";
+export const SET_LINE_BROADCAST_FORMAL_RUNTIME_OPEN_RPC =
+  "set_line_broadcast_formal_runtime_open";
+export const READ_LINE_BROADCAST_CHANNEL_USAGE_RPC =
+  "read_line_broadcast_channel_usage";
+export const FINALIZE_STALE_LINE_BROADCAST_SENDING_FOR_CHANNEL_RPC =
+  "finalize_stale_line_broadcast_sending_for_channel";
 
 export type LineActor = {
   authUserId: string | null;

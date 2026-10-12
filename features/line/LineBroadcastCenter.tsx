@@ -37,6 +37,7 @@ import {
   isLineBroadcastConfirmSubmitEnabled,
   lineBroadcastApiResultLabel,
   lineBroadcastConfirmStatusHint,
+  lineBroadcastFormalStatusHint,
   lineBroadcastStatusLabel,
   lineOfficialQuotaOwnerMessage,
   lineOfficialAccountNameLabel,
@@ -75,6 +76,8 @@ export function LineBroadcastCenter({
   const [quota, setQuota] = useState<LineQuotaPublic>(() => unknownLineQuota());
   const [sendOpen, setSendOpen] = useState(false);
   const [oneshotActive, setOneshotActive] = useState(false);
+  const [formalActive, setFormalActive] = useState(false);
+  const [formalMessage, setFormalMessage] = useState<string | null>(null);
   const [testPushOpen, setTestPushOpen] = useState(false);
   const [recipient, setRecipient] = useState<LineOwnerRecipientPublic | null>(null);
   const [testSends, setTestSends] = useState<LineTestSendPublic[]>([]);
@@ -103,6 +106,8 @@ export function LineBroadcastCenter({
     quota: LineQuotaPublic;
     sendOpen: boolean;
     oneshotActive?: boolean;
+    formalActive?: boolean;
+    formalMessage?: string | null;
     testPushOpen: boolean;
     broadcasts: LineBroadcastPublic[];
     testSends: LineTestSendPublic[];
@@ -112,6 +117,8 @@ export function LineBroadcastCenter({
     setQuota(data.quota);
     setSendOpen(data.sendOpen);
     setOneshotActive(Boolean(data.oneshotActive));
+    setFormalActive(Boolean(data.formalActive));
+    setFormalMessage(data.formalMessage ?? null);
     setTestPushOpen(data.testPushOpen);
     setHistory(visibleLineBroadcastsForOrganization(data.broadcasts, organization.id));
     setTestSends(data.testSends);
@@ -282,6 +289,13 @@ export function LineBroadcastCenter({
               </Button>
               <p className="text-[12px] text-secondary-text">
                 發送對象：此官方帳號所有可接收訊息的好友。系統不估計好友數。
+              </p>
+              <p className="text-[12px] text-secondary-text" data-line-formal-status>
+                {lineBroadcastFormalStatusHint({
+                  oneshotActive,
+                  formalActive,
+                  formalMessage,
+                })}
               </p>
             </Card>
           </div>

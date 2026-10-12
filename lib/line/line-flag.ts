@@ -15,9 +15,14 @@ export const LINE_WEBHOOK_HOST_ENV = "BEAUTY_OS_LINE_WEBHOOK_HOST";
 export const LINE_WEBHOOK_BASE_URL_ENV = "BEAUTY_OS_LINE_WEBHOOK_BASE_URL";
 export const LINE_TEST_PUSH_OPEN_ENV = "BEAUTY_OS_LINE_TEST_PUSH_OPEN";
 export const LINE_TEST_PUSH_ORG_ENV = "BEAUTY_OS_LINE_TEST_PUSH_ORG";
+export const LINE_BROADCAST_FORMAL_OPEN_ENV = "BEAUTY_OS_LINE_BROADCAST_FORMAL_OPEN";
+export const LINE_BROADCAST_FORMAL_ORG_ENV = "BEAUTY_OS_LINE_BROADCAST_FORMAL_ORG";
 
 /** Phase 1B: real send stays hardcoded closed. Do not add an env bypass. */
 export const LINE_BROADCAST_SEND_OPEN = false;
+
+/** Fail-closed marker. Do not flip. Formal send uses a separate Preview allowlist. */
+export const LINE_BROADCAST_FORMAL_OPEN = false;
 
 /** Fail-closed marker. Do not flip. The only open path is the Preview allowlist. */
 export const LINE_TEST_PUSH_OPEN = false;
@@ -61,6 +66,48 @@ export function isLineBroadcastSendOpen(
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
 ): boolean {
   return isLineConnectionPilotEnabled(env) && LINE_BROADCAST_SEND_OPEN;
+}
+
+export function isLineBroadcastFormalEnvironmentOpen(
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+): boolean {
+  if ((env.VERCEL_ENV ?? "").trim() !== "preview") {
+    return false;
+  }
+  const raw = (env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+  if (!raw) return false;
+  try {
+    return new URL(raw).hostname === LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST;
+  } catch {
+    return false;
+  }
+}
+
+/** Preview allowlist only. Never opens via LINE_BROADCAST_SEND_OPEN. TEST stays oneshot-only. */
+export function isLineBroadcastFormalOpen(
+  input: {
+    organizationId?: string | null;
+    env?: NodeJS.Dict<string>;
+  } = {},
+): boolean {
+  const env = input.env ?? (typeof process !== "undefined" ? process.env : {});
+  if (!isLineConnectionPilotEnabled(env)) {
+    return false;
+  }
+  if ((env.VERCEL_ENV ?? "").trim() === "production") {
+    return false;
+  }
+  if (!isLineBroadcastFormalEnvironmentOpen(env)) {
+    return false;
+  }
+  if (!isExplicitRemotePilotEnabled(LINE_BROADCAST_FORMAL_OPEN_ENV, env)) {
+    return false;
+  }
+  const organizationId = (input.organizationId ?? "").trim();
+  if (!organizationId || organizationId === LINE_BROADCAST_ONESHOT_ALLOWED_ORG_ID) {
+    return false;
+  }
+  return (env[LINE_BROADCAST_FORMAL_ORG_ENV] ?? "").trim() === organizationId;
 }
 
 export function isLineBroadcastOneshotEnvironmentOpen(

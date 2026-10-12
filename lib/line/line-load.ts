@@ -1,5 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
-import { OWNER_READ_LINE_WEBHOOK_TOKEN_CIPHER_RPC } from "@/lib/line/line-command";
+import {
+  OWNER_READ_LINE_WEBHOOK_TOKEN_CIPHER_RPC,
+  READ_LINE_BROADCAST_CHANNEL_USAGE_RPC,
+} from "@/lib/line/line-command";
+import {
+  emptyLineBroadcastChannelUsage,
+  parseLineBroadcastChannelUsage,
+  type LineBroadcastChannelUsagePublic,
+} from "@/lib/line/line-channel-lock";
 import { decryptLineCredential } from "@/lib/line/line-crypto";
 import { lineWebhookPublicUrl } from "@/lib/line/line-webhook-url";
 import { isLineHttpErrorClass } from "@/lib/line/line-http-error";
@@ -110,6 +118,37 @@ export async function readLineBroadcastTestRuntimeOpen(
     (data as { broadcast_test_runtime_open?: unknown }).broadcast_test_runtime_open,
   );
   return { readOk: true, open: runtimeOpen, runtimeOpen };
+}
+
+export async function readLineBroadcastFormalRuntimeOpen(
+  organizationId: string,
+): Promise<{ readOk: boolean; open: boolean; runtimeOpen: boolean | null }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("line_official_accounts")
+    .select("organization_id,broadcast_formal_runtime_open")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error || !data) {
+    return { readOk: false, open: false, runtimeOpen: null };
+  }
+  const runtimeOpen = Boolean(
+    (data as { broadcast_formal_runtime_open?: unknown }).broadcast_formal_runtime_open,
+  );
+  return { readOk: true, open: runtimeOpen, runtimeOpen };
+}
+
+export async function readLineBroadcastChannelUsage(
+  organizationId: string,
+): Promise<LineBroadcastChannelUsagePublic> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(READ_LINE_BROADCAST_CHANNEL_USAGE_RPC, {
+    p_organization_id: organizationId,
+  });
+  if (error || !data) {
+    return emptyLineBroadcastChannelUsage();
+  }
+  return parseLineBroadcastChannelUsage(data);
 }
 
 export async function readLineBroadcastOneshotPermit(

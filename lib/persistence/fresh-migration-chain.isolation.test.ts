@@ -48,6 +48,7 @@ const EXPECTED_CHAIN = [
   "20261011010000_line_test_push_runtime_kill_switch.sql",
   "20261011020000_line_broadcast_claim_safety.sql",
   "20261011140000_line_broadcast_oneshot_permit.sql",
+  "20261012120000_line_broadcast_channel_lock.sql",
 ] as const;
 
 function read(rel: string): string {
