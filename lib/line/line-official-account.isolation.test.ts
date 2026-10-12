@@ -1984,7 +1984,7 @@ describe("LINE Phase 1E owner broadcast simplification", () => {
     expect(settingsUi).not.toMatch(/Retry-Key|lbrq-|ltsq-/);
     expect(broadcastUi).not.toMatch(/line-crypto|line-send-adapter|line-push-adapter/);
     expect(lineBroadcastConfirmStatusHint(false)).toBe(
-      "目前為預覽版本，尚未開放實際發送。",
+      "實際發送尚未開放。確認發送前必須通過店家、官方帳號與額度檢查。",
     );
     expect(lineBroadcastConfirmStatusHint(true)).toBe(
       "送出後無法撤回，請確認訊息內容正確。",
@@ -2073,8 +2073,9 @@ describe("LINE source contracts", () => {
     expect(broadcastUi).toMatch(/確認發送/);
     expect(broadcastUi).toMatch(/lineBroadcastConfirmStatusHint/);
     expect(source("lib/line/line-visibility.ts")).toMatch(
-      /目前為預覽版本，尚未開放實際發送/,
+      /實際發送尚未開放。確認發送前必須通過店家、官方帳號與額度檢查/,
     );
+    expect(source("lib/line/line-visibility.ts")).not.toMatch(/目前為預覽版本/);
     expect(broadcastUi).toMatch(/我確認訊息內容正確，並同意發送給全部好友/);
     expect(broadcastUi).toMatch(/確認測試發送/);
     expect(broadcastUi).toMatch(/建立群發/);

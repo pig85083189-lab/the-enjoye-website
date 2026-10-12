@@ -91,7 +91,7 @@ export function lineBroadcastApiResultLabel(result: string | null): string {
 export function lineBroadcastConfirmStatusHint(sendOpen: boolean): string {
   return sendOpen
     ? "送出後無法撤回，請確認訊息內容正確。"
-    : "目前為預覽版本，尚未開放實際發送。";
+    : "實際發送尚未開放。確認發送前必須通過店家、官方帳號與額度檢查。";
 }
 
 export function lineBroadcastFormalStatusHint(input: {

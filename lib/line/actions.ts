@@ -612,14 +612,9 @@ export async function loadLineBroadcastPrepareAction(
     });
     const formalActive = !oneshotActive && formalUi.ok;
     const sendOpen = isLineBroadcastSendOpen() || oneshotActive || formalActive;
-    const quota =
-      sendOpen && account?.tokenConfigured
-        ? await loadLineQuotaForOwner(scopedOrg)
-        : unknownLineQuota(
-            account?.tokenConfigured
-              ? "實際發送尚未開放，未查詢 LINE 額度"
-              : "尚未保存 Channel Access Token",
-          );
+    const quota = account?.tokenConfigured
+      ? await loadLineQuotaForOwner(scopedOrg)
+      : unknownLineQuota("尚未保存 Channel Access Token");
     return {
       ok: true,
       message: "ok",
