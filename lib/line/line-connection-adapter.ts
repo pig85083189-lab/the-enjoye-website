@@ -63,8 +63,29 @@ export async function fetchLineBotInfo(
 }
 
 export type LineChannelTokenIdentityResult =
-  | { ok: true; clientId: string | null; scope: string | null }
-  | { ok: false; message: string };
+  | { ok: true; clientId: string | null; scope: string | null; httpStatus: number }
+  | { ok: false; message: string; httpStatus?: number | null };
+
+/**
+ * Official verify for short-lived and long-lived Channel Access Tokens:
+ * POST /v2/oauth/verify with application/x-www-form-urlencoded access_token.
+ * Do not use GET + Bearer — that is for Messaging API bot endpoints, not this verify.
+ */
+export function inspectLineChannelTokenVerifyRequest(accessToken: string): {
+  url: string;
+  method: "POST";
+  headers: { "Content-Type": "application/x-www-form-urlencoded" };
+  body: string;
+} {
+  return {
+    url: `${LINE_API_ORIGIN}${LINE_OAUTH_VERIFY_PATH}`,
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({ access_token: accessToken }).toString(),
+  };
+}
 
 export async function fetchLineChannelTokenIdentity(
   accessToken: string,
@@ -73,24 +94,43 @@ export async function fetchLineChannelTokenIdentity(
   if (typeof window !== "undefined") {
     throw new Error("LINE connection adapter cannot run in the browser");
   }
+  const request = inspectLineChannelTokenVerifyRequest(accessToken);
   try {
-    const response = await fetchImpl(`${LINE_API_ORIGIN}${LINE_OAUTH_VERIFY_PATH}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    const response = await fetchImpl(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
     });
     if (!response.ok) {
-      return { ok: false, message: "LINE Channel 驗證失敗" };
+      return {
+        ok: false,
+        httpStatus: response.status,
+        message: `LINE Token 驗證 API 回傳 HTTP ${response.status}`,
+      };
     }
-    const body = (await response.json()) as {
-      client_id?: string;
-      scope?: string;
-    };
+    let body: { client_id?: unknown; scope?: unknown };
+    try {
+      body = (await response.json()) as { client_id?: unknown; scope?: unknown };
+    } catch {
+      return {
+        ok: false,
+        httpStatus: response.status,
+        message: "LINE Token 驗證回應無法解析",
+      };
+    }
+    const clientId = typeof body.client_id === "string" ? body.client_id.trim() : "";
+    if (!clientId) {
+      return {
+        ok: false,
+        httpStatus: response.status,
+        message: "LINE API 回傳資料不足，無法確認 Channel ID",
+      };
+    }
     return {
       ok: true,
-      clientId: body.client_id ?? null,
-      scope: body.scope ?? null,
+      clientId,
+      scope: typeof body.scope === "string" ? body.scope : null,
+      httpStatus: response.status,
     };
   } catch (error) {
     return {

@@ -151,6 +151,7 @@ import {
 import {
   fetchLineBotInfo,
   fetchLineChannelTokenIdentity,
+  inspectLineChannelTokenVerifyRequest,
   verifyLineOneshotOfficialAccount,
 } from "@/lib/line/line-connection-adapter";
 import {
@@ -3304,11 +3305,22 @@ describe("LINE Phase 1G.2 oneshot broadcast permit", () => {
     expect(called.join("")).not.toContain("/message/push");
     expect(called.join("")).not.toContain("/message/multicast");
 
-    const token = await fetchLineChannelTokenIdentity("mock-token", async (input) => {
+    const token = await fetchLineChannelTokenIdentity("mock-token", async (input, init) => {
       expect(String(input)).toContain(LINE_OAUTH_VERIFY_PATH);
+      expect(init?.method).toBe("POST");
+      expect(JSON.stringify(init?.headers ?? {})).toMatch(
+        /application\/x-www-form-urlencoded/,
+      );
+      expect(String(init?.body)).toBe("access_token=mock-token");
+      expect(JSON.stringify(init?.headers ?? {})).not.toMatch(/Bearer /);
       return new Response(JSON.stringify({ client_id: "2009219238" }), { status: 200 });
     });
-    expect(token).toEqual({ ok: true, clientId: "2009219238", scope: null });
+    expect(token).toEqual({
+      ok: true,
+      clientId: "2009219238",
+      scope: null,
+      httpStatus: 200,
+    });
     expect(source("lib/line/line-connection-adapter.ts")).toMatch(/LINE_OAUTH_VERIFY_PATH/);
     expect(source("lib/line/line-connection-adapter.ts")).not.toMatch(/\/message\/broadcast/);
     expect(source("lib/line/line-connection-adapter.ts")).not.toMatch(/\/message\/push/);
@@ -3632,6 +3644,65 @@ describe("LINE Phase 1G.7 Preview Owner-only read-only probe", () => {
     expect(probeUi).toMatch(/檢查 LINE 連線與額度/);
     expect(probeUi).not.toMatch(/channelAccessToken|lineUserId|User ID/);
     expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1G\.7/);
+  });
+
+  it("verifies long-lived tokens with POST form body and does not treat HTTP errors as channel mismatch", async () => {
+    const inspected = inspectLineChannelTokenVerifyRequest("mock-token");
+    expect(inspected).toMatchObject({
+      url: "https://api.line.me/v2/oauth/verify",
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "access_token=mock-token",
+    });
+    expect(source("lib/line/line-connection-adapter.ts")).toMatch(
+      /method: request\.method/,
+    );
+    expect(source("lib/line/line-connection-adapter.ts")).not.toMatch(
+      /fetchImpl\(`\$\{LINE_API_ORIGIN\}\$\{LINE_OAUTH_VERIFY_PATH\}`[\s\S]{0,120}method:\s*"GET"/,
+    );
+
+    const writes = { count: 0 };
+    const httpFail = await runLineOneshotReadOnlyProbe({
+      accessToken: "mock-token",
+      writes,
+      now: () => new Date("2026-10-12T02:47:13.000Z"),
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        if (url.includes(LINE_BOT_INFO_PATH)) {
+          return new Response(
+            JSON.stringify({ displayName: "ai", basicId: "@357gospk" }),
+            { status: 200 },
+          );
+        }
+        if (url.includes(LINE_OAUTH_VERIFY_PATH)) {
+          expect(init?.method).toBe("POST");
+          return new Response(JSON.stringify({ error: "invalid_request" }), {
+            status: 405,
+          });
+        }
+        throw new Error(`unexpected LINE path ${url}`);
+      },
+    });
+    expect(httpFail).toMatchObject({
+      ok: false,
+      message: "LINE Token 驗證 API 回傳 HTTP 405",
+      data: {
+        connected: false,
+        displayName: "ai",
+        basicId: "@357gospk",
+        channelId: null,
+      },
+    });
+    expect(httpFail.message).not.toMatch(/不一致/);
+    expect(writes.count).toBe(0);
+
+    const schemaFail = await fetchLineChannelTokenIdentity("mock-token", async () => {
+      return new Response("not-json", { status: 200 });
+    });
+    expect(schemaFail).toMatchObject({
+      ok: false,
+      message: "LINE Token 驗證回應無法解析",
+    });
   });
 });
 
