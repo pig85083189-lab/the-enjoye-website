@@ -36,8 +36,9 @@ export {
 
 export async function createAuthenticatedTreatmentReadPersistence(
   client: IdentitySupabaseClient,
+  organizationAppId?: string | null,
 ) {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   return {
     identity,
     treatments: new TreatmentRemoteAdapter(
@@ -56,7 +57,7 @@ export async function listRemotePilotTreatments(
   if (!isTreatmentRemoteReadPilotEnabled(env)) {
     throw new Error("Treatment remote read pilot is off");
   }
-  const persistence = await createAuthenticatedTreatmentReadPersistence(client);
+  const persistence = await createAuthenticatedTreatmentReadPersistence(client, organizationId);
   return persistence.treatments.list(organizationId);
 }
 
@@ -69,7 +70,7 @@ export async function listRemotePilotTreatmentsByCustomer(
   if (!isTreatmentRemoteReadPilotEnabled(env)) {
     throw new Error("Treatment remote read pilot is off");
   }
-  const persistence = await createAuthenticatedTreatmentReadPersistence(client);
+  const persistence = await createAuthenticatedTreatmentReadPersistence(client, organizationId);
   return persistence.treatments.listByCustomerId(organizationId, customerId);
 }
 
@@ -82,7 +83,7 @@ export async function getRemotePilotTreatment(
   if (!isTreatmentRemoteReadPilotEnabled(env)) {
     throw new Error("Treatment remote read pilot is off");
   }
-  const persistence = await createAuthenticatedTreatmentReadPersistence(client);
+  const persistence = await createAuthenticatedTreatmentReadPersistence(client, organizationId);
   return persistence.treatments.get(organizationId, treatmentId);
 }
 
@@ -95,7 +96,7 @@ export async function getRemotePilotTreatmentByAppointment(
   if (!isTreatmentRemoteReadPilotEnabled(env)) {
     throw new Error("Treatment remote read pilot is off");
   }
-  const persistence = await createAuthenticatedTreatmentReadPersistence(client);
+  const persistence = await createAuthenticatedTreatmentReadPersistence(client, organizationId);
   return persistence.treatments.getByAppointmentId(organizationId, appointmentId);
 }
 
@@ -107,7 +108,7 @@ export async function listRemotePilotAppointmentsForTreatments(
   if (!isTreatmentRemoteReadPilotEnabled(env)) {
     throw new Error("Treatment remote read pilot is off");
   }
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationId);
   const appointments = new AppointmentRemoteAdapter(
     identity.mapper,
     new AuthenticatedAppointmentReadStore(client),

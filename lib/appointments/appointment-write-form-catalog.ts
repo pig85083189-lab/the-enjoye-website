@@ -100,8 +100,9 @@ function asName(value: unknown): string {
 
 export async function loadAppointmentWriteFormCatalog(
   client: IdentitySupabaseClient,
+  organizationAppId?: string | null,
 ): Promise<AppointmentWriteFormCatalog> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   const staffRow = identity.catalog.findStaffByAppId(
     identity.organizationDbId,
     identity.operationalStaffId,

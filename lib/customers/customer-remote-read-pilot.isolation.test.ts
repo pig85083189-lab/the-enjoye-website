@@ -18,7 +18,6 @@ import type {
   IdentitySupabaseClient,
 } from "@/lib/persistence/authenticated-identity-catalog";
 import { getPersistenceDriver } from "@/lib/persistence/driver";
-import { UnmappedIdentityError } from "@/lib/persistence/identity-errors";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { ORG_ENJOYE_ID } from "@/lib/tenant/constants";
 import type { Customer } from "@/types";
@@ -243,9 +242,10 @@ describe("Phase 1C-3 customer remote read pilot", () => {
     });
     const rows = await listRemotePilotCustomers(ORG_APP, client);
     expect(rows.map((customer) => customer.id)).toEqual([QA_APP_ID]);
-    await expect(listRemotePilotCustomers("org-unrelated", client)).rejects.toBeInstanceOf(
-      UnmappedIdentityError,
-    );
+    await expect(listRemotePilotCustomers("org-unrelated", client)).rejects.toMatchObject({
+      name: "IdentityCatalogError",
+      reason: "missing_membership",
+    });
   });
 
   it("H. Phase 1C-3 has no remote write path", async () => {

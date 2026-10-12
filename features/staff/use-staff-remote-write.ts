@@ -23,6 +23,6 @@ export async function submitStaffOperationalCreate(input: StaffOperationalCreate
     input,
     staffRemoteWriteBrowserEnv(),
   );
-  const roster = await listAuthenticatedOrgStaff(client);
+  const roster = await listAuthenticatedOrgStaff(client, input.organizationId);
   return { created, roster };
 }

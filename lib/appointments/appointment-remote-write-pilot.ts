@@ -144,8 +144,9 @@ export interface AuthenticatedAppointmentWritePersistence {
 
 export async function createAuthenticatedAppointmentWritePersistence(
   client: AppointmentWriteClient,
+  organizationAppId?: string | null,
 ): Promise<AuthenticatedAppointmentWritePersistence> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   const snapshots = await loadAppointmentWriteSnapshots(client, identity);
   const appointments = new AppointmentRemoteAdapter(
     identity.mapper,
@@ -185,7 +186,10 @@ export async function runAuthenticatedAppointmentWriteCreate(
   if (!isAppointmentRemoteWritePilotEnabled(env)) {
     throw new Error("Appointment remote write pilot is off");
   }
-  const persistence = await createAuthenticatedAppointmentWritePersistence(client);
+  const persistence = await createAuthenticatedAppointmentWritePersistence(
+    client,
+    input.organizationId,
+  );
   const staff = persistence.identity.catalog.findStaffByAppId(
     persistence.identity.organizationDbId,
     persistence.identity.operationalStaffId,

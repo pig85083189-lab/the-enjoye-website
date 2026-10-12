@@ -75,8 +75,9 @@ export function assertTreatmentWriteRole(actor: CapabilityActor): void {
 
 export async function createAuthenticatedTreatmentWritePersistence(
   client: TreatmentWriteClient,
+  organizationAppId?: string | null,
 ): Promise<AuthenticatedTreatmentWritePersistence> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   return {
     identity,
     treatments: new TreatmentRemoteAdapter(

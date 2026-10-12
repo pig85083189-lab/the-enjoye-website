@@ -29,8 +29,9 @@ export {
 
 export async function createAuthenticatedServiceReadPersistence(
   client: IdentitySupabaseClient,
+  organizationAppId?: string | null,
 ) {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   return {
     identity,
     services: new ServiceRemoteAdapter(
@@ -44,7 +45,7 @@ export async function listRemotePilotServices(
   organizationId: string,
   client: IdentitySupabaseClient,
 ): Promise<Service[]> {
-  const persistence = await createAuthenticatedServiceReadPersistence(client);
+  const persistence = await createAuthenticatedServiceReadPersistence(client, organizationId);
   return listPersistedServices(organizationId, undefined, persistence);
 }
 
@@ -53,6 +54,6 @@ export async function getRemotePilotService(
   serviceId: string,
   client: IdentitySupabaseClient,
 ): Promise<Service | undefined> {
-  const persistence = await createAuthenticatedServiceReadPersistence(client);
+  const persistence = await createAuthenticatedServiceReadPersistence(client, organizationId);
   return getPersistedService(organizationId, serviceId, persistence);
 }

@@ -4,6 +4,7 @@ import {
   Flower2,
   Landmark,
   LayoutDashboard,
+  MessageCircle,
   Package,
   PiggyBank,
   Receipt,
@@ -243,6 +244,17 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     description: "店家與分店設定",
     requiredPermissions: ["settings.manage"],
     roles: ["OWNER", "MANAGER"],
+  },
+  {
+    id: "line",
+    label: "LINE 群發",
+    href: "/staff/line",
+    icon: MessageCircle,
+    group: "system",
+    status: "ready",
+    description: "官方帳號全好友文字群發",
+    requiredPermissions: ["settings.manage"],
+    roles: ["OWNER"],
   },
 ];
 

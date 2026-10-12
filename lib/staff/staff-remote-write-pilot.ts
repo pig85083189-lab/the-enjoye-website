@@ -46,8 +46,9 @@ export interface AuthenticatedStaffWritePersistence {
 
 export async function createAuthenticatedStaffWritePersistence(
   client: StaffWriteClient,
+  organizationAppId?: string | null,
 ): Promise<AuthenticatedStaffWritePersistence> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   return {
     identity,
     staff: new AuthenticatedStaffWriteStore(client),
@@ -92,7 +93,10 @@ export async function runAuthenticatedStaffWriteCreate(
   if (!isStaffRemoteWritePilotEnabled(env)) {
     throw new StaffWritePilotOffError();
   }
-  const persistence = await createAuthenticatedStaffWritePersistence(client);
+  const persistence = await createAuthenticatedStaffWritePersistence(
+    client,
+    input.organizationId,
+  );
   const actor = persistence.identity.catalog.findStaffByAppId(
     persistence.identity.organizationDbId,
     persistence.identity.operationalStaffId,
@@ -145,7 +149,8 @@ export async function runAuthenticatedStaffWriteCreate(
 
 export async function listAuthenticatedOrgStaff(
   client: StaffWriteClient,
+  organizationAppId?: string | null,
 ): Promise<StaffMembership[]> {
-  const persistence = await createAuthenticatedStaffWritePersistence(client);
+  const persistence = await createAuthenticatedStaffWritePersistence(client, organizationAppId);
   return persistence.staff.listOrgMemberships(persistence.identity.organizationAppId);
 }

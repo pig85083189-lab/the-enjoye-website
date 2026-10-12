@@ -56,6 +56,7 @@ Team
 
 System
   Settings
+  LINE 群發 (OWNER)
 
 — footer —
 Location switcher

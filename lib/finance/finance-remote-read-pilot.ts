@@ -75,7 +75,7 @@ export async function listRemoteFinanceSnapshot(
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
 ): Promise<FinanceRemoteSnapshot> {
   requirePilot(env);
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationId);
   const organizationDbId = identity.mapper.resolveOrganizationDbId(organizationId);
   const locationDbId = identity.mapper.resolveLocationDbId(organizationId, locationId);
 

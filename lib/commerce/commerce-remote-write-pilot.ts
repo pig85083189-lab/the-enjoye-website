@@ -53,8 +53,9 @@ export function assertCommerceWriteRole(actor: CapabilityActor): void {
 
 export async function createAuthenticatedCommerceWritePersistence(
   client: CommerceWriteClient,
+  organizationAppId?: string | null,
 ): Promise<AuthenticatedCommerceWritePersistence> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   return {
     identity,
     commerce: new AuthenticatedCommerceStore(client),
@@ -163,7 +164,7 @@ export async function runAuthenticatedCommerceListTransactions(
   if (!isCommerceRemoteWritePilotEnabled(env)) {
     throw new Error(COMMERCE_WRITE_PILOT_OFF_MESSAGE);
   }
-  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client, organizationId);
   persistence.identity.mapper.resolveOrganizationDbId(organizationId);
   const rows = await persistence.commerce.listTransactions();
   return rows.filter((row) => row.organizationId === organizationId);

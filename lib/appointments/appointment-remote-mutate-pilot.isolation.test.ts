@@ -350,7 +350,7 @@ describe("Phase 1C-6D.1 appointment remote mutate foundation", () => {
         },
         MUTATE_ON,
       ),
-    ).rejects.toThrow(/authenticated organization/);
+    ).rejects.toThrow(/No authenticated staff_auth_memberships row for this Auth user and organization/);
   });
 
   it("authorizes a mapped new location and refuses a stale write", async () => {

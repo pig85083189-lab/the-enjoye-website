@@ -31,7 +31,10 @@ function writeClient(): AppointmentWriteClient | null {
   return createBrowserClientOrNull() as AppointmentWriteClient | null;
 }
 
-export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteState {
+export function useCalendarRemoteWrite(
+  enabled: boolean,
+  organizationId?: string | null,
+): CalendarRemoteWriteState {
   const [result, setResult] = useState<Exclude<
     CalendarRemoteWriteState,
     { status: "off" } | { status: "loading" }
@@ -46,7 +49,7 @@ export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteSta
         if (!client) {
           throw new Error("Authenticated Supabase client is unavailable");
         }
-        const catalog = await loadAppointmentWriteFormCatalog(client);
+        const catalog = await loadAppointmentWriteFormCatalog(client, organizationId);
         if (cancelled) return;
         if (!catalog.canCreate) {
           setResult({
@@ -76,7 +79,7 @@ export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteSta
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, organizationId]);
 
   if (!enabled) return { status: "off", canCreate: false, canCancel: false };
   if (!result) return { status: "loading", canCreate: false, canCancel: false };
