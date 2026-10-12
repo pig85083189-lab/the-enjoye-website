@@ -99,6 +99,8 @@ function asBroadcast(row: Record<string, unknown>): LineBroadcastPublic {
     updatedAt: String(row.updated_at ?? ""),
     confirmedAt: (row.confirmed_at as string | null) ?? null,
     sendClaimedAt: (row.send_claimed_at as string | null) ?? null,
+    createdByStaffId: (row.created_by_staff_id as string | null) ?? null,
+    confirmedByStaffId: (row.confirmed_by_staff_id as string | null) ?? null,
   };
 }
 

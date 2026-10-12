@@ -100,6 +100,8 @@ export type LineBroadcastPublic = {
   updatedAt: string;
   confirmedAt: string | null;
   sendClaimedAt?: string | null;
+  createdByStaffId?: string | null;
+  confirmedByStaffId?: string | null;
 };
 
 export type LineWebhookPublicUrl = {

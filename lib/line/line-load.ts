@@ -61,6 +61,8 @@ function asBroadcast(row: Record<string, unknown>): LineBroadcastPublic {
     updatedAt: String(row.updated_at ?? ""),
     confirmedAt: (row.confirmed_at as string | null) ?? null,
     sendClaimedAt: (row.send_claimed_at as string | null) ?? null,
+    createdByStaffId: (row.created_by_staff_id as string | null) ?? null,
+    confirmedByStaffId: (row.confirmed_by_staff_id as string | null) ?? null,
   };
 }
 
@@ -70,6 +72,9 @@ export type LineAccountRead =
 
 const LINE_ACCOUNT_PUBLIC_COLUMNS =
   "organization_id,channel_id,bot_display_name,bot_basic_id,token_hint,secret_configured,token_configured,broadcast_enabled,test_push_enabled,last_tested_at,last_test_status,last_test_message";
+
+const LINE_BROADCAST_PUBLIC_COLUMNS =
+  "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,http_status,error_class,created_at,updated_at,confirmed_at,send_claimed_at,created_by_staff_id,confirmed_by_staff_id";
 
 export async function readLineTestPushRuntimeOpen(
   organizationId: string,
@@ -165,9 +170,7 @@ export async function loadLineBroadcasts(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("line_broadcasts")
-    .select(
-      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,http_status,error_class,created_at,updated_at,confirmed_at,send_claimed_at",
-    )
+    .select(LINE_BROADCAST_PUBLIC_COLUMNS)
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -182,9 +185,7 @@ export async function loadLineBroadcastByRequestId(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("line_broadcasts")
-    .select(
-      "id,organization_id,status,text_body,request_id,line_request_id,api_result,error_message,http_status,error_class,created_at,updated_at,confirmed_at,send_claimed_at",
-    )
+    .select(LINE_BROADCAST_PUBLIC_COLUMNS)
     .eq("organization_id", organizationId)
     .eq("request_id", requestId)
     .maybeSingle();
