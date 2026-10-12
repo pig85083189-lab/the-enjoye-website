@@ -61,6 +61,10 @@ import {
   resolveLineTestPushTransport,
 } from "@/lib/line/line-flag";
 import { evaluateLineBroadcastOneshotPermit } from "@/lib/line/line-oneshot";
+import {
+  evaluateLineOneshotReadOnlyProbe,
+  runLineOneshotReadOnlyProbe,
+} from "@/lib/line/line-oneshot-probe";
 import { fetchLineMessageQuota } from "@/lib/line/line-quota-adapter";
 import { isLineOfficialAccountConnected, unknownLineQuota } from "@/lib/line/line-quota";
 import {
@@ -72,6 +76,7 @@ import { executeLineBroadcastHttp } from "@/lib/line/line-send-adapter";
 import { runClaimedLineBroadcastSend } from "@/lib/line/line-send-pipeline";
 import {
   LINE_SETTINGS_LOAD_ERROR,
+  LINE_SETTINGS_PROBE_ERROR,
   LINE_SETTINGS_SAVE_ERROR,
   LINE_SETTINGS_SAVE_SUCCESS,
   LINE_SETTINGS_TEST_ERROR,
@@ -99,6 +104,7 @@ import type {
   LineBroadcastPublic,
   LineDecisionReason,
   LineOfficialAccountPublic,
+  LineOneshotReadOnlyProbePublic,
   LineWebhookPublicUrl,
 } from "@/lib/line/line-types";
 import { createClient } from "@/lib/supabase/server";
@@ -310,6 +316,43 @@ export async function testLineOfficialAccountAction(input: {
   }
   return { ok: true, message: "連線成功。這次測試沒有向好友發送訊息。" };
   }, LINE_SETTINGS_TEST_ERROR);
+}
+
+export async function probeLineOneshotReadOnlyAction(input: {
+  organizationId: string;
+}): Promise<
+  | { ok: true; message: string; data: LineOneshotReadOnlyProbePublic }
+  | {
+      ok: false;
+      reason: LineDecisionReason;
+      message: string;
+      data?: LineOneshotReadOnlyProbePublic;
+    }
+> {
+  try {
+    const { actor } = await loadActor(input.organizationId);
+    const gate = evaluateLineOneshotReadOnlyProbe({
+      actor,
+      organizationId: input.organizationId,
+    });
+    if (!gate.ok) return gate;
+
+    const env = process.env;
+    if (!hasLineCredentialKey(env) || !canEncryptLineCredentials(env)) {
+      return { ok: false, reason: "error", message: "LINE 憑證加密金鑰尚未設定" };
+    }
+    const secrets = await readOwnerAccessTokenCipher(input.organizationId);
+    if (secrets.error || !secrets.cipher.startsWith("v1.")) {
+      return { ok: false, reason: "not_configured", message: "找不到已保存的 LINE 憑證" };
+    }
+    const token = decryptLineCredential(secrets.cipher, env);
+    if (!token.ok) {
+      return { ok: false, reason: "error", message: token.message };
+    }
+    return runLineOneshotReadOnlyProbe({ accessToken: token.plaintext });
+  } catch {
+    return { ok: false, reason: "error", message: LINE_SETTINGS_PROBE_ERROR };
+  }
 }
 
 export async function setLineBroadcastEnabledAction(input: {

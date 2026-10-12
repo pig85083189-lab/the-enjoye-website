@@ -1,7 +1,10 @@
 import { canManageLineOfficialAccount } from "@/lib/line/line-roles";
-import type { LineBroadcastStatus } from "@/lib/line/line-types";
+import type { LineBroadcastStatus, LineQuotaPublic } from "@/lib/line/line-types";
 import { ORG_BEAUTY_OS_TEST_ID } from "@/lib/tenant/constants";
 import type { StaffRole } from "@/types/saas";
+
+export const LINE_ONESHOT_PROBE_FRIEND_COUNT_LABEL = "尚未驗證";
+export const LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL = "無法確認";
 
 export function canShowLineSettings(actor: {
   role?: StaffRole | string | null;
@@ -15,6 +18,13 @@ export function canShowLineEngineerDiagnostics(
   organizationId?: string | null,
 ): boolean {
   return organizationId === ORG_BEAUTY_OS_TEST_ID;
+}
+
+/** Preview TEST Owner-only read-only LINE identity/quota card. */
+export function canShowLineOneshotReadOnlyProbe(
+  organizationId?: string | null,
+): boolean {
+  return canShowLineEngineerDiagnostics(organizationId);
 }
 
 export function lineBroadcastStatusLabel(status: LineBroadcastStatus): string {
@@ -109,4 +119,26 @@ export function lineOwnerRecipientLabel(
 ): string {
   if (!recipient?.bound) return "尚未綁定店長 LINE";
   return `已綁定 ${recipient.hint || "••••"}`;
+}
+
+export function lineOneshotProbeText(value: string | number | null | undefined): string {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  const trimmed = String(value ?? "").trim();
+  return trimmed || LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL;
+}
+
+export function lineOneshotProbeQuotaLimitLabel(quota: LineQuotaPublic): string {
+  if (quota.type === "none") return "無上限";
+  if (quota.type === "limited" && quota.limit != null) return String(quota.limit);
+  return LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL;
+}
+
+export function lineOneshotProbeQuotaUsageLabel(quota: LineQuotaPublic): string {
+  return quota.usage == null ? LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL : String(quota.usage);
+}
+
+export function lineOneshotProbeQuotaRemainingLabel(quota: LineQuotaPublic): string {
+  if (quota.type === "none") return LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL;
+  if (quota.type === "limited" && quota.remaining != null) return String(quota.remaining);
+  return LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL;
 }

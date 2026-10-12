@@ -8,6 +8,7 @@ import {
   ensureLineWebhookPublicUrlAction,
   loadLineBroadcastPrepareAction,
   loadLineOfficialAccountAction,
+  probeLineOneshotReadOnlyAction,
   rotateLineWebhookPublicTokenAction,
   saveLineOfficialAccountAction,
   setLineBroadcastEnabledAction,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/line/actions";
 import {
   LINE_SETTINGS_LOAD_ERROR,
+  LINE_SETTINGS_PROBE_ERROR,
   LINE_SETTINGS_SAVE_ERROR,
   LINE_SETTINGS_TEST_ERROR,
   LINE_SETTINGS_UNEXPECTED_ERROR,
@@ -30,12 +32,20 @@ import {
   type LineSettingsLoadState,
 } from "@/lib/line/line-settings-status";
 import {
+  LINE_ONESHOT_PROBE_FRIEND_COUNT_LABEL,
+  LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL,
   canShowLineEngineerDiagnostics,
+  canShowLineOneshotReadOnlyProbe,
   canShowLineSettings,
+  lineOneshotProbeQuotaLimitLabel,
+  lineOneshotProbeQuotaRemainingLabel,
+  lineOneshotProbeQuotaUsageLabel,
+  lineOneshotProbeText,
   lineOwnerRecipientLabel,
 } from "@/lib/line/line-visibility";
 import type {
   LineOfficialAccountPublic,
+  LineOneshotReadOnlyProbePublic,
   LineOwnerRecipientPublic,
   LineWebhookPublicUrl,
 } from "@/lib/line/line-types";
@@ -43,6 +53,12 @@ import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 const fieldClass =
   "min-h-11 w-full min-w-0 rounded-2xl border border-border bg-surface px-4 text-[15px] text-text outline-none ring-primary/30 focus-visible:ring-2";
+
+function formatLineOneshotProbeCheckedAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL;
+  return date.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+}
 
 function Feedback({
   feedback,
@@ -96,10 +112,18 @@ export function LineOfficialAccountSettings({
   const [webhook, setWebhook] = useState<LineWebhookPublicUrl | null>(null);
   const [bindCode, setBindCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [oneshotProbe, setOneshotProbe] = useState<LineOneshotReadOnlyProbePublic | null>(
+    null,
+  );
+  const [probeFeedback, setProbeFeedback] = useState<LineActionFeedback>({
+    kind: "idle",
+    message: "",
+  });
   const generationRef = useRef(0);
 
   const allowed = canShowLineSettings(membership);
   const engineer = canShowLineEngineerDiagnostics(organization.id);
+  const oneshotProbeVisible = canShowLineOneshotReadOnlyProbe(organization.id);
   const status = useMemo(
     () => describeLineSettingsStatus({ loadState, account }),
     [loadState, account],
@@ -390,6 +414,68 @@ export function LineOfficialAccountSettings({
             </div>
             <Feedback feedback={broadcastFeedback} testId="broadcast" />
           </Card>
+
+          {oneshotProbeVisible ? (
+            <Card data-line-oneshot-probe padding="lg" className="space-y-3">
+              <h2 className="text-[16px] font-semibold text-text">檢查 LINE 連線與額度</h2>
+              <p className="text-[13px] text-secondary-text">
+                只讀取官方帳號身分與月訊息額度。不會發送訊息、不會寫入資料，也不依賴發送開關。
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || loadState === "loading"}
+                data-line-oneshot-probe-submit
+                onClick={() => {
+                  const generation = ++generationRef.current;
+                  setBusy(true);
+                  setProbeFeedback({ kind: "idle", message: "" });
+                  void (async () => {
+                    try {
+                      const result = await probeLineOneshotReadOnlyAction({
+                        organizationId: organization.id,
+                      });
+                      if (generation !== generationRef.current) return;
+                      if (result.data) setOneshotProbe(result.data);
+                      setProbeFeedback(
+                        result.ok
+                          ? { kind: "success", message: result.message }
+                          : { kind: "error", message: result.message },
+                      );
+                    } catch {
+                      if (generation !== generationRef.current) return;
+                      setProbeFeedback(lineActionCaughtError(LINE_SETTINGS_PROBE_ERROR));
+                    } finally {
+                      if (generation === generationRef.current) setBusy(false);
+                    }
+                  })();
+                }}
+              >
+                檢查 LINE 連線與額度
+              </Button>
+              {oneshotProbe ? (
+                <dl
+                  data-line-oneshot-probe-result={oneshotProbe.connected ? "ok" : "failed"}
+                  className="space-y-1 text-sm text-text"
+                >
+                  <div>LINE 連線：{oneshotProbe.connected ? "成功" : "失敗"}</div>
+                  <div>官方帳號名稱：{lineOneshotProbeText(oneshotProbe.displayName)}</div>
+                  <div>Basic ID：{lineOneshotProbeText(oneshotProbe.basicId)}</div>
+                  <div>Channel ID：{lineOneshotProbeText(oneshotProbe.channelId)}</div>
+                  <div>月訊息額度：{lineOneshotProbeQuotaLimitLabel(oneshotProbe.quota)}</div>
+                  <div>已使用訊息數：{lineOneshotProbeQuotaUsageLabel(oneshotProbe.quota)}</div>
+                  <div>
+                    剩餘額度：{lineOneshotProbeQuotaRemainingLabel(oneshotProbe.quota)}
+                  </div>
+                  <div>好友人數：{LINE_ONESHOT_PROBE_FRIEND_COUNT_LABEL}</div>
+                  <div>
+                    最後檢查時間：{formatLineOneshotProbeCheckedAt(oneshotProbe.checkedAt)}
+                  </div>
+                </dl>
+              ) : null}
+              <Feedback feedback={probeFeedback} testId="oneshot-probe" />
+            </Card>
+          ) : null}
 
           {engineer ? (
           <Card data-line-owner-bind data-line-engineer-diagnostics padding="lg" className="space-y-3">

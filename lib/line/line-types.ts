@@ -74,6 +74,17 @@ export type LineQuotaPublic = {
   label: string;
 };
 
+export type LineOneshotReadOnlyProbePublic = {
+  connected: boolean;
+  tokenValid: boolean;
+  displayName: string | null;
+  basicId: string | null;
+  channelId: string | null;
+  quota: LineQuotaPublic;
+  friendCountLabel: "尚未驗證";
+  checkedAt: string;
+};
+
 export type LineBroadcastPublic = {
   id: string;
   organizationId: string;

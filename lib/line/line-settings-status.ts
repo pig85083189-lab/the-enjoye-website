@@ -21,6 +21,7 @@ export const LINE_SETTINGS_LOAD_ERROR = "無法讀取 LINE 官方帳號設定";
 export const LINE_SETTINGS_SAVE_ERROR = "LINE 憑證寫入失敗";
 export const LINE_SETTINGS_SAVE_SUCCESS = "LINE 官方帳號憑證已加密保存";
 export const LINE_SETTINGS_TEST_ERROR = "LINE 連線測試失敗";
+export const LINE_SETTINGS_PROBE_ERROR = "LINE 連線檢查失敗";
 export const LINE_SETTINGS_UNEXPECTED_ERROR = "操作失敗，請稍後再試";
 
 export function lineCredentialState(

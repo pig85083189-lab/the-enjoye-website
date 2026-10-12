@@ -251,6 +251,19 @@ LINE 月額度未知、查詢失敗或剩餘不足時，伺服器拒絕正式群
 
 每日 3 次、Owner、requestId 去重、LINE 月額度未知/不足拒絕、timeout / HTTP 5xx 記 `pending_confirmation` 且不自動重送，全部保留。
 
+### Phase 1G.7 — Preview TEST Owner 唯讀 LINE 診斷
+
+`probeLineOneshotReadOnlyAction` 在讀取任何憑證前先驗證：已登入、Owner、`org-beauty-os-test`、`VERCEL_ENV=preview`、Supabase host `bfzquejrtgqzzarhkiya.supabase.co`。通過後才解密既有 Channel Access Token，並只呼叫：
+
+- `GET /v2/oauth/verify`
+- `GET /v2/bot/info`
+- `GET /v2/bot/message/quota`
+- `GET /v2/bot/message/quota/consumption`
+
+核對 Channel ID `2009219238`、官方帳號 `ai`、Basic ID `@357gospk`。LINE HTTP 設 timeout。額度 `type=none` 不計算剩餘；資料不足顯示「無法確認」。好友人數固定「尚未驗證」，不查詢也不顯示 LINE User ID。
+
+此診斷不依賴 `sendOpen`、不寫入任何資料表、不改 `last_test_status`、不建立 permit、不開 runtime gate、不開 `broadcast_enabled`，也不回傳 Token / Secret。Production 與其他 Organization 一律拒絕。Beauty OS TEST 的 LINE 設定頁提供「檢查 LINE 連線與額度」。
+
 ### 首次真實 Push 驗收（尚未授權，本階段不做）
 
 具備條件：

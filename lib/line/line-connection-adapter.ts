@@ -10,6 +10,16 @@ import {
 } from "@/lib/line/line-command";
 import type { LineOneshotIdentity } from "@/lib/line/line-oneshot";
 
+function lineConnectionHttpErrorMessage(error: unknown): string {
+  if (
+    (error instanceof Error && error.name === "AbortError") ||
+    /timeout|aborted/i.test(error instanceof Error ? error.message : "")
+  ) {
+    return "LINE 連線逾時，未變更任何資料";
+  }
+  return "目前無法連線到 LINE API";
+}
+
 export type LineBotInfoResult =
   | {
       ok: true;
@@ -44,8 +54,11 @@ export async function fetchLineBotInfo(
       displayName: body.displayName ?? null,
       basicId: body.basicId ?? null,
     };
-  } catch {
-    return { ok: false, message: "目前無法連線到 LINE API" };
+  } catch (error) {
+    return {
+      ok: false,
+      message: lineConnectionHttpErrorMessage(error),
+    };
   }
 }
 
@@ -79,8 +92,11 @@ export async function fetchLineChannelTokenIdentity(
       clientId: body.client_id ?? null,
       scope: body.scope ?? null,
     };
-  } catch {
-    return { ok: false, message: "目前無法連線到 LINE API" };
+  } catch (error) {
+    return {
+      ok: false,
+      message: lineConnectionHttpErrorMessage(error),
+    };
   }
 }
 

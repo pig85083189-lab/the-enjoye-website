@@ -159,6 +159,17 @@ import {
   lineBroadcastOneshotMessageSha256,
 } from "@/lib/line/line-oneshot";
 import {
+  LINE_ONESHOT_PROBE_ALLOWED_PATHS,
+  LINE_ONESHOT_PROBE_FRIEND_COUNT_LABEL,
+  LINE_ONESHOT_PROBE_TIMEOUT_MS,
+  LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL,
+  evaluateLineOneshotReadOnlyProbe,
+  interpretLineOneshotReadOnlyProbe,
+  lineOneshotProbeQuotaRemainingLabel,
+  runLineOneshotReadOnlyProbe,
+  sanitizeLineOneshotProbeQuota,
+} from "@/lib/line/line-oneshot-probe";
+import {
   countAcceptedBroadcastsOnDay,
   countClaimedBroadcastsOnTaipeiDay,
   LINE_BROADCAST_QUOTA_TIMEZONE,
@@ -175,6 +186,7 @@ import {
 } from "@/lib/line/line-settings-status";
 import {
   canShowLineEngineerDiagnostics,
+  canShowLineOneshotReadOnlyProbe,
   canShowLineSettings,
   isLineBroadcastConfirmSubmitEnabled,
   lineBroadcastApiResultLabel,
@@ -3366,3 +3378,274 @@ describe("LINE Phase 1G.2 oneshot broadcast permit", () => {
     expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1G\.2/);
   });
 });
+
+describe("LINE Phase 1G.7 Preview Owner-only read-only probe", () => {
+  const probeOwner = ownerActor({ organizationId: ORG_BEAUTY_OS_TEST_ID });
+  const checkedAt = "2026-10-11T12:00:00.000Z";
+
+  function mockLineReadOnlyFetch(over: {
+    bot?: { status?: number; body?: object };
+    verify?: { status?: number; body?: object };
+    quota?: { status?: number; body?: object };
+    consumption?: { status?: number; body?: object };
+    hang?: boolean;
+  } = {}) {
+    const called: string[] = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      called.push(url);
+      if (over.hang) {
+        await new Promise<never>((_, reject) => {
+          const abort = () => {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          };
+          if (init?.signal?.aborted) {
+            abort();
+            return;
+          }
+          init?.signal?.addEventListener("abort", abort, { once: true });
+        });
+      }
+      if (url.includes(LINE_QUOTA_CONSUMPTION_PATH)) {
+        return new Response(
+          JSON.stringify(over.consumption?.body ?? { totalUsage: 12 }),
+          { status: over.consumption?.status ?? 200 },
+        );
+      }
+      if (url.includes(LINE_QUOTA_PATH)) {
+        return new Response(
+          JSON.stringify(over.quota?.body ?? { type: "limited", value: 200 }),
+          { status: over.quota?.status ?? 200 },
+        );
+      }
+      if (url.includes(LINE_BOT_INFO_PATH)) {
+        return new Response(
+          JSON.stringify(over.bot?.body ?? { displayName: "ai", basicId: "@357gospk" }),
+          { status: over.bot?.status ?? 200 },
+        );
+      }
+      if (url.includes(LINE_OAUTH_VERIFY_PATH)) {
+        return new Response(
+          JSON.stringify(over.verify?.body ?? { client_id: "2009219238" }),
+          { status: over.verify?.status ?? 200 },
+        );
+      }
+      throw new Error(`unexpected LINE path ${url}`);
+    };
+    return { fetchImpl, called };
+  }
+
+  it("lets Preview TEST Owner query and refuses other actors or environments", () => {
+    expect(
+      evaluateLineOneshotReadOnlyProbe({
+        env: previewAllowlistEnv,
+        actor: probeOwner,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      evaluateLineOneshotReadOnlyProbe({
+        env: previewAllowlistEnv,
+        actor: ownerActor({
+          organizationId: ORG_BEAUTY_OS_TEST_ID,
+          role: "MANAGER",
+        }),
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+      }),
+    ).toMatchObject({ ok: false, reason: "unauthorized" });
+    expect(
+      evaluateLineOneshotReadOnlyProbe({
+        env: previewAllowlistEnv,
+        actor: ownerActor(),
+        organizationId: ORG_ENJOYE_ID,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineOneshotReadOnlyProbe({
+        env: { ...previewAllowlistEnv, VERCEL_ENV: "production" },
+        actor: probeOwner,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(
+      evaluateLineOneshotReadOnlyProbe({
+        env: {
+          ...previewAllowlistEnv,
+          NEXT_PUBLIC_SUPABASE_URL: `https://${PRODUCTION_SUPABASE_HOST}`,
+        },
+        actor: probeOwner,
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+      }),
+    ).toMatchObject({ ok: false, reason: "send_closed" });
+    expect(isLineBroadcastSendOpen(previewAllowlistEnv)).toBe(false);
+    expect(canShowLineOneshotReadOnlyProbe(ORG_BEAUTY_OS_TEST_ID)).toBe(true);
+    expect(canShowLineOneshotReadOnlyProbe(ORG_ENJOYE_ID)).toBe(false);
+  });
+
+  it("refuses channel mismatch, invalid token, timeout, and incomplete identity", async () => {
+    expect(
+      interpretLineOneshotReadOnlyProbe({
+        identity: {
+          clientId: "1234567890",
+          displayName: "ai",
+          basicId: "@357gospk",
+        },
+        quota: describeLineQuota({ type: "limited", limit: 200, usage: 12 }),
+        checkedAt,
+      }),
+    ).toMatchObject({ ok: false, reason: "not_configured" });
+    expect(
+      interpretLineOneshotReadOnlyProbe({
+        identity: {
+          clientId: LINE_BROADCAST_ONESHOT_CHANNEL_ID,
+          displayName: "",
+          basicId: LINE_BROADCAST_ONESHOT_BOT_BASIC_ID,
+        },
+        quota: unknownLineQuota(),
+        checkedAt,
+      }),
+    ).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/無法確認/),
+    });
+
+    const invalid = mockLineReadOnlyFetch({
+      verify: { status: 401, body: { message: "invalid token" } },
+    });
+    const writes = { count: 0 };
+    const invalidToken = await runLineOneshotReadOnlyProbe({
+      accessToken: "mock-token",
+      fetchImpl: invalid.fetchImpl,
+      writes,
+      now: () => new Date(checkedAt),
+    });
+    expect(invalidToken).toMatchObject({
+      ok: false,
+      reason: "not_configured",
+      data: { connected: false, tokenValid: false },
+    });
+    expect(writes.count).toBe(0);
+
+    const hanging = mockLineReadOnlyFetch({ hang: true });
+    const timedOut = await runLineOneshotReadOnlyProbe({
+      accessToken: "mock-token",
+      fetchImpl: withShortTimeout(hanging.fetchImpl),
+      writes,
+    });
+    expect(timedOut.ok).toBe(false);
+    expect(timedOut.message).toMatch(/逾時|無法連線/);
+    expect(writes.count).toBe(0);
+    expect(hanging.called.join("")).not.toContain("/message/broadcast");
+    expect(hanging.called.join("")).not.toContain("/message/push");
+    expect(hanging.called.join("")).not.toContain("/message/multicast");
+  });
+
+  it("does not invent remaining quota when LINE reports type=none", async () => {
+    const none = sanitizeLineOneshotProbeQuota({
+      known: true,
+      type: "none",
+      limit: null,
+      usage: 18,
+      remaining: 999,
+      label: "forged",
+    });
+    expect(none).toMatchObject({
+      known: true,
+      type: "none",
+      usage: 18,
+      remaining: null,
+    });
+    expect(lineOneshotProbeQuotaRemainingLabel(none)).toBe(
+      LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL,
+    );
+
+    const mock = mockLineReadOnlyFetch({
+      quota: { body: { type: "none" } },
+      consumption: { body: { totalUsage: 18 } },
+    });
+    const writes = { count: 0 };
+    const result = await runLineOneshotReadOnlyProbe({
+      accessToken: "mock-token",
+      fetchImpl: mock.fetchImpl,
+      writes,
+      now: () => new Date(checkedAt),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected probe success");
+    expect(result.data).toMatchObject({
+      connected: true,
+      tokenValid: true,
+      displayName: "ai",
+      basicId: "@357gospk",
+      channelId: "2009219238",
+      friendCountLabel: LINE_ONESHOT_PROBE_FRIEND_COUNT_LABEL,
+      quota: { type: "none", usage: 18, remaining: null },
+    });
+    expect(lineOneshotProbeQuotaRemainingLabel(result.data.quota)).toBe(
+      LINE_ONESHOT_PROBE_UNCONFIRMED_LABEL,
+    );
+    expect(writes.count).toBe(0);
+    expect(mock.called.every((url) => (LINE_ONESHOT_PROBE_ALLOWED_PATHS as readonly string[]).includes(url))).toBe(
+      true,
+    );
+    expect(mock.called.join("")).not.toContain("/message/broadcast");
+    expect(mock.called.join("")).not.toContain("/message/push");
+    expect(mock.called.join("")).not.toContain("/message/multicast");
+    expect(JSON.stringify(result.data)).not.toMatch(/userId|accessToken|secret|cipher/i);
+  });
+
+  it("keeps the action and settings card read-only and gated before credentials", () => {
+    const actions = source("lib/line/actions.ts");
+    const start = actions.indexOf("export async function probeLineOneshotReadOnlyAction");
+    const next = actions.indexOf("export async function", start + 1);
+    const probeFn = actions.slice(start, next === -1 ? undefined : next);
+    expect(start).toBeGreaterThan(-1);
+    expect(probeFn.indexOf("evaluateLineOneshotReadOnlyProbe")).toBeGreaterThan(-1);
+    expect(probeFn.indexOf("evaluateLineOneshotReadOnlyProbe")).toBeLessThan(
+      probeFn.indexOf("readOwnerAccessTokenCipher"),
+    );
+    expect(probeFn.indexOf("readOwnerAccessTokenCipher")).toBeLessThan(
+      probeFn.indexOf("decryptLineCredential"),
+    );
+    expect(probeFn.indexOf("decryptLineCredential")).toBeLessThan(
+      probeFn.indexOf("runLineOneshotReadOnlyProbe"),
+    );
+    expect(probeFn).not.toMatch(
+      /RECORD_LINE_CONNECTION_TEST|CLAIM_LINE_|SET_LINE_|UPSERT_LINE_|executeLineBroadcast|executeLineTestPush|isLineBroadcastSendOpen|broadcast_enabled|last_test/,
+    );
+    expect(source("lib/line/line-oneshot-probe.ts")).not.toMatch(
+      /\/message\/broadcast|\/message\/push|\/message\/multicast|friend_count|follower_count/,
+    );
+    expect(LINE_ONESHOT_PROBE_TIMEOUT_MS).toBe(8000);
+
+    const settingsUi = source("features/line/LineOfficialAccountSettings.tsx");
+    expect(settingsUi).toMatch(/data-line-oneshot-probe/);
+    expect(settingsUi).toMatch(/檢查 LINE 連線與額度/);
+    expect(settingsUi).toMatch(/probeLineOneshotReadOnlyAction/);
+    expect(settingsUi).toMatch(/LINE_ONESHOT_PROBE_FRIEND_COUNT_LABEL/);
+    expect(settingsUi).toMatch(/canShowLineOneshotReadOnlyProbe/);
+    const probeStart = settingsUi.indexOf("data-line-oneshot-probe");
+    const probeEnd = settingsUi.indexOf("data-line-owner-bind", probeStart);
+    const probeUi = settingsUi.slice(probeStart, probeEnd === -1 ? undefined : probeEnd);
+    expect(probeUi).toMatch(/檢查 LINE 連線與額度/);
+    expect(probeUi).not.toMatch(/channelAccessToken|lineUserId|User ID/);
+    expect(source("docs/saas/line-official-account.md")).toMatch(/Phase 1G\.7/);
+  });
+});
+
+function withShortTimeout(fetchImpl: typeof fetch): typeof fetch {
+  return async (input, init) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20);
+    try {
+      return await fetchImpl(input, {
+        ...init,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
