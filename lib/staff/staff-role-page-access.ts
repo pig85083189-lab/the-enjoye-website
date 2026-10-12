@@ -7,6 +7,7 @@ import type { StaffRole } from "@/types/saas";
 export type StaffRolePageAccess = "login" | "forbidden" | "ok";
 
 export const STAFF_SETTINGS_ROLES = ["OWNER", "MANAGER"] as const satisfies readonly StaffRole[];
+export const STAFF_LINE_ROLES = ["OWNER"] as const satisfies readonly StaffRole[];
 export const STAFF_FINANCE_ROLES = [
   "OWNER",
   "MANAGER",
