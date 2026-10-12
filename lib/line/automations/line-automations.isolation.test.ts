@@ -36,7 +36,6 @@ function source(rel: string): string {
 
 const AUTOMATION_FILES = [
   "app/staff/(app)/line/automations/page.tsx",
-  "app/staff/(app)/line/page.tsx",
   "app/staff/(app)/line/layout.tsx",
   "features/line/automations/LineAutomationsWorkspace.tsx",
   "features/line/automations/LineAutomationCard.tsx",
@@ -123,9 +122,6 @@ describe("LINE automation access and page wiring", () => {
     expect(source("app/staff/(app)/line/layout.tsx")).toMatch(/STAFF_LINE_ROLES/);
     expect(source("app/staff/(app)/line/automations/page.tsx")).toMatch(
       /LineAutomationsWorkspace/,
-    );
-    expect(source("app/staff/(app)/line/page.tsx")).toMatch(
-      /redirect\("\/staff\/line\/automations"\)/,
     );
   });
 
