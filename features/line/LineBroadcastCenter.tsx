@@ -192,9 +192,14 @@ export function LineBroadcastCenter({
         <p className="text-sm text-secondary-text">
           編輯訊息、預覽後確認，會發送給此官方帳號所有可接收訊息的好友。
         </p>
-        <Link href="/staff/settings/line" className="text-sm text-primary">
-          LINE 設定
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/staff/settings/line" className="text-sm text-primary">
+            LINE 設定
+          </Link>
+          <Link href="/staff/line/automations" className="text-sm text-primary">
+            LINE 自動推播
+          </Link>
+        </div>
       </header>
 
       {!connectionPilotEnabled ? (
