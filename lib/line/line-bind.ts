@@ -17,6 +17,13 @@ export function hashLineBindCode(organizationId: string, code: string): string {
     .digest("hex");
 }
 
+/** Stable unique key for a LINE userId inside one organization. Not a display hint. */
+export function hashLineUserId(organizationId: string, userId: string): string {
+  return createHash("sha256")
+    .update(`${organizationId}:${userId.trim()}`, "utf8")
+    .digest("hex");
+}
+
 export function hashLineWebhookPublicToken(organizationId: string, token: string): string {
   return createHash("sha256")
     .update(`${organizationId}:${token.trim()}`, "utf8")
@@ -55,6 +62,7 @@ export type LineWebhookTextEvent = {
   sourceType: string | null;
   userId: string | null;
   text: string | null;
+  eventType?: string | null;
 };
 
 export function extractLineWebhookTextEvents(payload: unknown): LineWebhookTextEvent[] {
@@ -75,6 +83,7 @@ export function extractLineWebhookTextEvents(payload: unknown): LineWebhookTextE
       sourceType: typeof source.type === "string" ? source.type : null,
       userId: typeof source.userId === "string" ? source.userId : null,
       text: typeof message.text === "string" ? message.text : null,
+      eventType: typeof row.type === "string" ? row.type : null,
     };
   });
 }

@@ -56,16 +56,26 @@ export function LineAutomationMonthlyStats({
   );
 }
 
-export function LineAutomationCardMetrics() {
+export function LineAutomationCardMetrics({
+  plannedCount = null,
+  bindCount = null,
+}: {
+  plannedCount?: number | null;
+  bindCount?: number | null;
+}) {
   return (
     <div className="flex shrink-0 gap-5 text-right" data-line-automation-card-metrics>
       <div>
-        <p className="text-[11px] text-secondary-text">本月已發送</p>
-        <p className="text-[22px] font-semibold leading-none text-text">—</p>
+        <p className="text-[11px] text-secondary-text">已驗證綁定</p>
+        <p className="text-[22px] font-semibold leading-none text-text" data-line-automation-bind-count>
+          {formatLineAutomationStat(bindCount)}
+        </p>
       </div>
       <div>
-        <p className="text-[11px] text-secondary-text">預計發送</p>
-        <p className="text-[22px] font-semibold leading-none text-text">—</p>
+        <p className="text-[11px] text-secondary-text">預定提醒</p>
+        <p className="text-[22px] font-semibold leading-none text-text" data-line-automation-planned-count>
+          {formatLineAutomationStat(plannedCount)}
+        </p>
       </div>
     </div>
   );

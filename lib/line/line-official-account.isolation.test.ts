@@ -2149,8 +2149,17 @@ describe("LINE source contracts", () => {
     expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).toMatch(
       "READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC",
     );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).toMatch(
+      /createAnonymousClient/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).toMatch(
+      /CONSUME_LINE_OWNER_BIND_PUBLIC_RPC/,
+    );
+    expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).toMatch(
+      /opened && opened\.ok \? createServiceRoleClient/,
+    );
     expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).not.toMatch(
-      /createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY|access_token/,
+      /SUPABASE_SERVICE_ROLE_KEY|access_token/,
     );
     expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).not.toMatch(
       /console\.(log|info|debug)/,

@@ -15,11 +15,30 @@ import {
   lineAutomationById,
 } from "@/lib/line/automations/catalog";
 import {
+  loadAppointmentReminderWorkspaceAction,
+  runAppointmentReminderDryRunAction,
+  saveAppointmentReminderRuleAction,
+  startCustomerLineBindAction,
+} from "@/lib/line/automations/appointment-reminder-actions";
+import type {
+  AppointmentReminderDelivery,
+  AppointmentReminderDryRunRecord,
+} from "@/lib/line/automations/appointment-reminder-types";
+import {
+  LINE_AUTOMATION_BIND_COUNT_LABEL,
+  LINE_AUTOMATION_BIND_HINT,
+  LINE_AUTOMATION_DB_NOT_READY,
+  LINE_AUTOMATION_DRY_RUN_ACTION_LABEL,
+  LINE_AUTOMATION_DRY_RUN_EMPTY,
   LINE_AUTOMATION_HISTORY_EMPTY,
   LINE_AUTOMATION_LOCAL_DRAFT_HINT,
   LINE_AUTOMATION_NOT_LIVE_HINT,
   LINE_AUTOMATION_PAGE_SUBTITLE,
   LINE_AUTOMATION_PAGE_TITLE,
+  LINE_AUTOMATION_PERSIST_CLOSED_MESSAGE,
+  LINE_AUTOMATION_PLANNED_COUNT_LABEL,
+  LINE_AUTOMATION_REMINDER_BACKEND_HINT,
+  LINE_AUTOMATION_START_BIND_LABEL,
 } from "@/lib/line/automations/copy";
 import {
   applyLineAutomationEditor,
@@ -39,8 +58,21 @@ export function LineAutomationsWorkspace() {
   const [selectedId, setSelectedId] = useState<LineAutomationId>("appointment_reminder");
   const [drafts, setDrafts] = useState(createDefaultLineAutomationDrafts);
   const [editingId, setEditingId] = useState<LineAutomationId | null>(null);
+  const [persistMessage, setPersistMessage] = useState<string | null>(null);
+  const [deliveries, setDeliveries] = useState<AppointmentReminderDelivery[]>([]);
+  const [dryRuns, setDryRuns] = useState<AppointmentReminderDryRunRecord[]>([]);
+  const [saved, setSaved] = useState(false);
+  const [persistOpen, setPersistOpen] = useState(false);
+  const [bindCount, setBindCount] = useState<number | null>(null);
+  const [plannedCount, setPlannedCount] = useState<number | null>(null);
+  const [bindCustomerId, setBindCustomerId] = useState("");
+  const [bindCode, setBindCode] = useState<string | null>(null);
   const previousOrganizationId = useRef<string | null>(null);
-  const stats = createEmptyLineAutomationStats();
+  const stats = {
+    ...createEmptyLineAutomationStats(),
+    plannedThisMonth: plannedCount,
+    pendingTasks: plannedCount,
+  };
 
   useEffect(() => {
     const reset = resetLineAutomationDraftsOnOrganizationChange({
@@ -54,7 +86,41 @@ export function LineAutomationsWorkspace() {
       setEditingId(null);
       setTab("overview");
       setSelectedId("appointment_reminder");
+      setPersistMessage(null);
+      setDeliveries([]);
+      setDryRuns([]);
+      setSaved(false);
+      setPersistOpen(false);
+      setBindCount(null);
+      setPlannedCount(null);
+      setBindCode(null);
     }
+    void loadAppointmentReminderWorkspaceAction(organization.id).then((result) => {
+      if (!result.ok || !result.data) {
+        setPersistMessage(result.ok ? result.message : LINE_AUTOMATION_DB_NOT_READY);
+        setSaved(false);
+        return;
+      }
+      setPersistMessage(result.message);
+      setSaved(result.data.saved);
+      setPersistOpen(result.data.persistOpen);
+      setBindCount(result.data.bindCount);
+      setPlannedCount(result.data.plannedCount);
+      setDeliveries(result.data.deliveries);
+      setDryRuns(result.data.dryRuns);
+      if (result.data.saved) {
+        const rule = result.data.rule;
+        setDrafts((current) => ({
+          ...current,
+          appointment_reminder: {
+            ...current.appointment_reminder,
+            enabled: rule.enabled,
+            selectedTimingIds: [...rule.selectedTimingIds],
+            template: rule.template || current.appointment_reminder.template,
+          },
+        }));
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organization.id]);
 
@@ -123,6 +189,7 @@ export function LineAutomationsWorkspace() {
         className="rounded-2xl bg-primary-light/70 px-4 py-3 text-[13px] leading-relaxed text-text"
       >
         <p>{LINE_AUTOMATION_NOT_LIVE_HINT}</p>
+        <p className="mt-1 text-secondary-text">{LINE_AUTOMATION_REMINDER_BACKEND_HINT}</p>
         <p className="mt-1 text-secondary-text">{LINE_AUTOMATION_LOCAL_DRAFT_HINT}</p>
       </div>
 
@@ -164,9 +231,37 @@ export function LineAutomationsWorkspace() {
       {tab === "history" ? (
         <Card padding="lg" data-line-automation-history>
           <h2 className="text-[16px] font-semibold text-text">發送紀錄</h2>
-          <p className="mt-2 text-[14px] leading-relaxed text-secondary-text">
-            {LINE_AUTOMATION_HISTORY_EMPTY}
-          </p>
+          {deliveries.length === 0 ? (
+            <p className="mt-2 text-[14px] leading-relaxed text-secondary-text">
+              {LINE_AUTOMATION_HISTORY_EMPTY}
+            </p>
+          ) : (
+            <ul className="mt-3 space-y-2" data-line-automation-delivery-list>
+              {deliveries.map((row) => (
+                <li key={row.requestId} className="rounded-2xl border border-border bg-white px-3 py-2 text-[13px]">
+                  <p className="font-medium text-text">{row.status}</p>
+                  <p className="text-secondary-text">{row.message ?? row.requestId}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+          <h3 className="mt-5 text-[15px] font-semibold text-text">Dry-run 測試結果</h3>
+          {dryRuns.length === 0 ? (
+            <p className="mt-2 text-[14px] leading-relaxed text-secondary-text">
+              {LINE_AUTOMATION_DRY_RUN_EMPTY}
+            </p>
+          ) : (
+            <ul className="mt-3 space-y-2" data-line-automation-dry-run-list>
+              {dryRuns.map((row) => (
+                <li key={row.id} className="rounded-2xl border border-border bg-white px-3 py-2 text-[13px]">
+                  <p className="font-medium text-text">
+                    {row.eligible ? "檢查通過" : row.skipReason ?? "未通過"}
+                  </p>
+                  <p className="text-secondary-text">{row.message}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       ) : (
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -177,6 +272,9 @@ export function LineAutomationsWorkspace() {
                 definition={definition}
                 draft={drafts[definition.id]}
                 selected={selectedId === definition.id}
+                saved={definition.id === "appointment_reminder" ? saved : false}
+                plannedCount={definition.id === "appointment_reminder" ? plannedCount : null}
+                bindCount={definition.id === "appointment_reminder" ? bindCount : null}
                 onSelect={() => setSelectedId(definition.id)}
                 onToggle={(enabled) =>
                   setDrafts((current) =>
@@ -206,6 +304,76 @@ export function LineAutomationsWorkspace() {
         </div>
       )}
 
+      {selectedId === "appointment_reminder" && tab !== "history" ? (
+        <Card padding="lg" data-line-automation-reminder-status>
+          <h2 className="text-[16px] font-semibold text-text">預約提醒資料狀態</h2>
+          <p className="mt-2 text-[13px] text-secondary-text" data-line-automation-saved-state>
+            {saved ? "設定已儲存。正式發送仍關閉。" : LINE_AUTOMATION_DB_NOT_READY}
+          </p>
+          <dl className="mt-3 grid gap-2 text-[13px] sm:grid-cols-2">
+            <div>
+              <dt className="text-secondary-text">{LINE_AUTOMATION_BIND_COUNT_LABEL}</dt>
+              <dd className="font-medium text-text">{bindCount ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-secondary-text">{LINE_AUTOMATION_PLANNED_COUNT_LABEL}</dt>
+              <dd className="font-medium text-text">{plannedCount ?? "—"}</dd>
+            </div>
+          </dl>
+          {persistOpen ? (
+            <div className="mt-4 space-y-3">
+              <label className="block space-y-1">
+                <span className="text-[13px] text-text">客人識別（customer app id）</span>
+                <input
+                  value={bindCustomerId}
+                  onChange={(event) => setBindCustomerId(event.target.value)}
+                  className="min-h-11 w-full rounded-2xl border border-border bg-white px-4 text-[14px] outline-none"
+                />
+              </label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  className="inline-flex min-h-10 items-center justify-center rounded-full bg-primary px-4 text-[13px] font-medium text-white"
+                  onClick={() => {
+                    void startCustomerLineBindAction({
+                      organizationId: organization.id,
+                      customerId: bindCustomerId.trim(),
+                    }).then((result) => {
+                      setPersistMessage(result.message);
+                      setBindCode(result.ok ? result.data?.code ?? null : null);
+                    });
+                  }}
+                >
+                  {LINE_AUTOMATION_START_BIND_LABEL}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex min-h-10 items-center justify-center rounded-full border border-primary/35 px-4 text-[13px] font-medium text-primary"
+                  onClick={() => {
+                    void runAppointmentReminderDryRunAction(organization.id).then((result) => {
+                      setPersistMessage(result.message);
+                      void loadAppointmentReminderWorkspaceAction(organization.id).then((loaded) => {
+                        if (loaded.ok && loaded.data) setDryRuns(loaded.data.dryRuns);
+                      });
+                    });
+                  }}
+                >
+                  {LINE_AUTOMATION_DRY_RUN_ACTION_LABEL}
+                </button>
+              </div>
+              <p className="text-[12px] text-secondary-text">{LINE_AUTOMATION_BIND_HINT}</p>
+              {bindCode ? (
+                <p className="text-[13px] font-medium text-text" data-line-automation-bind-code>
+                  驗證碼：{bindCode}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="mt-3 text-[13px] text-secondary-text">{LINE_AUTOMATION_DB_NOT_READY}</p>
+          )}
+        </Card>
+      ) : null}
+
       <LineAutomationMonthlyStats stats={stats} />
 
       <p className="text-[12px] text-secondary-text">
@@ -218,8 +386,28 @@ export function LineAutomationsWorkspace() {
         <LineAutomationRuleEditor
           definition={lineAutomationById(editingId)}
           draft={drafts[editingId]}
+          persistMessage={editingId === "appointment_reminder" ? persistMessage : null}
           onClose={() => setEditingId(null)}
-          onApply={(next) => setDrafts((current) => applyLineAutomationEditor(current, next))}
+          onApply={(next) => {
+            setDrafts((current) => applyLineAutomationEditor(current, next));
+            if (next.id !== "appointment_reminder") return;
+            void saveAppointmentReminderRuleAction({
+              organizationId: organization.id,
+              draft: next,
+            }).then((result) => {
+              setPersistMessage(result.message || LINE_AUTOMATION_PERSIST_CLOSED_MESSAGE);
+              setSaved(result.persisted === true);
+              if (result.persisted) {
+                void loadAppointmentReminderWorkspaceAction(organization.id).then((loaded) => {
+                  if (!loaded.ok || !loaded.data) return;
+                  setPlannedCount(loaded.data.plannedCount);
+                  setBindCount(loaded.data.bindCount);
+                  setDryRuns(loaded.data.dryRuns);
+                  setDeliveries(loaded.data.deliveries);
+                });
+              }
+            });
+          }}
         />
       ) : null}
     </div>

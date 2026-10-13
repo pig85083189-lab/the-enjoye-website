@@ -9,6 +9,10 @@
  * No service role. No localStorage fallback. No dual write.
  */
 
+import {
+  notifyAppointmentWrittenForReminders,
+  type AppointmentReminderRpcClient,
+} from "@/lib/line/automations/appointment-reminder-write-hook";
 import { AppointmentRemoteAdapter } from "@/lib/persistence/appointment-remote-adapter";
 import {
   AuthenticatedAppointmentTableStore,
@@ -131,6 +135,24 @@ export async function runAuthenticatedAppointmentWriteMutate(
   }
   const command = persistence.prepare(input, current);
   const mutated = await persistence.mutate(command);
+  void notifyAppointmentWrittenForReminders({
+    organizationId: command.organizationId,
+    appointment: mutated.appointment,
+    change:
+      command.status === "CANCELLED"
+        ? "cancelled"
+        : command.status === "COMPLETED"
+          ? "completed"
+          : command.startAt !== current.startAt
+            ? "rescheduled"
+            : command.customerId !== current.customerId
+              ? "customer_changed"
+              : command.serviceId !== current.serviceId
+                ? "service_changed"
+                : "status_changed",
+    client: client as unknown as AppointmentReminderRpcClient,
+    env,
+  });
   emitAppointmentRemoteWriteRefresh({
     organizationId: command.organizationId,
     customerId: command.customerId,

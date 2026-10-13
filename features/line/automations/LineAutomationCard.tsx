@@ -5,6 +5,7 @@ import { LineAutomationSwitch } from "@/features/line/automations/LineAutomation
 import {
   LINE_AUTOMATION_LOCAL_ONLY_BADGE,
   LINE_AUTOMATION_LOCAL_PREVIEW_BADGE,
+  LINE_AUTOMATION_SAVED_BADGE,
   LINE_AUTOMATION_SETTINGS_LABEL,
 } from "@/lib/line/automations/copy";
 import { lineAutomationTimingsForDraft } from "@/lib/line/automations/draft";
@@ -15,6 +16,9 @@ export function LineAutomationCard({
   definition,
   draft,
   selected,
+  saved,
+  plannedCount,
+  bindCount,
   onSelect,
   onToggle,
   onOpenSettings,
@@ -22,6 +26,9 @@ export function LineAutomationCard({
   definition: LineAutomationDefinition;
   draft: LineAutomationDraft;
   selected?: boolean;
+  saved?: boolean;
+  plannedCount?: number | null;
+  bindCount?: number | null;
   onSelect?: () => void;
   onToggle: (enabled: boolean) => void;
   onOpenSettings: () => void;
@@ -50,10 +57,12 @@ export function LineAutomationCard({
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-[16px] font-semibold text-text">{definition.title}</h3>
                 {definition.badge ? <Badge tone="primary">{definition.badge}</Badge> : null}
-                <Badge tone={draft.enabled ? "warning" : "neutral"}>
-                  {draft.enabled
-                    ? LINE_AUTOMATION_LOCAL_PREVIEW_BADGE
-                    : LINE_AUTOMATION_LOCAL_ONLY_BADGE}
+                <Badge tone={saved ? "primary" : draft.enabled ? "warning" : "neutral"}>
+                  {saved
+                    ? LINE_AUTOMATION_SAVED_BADGE
+                    : draft.enabled
+                      ? LINE_AUTOMATION_LOCAL_PREVIEW_BADGE
+                      : LINE_AUTOMATION_LOCAL_ONLY_BADGE}
                 </Badge>
               </div>
               <p className="mt-1 text-[13px] leading-relaxed text-secondary-text">
@@ -100,7 +109,10 @@ export function LineAutomationCard({
               {LINE_AUTOMATION_SETTINGS_LABEL}
             </button>
           </div>
-          <LineAutomationCardMetrics />
+          <LineAutomationCardMetrics
+            plannedCount={definition.id === "appointment_reminder" ? plannedCount : null}
+            bindCount={definition.id === "appointment_reminder" ? bindCount : null}
+          />
         </div>
       </div>
     </article>
