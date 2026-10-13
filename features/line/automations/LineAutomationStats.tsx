@@ -59,9 +59,11 @@ export function LineAutomationMonthlyStats({
 export function LineAutomationCardMetrics({
   plannedCount = null,
   bindCount = null,
+  consentCount = null,
 }: {
   plannedCount?: number | null;
   bindCount?: number | null;
+  consentCount?: number | null;
 }) {
   return (
     <div className="flex shrink-0 gap-5 text-right" data-line-automation-card-metrics>
@@ -69,6 +71,12 @@ export function LineAutomationCardMetrics({
         <p className="text-[11px] text-secondary-text">已驗證綁定</p>
         <p className="text-[22px] font-semibold leading-none text-text" data-line-automation-bind-count>
           {formatLineAutomationStat(bindCount)}
+        </p>
+      </div>
+      <div>
+        <p className="text-[11px] text-secondary-text">已同意提醒</p>
+        <p className="text-[22px] font-semibold leading-none text-text" data-line-automation-consent-count>
+          {formatLineAutomationStat(consentCount)}
         </p>
       </div>
       <div>

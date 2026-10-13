@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Local-only Phase 2B PostgreSQL review. Unix socket only.
+# Local-only Phase 2B/2C PostgreSQL review. Unix socket only.
 # Never connect to Preview / Production. Never call LINE.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DB="beauty_os_line_reminder_2b_local"
+DB="beauty_os_line_reminder_2c_local"
 PSQL=(psql -d "$DB" -v ON_ERROR_STOP=1 -X -q)
 
 if [[ "${PGHOST:-}" != "" || "${DATABASE_URL:-}" != "" ]]; then
@@ -17,7 +17,9 @@ createdb "$DB"
 
 "${PSQL[@]}" -f "$ROOT/supabase/tests/line-appointment-reminder.local-stub.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261013120000_line_appointment_reminder_automation.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261013140000_line_appointment_reminder_phase_2c.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/line-appointment-reminder.local-cases.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/tests/line-appointment-reminder-phase-2c.local-cases.sql"
 
 "${PSQL[@]}" <<'SQL'
 update public.line_automation_jobs

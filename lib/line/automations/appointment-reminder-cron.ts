@@ -28,6 +28,24 @@ export function authorizeAppointmentReminderCron(input: {
   return { ok: true };
 }
 
+export function evaluateAppointmentReminderCronRpcResults(input: {
+  finalizeError: unknown;
+  tickError: unknown;
+  tickData: unknown;
+}): { ok: true; checked: number } | { ok: false; message: string } {
+  if (input.finalizeError) {
+    return { ok: false, message: "Dry-run finalize 失敗，沒有發送 LINE" };
+  }
+  if (input.tickError) {
+    return { ok: false, message: "Dry-run RPC 失敗，沒有發送 LINE" };
+  }
+  const row =
+    input.tickData && typeof input.tickData === "object"
+      ? (input.tickData as { checked?: unknown })
+      : null;
+  return { ok: true, checked: Number(row?.checked ?? 0) };
+}
+
 export function appointmentReminderCronMode(input: {
   env?: NodeJS.Dict<string>;
   dispatchOpen?: boolean;

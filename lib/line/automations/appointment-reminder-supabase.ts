@@ -88,6 +88,7 @@ export function createAppointmentReminderSupabaseRepository(
         rule: rule.template ? rule : { ...createDefaultAppointmentReminderRule(organizationId), ...rule },
         saved: row.saved === true,
         bindCount: Number(row.bind_count ?? 0),
+        consentCount: Number(row.consent_count ?? 0),
         plannedCount: Number(row.planned_count ?? 0),
         deliveries: [],
         dryRuns: [],

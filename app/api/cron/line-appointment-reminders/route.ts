@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   appointmentReminderCronMode,
   authorizeAppointmentReminderCron,
+  evaluateAppointmentReminderCronRpcResults,
 } from "@/lib/line/automations/appointment-reminder-cron";
 import { isAppointmentReminderSendOpen } from "@/lib/line/automations/appointment-reminder-flag";
 import {
@@ -53,18 +54,37 @@ async function handle(request: Request) {
         message: "Dry-run 已允許但沒有可寫入的 server client，沒有發送 LINE",
       });
     }
-    await admin.rpc(FINALIZE_STALE_LINE_APPOINTMENT_REMINDER_CLAIMED_RPC, {
+    const finalize = await admin.rpc(FINALIZE_STALE_LINE_APPOINTMENT_REMINDER_CLAIMED_RPC, {
       p_stale_after_seconds: 30,
     });
-    const tick = await admin.rpc(RUN_LINE_APPOINTMENT_REMINDER_DRY_RUN_RPC, {
-      p_organization_id: null,
+    const tick = finalize.error
+      ? { data: null, error: finalize.error }
+      : await admin.rpc(RUN_LINE_APPOINTMENT_REMINDER_DRY_RUN_RPC, {
+          p_organization_id: null,
+        });
+    const outcome = evaluateAppointmentReminderCronRpcResults({
+      finalizeError: finalize.error,
+      tickError: tick.error,
+      tickData: tick.data,
     });
+    if (!outcome.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          skipped: false,
+          mode: "dry_run",
+          sent: false,
+          message: outcome.message,
+        },
+        { status: 500 },
+      );
+    }
     return NextResponse.json({
       ok: true,
       skipped: false,
       mode: "dry_run",
       sent: false,
-      checked: Number((tick.data as { checked?: unknown } | null)?.checked ?? 0),
+      checked: outcome.checked,
       message: "Dry-run 只做檢查與紀錄，不會連接 LINE Push",
     });
   }

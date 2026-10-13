@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { tokenHintFromAccessToken } from "@/lib/line/line-crypto";
+import { LINE_CREDENTIAL_KEY_ENV } from "@/lib/line/line-flag";
 
 export const LINE_USER_ID_PATTERN = /^U[0-9a-f]{32}$/i;
 
@@ -17,9 +18,34 @@ export function hashLineBindCode(organizationId: string, code: string): string {
     .digest("hex");
 }
 
-/** Stable unique key for a LINE userId inside one organization. Not a display hint. */
-export function hashLineUserId(organizationId: string, userId: string): string {
-  return createHash("sha256")
+function readLineUserIdHmacKey(
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+): Buffer | null {
+  const raw = (env[LINE_CREDENTIAL_KEY_ENV] ?? "").trim();
+  if (!raw) return null;
+  try {
+    const key = Buffer.from(raw, "base64");
+    return key.length === 32 ? key : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Org-scoped LINE userId identifier. HMAC-SHA256 with the server credential key.
+ * Never send this hash to the browser. Fail-closed empty string if the key is missing.
+ */
+export function hashLineUserId(
+  organizationId: string,
+  userId: string,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+): string {
+  if (typeof window !== "undefined") {
+    throw new Error("LINE userId hash cannot run in the browser");
+  }
+  const key = readLineUserIdHmacKey(env);
+  if (!key) return "";
+  return createHmac("sha256", key)
     .update(`${organizationId}:${userId.trim()}`, "utf8")
     .digest("hex");
 }

@@ -672,7 +672,9 @@ describe("appointment reminder UI and draft migration safety", () => {
       name.endsWith(".sql"),
     );
     expect(published).toContain("20261013120000_line_appointment_reminder_automation.sql");
+    expect(published).toContain("20261013140000_line_appointment_reminder_phase_2c.sql");
     const sql = source("supabase/migrations/20261013120000_line_appointment_reminder_automation.sql");
+    const sql2c = source("supabase/migrations/20261013140000_line_appointment_reminder_phase_2c.sql");
     expect(sql).toMatch(/Owner approval is required/);
     expect(sql).not.toMatch(/DRAFT ONLY/);
     expect(sql).toMatch(/line_customer_bindings/);
@@ -687,6 +689,10 @@ describe("appointment reminder UI and draft migration safety", () => {
     expect(source("lib/persistence/fresh-migration-chain.isolation.test.ts")).toMatch(
       /20261013120000_line_appointment_reminder_automation\.sql/,
     );
+    expect(sql2c).toMatch(/set_line_appointment_reminder_consent/);
+    expect(sql2c).toMatch(/bind_does_not_opt_in/);
+    expect(sql2c).not.toMatch(/from public\.customers/i);
+    expect(sql2c).toMatch(/Do not apply remotely without Owner approval/);
   });
 
   it("does not expose Channel tokens or reuse Owner recipients", () => {

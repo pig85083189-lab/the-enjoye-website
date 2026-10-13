@@ -19,6 +19,7 @@ export type AppointmentReminderWorkspaceSnapshot = {
   rule: AppointmentReminderRule;
   saved: boolean;
   bindCount: number;
+  consentCount: number;
   plannedCount: number;
   deliveries: AppointmentReminderDelivery[];
   dryRuns: AppointmentReminderDryRunRecord[];
