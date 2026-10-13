@@ -15,11 +15,19 @@ import {
   lineAutomationById,
 } from "@/lib/line/automations/catalog";
 import {
+  loadAppointmentReminderDeliveriesAction,
+  loadAppointmentReminderWorkspaceAction,
+  saveAppointmentReminderRuleAction,
+} from "@/lib/line/automations/appointment-reminder-actions";
+import type { AppointmentReminderDelivery } from "@/lib/line/automations/appointment-reminder-types";
+import {
   LINE_AUTOMATION_HISTORY_EMPTY,
   LINE_AUTOMATION_LOCAL_DRAFT_HINT,
   LINE_AUTOMATION_NOT_LIVE_HINT,
   LINE_AUTOMATION_PAGE_SUBTITLE,
   LINE_AUTOMATION_PAGE_TITLE,
+  LINE_AUTOMATION_PERSIST_CLOSED_MESSAGE,
+  LINE_AUTOMATION_REMINDER_BACKEND_HINT,
 } from "@/lib/line/automations/copy";
 import {
   applyLineAutomationEditor,
@@ -39,6 +47,8 @@ export function LineAutomationsWorkspace() {
   const [selectedId, setSelectedId] = useState<LineAutomationId>("appointment_reminder");
   const [drafts, setDrafts] = useState(createDefaultLineAutomationDrafts);
   const [editingId, setEditingId] = useState<LineAutomationId | null>(null);
+  const [persistMessage, setPersistMessage] = useState<string | null>(null);
+  const [deliveries, setDeliveries] = useState<AppointmentReminderDelivery[]>([]);
   const previousOrganizationId = useRef<string | null>(null);
   const stats = createEmptyLineAutomationStats();
 
@@ -54,7 +64,16 @@ export function LineAutomationsWorkspace() {
       setEditingId(null);
       setTab("overview");
       setSelectedId("appointment_reminder");
+      setPersistMessage(null);
+      setDeliveries([]);
     }
+    void loadAppointmentReminderWorkspaceAction(organization.id).then((result) => {
+      if (!result.ok) return;
+      setPersistMessage(result.message);
+    });
+    void loadAppointmentReminderDeliveriesAction(organization.id).then((result) => {
+      if (result.ok) setDeliveries(result.data ?? []);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organization.id]);
 
@@ -123,6 +142,7 @@ export function LineAutomationsWorkspace() {
         className="rounded-2xl bg-primary-light/70 px-4 py-3 text-[13px] leading-relaxed text-text"
       >
         <p>{LINE_AUTOMATION_NOT_LIVE_HINT}</p>
+        <p className="mt-1 text-secondary-text">{LINE_AUTOMATION_REMINDER_BACKEND_HINT}</p>
         <p className="mt-1 text-secondary-text">{LINE_AUTOMATION_LOCAL_DRAFT_HINT}</p>
       </div>
 
@@ -164,9 +184,20 @@ export function LineAutomationsWorkspace() {
       {tab === "history" ? (
         <Card padding="lg" data-line-automation-history>
           <h2 className="text-[16px] font-semibold text-text">發送紀錄</h2>
-          <p className="mt-2 text-[14px] leading-relaxed text-secondary-text">
-            {LINE_AUTOMATION_HISTORY_EMPTY}
-          </p>
+          {deliveries.length === 0 ? (
+            <p className="mt-2 text-[14px] leading-relaxed text-secondary-text">
+              {LINE_AUTOMATION_HISTORY_EMPTY}
+            </p>
+          ) : (
+            <ul className="mt-3 space-y-2" data-line-automation-delivery-list>
+              {deliveries.map((row) => (
+                <li key={row.requestId} className="rounded-2xl border border-border bg-white px-3 py-2 text-[13px]">
+                  <p className="font-medium text-text">{row.status}</p>
+                  <p className="text-secondary-text">{row.message ?? row.requestId}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       ) : (
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -218,8 +249,18 @@ export function LineAutomationsWorkspace() {
         <LineAutomationRuleEditor
           definition={lineAutomationById(editingId)}
           draft={drafts[editingId]}
+          persistMessage={editingId === "appointment_reminder" ? persistMessage : null}
           onClose={() => setEditingId(null)}
-          onApply={(next) => setDrafts((current) => applyLineAutomationEditor(current, next))}
+          onApply={(next) => {
+            setDrafts((current) => applyLineAutomationEditor(current, next));
+            if (next.id !== "appointment_reminder") return;
+            void saveAppointmentReminderRuleAction({
+              organizationId: organization.id,
+              draft: next,
+            }).then((result) => {
+              setPersistMessage(result.message || LINE_AUTOMATION_PERSIST_CLOSED_MESSAGE);
+            });
+          }}
         />
       ) : null}
     </div>

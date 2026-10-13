@@ -13,6 +13,7 @@ import {
   LINE_AUTOMATION_EMPTY_STAT,
   LINE_AUTOMATION_LOCAL_ONLY_BADGE,
   LINE_AUTOMATION_NOT_LIVE_HINT,
+  LINE_AUTOMATION_REMINDER_BACKEND_HINT,
   LINE_AUTOMATION_STATS_EMPTY_HINT,
 } from "@/lib/line/automations/copy";
 import {
@@ -170,6 +171,7 @@ describe("LINE automation safety", () => {
     const joined = AUTOMATION_FILES.map((file) => source(file)).join("\n");
     expect(joined).toMatch(/尚未正式啟用|不會發送 LINE 訊息/);
     expect(joined).toContain(LINE_AUTOMATION_NOT_LIVE_HINT);
+    expect(joined).toContain(LINE_AUTOMATION_REMINDER_BACKEND_HINT);
     expect(joined).not.toMatch(/api\.line\.me|\/v2\/bot\/message/);
     expect(joined).not.toMatch(/sendLineBroadcastAction|sendLineTestPushAction/);
     expect(joined).not.toMatch(/multicast|LINE_BROADCAST_SEND_OPEN|LINE_TEST_PUSH_OPEN/);
