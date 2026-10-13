@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { evaluateAppointmentReminderAudience } from "@/lib/line/automations/appointment-reminder-bindings";
 import { evaluateAppointmentReminderDispatch } from "@/lib/line/automations/appointment-reminder-command";
-import { authorizeAppointmentReminderCron, runAppointmentReminderCronTick } from "@/lib/line/automations/appointment-reminder-cron";
+import { appointmentReminderCronMode, authorizeAppointmentReminderCron } from "@/lib/line/automations/appointment-reminder-cron";
 import { dispatchAppointmentReminderJob } from "@/lib/line/automations/appointment-reminder-dispatcher";
 import {
   allAppointmentReminderFlagsClosed,
@@ -508,7 +508,7 @@ describe("appointment reminder flags, cron, and customer push adapter", () => {
       rule: enabledRule(),
     });
     expect(save.ok).toBe(false);
-    const hook = notifyAppointmentWrittenForReminders({
+    const hook = await notifyAppointmentWrittenForReminders({
       organizationId: ORG_ENJOYE_ID,
       appointment: appointment(),
       change: "created",
@@ -526,11 +526,7 @@ describe("appointment reminder flags, cron, and customer push adapter", () => {
       },
     });
     expect(called).toBe(false);
-    const cron = await runAppointmentReminderCronTick({
-      store: createAppointmentReminderMemoryStore(),
-      organizationIds: [ORG_ENJOYE_ID],
-    });
-    expect(cron.skipped).toBe(true);
+    expect(appointmentReminderCronMode({})).toBe("closed");
   });
 
   it("uses personal Push only and never Broadcast or Multicast", async () => {
@@ -555,16 +551,30 @@ describe("appointment reminder flags, cron, and customer push adapter", () => {
   });
 
   it("requires cron authorization and refuses dispatch while flags are closed", () => {
+    const secret = "cron-secret-16ch";
     expect(
       authorizeAppointmentReminderCron({
-        authorization: "Bearer wrong",
-        env: { CRON_SECRET: "secret" },
+        authorization: "Bearer wrong-secret-16",
+        vercelCron: "1",
+        env: { CRON_SECRET: secret, VERCEL_ENV: "preview" },
+      }).ok,
+    ).toBe(false);
+    expect(
+      authorizeAppointmentReminderCron({
+        vercelCron: "1",
+        env: { CRON_SECRET: secret, VERCEL_ENV: "production" },
       }).ok,
     ).toBe(false);
     expect(
       authorizeAppointmentReminderCron({
         authorization: "Bearer secret",
         env: { CRON_SECRET: "secret" },
+      }).ok,
+    ).toBe(false);
+    expect(
+      authorizeAppointmentReminderCron({
+        authorization: `Bearer ${secret}`,
+        env: { CRON_SECRET: secret },
       }).ok,
     ).toBe(true);
     expect(source("app/api/cron/line-appointment-reminders/route.ts")).toMatch(/send_closed/);
@@ -657,22 +667,25 @@ describe("appointment reminder UI and draft migration safety", () => {
     }).ok).toBe(false);
   });
 
-  it("keeps the draft SQL out of the published migration chain", () => {
+  it("publishes Preview-ready SQL without applying it remotely", () => {
     const published = readdirSync(path.join(ROOT, "supabase/migrations")).filter((name) =>
       name.endsWith(".sql"),
     );
-    expect(published).not.toContain("20261013120000_line_appointment_reminder_automation.sql");
-    const draft = source("supabase/drafts/20261013120000_line_appointment_reminder_automation.sql");
-    expect(draft).toMatch(/DRAFT ONLY/);
-    expect(draft).toMatch(/line_customer_bindings/);
-    expect(draft).toMatch(/line_notification_preferences/);
-    expect(draft).toMatch(/claim_line_appointment_reminder_job/);
-    expect(draft).toMatch(/870121/);
-    expect(draft).toMatch(/user_is_org_owner/);
-    expect(draft).toMatch(/never a send destination/);
-    expect(draft).not.toMatch(/from public\.customers/i);
+    expect(published).toContain("20261013120000_line_appointment_reminder_automation.sql");
+    const sql = source("supabase/migrations/20261013120000_line_appointment_reminder_automation.sql");
+    expect(sql).toMatch(/Owner approval is required/);
+    expect(sql).not.toMatch(/DRAFT ONLY/);
+    expect(sql).toMatch(/line_customer_bindings/);
+    expect(sql).toMatch(/line_notification_preferences/);
+    expect(sql).toMatch(/claim_line_appointment_reminder_job/);
+    expect(sql).toMatch(/session_user/);
+    expect(sql).toMatch(/870121/);
+    expect(sql).toMatch(/user_is_org_owner/);
+    expect(sql).toMatch(/never a send destination/);
+    expect(sql).toMatch(/line_automation_deliveries_job_org_fkey/);
+    expect(sql).not.toMatch(/from public\.customers/i);
     expect(source("lib/persistence/fresh-migration-chain.isolation.test.ts")).toMatch(
-      /20261012120000_line_broadcast_channel_lock\.sql/,
+      /20261013120000_line_appointment_reminder_automation\.sql/,
     );
   });
 

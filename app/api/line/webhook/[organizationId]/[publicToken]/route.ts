@@ -6,8 +6,16 @@ import {
 } from "@/lib/line/line-command";
 import { decryptLineCredential, encryptLineCredential } from "@/lib/line/line-crypto";
 import { evaluateLineWebhookAdmission } from "@/lib/line/line-webhook-host";
+import { processLineWebhookCustomerAutomation } from "@/lib/line/automations/customer-line-webhook";
+import {
+  CONSUME_LINE_CUSTOMER_BIND_RPC,
+  MARK_LINE_CUSTOMER_BLOCKED_RPC,
+  MARK_LINE_CUSTOMER_UNSUBSCRIBED_RPC,
+  UNBIND_LINE_CUSTOMER_BY_HASH_RPC,
+} from "@/lib/line/automations/appointment-reminder-rpc";
 import { processLineWebhookBind } from "@/lib/line/line-webhook";
 import { createAnonymousClient } from "@/lib/supabase/anon";
+import { createServiceRoleClient } from "@/lib/supabase/admin";
 
 function requestHost(request: Request): string | null {
   return request.headers.get("x-forwarded-host") ?? request.headers.get("host");
@@ -102,6 +110,47 @@ export async function POST(
   });
   if (!result.ok && result.reason === "unauthorized") {
     return json(403, { ok: false });
+  }
+  const admin = opened && opened.ok ? createServiceRoleClient() : null;
+  if (admin) {
+    await processLineWebhookCustomerAutomation({
+      organizationId,
+      rawBody,
+      encryptUserId: (userId) => {
+        const packed = encryptLineCredential(userId);
+        return packed.ok ? { cipher: packed.cipher, keyId: packed.keyId } : null;
+      },
+      consumeBind: async (bind) => {
+        const consumed = await admin.rpc(CONSUME_LINE_CUSTOMER_BIND_RPC, {
+          p_organization_id: bind.organizationId,
+          p_code: bind.code,
+          p_line_user_id_cipher: bind.cipher,
+          p_line_user_id_hash: bind.hash,
+          p_line_user_id_hint: bind.hint,
+          p_key_id: bind.keyId,
+        });
+        const row = consumed.data && typeof consumed.data === "object" ? consumed.data : {};
+        return { bound: (row as { bound?: unknown }).bound === true };
+      },
+      markUnsubscribed: async (hash) => {
+        await admin.rpc(MARK_LINE_CUSTOMER_UNSUBSCRIBED_RPC, {
+          p_organization_id: organizationId,
+          p_line_user_id_hash: hash,
+        });
+      },
+      markUnbound: async (hash) => {
+        await admin.rpc(UNBIND_LINE_CUSTOMER_BY_HASH_RPC, {
+          p_organization_id: organizationId,
+          p_line_user_id_hash: hash,
+        });
+      },
+      markBlocked: async (hash) => {
+        await admin.rpc(MARK_LINE_CUSTOMER_BLOCKED_RPC, {
+          p_organization_id: organizationId,
+          p_line_user_id_hash: hash,
+        });
+      },
+    });
   }
   return json(200, { ok: true, bound: result.ok ? result.bound : false });
 }

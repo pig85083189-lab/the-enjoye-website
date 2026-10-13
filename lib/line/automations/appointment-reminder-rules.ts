@@ -114,7 +114,7 @@ export function evaluateAppointmentReminderRuleSave(input: {
   if (input.rule.template.length > APPOINTMENT_REMINDER_TEXT_MAX) {
     return refuse("invalid_input", `文字最多 ${APPOINTMENT_REMINDER_TEXT_MAX} 字`);
   }
-  if (!isAppointmentReminderPersistOpen(input.persistOpen)) {
+  if (!isAppointmentReminderPersistOpen({ override: input.persistOpen })) {
     return refuse("send_closed", "正式設定寫入尚未開放，規則不會寫入資料庫", "persist_closed");
   }
   return { ok: true };

@@ -169,18 +169,19 @@ export function interpretAppointmentReminderApiOutcome(input: {
   httpStatus?: number | null;
   lineRequestId?: string | null;
   localErrorClass?: LineHttpErrorClass | null;
+  unknownDelivery?: boolean;
 }): {
   apiResult: LineApiResult;
   status: LineBroadcastStatus;
   message: string;
   errorClass: LineHttpErrorClass | null;
 } {
-  if (input.timedOut) {
+  if (input.timedOut || input.unknownDelivery) {
     return {
       apiResult: "pending_confirmation",
       status: "pending_confirmation",
-      message: appointmentReminderFailureMessage("timeout"),
-      errorClass: "timeout",
+      message: appointmentReminderFailureMessage(input.timedOut ? "timeout" : "unknown"),
+      errorClass: input.timedOut ? "timeout" : "unknown",
     };
   }
   if (input.httpOk) {

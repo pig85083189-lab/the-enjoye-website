@@ -31,7 +31,8 @@ export type AppointmentReminderJobStatus =
   | "canceled"
   | "expired"
   | "skipped"
-  | "pending_confirmation";
+  | "pending_confirmation"
+  | "reconciled";
 
 export type AppointmentReminderSkipReason =
   | "past_due"
@@ -101,7 +102,7 @@ export type AppointmentReminderDelivery = {
   organizationId: string;
   jobId: string;
   requestId: string;
-  status: "accepted" | "failed" | "pending_confirmation" | "skipped";
+  status: "accepted" | "failed" | "pending_confirmation" | "skipped" | "dry_run" | "reconciled";
   lineRequestId?: string | null;
   httpStatus?: number | null;
   errorClass?: LineHttpErrorClass | null;
@@ -113,9 +114,21 @@ export type CustomerLineBinding = {
   organizationId: string;
   customerId: string;
   lineUserId: string;
+  lineUserIdHash?: string;
   verified: boolean;
   unboundAt?: string | null;
   blockedAt?: string | null;
+};
+
+export type AppointmentReminderDryRunRecord = {
+  id: string;
+  organizationId: string;
+  jobId: string | null;
+  requestId: string | null;
+  eligible: boolean;
+  skipReason?: AppointmentReminderSkipReason | null;
+  message: string;
+  createdAt: string;
 };
 
 export type NotificationPreference = {

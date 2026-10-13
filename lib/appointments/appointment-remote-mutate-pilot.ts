@@ -9,7 +9,10 @@
  * No service role. No localStorage fallback. No dual write.
  */
 
-import { notifyAppointmentWrittenForReminders } from "@/lib/line/automations/appointment-reminder-write-hook";
+import {
+  notifyAppointmentWrittenForReminders,
+  type AppointmentReminderRpcClient,
+} from "@/lib/line/automations/appointment-reminder-write-hook";
 import { AppointmentRemoteAdapter } from "@/lib/persistence/appointment-remote-adapter";
 import {
   AuthenticatedAppointmentTableStore,
@@ -132,7 +135,7 @@ export async function runAuthenticatedAppointmentWriteMutate(
   }
   const command = persistence.prepare(input, current);
   const mutated = await persistence.mutate(command);
-  notifyAppointmentWrittenForReminders({
+  void notifyAppointmentWrittenForReminders({
     organizationId: command.organizationId,
     appointment: mutated.appointment,
     change:
@@ -147,6 +150,8 @@ export async function runAuthenticatedAppointmentWriteMutate(
               : command.serviceId !== current.serviceId
                 ? "service_changed"
                 : "status_changed",
+    client: client as unknown as AppointmentReminderRpcClient,
+    env,
   });
   emitAppointmentRemoteWriteRefresh({
     organizationId: command.organizationId,

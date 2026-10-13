@@ -32,6 +32,10 @@ function localRefuse(errorClass: LineHttpErrorClass): LineBroadcastHttpResult {
   };
 }
 
+export type CustomerLinePushHttpResult = LineBroadcastHttpResult & {
+  unknownDelivery?: boolean;
+};
+
 export type CustomerLinePushHttpInspection = {
   method: string | undefined;
   path: string;
@@ -86,7 +90,7 @@ export async function executeCustomerLinePushHttp(input: {
   requestId: string;
   sendOpen?: boolean;
   fetchImpl?: typeof fetch;
-}): Promise<LineBroadcastHttpResult> {
+}): Promise<CustomerLinePushHttpResult> {
   if (typeof window !== "undefined") {
     throw new Error("LINE customer push adapter cannot run in the browser");
   }
@@ -135,7 +139,13 @@ export async function executeCustomerLinePushHttp(input: {
     const timedOut =
       (error instanceof Error && error.name === "AbortError") ||
       /timeout|aborted/i.test(error instanceof Error ? error.message : "");
-    return { timedOut, httpOk: false, lineRequestId: null, httpStatus: null };
+    return {
+      timedOut,
+      httpOk: false,
+      lineRequestId: null,
+      httpStatus: null,
+      unknownDelivery: !timedOut,
+    };
   } finally {
     clearTimeout(timer);
   }

@@ -9,7 +9,10 @@
  * No service role. No localStorage fallback.
  */
 
-import { notifyAppointmentWrittenForReminders } from "@/lib/line/automations/appointment-reminder-write-hook";
+import {
+  notifyAppointmentWrittenForReminders,
+  type AppointmentReminderRpcClient,
+} from "@/lib/line/automations/appointment-reminder-write-hook";
 import { AppointmentRemoteAdapter } from "@/lib/persistence/appointment-remote-adapter";
 import {
   AuthenticatedAppointmentTableStore,
@@ -194,10 +197,12 @@ export async function runAuthenticatedAppointmentWriteCreate(
   assertAppointmentWriteOperationalRole(staff?.role);
   const command = persistence.prepare(input);
   const created = await persistence.create(command);
-  notifyAppointmentWrittenForReminders({
+  void notifyAppointmentWrittenForReminders({
     organizationId: command.organizationId,
     appointment: created.appointment,
     change: "created",
+    client: client as unknown as AppointmentReminderRpcClient,
+    env,
   });
   emitAppointmentRemoteWriteRefresh({
     organizationId: command.organizationId,

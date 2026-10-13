@@ -9,7 +9,9 @@ export const LINE_AUTOMATION_LOCAL_DRAFT_HINT =
 export const LINE_AUTOMATION_REMINDER_BACKEND_HINT =
   "預約提醒已接上可測試後端。正式寫入與正式發送仍關閉。";
 export const LINE_AUTOMATION_PERSIST_CLOSED_MESSAGE =
-  "正式設定寫入尚未開放，規則僅本機預覽，也不會建立排程。";
+  "資料庫尚未接通或正式寫入尚未開放，規則沒有儲存成功。";
+export const LINE_AUTOMATION_PERSIST_SAVED_MESSAGE = "預約提醒規則已儲存。正式發送仍關閉。";
+export const LINE_AUTOMATION_DB_NOT_READY = "尚未接通資料庫，不會假裝已經儲存。";
 export const LINE_AUTOMATION_STATS_EMPTY_HINT =
   "尚無發送資料。自動推播尚未接上正式發送，此處不顯示模擬數字。";
 export const LINE_AUTOMATION_HISTORY_EMPTY =
@@ -25,3 +27,11 @@ export const LINE_AUTOMATION_EDITOR_WARNING =
   "此設定僅存在於此瀏覽器工作階段，不會寫入資料庫，也不會呼叫 LINE API。";
 export const LINE_AUTOMATION_REMINDER_EDITOR_WARNING =
   "預約提醒可送出後端檢查，但正式寫入與正式發送仍關閉，系統不會呼叫 LINE API。";
+export const LINE_AUTOMATION_SAVED_BADGE = "已儲存";
+export const LINE_AUTOMATION_BIND_COUNT_LABEL = "已驗證且同意的客人綁定";
+export const LINE_AUTOMATION_PLANNED_COUNT_LABEL = "預定提醒";
+export const LINE_AUTOMATION_DRY_RUN_EMPTY = "尚無 Dry-run 紀錄。正式發送關閉，不會連接 LINE Push。";
+export const LINE_AUTOMATION_START_BIND_LABEL = "產生客人綁定驗證碼";
+export const LINE_AUTOMATION_DRY_RUN_ACTION_LABEL = "執行 Dry-run 檢查";
+export const LINE_AUTOMATION_BIND_HINT =
+  "請請客人用自己的 LINE 把驗證碼傳給本官方帳號。傳送即表示同意預約提醒。";

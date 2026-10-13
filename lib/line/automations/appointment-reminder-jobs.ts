@@ -1,5 +1,6 @@
 import {
   APPOINTMENT_REMINDER_CLAIM_GRACE_MS,
+  APPOINTMENT_REMINDER_STALE_CLAIMED_SECONDS,
 } from "@/lib/line/automations/appointment-reminder-flag";
 import {
   jobMatchesPlan,
@@ -164,6 +165,56 @@ export type AppointmentReminderClaimState = {
   jobs: Record<string, AppointmentReminderJob>;
 };
 
+export function appointmentReminderClaimIsStale(input: {
+  status: string;
+  claimedAt?: string | null;
+  nowMs?: number;
+  staleAfterSeconds?: number;
+}): { finalize: boolean; reason: "in_flight" | "stale" | "not_claimed" } {
+  if (input.status !== "claimed") return { finalize: false, reason: "not_claimed" };
+  const claimed = input.claimedAt ? Date.parse(input.claimedAt) : Number.NaN;
+  const now = input.nowMs ?? Date.now();
+  const staleAfter = (input.staleAfterSeconds ?? APPOINTMENT_REMINDER_STALE_CLAIMED_SECONDS) * 1000;
+  if (!Number.isFinite(claimed) || now - claimed < staleAfter) {
+    return { finalize: false, reason: "in_flight" };
+  }
+  return { finalize: true, reason: "stale" };
+}
+
+export function reminderChannelHasInflight(input: {
+  reminderJobs: Array<{ status: string; claimedAt?: string | null }>;
+  broadcastRows: Array<{ status: string }>;
+  nowMs?: number;
+}): boolean {
+  if (input.broadcastRows.some((row) => row.status === "sending")) return true;
+  return input.reminderJobs.some((job) => {
+    if (job.status !== "claimed") return false;
+    return !appointmentReminderClaimIsStale({
+      status: job.status,
+      claimedAt: job.claimedAt,
+      nowMs: input.nowMs,
+    }).finalize;
+  });
+}
+
+export function finalizeStaleAppointmentReminderClaim(
+  job: AppointmentReminderJob,
+  nowMs = Date.now(),
+): AppointmentReminderJob {
+  const stale = appointmentReminderClaimIsStale({
+    status: job.status,
+    claimedAt: job.claimedAt,
+    nowMs,
+  });
+  if (!stale.finalize) return job;
+  return {
+    ...job,
+    status: "pending_confirmation",
+    skipReason: null,
+    updatedAt: new Date(nowMs).toISOString(),
+  };
+}
+
 export function applyAppointmentReminderClaimStep(
   state: AppointmentReminderClaimState,
   requestId: string,
@@ -178,13 +229,29 @@ export function applyAppointmentReminderClaimStep(
   if (!job) {
     return { claimed: false, reason: "duplicate", status: "failed" };
   }
-  if (job.status === "accepted" || job.sendClaimedAt) {
-    return { claimed: false, reason: "duplicate", status: job.status, job };
-  }
-  if (job.status === "pending_confirmation" || job.status === "claimed") {
+  if (job.status === "claimed") {
+    const stale = appointmentReminderClaimIsStale({
+      status: job.status,
+      claimedAt: job.claimedAt,
+      nowMs,
+    });
+    if (stale.finalize) {
+      job.status = "pending_confirmation";
+      job.updatedAt = new Date(nowMs).toISOString();
+      return { claimed: false, reason: "inflight", status: "pending_confirmation", job };
+    }
     return { claimed: false, reason: "inflight", status: job.status, job };
   }
-  if (job.status === "failed" || job.status === "canceled" || job.status === "expired" || job.status === "skipped") {
+  if (job.status === "accepted" || job.status === "pending_confirmation" || job.sendClaimedAt) {
+    return { claimed: false, reason: "duplicate", status: job.status, job };
+  }
+  if (
+    job.status === "failed" ||
+    job.status === "canceled" ||
+    job.status === "expired" ||
+    job.status === "skipped" ||
+    job.status === "reconciled"
+  ) {
     return { claimed: false, reason: "duplicate", status: job.status, job };
   }
   const window = appointmentReminderJobIsDue({ job, nowMs });
