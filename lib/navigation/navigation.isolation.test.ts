@@ -58,6 +58,32 @@ describe("active route resolution", () => {
     expect(resolveActiveNavId("/staff/settings")).toBe("settings");
     expect(resolveActiveNavId("/staff/settings/organization")).toBe("settings");
     expect(resolveActiveNavId("/staff/settings/locations")).toBe("settings");
+    expect(resolveActiveNavId("/staff/settings/line")).toBe("settings");
+  });
+
+  it("LINE broadcast center is a system route for owners", () => {
+    expect(resolveActiveNavId("/staff/line")).toBe("line");
+    expect(isNavItemVisibleForRole(NAVIGATION_ITEMS.find((i) => i.id === "line")!, "OWNER")).toBe(
+      true,
+    );
+    for (const role of ["MANAGER", "STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
+      expect(isNavItemVisibleForRole(NAVIGATION_ITEMS.find((i) => i.id === "line")!, role)).toBe(
+        false,
+      );
+    }
+  });
+
+  it("LINE automations is a distinct Owner-only route", () => {
+    expect(resolveActiveNavId("/staff/line/automations")).toBe("line-automations");
+    expect(resolveActiveNavId("/staff/line")).toBe("line");
+    expect(
+      isNavItemVisibleForRole(NAVIGATION_ITEMS.find((i) => i.id === "line-automations")!, "OWNER"),
+    ).toBe(true);
+    for (const role of ["MANAGER", "STAFF", "RECEPTIONIST", "ACCOUNTANT"] as const) {
+      expect(
+        isNavItemVisibleForRole(NAVIGATION_ITEMS.find((i) => i.id === "line-automations")!, role),
+      ).toBe(false);
+    }
   });
 
   it("finance cluster is nested under sales and collapsed in More", () => {
@@ -101,6 +127,8 @@ describe("role-aware visibility", () => {
     expect(ids).not.toContain("staff");
     expect(ids).not.toContain("settings");
     expect(ids).not.toContain("reports");
+    expect(ids).not.toContain("line");
+    expect(ids).not.toContain("line-automations");
   });
 
   it("shows Staff and Settings for OWNER", () => {
@@ -108,6 +136,8 @@ describe("role-aware visibility", () => {
     expect(ids).toContain("staff");
     expect(ids).toContain("settings");
     expect(ids).toContain("reports");
+    expect(ids).toContain("line");
+    expect(ids).toContain("line-automations");
   });
 
   it("shows Staff to OWNER and MANAGER and hides it from other roles", () => {
