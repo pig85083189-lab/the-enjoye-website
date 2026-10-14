@@ -21,7 +21,7 @@ import type {
   IdentitySupabaseClient,
 } from "@/lib/persistence/authenticated-identity-catalog";
 import { getPersistenceDriver } from "@/lib/persistence/driver";
-import { UnmappedIdentityError } from "@/lib/persistence/identity-errors";
+import { IdentityCatalogError } from "@/lib/persistence/identity-errors";
 import { formatTaipeiAppointmentDisplay } from "@/lib/persistence/appointment-time";
 import { ORG_ENJOYE_ID } from "@/lib/tenant/constants";
 
@@ -339,7 +339,7 @@ describe("Phase 1C-5C appointment remote read pilot", () => {
     expect(rows.map((row) => row.id)).toEqual([APT_APP_ID]);
     await expect(
       listRemotePilotAppointmentsByCustomer("org-unrelated", FUTURE_QA_APPOINTMENT.customerAppId, client),
-    ).rejects.toBeInstanceOf(UnmappedIdentityError);
+    ).rejects.toBeInstanceOf(IdentityCatalogError);
   });
 
   it("displays Taipei 2026/10/09 10:00–11:40 and never 02:00–03:40", async () => {

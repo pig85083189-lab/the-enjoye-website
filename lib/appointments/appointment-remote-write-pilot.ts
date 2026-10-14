@@ -9,6 +9,10 @@
  * No service role. No localStorage fallback.
  */
 
+import {
+  notifyAppointmentWrittenForReminders,
+  type AppointmentReminderRpcClient,
+} from "@/lib/line/automations/appointment-reminder-write-hook";
 import { AppointmentRemoteAdapter } from "@/lib/persistence/appointment-remote-adapter";
 import {
   AuthenticatedAppointmentTableStore,
@@ -16,6 +20,7 @@ import {
 } from "@/lib/persistence/authenticated-appointment-store";
 import {
   loadAuthenticatedIdentityCatalog,
+  type AuthenticatedIdentityLoadOptions,
   type IdentityQueryBuilder,
   type IdentitySupabaseClient,
   type LoadedAuthenticatedIdentity,
@@ -144,8 +149,9 @@ export interface AuthenticatedAppointmentWritePersistence {
 
 export async function createAuthenticatedAppointmentWritePersistence(
   client: AppointmentWriteClient,
+  options: AuthenticatedIdentityLoadOptions = {},
 ): Promise<AuthenticatedAppointmentWritePersistence> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, options);
   const snapshots = await loadAppointmentWriteSnapshots(client, identity);
   const appointments = new AppointmentRemoteAdapter(
     identity.mapper,
@@ -185,7 +191,9 @@ export async function runAuthenticatedAppointmentWriteCreate(
   if (!isAppointmentRemoteWritePilotEnabled(env)) {
     throw new Error("Appointment remote write pilot is off");
   }
-  const persistence = await createAuthenticatedAppointmentWritePersistence(client);
+  const persistence = await createAuthenticatedAppointmentWritePersistence(client, {
+    organizationId: input.organizationId,
+  });
   const staff = persistence.identity.catalog.findStaffByAppId(
     persistence.identity.organizationDbId,
     persistence.identity.operationalStaffId,
@@ -193,6 +201,13 @@ export async function runAuthenticatedAppointmentWriteCreate(
   assertAppointmentWriteOperationalRole(staff?.role);
   const command = persistence.prepare(input);
   const created = await persistence.create(command);
+  await notifyAppointmentWrittenForReminders({
+    organizationId: command.organizationId,
+    appointment: created.appointment,
+    change: "created",
+    client: client as unknown as AppointmentReminderRpcClient,
+    env,
+  });
   emitAppointmentRemoteWriteRefresh({
     organizationId: command.organizationId,
     customerId: command.customerId,
