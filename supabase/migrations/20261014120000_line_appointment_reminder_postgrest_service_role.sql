@@ -12,8 +12,9 @@
 -- requester. request.jwt is client-settable and is not used.
 --
 -- External callers are authorized only by EXECUTE on the entry RPC.
--- Owner dry-run stays organization-scoped and does not call privileged
--- service RPCs (closes the DEFINER internal path).
+-- Owner dry-run requires a non-empty organization_id and user_is_org_owner.
+-- It never runs globally and does not call privileged service RPCs.
+-- Cron dry-run is a separate service_role-only RPC.
 -- Additive. Do not apply remotely without Owner approval.
 -- Does not change LINE Broadcast claim/send, tokens, or Production RLS.
 --
@@ -344,20 +345,21 @@ security definer
 set search_path = public
 as $$
 begin
-  if p_organization_id is null then
-    if session_user not in ('postgres', 'service_role', 'supabase_admin') then
-      raise exception 'unauthorized' using errcode = '42501';
-    end if;
-  elsif session_user not in ('postgres', 'service_role', 'supabase_admin')
-     and not public.user_is_org_owner(p_organization_id) then
+  if p_organization_id is null
+     or length(btrim(p_organization_id)) = 0
+     or p_organization_id not like 'org-%' then
     raise exception 'unauthorized' using errcode = '42501';
   end if;
-  -- Do not call privileged service RPCs from this authenticated entry.
+  if not public.user_is_org_owner(p_organization_id) then
+    raise exception 'unauthorized' using errcode = '42501';
+  end if;
+  -- Owner entry only. Never finalize, claim, or run globally.
   return public.line_appointment_reminder_dry_run_internal(p_organization_id);
 end;
 $$;
 
-revoke all on function public.run_line_appointment_reminder_dry_run(text) from public, anon;
+revoke all on function public.run_line_appointment_reminder_dry_run(text)
+  from public, anon, service_role;
 grant execute on function public.run_line_appointment_reminder_dry_run(text) to authenticated;
 
 create or replace function public.list_due_line_appointment_reminder_jobs(
@@ -851,7 +853,7 @@ begin
     execute 'grant execute on function public.mark_line_customer_unsubscribed(text, text) to service_role';
     execute 'grant execute on function public.mark_line_customer_blocked(text, text) to service_role';
     execute 'grant execute on function public.unbind_line_customer_by_hash(text, text) to service_role';
-    execute 'grant execute on function public.run_line_appointment_reminder_dry_run(text) to service_role';
+    execute 'revoke all on function public.run_line_appointment_reminder_dry_run(text) from service_role';
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticator') then
     foreach v_sig in array array[

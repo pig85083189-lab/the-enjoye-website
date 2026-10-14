@@ -192,6 +192,40 @@ begin
   exception when insufficient_privilege then
     null;
   end;
+  begin
+    perform public.run_line_appointment_reminder_dry_run('');
+    perform tests.assert(false, 'empty organization_id is rejected');
+  exception when insufficient_privilege then
+    null;
+  end;
+  reset session authorization;
+
+  perform tests.become('cccccccc-cccc-cccc-cccc-cccccccccccc');
+  set session authorization authenticated;
+  begin
+    perform public.run_line_appointment_reminder_dry_run('org-the-enjoye');
+    perform tests.assert(false, 'staff cannot owner dry-run');
+  exception when insufficient_privilege then
+    null;
+  end;
+  reset session authorization;
+
+  begin
+    set session authorization service_role;
+    perform public.run_line_appointment_reminder_dry_run('org-the-enjoye');
+    perform tests.assert(false, 'service_role cannot use owner dry-run');
+  exception when insufficient_privilege then
+    null;
+  end;
+  reset session authorization;
+
+  begin
+    set session authorization postgres;
+    perform public.run_line_appointment_reminder_dry_run(null);
+    perform tests.assert(false, 'owner rpc forbids null even for postgres');
+  exception when insufficient_privilege then
+    null;
+  end;
   reset session authorization;
 
   grant execute on function public.finalize_stale_line_appointment_reminder_claimed(integer)
@@ -392,6 +426,26 @@ select tests.assert(
     'execute'
   ),
   'authenticated keeps owner org dry-run'
+);
+select tests.assert(
+  not has_function_privilege(
+    'service_role',
+    'public.run_line_appointment_reminder_dry_run(text)',
+    'execute'
+  ),
+  'service_role has no owner dry-run EXECUTE'
+);
+select tests.assert(
+  pg_get_functiondef(
+    'public.run_line_appointment_reminder_dry_run(text)'::regprocedure
+  ) not like '%claim_line_appointment_reminder_job%',
+  'owner dry-run does not call claim'
+);
+select tests.assert(
+  pg_get_functiondef(
+    'public.run_line_appointment_reminder_dry_run(text)'::regprocedure
+  ) not like '%session_user%',
+  'owner dry-run does not use session_user identity'
 );
 select tests.assert(
   not exists (
