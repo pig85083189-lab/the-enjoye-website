@@ -1,7 +1,8 @@
 /**
- * Browser calendar submit env. Client bundles only see NEXT_PUBLIC_* plus
- * the hardcoded write / mutate / calendar-read pilots. Persist still requires
- * the Preview Supabase host and never opens on Production.
+ * Browser calendar submit env. Client bundles do not spread process.env;
+ * NEXT_PUBLIC_* must be read as a direct property so Next can inline it.
+ * Persist still requires the Preview Supabase host and never opens on
+ * Production.
  */
 
 import { LINE_APPOINTMENT_REMINDER_PERSIST_OPEN_ENV } from "@/lib/line/automations/appointment-reminder-flag";
@@ -21,7 +22,14 @@ export function calendarRemoteSubmitEnv(
   extra: NodeJS.Dict<string> = {},
   base: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
 ): NodeJS.Dict<string> {
-  const env: NodeJS.Dict<string> = { ...base, ...extra };
+  const env: NodeJS.Dict<string> = {
+    ...base,
+    NEXT_PUBLIC_SUPABASE_URL:
+      extra.NEXT_PUBLIC_SUPABASE_URL ??
+      base.NEXT_PUBLIC_SUPABASE_URL ??
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+    ...extra,
+  };
   if ((env.VERCEL_ENV ?? "").trim() === "production") return env;
   if (reminderSupabaseHostname(env) !== LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST) {
     return env;

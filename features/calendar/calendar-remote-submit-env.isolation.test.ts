@@ -27,6 +27,14 @@ describe("calendarRemoteSubmitEnv", () => {
     expect(env.BEAUTY_OS_LINE_APPOINTMENT_REMINDER_PERSIST_OPEN).toBeUndefined();
   });
 
+  it("opens persist when the browser process.env spread is empty", () => {
+    const env = calendarRemoteSubmitEnv(
+      { NEXT_PUBLIC_SUPABASE_URL: PREVIEW_URL },
+      {},
+    );
+    expect(isAppointmentReminderPersistOpen({ env })).toBe(true);
+  });
+
   it("stays closed when VERCEL_ENV is production", () => {
     const env = calendarRemoteSubmitEnv(
       {},

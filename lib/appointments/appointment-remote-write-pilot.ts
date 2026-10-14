@@ -201,7 +201,7 @@ export async function runAuthenticatedAppointmentWriteCreate(
   assertAppointmentWriteOperationalRole(staff?.role);
   const command = persistence.prepare(input);
   const created = await persistence.create(command);
-  void notifyAppointmentWrittenForReminders({
+  await notifyAppointmentWrittenForReminders({
     organizationId: command.organizationId,
     appointment: created.appointment,
     change: "created",

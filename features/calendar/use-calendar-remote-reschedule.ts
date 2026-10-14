@@ -55,6 +55,7 @@ export async function submitCalendarRemoteAppointmentReschedule(input: {
         [APPOINTMENT_REMOTE_MUTATE_PILOT_ENV]: "1",
         [APPOINTMENT_REMOTE_WRITE_PILOT_ENV]: "1",
         [CALENDAR_REMOTE_READ_PILOT_ENV]: "1",
+        NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
       }),
     );
   } catch (error) {

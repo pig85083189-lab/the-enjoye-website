@@ -139,7 +139,7 @@ export async function runAuthenticatedAppointmentWriteMutate(
   }
   const command = persistence.prepare(input, current);
   const mutated = await persistence.mutate(command);
-  void notifyAppointmentWrittenForReminders({
+  await notifyAppointmentWrittenForReminders({
     organizationId: command.organizationId,
     appointment: mutated.appointment,
     change:

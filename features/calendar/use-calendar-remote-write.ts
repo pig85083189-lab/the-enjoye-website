@@ -112,6 +112,7 @@ export async function submitCalendarRemoteAppointmentCreate(input: {
     calendarRemoteSubmitEnv({
       [APPOINTMENT_REMOTE_WRITE_PILOT_ENV]: "1",
       [CALENDAR_REMOTE_READ_PILOT_ENV]: "1",
+      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     }),
   );
 }
