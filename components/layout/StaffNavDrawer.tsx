@@ -87,7 +87,12 @@ export function StaffNavDrawer({ open, onClose }: StaffNavDrawerProps) {
                           inactiveClassName="text-secondary-text hover:bg-[#FAF7F5] hover:text-text"
                         >
                           <Icon className="h-5 w-5" aria-hidden />
-                          {item.label}
+                          <span className="flex-1">{item.label}</span>
+                          {item.badge ? (
+                            <span className="rounded-full bg-primary-light px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-primary">
+                              {item.badge}
+                            </span>
+                          ) : null}
                         </StaffNavLink>
                       </li>
                     );
