@@ -310,7 +310,7 @@ describe("Customer remote write create", () => {
         },
         WRITE_ON,
       ),
-    ).rejects.toBeInstanceOf(UnmappedIdentityError);
+    ).rejects.toBeInstanceOf(IdentityCatalogError);
     const tables = validTables({
       customers: [
         qaCustomerRow(),

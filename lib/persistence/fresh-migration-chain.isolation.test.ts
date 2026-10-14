@@ -39,6 +39,19 @@ const EXPECTED_CHAIN = [
   "20261007150000_staff_operational_create_fix.sql",
   "20261008120000_staff_login_invite_foundation.sql",
   "20261008130000_staff_login_invite_create.sql",
+  "20261010120000_line_official_account_foundation.sql",
+  "20261010140000_line_broadcast_real_send.sql",
+  "20261010160000_line_owner_test_push.sql",
+  "20261010180000_line_webhook_least_privilege.sql",
+  "20261010190000_line_test_push_claim_daily_quota.sql",
+  "20261010200000_line_test_push_error_diagnostics.sql",
+  "20261011010000_line_test_push_runtime_kill_switch.sql",
+  "20261011020000_line_broadcast_claim_safety.sql",
+  "20261011140000_line_broadcast_oneshot_permit.sql",
+  "20261012120000_line_broadcast_channel_lock.sql",
+  "20261013120000_line_appointment_reminder_automation.sql",
+  "20261013140000_line_appointment_reminder_phase_2c.sql",
+  "20261014120000_line_appointment_reminder_postgrest_service_role.sql",
 ] as const;
 
 function read(rel: string): string {

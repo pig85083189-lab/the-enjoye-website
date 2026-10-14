@@ -226,7 +226,7 @@ describe("Phase 1C-6C appointment write customer catalog", () => {
     expect(calendar).toMatch(/filterAppointmentWriteCustomers/);
     expect(calendar).not.toMatch(/phone: ""/);
     const remoteMap = calendar.slice(
-      calendar.indexOf("? remoteCreate.customers.map"),
+      calendar.indexOf("? remoteCatalog.customers.map"),
       calendar.indexOf(": localCustomerRepository.list"),
     );
     expect(remoteMap).toMatch(/phone: c\.phone/);
