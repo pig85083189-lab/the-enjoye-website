@@ -578,7 +578,9 @@ describe("appointment reminder flags, cron, and customer push adapter", () => {
       }).ok,
     ).toBe(true);
     expect(source("app/api/cron/line-appointment-reminders/route.ts")).toMatch(/send_closed/);
-    expect(source("vercel.json")).toMatch(/\*\/15 \* \* \* \*/);
+    expect(source("vercel.json")).toMatch(/\/api\/cron\/line-appointment-reminders/);
+    expect(source("vercel.json")).toMatch(/0 3 \* \* \*/);
+    expect(source("vercel.json")).not.toMatch(/\*\/15 \* \* \* \*/);
     expect(source("vercel.json")).not.toMatch(/BEAUTY_OS_/);
   });
 });
