@@ -28,21 +28,44 @@ export function authorizeAppointmentReminderCron(input: {
   return { ok: true };
 }
 
+function cronRpcErrorText(error: unknown): string {
+  if (!error) return "";
+  if (typeof error === "string") return error;
+  if (typeof error === "object") {
+    const row = error as { code?: unknown; message?: unknown };
+    return [row.code, row.message].filter((part) => typeof part === "string").join(" ");
+  }
+  return "";
+}
+
+export function isAppointmentReminderCronPrivilegeError(error: unknown): boolean {
+  return /42501|unauthorized|permission denied/i.test(cronRpcErrorText(error));
+}
+
 export function evaluateAppointmentReminderCronRpcResults(input: {
   finalizeError: unknown;
   tickError: unknown;
   tickData: unknown;
 }): { ok: true; checked: number } | { ok: false; message: string } {
   if (input.finalizeError) {
+    if (isAppointmentReminderCronPrivilegeError(input.finalizeError)) {
+      return { ok: false, message: "Dry-run RPC 權限失敗，沒有發送 LINE" };
+    }
     return { ok: false, message: "Dry-run finalize 失敗，沒有發送 LINE" };
   }
   if (input.tickError) {
+    if (isAppointmentReminderCronPrivilegeError(input.tickError)) {
+      return { ok: false, message: "Dry-run RPC 權限失敗，沒有發送 LINE" };
+    }
     return { ok: false, message: "Dry-run RPC 失敗，沒有發送 LINE" };
   }
   const row =
     input.tickData && typeof input.tickData === "object"
-      ? (input.tickData as { checked?: unknown })
+      ? (input.tickData as { checked?: unknown; sent?: unknown; mode?: unknown })
       : null;
+  if (row && row.sent === true) {
+    return { ok: false, message: "Dry-run RPC 失敗，沒有發送 LINE" };
+  }
   return { ok: true, checked: Number(row?.checked ?? 0) };
 }
 

@@ -289,6 +289,9 @@ describe("Phase 2C tenant, permission, race, and Broadcast regression", () => {
     expect(source("scripts/line-appointment-reminder-local-pg.sh")).toMatch(
       /20261013140000_line_appointment_reminder_phase_2c\.sql/,
     );
+    expect(source("scripts/line-appointment-reminder-local-pg.sh")).toMatch(
+      /20261014120000_line_appointment_reminder_postgrest_service_role\.sql/,
+    );
     expect(source("scripts/line-appointment-reminder-local-pg.sh")).not.toMatch(
       /bfzquejrtgqzzarhkiya|knccefcxncglgpmvgqlp|api\.line\.me/,
     );

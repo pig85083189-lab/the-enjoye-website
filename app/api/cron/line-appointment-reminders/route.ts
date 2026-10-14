@@ -5,10 +5,7 @@ import {
   evaluateAppointmentReminderCronRpcResults,
 } from "@/lib/line/automations/appointment-reminder-cron";
 import { isAppointmentReminderSendOpen } from "@/lib/line/automations/appointment-reminder-flag";
-import {
-  FINALIZE_STALE_LINE_APPOINTMENT_REMINDER_CLAIMED_RPC,
-  RUN_LINE_APPOINTMENT_REMINDER_DRY_RUN_RPC,
-} from "@/lib/line/automations/appointment-reminder-rpc";
+import { RUN_LINE_APPOINTMENT_REMINDER_CRON_DRY_RUN_RPC } from "@/lib/line/automations/appointment-reminder-rpc";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -54,16 +51,9 @@ async function handle(request: Request) {
         message: "Dry-run 已允許但沒有可寫入的 server client，沒有發送 LINE",
       });
     }
-    const finalize = await admin.rpc(FINALIZE_STALE_LINE_APPOINTMENT_REMINDER_CLAIMED_RPC, {
-      p_stale_after_seconds: 30,
-    });
-    const tick = finalize.error
-      ? { data: null, error: finalize.error }
-      : await admin.rpc(RUN_LINE_APPOINTMENT_REMINDER_DRY_RUN_RPC, {
-          p_organization_id: null,
-        });
+    const tick = await admin.rpc(RUN_LINE_APPOINTMENT_REMINDER_CRON_DRY_RUN_RPC);
     const outcome = evaluateAppointmentReminderCronRpcResults({
-      finalizeError: finalize.error,
+      finalizeError: null,
       tickError: tick.error,
       tickData: tick.data,
     });

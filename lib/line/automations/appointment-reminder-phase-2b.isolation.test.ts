@@ -434,7 +434,7 @@ describe("Phase 2B persist hook, dry-run, and Broadcast regression", () => {
       /executeCustomerLinePushHttp|\/v2\/bot\/message\/push/,
     );
     expect(source("app/api/cron/line-appointment-reminders/route.ts")).toMatch(
-      /RUN_LINE_APPOINTMENT_REMINDER_DRY_RUN_RPC/,
+      /RUN_LINE_APPOINTMENT_REMINDER_CRON_DRY_RUN_RPC/,
     );
     expect(source("app/api/cron/line-appointment-reminders/route.ts")).toMatch(
       /evaluateAppointmentReminderCronRpcResults/,
