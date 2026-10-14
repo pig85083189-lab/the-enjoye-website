@@ -710,7 +710,7 @@ describe("appointment reminder UI and draft migration safety", () => {
       .map(source)
       .join("\n");
     expect(joined).not.toMatch(/OWNER_READ_LINE_TOKEN_CIPHER_RPC|channel_access_token/);
-    expect(joined).not.toMatch(/line_owner_recipients|executeLineBroadcastHttp|multicast/);
+    expect(joined).not.toMatch(/executeLineBroadcastHttp|executeCustomerLinePushHttp|multicast/);
     expect(source("lib/line/automations/appointment-reminder-bindings.ts")).toMatch(
       /Owner LINE recipients must not be reused/,
     );

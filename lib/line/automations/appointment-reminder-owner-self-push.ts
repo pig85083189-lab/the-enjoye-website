@@ -1,8 +1,8 @@
 /**
- * Phase 2E-6 Owner-self reminder test. SEND stays hardcoded closed.
- * Reuses THE ENJOYE Channel 2009219238. Does not retarget the official
- * Webhook URL, does not reuse test-push as authorization, and never
- * designates a LINE userId.
+ * Phase 2E-7 Owner-self reminder consent + oneshot. SEND stays closed.
+ * Test-push bind is identity evidence only. Independent grant + oneshot
+ * authorize the reminder test. This module never writes remotely or
+ * calls LINE.
  */
 
 import {
@@ -25,8 +25,15 @@ export const OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID = LINE_BROADCAST_ONESHOT_CHA
 export const OWNER_SELF_REMINDER_DAILY_LIMIT = 1;
 export const OWNER_SELF_REMINDER_CONFIRM_PHRASE = "確認發送一則給我自己的預約提醒測試";
 export const OWNER_SELF_REMINDER_ONESHOT_PREFIX = "laros-";
+export const OWNER_SELF_REMINDER_GRANT_PREFIX = "lorg-";
 export const OWNER_SELF_REMINDER_KILL_SWITCH_OPEN = false;
 export const OWNER_SELF_REMINDER_FAKE_CUSTOMER_ID = "cust-2d2-fake-bound";
+export const OWNER_SELF_REMINDER_PURPOSE = "owner_self_reminder_test_once";
+export const OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID = "apt-2e7-owner-self";
+export const OWNER_SELF_REMINDER_GRANT_TTL_MS = 24 * 60 * 60_000;
+export const OWNER_SELF_REMINDER_ONESHOT_TTL_MS = 2 * 60 * 60_000;
+export const OWNER_SELF_REMINDER_SQL_DRAFT =
+  "supabase/drafts/20261014180000_line_owner_self_reminder_grant.sql";
 
 export type OwnerSelfReminderReason =
   | "send_closed"
@@ -50,6 +57,37 @@ export type OwnerSelfBindEvidence = {
   testPushEnabled: boolean;
 };
 
+export type OwnerSelfReminderGrant = {
+  id: string;
+  organizationId: string;
+  staffUserId: string;
+  channelId: string;
+  purpose: string;
+  appointmentId: string;
+  bindBoundAt: string;
+  bindHint: string;
+  bindKeyId: string;
+  acknowledgedOnceOnly: boolean;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt?: string | null;
+  authorizedViaTestPush?: boolean;
+};
+
+export type OwnerSelfReminderOneshot = {
+  id: string;
+  grantId: string;
+  organizationId: string;
+  staffUserId: string;
+  channelId: string;
+  appointmentId: string;
+  bindBoundAt: string;
+  status: "issued" | "claimed" | "accepted" | "pending_confirmation" | "expired" | "canceled";
+  expiresAt: string;
+  claimedAt?: string | null;
+  consumedAt?: string | null;
+};
+
 export type OwnerSelfReminderView = {
   visible: boolean;
   organizationId: string;
@@ -57,7 +95,7 @@ export type OwnerSelfReminderView = {
   ownerBindPresent: boolean;
   ownerBindHint: string;
   ownerBindReusableAsReminder: false;
-  independentConsent: false;
+  independentConsent: boolean;
   trustworthyRecipient: false;
   remainingToday: number;
   confirmPhrase: string;
@@ -111,6 +149,12 @@ export function newOwnerSelfReminderOneshotId(
   return `${OWNER_SELF_REMINDER_ONESHOT_PREFIX}${random().replace(/-/g, "").slice(0, 16)}`;
 }
 
+export function newOwnerSelfReminderGrantId(
+  random: () => string = () => crypto.randomUUID(),
+): string {
+  return `${OWNER_SELF_REMINDER_GRANT_PREFIX}${random().replace(/-/g, "").slice(0, 16)}`;
+}
+
 export function ownerSelfReminderRefusesRetry(input: {
   oneshotConsumed?: boolean;
   previousStatus?: string | null;
@@ -127,14 +171,12 @@ export function ownerSelfReminderRefusesRetry(input: {
 
 /**
  * Webhook-verified Owner bind is identity evidence only.
- * Test-push enablement, Owner role, nickname, or a fake customer never authorize.
+ * testPushEnabled may be true; it never grants reminder consent.
  */
 export function evaluateOwnerSelfIdentity(input: {
   organizationId: string;
   actorStaffUserId?: string | null;
   evidence?: OwnerSelfBindEvidence | null;
-  independentConsent: boolean;
-  testPushRecipientReused?: boolean;
   fakeCustomerId?: string | null;
   plaintextLineUserId?: string | null;
 }): { ok: true } | { ok: false; reason: OwnerSelfReminderReason; message: string } {
@@ -144,13 +186,6 @@ export function evaluateOwnerSelfIdentity(input: {
   if (input.fakeCustomerId === OWNER_SELF_REMINDER_FAKE_CUSTOMER_ID) {
     return { ok: false, reason: "invalid_recipient", message: "不能使用假綁定客人作為店長本人收件者" };
   }
-  if (input.testPushRecipientReused) {
-    return {
-      ok: false,
-      reason: "invalid_recipient",
-      message: "既有店長 test-push 設定不能直接當作預約提醒收件者",
-    };
-  }
   const evidence = input.evidence;
   if (!evidence) {
     return { ok: false, reason: "unbound", message: "尚未有官方 Webhook 驗證的店長 LINE 綁定" };
@@ -158,7 +193,7 @@ export function evaluateOwnerSelfIdentity(input: {
   if (evidence.organizationId !== input.organizationId) {
     return { ok: false, reason: "unauthorized", message: "不能使用其他店家的店長 LINE 綁定" };
   }
-  if (evidence.bindMethod !== "webhook_code") {
+  if (evidence.bindMethod !== "webhook_code" || !evidence.boundAt) {
     return { ok: false, reason: "unbound", message: "店長 LINE 必須經官方 Webhook 驗證碼綁定" };
   }
   if (!evidence.secretPresent || evidence.keyId !== LINE_CREDENTIAL_KEY_ID) {
@@ -170,19 +205,171 @@ export function evaluateOwnerSelfIdentity(input: {
   if (!input.actorStaffUserId || evidence.staffUserId !== input.actorStaffUserId) {
     return { ok: false, reason: "unauthorized", message: "綁定必須屬於目前登入的店長本人" };
   }
-  if (evidence.testPushEnabled) {
-    return {
-      ok: false,
-      reason: "invalid_recipient",
-      message: "既有店長 test-push 設定不能直接當作預約提醒收件者",
-    };
-  }
-  if (!input.independentConsent) {
+  return { ok: true };
+}
+
+export function createOwnerSelfReminderGrantDraft(input: {
+  organizationId: string;
+  staffUserId: string;
+  evidence: OwnerSelfBindEvidence;
+  nowMs?: number;
+  random?: () => string;
+}): OwnerSelfReminderGrant {
+  const nowMs = input.nowMs ?? Date.now();
+  return {
+    id: newOwnerSelfReminderGrantId(input.random),
+    organizationId: input.organizationId,
+    staffUserId: input.staffUserId,
+    channelId: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
+    purpose: OWNER_SELF_REMINDER_PURPOSE,
+    appointmentId: OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID,
+    bindBoundAt: input.evidence.boundAt ?? "",
+    bindHint: input.evidence.hint,
+    bindKeyId: input.evidence.keyId ?? "",
+    acknowledgedOnceOnly: true,
+    createdAt: new Date(nowMs).toISOString(),
+    expiresAt: new Date(nowMs + OWNER_SELF_REMINDER_GRANT_TTL_MS).toISOString(),
+    revokedAt: null,
+    authorizedViaTestPush: false,
+  };
+}
+
+export function createOwnerSelfReminderOneshotDraft(input: {
+  grant: OwnerSelfReminderGrant;
+  nowMs?: number;
+  random?: () => string;
+}): OwnerSelfReminderOneshot {
+  const nowMs = input.nowMs ?? Date.now();
+  return {
+    id: newOwnerSelfReminderOneshotId(input.random),
+    grantId: input.grant.id,
+    organizationId: input.grant.organizationId,
+    staffUserId: input.grant.staffUserId,
+    channelId: input.grant.channelId,
+    appointmentId: input.grant.appointmentId,
+    bindBoundAt: input.grant.bindBoundAt,
+    status: "issued",
+    expiresAt: new Date(nowMs + OWNER_SELF_REMINDER_ONESHOT_TTL_MS).toISOString(),
+  };
+}
+
+export function evaluateOwnerSelfGrant(input: {
+  organizationId: string;
+  actorStaffUserId?: string | null;
+  channelId?: string | null;
+  evidence?: OwnerSelfBindEvidence | null;
+  grant?: OwnerSelfReminderGrant | null;
+  clientAcknowledged?: boolean;
+  authorizeWithTestPushEnabled?: boolean;
+  nowMs?: number;
+}): { ok: true } | { ok: false; reason: OwnerSelfReminderReason; message: string } {
+  if (input.authorizeWithTestPushEnabled) {
     return {
       ok: false,
       reason: "not_consented",
-      message: "尚未另外同意這次預約提醒測試，不能沿用 test-push 或店長角色",
+      message: "不能用店長 test-push 啟用狀態當作預約提醒同意",
     };
+  }
+  const grant = input.grant;
+  if (!grant) {
+    return {
+      ok: false,
+      reason: "not_consented",
+      message: input.clientAcknowledged
+        ? "前端勾選不能代替伺服器授權列"
+        : "尚未另外同意這次預約提醒測試，不能沿用 test-push 或店長角色",
+    };
+  }
+  if (grant.authorizedViaTestPush) {
+    return {
+      ok: false,
+      reason: "not_consented",
+      message: "不能用店長 test-push 啟用狀態當作預約提醒同意",
+    };
+  }
+  if (
+    grant.organizationId !== input.organizationId ||
+    grant.staffUserId !== input.actorStaffUserId ||
+    grant.channelId !== input.channelId
+  ) {
+    return { ok: false, reason: "unauthorized", message: "授權必須精確符合店家、店長與 Channel" };
+  }
+  if (grant.purpose !== OWNER_SELF_REMINDER_PURPOSE || !grant.acknowledgedOnceOnly) {
+    return { ok: false, reason: "not_consented", message: "這次授權不是單次預約提醒測試" };
+  }
+  if (grant.appointmentId !== OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID) {
+    return { ok: false, reason: "invalid_input", message: "只能授權固定的一筆測試預約" };
+  }
+  if (grant.revokedAt) {
+    return { ok: false, reason: "not_consented", message: "店長本人測試同意已撤回" };
+  }
+  const nowMs = input.nowMs ?? Date.now();
+  if (Date.parse(grant.expiresAt) <= nowMs) {
+    return { ok: false, reason: "not_consented", message: "店長本人測試同意已過期" };
+  }
+  const evidence = input.evidence;
+  if (
+    !evidence ||
+    grant.bindBoundAt !== evidence.boundAt ||
+    grant.bindHint !== evidence.hint ||
+    grant.bindKeyId !== evidence.keyId
+  ) {
+    return { ok: false, reason: "not_consented", message: "重新綁定後舊的測試同意已失效" };
+  }
+  return { ok: true };
+}
+
+export function evaluateOwnerSelfOneshotClaim(input: {
+  oneshot?: OwnerSelfReminderOneshot | null;
+  grant?: OwnerSelfReminderGrant | null;
+  evidence?: OwnerSelfBindEvidence | null;
+  appointmentId?: string | null;
+  oneshotConsumed?: boolean;
+  previousStatus?: string | null;
+  previousErrorClass?: LineHttpErrorClass | string | null;
+  previousHttpStatus?: number | null;
+  nowMs?: number;
+}): { ok: true } | { ok: false; reason: OwnerSelfReminderReason; message: string } {
+  const oneshot = input.oneshot;
+  if (!oneshot || !oneshot.id.startsWith(OWNER_SELF_REMINDER_ONESHOT_PREFIX)) {
+    return { ok: false, reason: "invalid_input", message: "缺少單次授權識別" };
+  }
+  if (!input.grant || oneshot.grantId !== input.grant.id) {
+    return { ok: false, reason: "invalid_input", message: "單次授權與同意列不符" };
+  }
+  if (
+    oneshot.organizationId !== input.grant.organizationId ||
+    oneshot.staffUserId !== input.grant.staffUserId ||
+    oneshot.channelId !== input.grant.channelId ||
+    oneshot.bindBoundAt !== input.grant.bindBoundAt
+  ) {
+    return { ok: false, reason: "duplicate", message: "單次授權不能在更改收件者後重用" };
+  }
+  if (
+    oneshot.appointmentId !== OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID ||
+    (input.appointmentId && input.appointmentId !== oneshot.appointmentId)
+  ) {
+    return { ok: false, reason: "invalid_input", message: "單次授權只能用於固定的測試預約" };
+  }
+  if (input.evidence && oneshot.bindBoundAt !== input.evidence.boundAt) {
+    return { ok: false, reason: "duplicate", message: "單次授權不能在更改收件者後重用" };
+  }
+  if (oneshot.consumedAt || input.oneshotConsumed || oneshot.status === "claimed") {
+    return { ok: false, reason: "duplicate", message: "這次單次授權已使用或結果待確認，不會重送" };
+  }
+  if (
+    ownerSelfReminderRefusesRetry({
+      oneshotConsumed: input.oneshotConsumed,
+      previousStatus: input.previousStatus ?? oneshot.status,
+      previousErrorClass: input.previousErrorClass,
+      previousHttpStatus: input.previousHttpStatus,
+    })
+  ) {
+    return { ok: false, reason: "duplicate", message: "這次單次授權已使用或結果待確認，不會重送" };
+  }
+  const nowMs = input.nowMs ?? Date.now();
+  if (Date.parse(oneshot.expiresAt) <= nowMs || oneshot.status === "expired") {
+    return { ok: false, reason: "duplicate", message: "單次授權已過期，不會重送" };
   }
   return { ok: true };
 }
@@ -190,10 +377,20 @@ export function evaluateOwnerSelfIdentity(input: {
 export function buildOwnerSelfReminderView(input: {
   organizationId: string;
   evidence?: OwnerSelfBindEvidence | null;
+  grant?: OwnerSelfReminderGrant | null;
   oneshotId?: string;
   quotaLabel?: string;
+  nowMs?: number;
 }): OwnerSelfReminderView {
   const evidence = input.evidence;
+  const grantOk = evaluateOwnerSelfGrant({
+    organizationId: input.organizationId,
+    actorStaffUserId: evidence?.staffUserId,
+    channelId: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
+    evidence,
+    grant: input.grant,
+    nowMs: input.nowMs,
+  }).ok;
   return {
     visible: isOwnerSelfReminderPanelVisible(input.organizationId),
     organizationId: OWNER_SELF_REMINDER_ALLOWED_ORG_ID,
@@ -201,7 +398,7 @@ export function buildOwnerSelfReminderView(input: {
     ownerBindPresent: Boolean(evidence?.bindMethod === "webhook_code" && evidence.hint),
     ownerBindHint: evidence?.hint?.startsWith("••••") ? evidence.hint : "••••",
     ownerBindReusableAsReminder: false,
-    independentConsent: false,
+    independentConsent: grantOk,
     trustworthyRecipient: false,
     remainingToday: OWNER_SELF_REMINDER_DAILY_LIMIT,
     confirmPhrase: OWNER_SELF_REMINDER_CONFIRM_PHRASE,
@@ -241,8 +438,10 @@ export function evaluateOwnerSelfReminderPush(input: {
   actorStaffUserId?: string | null;
   channelId?: string | null;
   evidence?: OwnerSelfBindEvidence | null;
-  independentConsent: boolean;
-  testPushRecipientReused?: boolean;
+  grant?: OwnerSelfReminderGrant | null;
+  oneshot?: OwnerSelfReminderOneshot | null;
+  clientAcknowledged?: boolean;
+  authorizeWithTestPushEnabled?: boolean;
   fakeCustomerId?: string | null;
   plaintextLineUserId?: string | null;
   confirmPhrase: string;
@@ -251,6 +450,7 @@ export function evaluateOwnerSelfReminderPush(input: {
   killSwitchOpen: boolean;
   sentToday: number;
   recipientCount: number;
+  appointmentId?: string | null;
   lineQuota?: LineQuotaPublic | null;
   quotaCheckedAt?: string | null;
   channelInflight?: boolean;
@@ -300,16 +500,6 @@ export function evaluateOwnerSelfReminderPush(input: {
   if (!input.killSwitchOpen) {
     return refuse(base, "send_closed", "店長本人測試停止開關已關閉");
   }
-  if (
-    ownerSelfReminderRefusesRetry({
-      oneshotConsumed: input.oneshotConsumed,
-      previousStatus: input.previousStatus,
-      previousErrorClass: input.previousErrorClass,
-      previousHttpStatus: input.previousHttpStatus,
-    })
-  ) {
-    return refuse(base, "duplicate", "這次單次授權已使用或結果待確認，不會重送");
-  }
   if (input.sentToday >= OWNER_SELF_REMINDER_DAILY_LIMIT) {
     return refuse(base, "quota_exceeded", "今日店長本人測試發送次數已達上限");
   }
@@ -318,13 +508,52 @@ export function evaluateOwnerSelfReminderPush(input: {
     organizationId: input.organizationId,
     actorStaffUserId: input.actorStaffUserId,
     evidence: input.evidence,
-    independentConsent: input.independentConsent,
-    testPushRecipientReused: input.testPushRecipientReused ?? input.evidence?.testPushEnabled,
     fakeCustomerId: input.fakeCustomerId,
     plaintextLineUserId: input.plaintextLineUserId,
   });
   if (!identity.ok) {
     return refuse(base, identity.reason, identity.message);
+  }
+
+  const consent = evaluateOwnerSelfGrant({
+    organizationId: input.organizationId,
+    actorStaffUserId: input.actorStaffUserId,
+    channelId: input.channelId,
+    evidence: input.evidence,
+    grant: input.grant,
+    clientAcknowledged: input.clientAcknowledged,
+    authorizeWithTestPushEnabled: input.authorizeWithTestPushEnabled,
+    nowMs: input.nowMs,
+  });
+  if (!consent.ok) {
+    return refuse(base, consent.reason, consent.message);
+  }
+
+  const oneshot = evaluateOwnerSelfOneshotClaim({
+    oneshot:
+      input.oneshot ??
+      ({
+        id: input.oneshotId,
+        grantId: input.grant!.id,
+        organizationId: input.organizationId,
+        staffUserId: input.actorStaffUserId ?? "",
+        channelId: input.channelId ?? "",
+        appointmentId: input.appointmentId ?? OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID,
+        bindBoundAt: input.evidence?.boundAt ?? "",
+        status: "issued",
+        expiresAt: new Date((input.nowMs ?? Date.now()) + OWNER_SELF_REMINDER_ONESHOT_TTL_MS).toISOString(),
+      } satisfies OwnerSelfReminderOneshot),
+    grant: input.grant,
+    evidence: input.evidence,
+    appointmentId: input.appointmentId ?? OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID,
+    oneshotConsumed: input.oneshotConsumed,
+    previousStatus: input.previousStatus,
+    previousErrorClass: input.previousErrorClass,
+    previousHttpStatus: input.previousHttpStatus,
+    nowMs: input.nowMs,
+  });
+  if (!oneshot.ok) {
+    return refuse(base, oneshot.reason, oneshot.message);
   }
 
   const snapshot = reminderChannelSnapshotAllowsSend({

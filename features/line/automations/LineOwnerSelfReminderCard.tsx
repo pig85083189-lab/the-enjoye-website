@@ -18,11 +18,14 @@ import {
   LINE_CONTROLLED_PUSH_ONESHOT_LABEL,
   LINE_CONTROLLED_PUSH_PHRASE_LABEL,
   LINE_CONTROLLED_PUSH_REMAINING_LABEL,
+  LINE_OWNER_SELF_ACK_LABEL,
+  LINE_OWNER_SELF_ACK_NOTE,
   LINE_OWNER_SELF_BIND_LABEL,
   LINE_OWNER_SELF_CHECK_LABEL,
   LINE_OWNER_SELF_CLOSED_LABEL,
   LINE_OWNER_SELF_CONSENT_LABEL,
   LINE_OWNER_SELF_HINT,
+  LINE_OWNER_SELF_ONCE_ONLY_LABEL,
   LINE_OWNER_SELF_TITLE,
   LINE_OWNER_SELF_TRUST_LABEL,
 } from "@/lib/line/automations/copy";
@@ -31,6 +34,7 @@ export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
   const visible = isOwnerSelfReminderPanelVisible(input.organizationId);
   const [view, setView] = useState<OwnerSelfReminderView | null>(null);
   const [confirmPhrase, setConfirmPhrase] = useState("");
+  const [acknowledged, setAcknowledged] = useState(false);
   const [decision, setDecision] = useState<OwnerSelfReminderDecision | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [audits, setAudits] = useState<OwnerSelfReminderDecision["audit"][]>([]);
@@ -59,6 +63,12 @@ export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
       <h2 className="text-[16px] font-semibold text-text">{LINE_OWNER_SELF_TITLE}</h2>
       <p className="mt-2 text-[13px] text-secondary-text">{LINE_OWNER_SELF_HINT}</p>
       <p className="mt-2 text-[12px] font-medium text-text">{LINE_OWNER_SELF_CLOSED_LABEL}</p>
+      <p
+        className="mt-2 rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2 text-[12px] font-medium text-text"
+        data-line-owner-self-once-only
+      >
+        {LINE_OWNER_SELF_ONCE_ONLY_LABEL}
+      </p>
       <dl className="mt-4 grid gap-2 text-[13px] sm:grid-cols-2">
         <div>
           <dt className="text-secondary-text">LINE Channel</dt>
@@ -68,12 +78,14 @@ export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
           <dt className="text-secondary-text">{LINE_OWNER_SELF_BIND_LABEL}</dt>
           <dd className="font-medium text-text" data-line-owner-self-bind>
             {view?.ownerBindPresent ? `已驗證 ${view.ownerBindHint}` : "尚未驗證"}
-            {view ? " · 不可直接重用" : ""}
+            {view ? " · 只當身分證據" : ""}
           </dd>
         </div>
         <div>
           <dt className="text-secondary-text">{LINE_OWNER_SELF_CONSENT_LABEL}</dt>
-          <dd className="font-medium text-text">尚未同意</dd>
+          <dd className="font-medium text-text" data-line-owner-self-consent>
+            {view?.independentConsent ? "已有伺服器授權列" : "尚未同意（test-push 不算）"}
+          </dd>
         </div>
         <div>
           <dt className="text-secondary-text">{LINE_OWNER_SELF_TRUST_LABEL}</dt>
@@ -90,6 +102,21 @@ export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
           <dd className="font-medium text-text">{view?.oneshotId || "檢查時會產生"}</dd>
         </div>
       </dl>
+      <label className="mt-4 flex items-start gap-2 text-[13px] text-text">
+        <input
+          type="checkbox"
+          checked={acknowledged}
+          onChange={(event) => setAcknowledged(event.target.checked)}
+          className="mt-1"
+          data-line-owner-self-ack
+        />
+        <span>
+          {LINE_OWNER_SELF_ACK_LABEL}
+          <span className="mt-1 block text-[12px] text-secondary-text">
+            {LINE_OWNER_SELF_ACK_NOTE}
+          </span>
+        </span>
+      </label>
       <label className="mt-4 block space-y-1">
         <span className="text-[13px] text-text">{LINE_CONTROLLED_PUSH_PHRASE_LABEL}</span>
         <input
@@ -112,6 +139,7 @@ export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
               organizationId: input.organizationId,
               confirmPhrase,
               oneshotId: view?.oneshotId,
+              clientAcknowledged: acknowledged,
             }).then((result) => {
               setMessage(result.message);
               if (result.ok && result.data) {

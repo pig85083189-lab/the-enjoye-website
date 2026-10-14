@@ -9,14 +9,26 @@ import {
   OWNER_SELF_REMINDER_CONFIRM_PHRASE,
   OWNER_SELF_REMINDER_DAILY_LIMIT,
   OWNER_SELF_REMINDER_FAKE_CUSTOMER_ID,
+  OWNER_SELF_REMINDER_GRANT_PREFIX,
+  OWNER_SELF_REMINDER_GRANT_TTL_MS,
   OWNER_SELF_REMINDER_KILL_SWITCH_OPEN,
   OWNER_SELF_REMINDER_ONESHOT_PREFIX,
+  OWNER_SELF_REMINDER_PURPOSE,
+  OWNER_SELF_REMINDER_SQL_DRAFT,
+  OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID,
   buildOwnerSelfReminderView,
+  createOwnerSelfReminderGrantDraft,
+  createOwnerSelfReminderOneshotDraft,
+  evaluateOwnerSelfGrant,
   evaluateOwnerSelfIdentity,
+  evaluateOwnerSelfOneshotClaim,
   evaluateOwnerSelfReminderPush,
   isOwnerSelfReminderPanelVisible,
+  newOwnerSelfReminderGrantId,
   newOwnerSelfReminderOneshotId,
   ownerSelfReminderRefusesRetry,
+  type OwnerSelfReminderGrant,
+  type OwnerSelfReminderOneshot,
 } from "@/lib/line/automations/appointment-reminder-owner-self-push";
 import {
   LINE_APPOINTMENT_REMINDER_CONTROLLED_PUSH_OPEN,
@@ -51,7 +63,42 @@ function evidence(overrides: Record<string, unknown> = {}) {
     keyId: LINE_CREDENTIAL_KEY_ID,
     secretPresent: true,
     boundAt: "2026-10-10T07:44:49.960272+00:00",
-    testPushEnabled: false,
+    testPushEnabled: true,
+    ...overrides,
+  };
+}
+
+function grant(overrides: Partial<OwnerSelfReminderGrant> = {}): OwnerSelfReminderGrant {
+  return {
+    id: `${OWNER_SELF_REMINDER_GRANT_PREFIX}test0001`,
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    staffUserId: "staff-001",
+    channelId: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
+    purpose: OWNER_SELF_REMINDER_PURPOSE,
+    appointmentId: OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID,
+    bindBoundAt: "2026-10-10T07:44:49.960272+00:00",
+    bindHint: "••••fc8c",
+    bindKeyId: LINE_CREDENTIAL_KEY_ID,
+    acknowledgedOnceOnly: true,
+    createdAt: "2026-10-14T08:00:00.000Z",
+    expiresAt: "2026-10-15T09:00:00.000Z",
+    revokedAt: null,
+    authorizedViaTestPush: false,
+    ...overrides,
+  };
+}
+
+function oneshot(overrides: Partial<OwnerSelfReminderOneshot> = {}): OwnerSelfReminderOneshot {
+  return {
+    id: `${OWNER_SELF_REMINDER_ONESHOT_PREFIX}test0001`,
+    grantId: `${OWNER_SELF_REMINDER_GRANT_PREFIX}test0001`,
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    staffUserId: "staff-001",
+    channelId: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
+    appointmentId: OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID,
+    bindBoundAt: "2026-10-10T07:44:49.960272+00:00",
+    status: "issued",
+    expiresAt: "2026-10-14T11:00:00.000Z",
     ...overrides,
   };
 }
@@ -62,12 +109,16 @@ function evaluate(overrides: Record<string, unknown> = {}) {
     actorStaffUserId: "staff-001",
     channelId: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
     evidence: evidence(),
-    independentConsent: true,
+    grant: grant(),
+    oneshot: oneshot(),
+    clientAcknowledged: false,
+    authorizeWithTestPushEnabled: false,
     confirmPhrase: OWNER_SELF_REMINDER_CONFIRM_PHRASE,
     oneshotId: `${OWNER_SELF_REMINDER_ONESHOT_PREFIX}test0001`,
     killSwitchOpen: true,
     sentToday: 0,
     recipientCount: 1,
+    appointmentId: OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID,
     lineQuota: { known: true, type: "none", limit: null, usage: 0, remaining: null, label: "unlimited" },
     quotaCheckedAt: new Date(NOW).toISOString(),
     env: PREVIEW_ENV,
@@ -76,7 +127,7 @@ function evaluate(overrides: Record<string, unknown> = {}) {
   });
 }
 
-describe("Phase 2E-6 Owner-self reminder Push", () => {
+describe("Phase 2E-7 Owner-self reminder consent + oneshot", () => {
   it("stays closed and never designates a LINE userId", () => {
     expect(LINE_APPOINTMENT_REMINDER_OWNER_SELF_PUSH_OPEN).toBe(false);
     expect(LINE_APPOINTMENT_REMINDER_SEND_OPEN).toBe(false);
@@ -88,29 +139,84 @@ describe("Phase 2E-6 Owner-self reminder Push", () => {
     expect(OWNER_SELF_REMINDER_ALLOWED_ORG_ID).toBe(ORG_BEAUTY_OS_TEST_ID);
     expect(OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID).toBe("2009219238");
     expect(OWNER_SELF_REMINDER_DAILY_LIMIT).toBe(1);
+    expect(OWNER_SELF_REMINDER_GRANT_TTL_MS).toBe(24 * 60 * 60_000);
     const passed = evaluate();
     expect(passed.authorized).toBe(true);
     expect(passed.wouldSend).toBe(false);
     expect(passed.sent).toBe(false);
+    expect(passed.reason).toBe("send_closed");
     expect(JSON.stringify(passed)).not.toContain(LINE_USER);
     expect(passed.audit.recipientHint).toBe("••••fc8c");
   });
 
-  it("refuses test-push reuse, fake customer, plaintext id, and role-only consent", () => {
+  it("treats verified test-push bind as identity only, never as reminder consent", () => {
     expect(
       evaluateOwnerSelfIdentity({
         organizationId: ORG_BEAUTY_OS_TEST_ID,
         actorStaffUserId: "staff-001",
         evidence: evidence({ testPushEnabled: true }),
-        independentConsent: true,
       }),
-    ).toMatchObject({ ok: false, reason: "invalid_recipient" });
+    ).toEqual({ ok: true });
+    expect(
+      evaluateOwnerSelfGrant({
+        organizationId: ORG_BEAUTY_OS_TEST_ID,
+        actorStaffUserId: "staff-001",
+        channelId: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
+        evidence: evidence({ testPushEnabled: true }),
+        grant: null,
+      }),
+    ).toMatchObject({ ok: false, reason: "not_consented" });
+    expect(evaluate({ grant: null, oneshot: null }).reason).toBe("not_consented");
+    expect(evaluate({ grant: null, oneshot: null, clientAcknowledged: true }).message).toMatch(
+      /前端勾選不能代替伺服器授權列/,
+    );
+    expect(evaluate({ authorizeWithTestPushEnabled: true }).reason).toBe("not_consented");
+    expect(evaluate({ grant: grant({ authorizedViaTestPush: true }) }).reason).toBe("not_consented");
+  });
+
+  it("authorizes identity plus a valid independent grant, but still does not send", () => {
+    const decision = evaluate({
+      evidence: evidence({ testPushEnabled: true }),
+      grant: grant(),
+      oneshot: oneshot(),
+    });
+    expect(decision.authorized).toBe(true);
+    expect(decision.wouldSend).toBe(false);
+    expect(decision.sent).toBe(false);
+    expect(decision.audit.wouldSend).toBe(false);
+    expect(decision.audit.sent).toBe(false);
+    const view = buildOwnerSelfReminderView({
+      organizationId: ORG_BEAUTY_OS_TEST_ID,
+      evidence: evidence({ testPushEnabled: true }),
+      grant: grant(),
+      nowMs: NOW,
+    });
+    expect(view.independentConsent).toBe(true);
+    expect(view.canSubmit).toBe(false);
+    expect(view.sendOpen).toBe(false);
+    expect(view.trustworthyRecipient).toBe(false);
+    expect(view.ownerBindReusableAsReminder).toBe(false);
+  });
+
+  it("refuses revoked, expired, rebound, foreign, and fake-customer grants", () => {
+    expect(evaluate({ grant: grant({ revokedAt: "2026-10-14T08:30:00.000Z" }) }).reason).toBe(
+      "not_consented",
+    );
+    expect(evaluate({ grant: grant({ expiresAt: "2026-10-14T08:00:00.000Z" }) }).reason).toBe(
+      "not_consented",
+    );
     expect(
       evaluate({
-        evidence: evidence({ testPushEnabled: true }),
-        testPushRecipientReused: true,
+        grant: grant({ bindBoundAt: "2026-10-13T00:00:00.000Z" }),
+      }).message,
+    ).toMatch(/重新綁定後舊的測試同意已失效/);
+    expect(evaluate({ actorStaffUserId: "staff-other" }).reason).toBe("unauthorized");
+    expect(
+      evaluate({
+        grant: grant({ organizationId: ORG_ENJOYE_ID, staffUserId: "staff-001" }),
       }).reason,
-    ).toBe("invalid_recipient");
+    ).toBe("unauthorized");
+    expect(evaluate({ organizationId: ORG_ENJOYE_ID }).reason).toBe("unauthorized");
     expect(evaluate({ fakeCustomerId: OWNER_SELF_REMINDER_FAKE_CUSTOMER_ID }).reason).toBe(
       "invalid_recipient",
     );
@@ -118,18 +224,18 @@ describe("Phase 2E-6 Owner-self reminder Push", () => {
       "invalid_recipient",
     );
     expect(evaluate({ plaintextLineUserId: LINE_USER }).reason).toBe("invalid_recipient");
-    expect(evaluate({ independentConsent: false }).reason).toBe("not_consented");
-    expect(evaluate({ actorStaffUserId: "staff-other" }).reason).toBe("unauthorized");
     expect(evaluate({ evidence: evidence({ keyId: "k-fake-2d2" }) }).reason).toBe("unbound");
+    expect(evaluate({ evidence: evidence({ boundAt: null }) }).reason).toBe("unbound");
     expect(evaluate({ evidence: null }).reason).toBe("unbound");
   });
 
-  it("hides the panel on other orgs and never lets the view submit", () => {
+  it("hides the panel on other orgs and never lets the live view submit", () => {
     expect(isOwnerSelfReminderPanelVisible(ORG_BEAUTY_OS_TEST_ID)).toBe(true);
     expect(isOwnerSelfReminderPanelVisible(ORG_ENJOYE_ID)).toBe(false);
     const view = buildOwnerSelfReminderView({
       organizationId: ORG_BEAUTY_OS_TEST_ID,
       evidence: evidence({ testPushEnabled: true }),
+      grant: null,
     });
     expect(view.trustworthyRecipient).toBe(false);
     expect(view.ownerBindReusableAsReminder).toBe(false);
@@ -139,13 +245,20 @@ describe("Phase 2E-6 Owner-self reminder Push", () => {
     expect(JSON.stringify(view)).not.toContain(LINE_USER);
   });
 
-  it("refuses Production, foreign orgs, lists, reused oneshots, and closed kill switch", () => {
+  it("refuses reused oneshots, recipient changes, unknown quota, and Production", () => {
     expect(evaluate({ env: { ...PREVIEW_ENV, VERCEL_ENV: "production" } }).reason).toBe("send_closed");
-    expect(evaluate({ organizationId: ORG_ENJOYE_ID }).reason).toBe("unauthorized");
     expect(evaluate({ channelId: "2000000000" }).reason).toBe("unauthorized");
     expect(evaluate({ recipientCount: 2 }).reason).toBe("invalid_input");
     expect(evaluate({ confirmPhrase: "發送" }).reason).toBe("invalid_input");
     expect(evaluate({ oneshotConsumed: true }).reason).toBe("duplicate");
+    expect(evaluate({ oneshot: oneshot({ status: "claimed", claimedAt: "2026-10-14T09:01:00.000Z" }) }).reason).toBe(
+      "duplicate",
+    );
+    expect(
+      evaluate({
+        oneshot: oneshot({ bindBoundAt: "2026-10-11T00:00:00.000Z" }),
+      }).message,
+    ).toMatch(/不能在更改收件者後重用/);
     expect(evaluate({ sentToday: 1 }).reason).toBe("quota_exceeded");
     expect(evaluate({ killSwitchOpen: false }).reason).toBe("send_closed");
     expect(evaluate({ channelInflight: true }).reason).toBe("inflight");
@@ -153,6 +266,16 @@ describe("Phase 2E-6 Owner-self reminder Push", () => {
       "quota_exceeded",
     );
     expect(newOwnerSelfReminderOneshotId(() => "aaaaaaaa-bbbb-cccc-dddd")).toMatch(/^laros-/);
+    expect(newOwnerSelfReminderGrantId(() => "aaaaaaaa-bbbb-cccc-dddd")).toMatch(/^lorg-/);
+    const drafted = createOwnerSelfReminderGrantDraft({
+      organizationId: ORG_BEAUTY_OS_TEST_ID,
+      staffUserId: "staff-001",
+      evidence: evidence(),
+      nowMs: NOW,
+      random: () => "aaaaaaaa-bbbb-cccc-dddd",
+    });
+    expect(drafted.authorizedViaTestPush).toBe(false);
+    expect(createOwnerSelfReminderOneshotDraft({ grant: drafted, nowMs: NOW }).id).toMatch(/^laros-/);
   });
 
   it("does not retry timeout, 5xx, or pending confirmation", () => {
@@ -165,24 +288,38 @@ describe("Phase 2E-6 Owner-self reminder Push", () => {
     expect(ownerSelfReminderRefusesRetry({ previousHttpStatus: 503 })).toBe(true);
     expect(evaluate({ previousErrorClass: "timeout" }).reason).toBe("duplicate");
     expect(evaluate({ previousHttpStatus: 500 }).reason).toBe("duplicate");
+    expect(
+      evaluateOwnerSelfOneshotClaim({
+        oneshot: oneshot({ status: "pending_confirmation" }),
+        grant: grant(),
+        nowMs: NOW,
+      }),
+    ).toMatchObject({ ok: false, reason: "duplicate" });
   });
 
-  it("keeps owner-self design off LINE APIs and off Production webhook changes", () => {
+  it("keeps owner-self design off LINE APIs, off published SQL, and off Broadcast", () => {
     expect(source("lib/line/automations/appointment-reminder-owner-self-push.ts")).not.toMatch(
       /executeCustomerLinePushHttp|api\.line\.me|multicast|broadcast/,
     );
     expect(source("lib/line/automations/appointment-reminder-actions.ts")).not.toMatch(
       /executeCustomerLinePushHttp|api\.line\.me|multicast/,
     );
+    expect(source("lib/line/automations/appointment-reminder-actions.ts")).toMatch(/grant: null/);
     expect(source("lib/line/automations/appointment-reminder-actions.ts")).toMatch(
-      /independentConsent: false/,
+      /authorizeWithTestPushEnabled: false/,
     );
     expect(source("lib/line/automations/appointment-reminder-actions.ts")).toMatch(
       /killSwitchOpen: OWNER_SELF_REMINDER_KILL_SWITCH_OPEN/,
     );
+    expect(source("lib/line/automations/appointment-reminder-actions.ts")).not.toMatch(
+      /grant_line_owner_self_reminder_test|claim_line_owner_self_reminder_oneshot/,
+    );
     const ui = source("features/line/automations/LineOwnerSelfReminderCard.tsx");
     expect(ui).toMatch(/data-line-owner-self-reminder/);
     expect(ui).toMatch(/OWNER_SELF_REMINDER_CONFIRM_PHRASE/);
+    expect(ui).toMatch(/LINE_OWNER_SELF_ONCE_ONLY_LABEL/);
+    expect(ui).toMatch(/data-line-owner-self-ack/);
+    expect(ui).not.toMatch(/localStorage|indexedDB/);
     expect(ui).not.toMatch(/U[0-9a-f]{32}|line_user_id_cipher|lineUserId/);
     expect(source("features/line/automations/LineAutomationsWorkspace.tsx")).toMatch(
       /LineOwnerSelfReminderCard/,
@@ -190,5 +327,36 @@ describe("Phase 2E-6 Owner-self reminder Push", () => {
     expect(source("app/api/line/webhook/[organizationId]/[publicToken]/route.ts")).toMatch(
       /processLineWebhookCustomerAutomation/,
     );
+    expect(source("features/line/LineBroadcastCenter.tsx")).not.toMatch(
+      /OwnerSelfReminder|laros-|lorg-/,
+    );
+    expect(LINE_BROADCAST_SEND_OPEN).toBe(false);
+  });
+
+  it("keeps the grant SQL as an unpublished draft", () => {
+    expect(OWNER_SELF_REMINDER_SQL_DRAFT).toBe(
+      "supabase/drafts/20261014180000_line_owner_self_reminder_grant.sql",
+    );
+    const sql = source(OWNER_SELF_REMINDER_SQL_DRAFT);
+    expect(sql).toMatch(/DRAFT ONLY\. DO NOT APPLY/);
+    expect(sql).toMatch(/Migration never inserts a grant or oneshot row/);
+    expect(sql).toMatch(/lorg-%/);
+    expect(sql).toMatch(/laros-%/);
+    expect(sql).toMatch(/org-beauty-os-test/);
+    expect(sql).toMatch(/2009219238/);
+    expect(sql).toMatch(/owner_self_reminder_test_once/);
+    expect(sql).toMatch(/apt-2e7-owner-self/);
+    expect(sql).toMatch(/authorized_via_test_push boolean not null default false/);
+    expect(sql).toMatch(/pg_advisory_xact_lock\(870121/);
+    expect(sql).toMatch(/for update/i);
+    expect(sql).toMatch(/LINE 額度未知時拒絕發送/);
+    expect(sql).toMatch(/不會重送/);
+    expect(sql).not.toMatch(/api\.line\.me|multicast|broadcast\(/i);
+    expect(sql).not.toMatch(/values\s*\(\s*'lorg-/i);
+    expect(sql).not.toMatch(/values\s*\(\s*'laros-/i);
+    expect(source("lib/persistence/fresh-migration-chain.isolation.test.ts")).not.toMatch(
+      /20261014180000_line_owner_self_reminder_grant/,
+    );
+    expect(source("supabase/drafts/README.md")).toMatch(/Do not apply these drafts to Preview or Production/);
   });
 });

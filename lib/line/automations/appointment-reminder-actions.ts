@@ -649,11 +649,12 @@ export async function loadOwnerSelfReminderViewAction(input: {
   const evidence = await loadOwnerSelfBindEvidence(input.organizationId);
   return {
     ok: true,
-    message: "尚未有獨立的店長本人預約提醒授權。沒有連接 LINE Push。",
+    message: "尚未有獨立的店長本人預約提醒授權。前端勾選不算同意。沒有連接 LINE Push。",
     persisted: false,
     data: buildOwnerSelfReminderView({
       organizationId: input.organizationId,
       evidence,
+      grant: null,
       oneshotId: newOwnerSelfReminderOneshotId(),
     }),
   };
@@ -663,6 +664,7 @@ export async function evaluateOwnerSelfReminderPushAction(input: {
   organizationId: string;
   confirmPhrase: string;
   oneshotId?: string;
+  clientAcknowledged?: boolean;
 }): Promise<
   AppointmentReminderActionResult<{
     view: OwnerSelfReminderView;
@@ -686,13 +688,16 @@ export async function evaluateOwnerSelfReminderPushAction(input: {
     actorStaffUserId: actor.userId,
     channelId: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
     evidence,
-    independentConsent: false,
-    testPushRecipientReused: evidence?.testPushEnabled === true,
+    grant: null,
+    oneshot: null,
+    clientAcknowledged: input.clientAcknowledged === true,
+    authorizeWithTestPushEnabled: false,
     confirmPhrase: input.confirmPhrase,
     oneshotId,
     killSwitchOpen: OWNER_SELF_REMINDER_KILL_SWITCH_OPEN,
     sentToday: 0,
     recipientCount: 1,
+    appointmentId: "apt-2e7-owner-self",
     lineQuota: unknownLineQuota("本階段不查詢 LINE 額度"),
     channelInflight: false,
   });
@@ -704,6 +709,7 @@ export async function evaluateOwnerSelfReminderPushAction(input: {
       view: buildOwnerSelfReminderView({
         organizationId: input.organizationId,
         evidence,
+        grant: null,
         oneshotId,
       }),
       decision,

@@ -55,12 +55,17 @@ export const LINE_CONTROLLED_PUSH_BIND_STATUS_LABEL = "已驗證綁定";
 export const LINE_CONTROLLED_PUSH_CONSENT_STATUS_LABEL = "獨立同意預約提醒";
 export const LINE_OWNER_SELF_TITLE = "店長本人預約提醒測試（Preview）";
 export const LINE_OWNER_SELF_HINT =
-  "沿用 THE ENJOYE LINE，不改正式 Webhook。既有店長 test-push 綁定不能直接當預約提醒收件者。本階段只檢查，不會連接 LINE Push。";
+  "沿用 THE ENJOYE LINE，不改正式 Webhook。這是只限一次的店長本人預約提醒測試，不是全店自動提醒。既有 test-push 綁定只能證明身分，不能代替這次同意。本階段只檢查，不會連接 LINE Push。";
 export const LINE_OWNER_SELF_CHECK_LABEL = "檢查店長本人發送（不會連接 LINE）";
 export const LINE_OWNER_SELF_CLOSED_LABEL = "正式發送、受控發送與店長本人測試都關閉";
 export const LINE_OWNER_SELF_BIND_LABEL = "既有店長 Webhook 綁定";
 export const LINE_OWNER_SELF_CONSENT_LABEL = "這次預約提醒測試的獨立同意";
 export const LINE_OWNER_SELF_TRUST_LABEL = "可信店長本人收件者";
+export const LINE_OWNER_SELF_ACK_LABEL =
+  "我了解這次只會發給我自己一則測試，不是開啟全店自動提醒";
+export const LINE_OWNER_SELF_ACK_NOTE =
+  "勾選只是畫面提示。伺服器必須另外建立有期限的授權列才算同意，前端勾選、瀏覽器暫存或可偽造的 API 參數都不能代替。";
+export const LINE_OWNER_SELF_ONCE_ONLY_LABEL = "只限一次的預約提醒測試，不是全店自動提醒";
 export const LINE_AUTOMATION_BIND_RATE_LIMITED_MESSAGE = "驗證碼產生過於頻繁，請稍後再試。";
 export const LINE_AUTOMATION_BIND_ATTEMPT_LIMITED_MESSAGE =
   "驗證嘗試次數過多，已暫時鎖定。請稍後再試。";
