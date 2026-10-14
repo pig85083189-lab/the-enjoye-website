@@ -120,6 +120,7 @@ function evaluate(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Phase 2E-4 controlled reminder Push", () => {
+  // Preview `next build` typechecks this file; keep job/audience fixtures complete.
   it("stays closed and never would-send even when every other gate passes", () => {
     expect(LINE_APPOINTMENT_REMINDER_CONTROLLED_PUSH_OPEN).toBe(false);
     expect(LINE_APPOINTMENT_REMINDER_SEND_OPEN).toBe(false);
