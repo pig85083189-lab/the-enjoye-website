@@ -15,9 +15,9 @@ import {
   LINE_BROADCAST_CHANNEL_LOCK_NAMESPACE,
   lineBroadcastQuotaSnapshotAllowsClaim,
 } from "@/lib/line/line-channel-lock";
+import { evaluateOwnerSelfPreviewRuntime } from "@/lib/line/automations/appointment-reminder-owner-self-preview";
 import {
   LINE_BROADCAST_ONESHOT_CHANNEL_ID,
-  LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST,
   LINE_CREDENTIAL_KEY_ID,
 } from "@/lib/line/line-flag";
 import type { LineHttpErrorClass, LineQuotaPublic } from "@/lib/line/line-types";
@@ -137,20 +137,8 @@ export type OwnerSelfReminderDecision = {
   };
 };
 
-function previewHost(env: NodeJS.Dict<string>): string | null {
-  const raw = (env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
-  if (!raw) return null;
-  try {
-    return new URL(raw).hostname;
-  } catch {
-    return null;
-  }
-}
-
 function isPreviewControlledEnvironment(env: NodeJS.Dict<string>): boolean {
-  if ((env.VERCEL_ENV ?? "").trim() === "production") return false;
-  if ((env.VERCEL_ENV ?? "").trim() !== "preview") return false;
-  return previewHost(env) === LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST;
+  return evaluateOwnerSelfPreviewRuntime(env).ok;
 }
 
 export function isOwnerSelfReminderPanelVisible(organizationId: string | null | undefined): boolean {

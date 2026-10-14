@@ -6,6 +6,7 @@ import {
   LINE_AUTOMATION_DB_NOT_READY,
   LINE_AUTOMATION_PERSIST_CLOSED_MESSAGE,
   LINE_AUTOMATION_PERSIST_SAVED_MESSAGE,
+  LINE_OWNER_SELF_PERSIST_CLOSED,
 } from "@/lib/line/automations/copy";
 import {
   CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
@@ -717,6 +718,30 @@ export async function evaluateOwnerSelfReminderPushAction(input: {
       }),
       decision,
     },
+  };
+}
+
+export async function prepareOwnerSelfReminderGrantAction(input: {
+  organizationId: string;
+  clientAcknowledged?: boolean;
+  intent: "grant" | "revoke" | "issue";
+}): Promise<AppointmentReminderActionResult<{ persisted: false }>> {
+  if (!isOwnerSelfReminderPanelVisible(input.organizationId)) {
+    return { ok: false, reason: "unauthorized", message: "店長本人測試發送只允許 Beauty OS TEST", persisted: false };
+  }
+  const actor = await loadReminderActor(input.organizationId);
+  const access = evaluateAppointmentReminderOwnerAccess({ organizationId: input.organizationId, actor });
+  if (!access.ok) {
+    return { ok: false, reason: access.reason, message: access.message, persisted: false };
+  }
+  if (input.intent === "grant" && input.clientAcknowledged !== true) {
+    return { ok: false, reason: "invalid_input", message: "必須主動同意這是只限一次的預約提醒測試", persisted: false };
+  }
+  return {
+    ok: true,
+    message: LINE_OWNER_SELF_PERSIST_CLOSED,
+    persisted: false,
+    data: { persisted: false },
   };
 }
 

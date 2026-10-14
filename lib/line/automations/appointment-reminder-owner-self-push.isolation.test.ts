@@ -359,7 +359,7 @@ describe("Phase 2E-8 Owner-self reminder consent + oneshot", () => {
     );
     const sql = source(OWNER_SELF_REMINDER_SQL_DRAFT);
     expect(sql).toMatch(/DRAFT ONLY\. DO NOT APPLY/);
-    expect(sql).toMatch(/Migration never inserts a grant, oneshot, or quota snapshot row/);
+    expect(sql).toMatch(/Migration never inserts a grant, oneshot, quota snapshot, or identity row/);
     expect(sql).toMatch(/lorg-%/);
     expect(sql).toMatch(/laros-%/);
     expect(sql).toMatch(/org-beauty-os-test/);
@@ -473,6 +473,8 @@ describe("Phase 2E-8 Owner-self authorization hardening", () => {
     expect(sql).toMatch(/非本人不能撤回這次店長本人測試同意/);
     expect(sql).toMatch(/app\.beauty_os_runtime/);
     expect(sql).toMatch(/店長本人測試授權不可在 Production 執行/);
+    expect(sql).toMatch(/line_owner_self_reminder_runtime_identity/);
+    expect(sql).toMatch(/bfzquejrtgqzzarhkiya\.supabase\.co/);
     expect(source("lib/line/automations/appointment-reminder-actions.ts")).not.toMatch(
       /createServiceRoleClient|record_line_owner_self_reminder_quota_snapshot/,
     );

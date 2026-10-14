@@ -1,10 +1,12 @@
 -- =============================================================================
--- Beauty OS LINE Owner-self reminder grant + oneshot (Phase 2E-8 hardened)
+-- Beauty OS LINE Owner-self reminder grant + oneshot (Phase 2E-9)
 -- DRAFT ONLY. DO NOT APPLY to Preview or Production.
 -- Do not copy into supabase/migrations/ until Owner confirms.
--- Migration never inserts a grant, oneshot, or quota snapshot row.
+-- Migration never inserts a grant, oneshot, quota snapshot, or identity row.
 -- Never calls LINE. Client-supplied quota parameters are not accepted.
 -- Channel lock 870121 + sibling-org FOR UPDATE matches Broadcast claim.
+-- PostgreSQL cannot discover the live project ref. Preview identity must be
+-- armed later by a trusted server after host + VERCEL_ENV verification.
 -- =============================================================================
 
 create table if not exists public.line_owner_self_reminder_grants (
@@ -139,6 +141,27 @@ create table if not exists public.line_owner_self_reminder_quota_snapshots (
 comment on table public.line_owner_self_reminder_quota_snapshots is
   'Trusted LINE quota snapshots written only by service_role. Authenticated callers cannot insert or forge rows. Draft never inserts a row.';
 
+create table if not exists public.line_owner_self_reminder_runtime_identity (
+  id text primary key,
+  supabase_host text not null,
+  runtime text not null,
+  armed_at timestamptz not null default now(),
+  constraint line_owner_self_reminder_runtime_identity_one
+    check (id = 'runtime'),
+  constraint line_owner_self_reminder_runtime_identity_preview
+    check (
+      supabase_host = 'bfzquejrtgqzzarhkiya.supabase.co'
+      and runtime = 'preview'
+    )
+);
+
+comment on table public.line_owner_self_reminder_runtime_identity is
+  'Fail-closed Preview identity. Draft never inserts a row. Authenticated cannot write. PostgreSQL cannot discover the live project ref; a service-role arm after server host verification is required.';
+
+alter table public.line_owner_self_reminder_runtime_identity enable row level security;
+revoke all on public.line_owner_self_reminder_runtime_identity
+  from public, anon, authenticated, service_role;
+
 alter table public.line_owner_self_reminder_grants enable row level security;
 alter table public.line_owner_self_reminder_oneshots enable row level security;
 alter table public.line_owner_self_reminder_quota_snapshots enable row level security;
@@ -181,9 +204,53 @@ as $$
 $$;
 
 comment on function public.line_owner_self_reminder_runtime_is_production() is
-  'Fail-closed Production detector for Owner-self test RPCs. Preview apply must not set app.beauty_os_runtime=production.';
+  'Extra fail-closed Production detector. A session GUC is not sufficient Preview evidence.';
 
 revoke all on function public.line_owner_self_reminder_runtime_is_production()
+  from public, anon;
+
+create or replace function public.line_owner_self_reminder_preview_runtime_ready()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.line_owner_self_reminder_runtime_identity i
+    where i.id = 'runtime'
+      and i.supabase_host = 'bfzquejrtgqzzarhkiya.supabase.co'
+      and i.runtime = 'preview'
+  )
+  and public.line_owner_self_reminder_runtime_is_production() is not true;
+$$;
+
+comment on function public.line_owner_self_reminder_preview_runtime_ready() is
+  'True only after a trusted Preview identity row exists. Unset, unknown, Production, or mismatch fail closed. Session GUCs cannot arm this.';
+
+revoke all on function public.line_owner_self_reminder_preview_runtime_ready()
+  from public, anon;
+
+create or replace function public.line_owner_self_reminder_environment_block()
+returns text
+language sql
+stable
+set search_path = public
+as $$
+  select case
+    when public.line_owner_self_reminder_runtime_is_production() then
+      '店長本人測試授權不可在 Production 執行'
+    when not public.line_owner_self_reminder_preview_runtime_ready() then
+      '店長本人測試授權只允許已確認的 Preview Supabase，未設定或環境不一致時拒絕'
+    else null
+  end;
+$$;
+
+comment on function public.line_owner_self_reminder_environment_block() is
+  'Shared fail-closed environment gate. Identity row is required; client SET is not enough.';
+
+revoke all on function public.line_owner_self_reminder_environment_block()
   from public, anon;
 
 create or replace function public.line_owner_self_reminder_service_role_call_allowed(
@@ -204,7 +271,8 @@ begin
      or pg_catalog.strpos(p_function, '--') > 0
      or p_function not in (
        'public.claim_line_owner_self_reminder_oneshot(text,text,text,text,text,text)',
-       'public.record_line_owner_self_reminder_quota_snapshot(text,boolean,text,integer,timestamptz)'
+       'public.record_line_owner_self_reminder_quota_snapshot(text,boolean,text,integer,timestamptz)',
+       'public.arm_line_owner_self_reminder_preview_runtime(text,text)'
      ) then
     return false;
   end if;
@@ -278,11 +346,11 @@ declare
   v_grant public.line_owner_self_reminder_grants%rowtype;
   v_id text;
 begin
-  if public.line_owner_self_reminder_runtime_is_production() then
+  if public.line_owner_self_reminder_environment_block() is not null then
     return jsonb_build_object(
       'ok', false,
       'reason', 'send_closed',
-      'message', '店長本人測試授權不可在 Production 執行'
+      'message', public.line_owner_self_reminder_environment_block()
     );
   end if;
   if v_uid is null then
@@ -431,11 +499,11 @@ declare
   v_actor public.staff_auth_memberships%rowtype;
   v_grant public.line_owner_self_reminder_grants%rowtype;
 begin
-  if public.line_owner_self_reminder_runtime_is_production() then
+  if public.line_owner_self_reminder_environment_block() is not null then
     return jsonb_build_object(
       'ok', false,
       'reason', 'send_closed',
-      'message', '店長本人測試授權不可在 Production 執行'
+      'message', public.line_owner_self_reminder_environment_block()
     );
   end if;
   if v_uid is null then
@@ -521,11 +589,11 @@ declare
   v_secret public.line_owner_recipient_secrets%rowtype;
   v_id text;
 begin
-  if public.line_owner_self_reminder_runtime_is_production() then
+  if public.line_owner_self_reminder_environment_block() is not null then
     return jsonb_build_object(
       'ok', false,
       'reason', 'send_closed',
-      'message', '店長本人測試授權不可在 Production 執行'
+      'message', public.line_owner_self_reminder_environment_block()
     );
   end if;
   if v_uid is null then
@@ -653,11 +721,11 @@ begin
   ) then
     raise exception 'unauthorized' using errcode = '42501';
   end if;
-  if public.line_owner_self_reminder_runtime_is_production() then
+  if public.line_owner_self_reminder_environment_block() is not null then
     return jsonb_build_object(
       'ok', false,
       'reason', 'send_closed',
-      'message', '店長本人測試授權不可在 Production 執行'
+      'message', public.line_owner_self_reminder_environment_block()
     );
   end if;
   if p_channel_id is distinct from '2009219238'
@@ -698,6 +766,63 @@ revoke all on function public.record_line_owner_self_reminder_quota_snapshot(tex
 grant execute on function public.record_line_owner_self_reminder_quota_snapshot(text, boolean, text, integer, timestamptz)
   to service_role;
 
+create or replace function public.arm_line_owner_self_reminder_preview_runtime(
+  p_supabase_host text,
+  p_runtime text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.line_owner_self_reminder_service_role_call_allowed(
+    'public.arm_line_owner_self_reminder_preview_runtime(text,text)'
+  ) then
+    raise exception 'unauthorized' using errcode = '42501';
+  end if;
+  if public.line_owner_self_reminder_runtime_is_production() then
+    return jsonb_build_object(
+      'ok', false,
+      'reason', 'send_closed',
+      'message', '店長本人測試授權不可在 Production 執行'
+    );
+  end if;
+  if p_supabase_host is distinct from 'bfzquejrtgqzzarhkiya.supabase.co'
+     or p_runtime is distinct from 'preview' then
+    return jsonb_build_object(
+      'ok', false,
+      'reason', 'send_closed',
+      'message', '店長本人測試授權只允許已確認的 Preview Supabase，未設定或環境不一致時拒絕'
+    );
+  end if;
+
+  insert into public.line_owner_self_reminder_runtime_identity (
+    id, supabase_host, runtime, armed_at
+  ) values (
+    'runtime', p_supabase_host, p_runtime, now()
+  )
+  on conflict (id) do update
+    set supabase_host = excluded.supabase_host,
+        runtime = excluded.runtime,
+        armed_at = now();
+
+  return jsonb_build_object(
+    'ok', true,
+    'supabase_host', p_supabase_host,
+    'runtime', p_runtime
+  );
+end;
+$$;
+
+comment on function public.arm_line_owner_self_reminder_preview_runtime(text, text) is
+  'service_role-only Preview identity arm. Does not trust client GUCs. Server must verify NEXT_PUBLIC_SUPABASE_URL before calling. Draft never calls this.';
+
+revoke all on function public.arm_line_owner_self_reminder_preview_runtime(text, text)
+  from public, anon, authenticated;
+grant execute on function public.arm_line_owner_self_reminder_preview_runtime(text, text)
+  to service_role;
+
 drop function if exists public.claim_line_owner_self_reminder_oneshot(text, text, text, text, text, boolean, integer, timestamptz);
 
 create or replace function public.claim_line_owner_self_reminder_oneshot(
@@ -730,11 +855,11 @@ begin
   ) then
     raise exception 'unauthorized' using errcode = '42501';
   end if;
-  if public.line_owner_self_reminder_runtime_is_production() then
+  if public.line_owner_self_reminder_environment_block() is not null then
     return jsonb_build_object(
       'claimed', false,
       'reason', 'send_closed',
-      'message', '店長本人測試授權不可在 Production 執行'
+      'message', public.line_owner_self_reminder_environment_block()
     );
   end if;
   if p_organization_id is distinct from 'org-beauty-os-test' then

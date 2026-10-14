@@ -66,6 +66,13 @@ export const LINE_OWNER_SELF_ACK_LABEL =
 export const LINE_OWNER_SELF_ACK_NOTE =
   "勾選只是畫面提示。伺服器必須另外建立有期限的授權列才算同意，前端勾選、瀏覽器暫存或可偽造的 API 參數都不能代替。";
 export const LINE_OWNER_SELF_ONCE_ONLY_LABEL = "只限一次的預約提醒測試，不是全店自動提醒";
+export const LINE_OWNER_SELF_GRANT_LABEL = "建立本人測試授權（本階段不寫入）";
+export const LINE_OWNER_SELF_REVOKE_LABEL = "撤回本人測試授權（本階段不寫入）";
+export const LINE_OWNER_SELF_ISSUE_LABEL = "發行單次授權（本階段不寫入）";
+export const LINE_OWNER_SELF_FLOW_HINT =
+  "流程：登入 TEST → 確認遮罩綁定 → 主動同意只收一則測試 → 伺服器建立 24 小時授權 → 發行 2 小時 oneshot。發送尚未開放。";
+export const LINE_OWNER_SELF_PERSIST_CLOSED =
+  "Preview 授權寫入尚未開放。沒有寫入遠端 SQL，也沒有連接 LINE。";
 export const LINE_AUTOMATION_BIND_RATE_LIMITED_MESSAGE = "驗證碼產生過於頻繁，請稍後再試。";
 export const LINE_AUTOMATION_BIND_ATTEMPT_LIMITED_MESSAGE =
   "驗證嘗試次數過多，已暫時鎖定。請稍後再試。";

@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import {
   evaluateOwnerSelfReminderPushAction,
   loadOwnerSelfReminderViewAction,
+  prepareOwnerSelfReminderGrantAction,
 } from "@/lib/line/automations/appointment-reminder-actions";
 import type {
   OwnerSelfReminderDecision,
@@ -24,8 +25,13 @@ import {
   LINE_OWNER_SELF_CHECK_LABEL,
   LINE_OWNER_SELF_CLOSED_LABEL,
   LINE_OWNER_SELF_CONSENT_LABEL,
+  LINE_OWNER_SELF_FLOW_HINT,
+  LINE_OWNER_SELF_GRANT_LABEL,
   LINE_OWNER_SELF_HINT,
+  LINE_OWNER_SELF_ISSUE_LABEL,
   LINE_OWNER_SELF_ONCE_ONLY_LABEL,
+  LINE_OWNER_SELF_PERSIST_CLOSED,
+  LINE_OWNER_SELF_REVOKE_LABEL,
   LINE_OWNER_SELF_TITLE,
   LINE_OWNER_SELF_TRUST_LABEL,
 } from "@/lib/line/automations/copy";
@@ -68,6 +74,9 @@ export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
         data-line-owner-self-once-only
       >
         {LINE_OWNER_SELF_ONCE_ONLY_LABEL}
+      </p>
+      <p className="mt-2 text-[12px] text-secondary-text" data-line-owner-self-flow>
+        {LINE_OWNER_SELF_FLOW_HINT}
       </p>
       <dl className="mt-4 grid gap-2 text-[13px] sm:grid-cols-2">
         <div>
@@ -153,6 +162,34 @@ export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
           {LINE_OWNER_SELF_CHECK_LABEL}
         </button>
       </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(
+          [
+            ["grant", LINE_OWNER_SELF_GRANT_LABEL],
+            ["issue", LINE_OWNER_SELF_ISSUE_LABEL],
+            ["revoke", LINE_OWNER_SELF_REVOKE_LABEL],
+          ] as const
+        ).map(([intent, label]) => (
+          <button
+            key={intent}
+            type="button"
+            className="inline-flex min-h-10 items-center justify-center rounded-full border border-border px-4 text-[13px] font-medium text-secondary-text"
+            data-line-owner-self-intent={intent}
+            onClick={() => {
+              void prepareOwnerSelfReminderGrantAction({
+                organizationId: input.organizationId,
+                clientAcknowledged: acknowledged,
+                intent,
+              }).then((result) => {
+                setMessage(result.message);
+              });
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-[12px] text-secondary-text">{LINE_OWNER_SELF_PERSIST_CLOSED}</p>
       {message ? <p className="mt-3 text-[13px] text-secondary-text">{message}</p> : null}
       {decision ? (
         <p className="mt-2 text-[13px] font-medium text-text">
