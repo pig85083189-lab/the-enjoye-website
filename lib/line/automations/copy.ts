@@ -40,6 +40,19 @@ export const LINE_AUTOMATION_CONSENT_HINT =
   "客人綁定後，需另外傳送「同意預約提醒」才會收到提醒。傳送「退訂」可取消訂閱，傳送「解除綁定」可解除綁定。";
 export const LINE_AUTOMATION_BIND_CREATED_MESSAGE =
   "驗證碼已產生。客人傳送驗證碼只完成綁定，不會自動同意預約提醒。";
+export const LINE_CONTROLLED_PUSH_TITLE = "受控測試發送（Preview）";
+export const LINE_CONTROLLED_PUSH_HINT =
+  "只允許 Beauty OS TEST 的指定假客戶。必須先完成官方 Webhook 綁定，再另外傳送「同意預約提醒」。本階段只檢查，不會連接 LINE Push。";
+export const LINE_CONTROLLED_PUSH_CHECK_LABEL = "檢查受控發送（不會連接 LINE）";
+export const LINE_CONTROLLED_PUSH_BIND_LABEL = "為指定假客戶產生綁定碼";
+export const LINE_CONTROLLED_PUSH_CLOSED_LABEL = "正式發送與受控發送都關閉";
+export const LINE_CONTROLLED_PUSH_PHRASE_LABEL = "二次確認文句";
+export const LINE_CONTROLLED_PUSH_ONESHOT_LABEL = "單次授權";
+export const LINE_CONTROLLED_PUSH_REMAINING_LABEL = "今日剩餘測試額度";
+export const LINE_CONTROLLED_PUSH_PREVIEW_LABEL = "預計發送內容";
+export const LINE_CONTROLLED_PUSH_KILL_LABEL = "停止開關";
+export const LINE_CONTROLLED_PUSH_BIND_STATUS_LABEL = "已驗證綁定";
+export const LINE_CONTROLLED_PUSH_CONSENT_STATUS_LABEL = "獨立同意預約提醒";
 export const LINE_AUTOMATION_BIND_RATE_LIMITED_MESSAGE = "驗證碼產生過於頻繁，請稍後再試。";
 export const LINE_AUTOMATION_BIND_ATTEMPT_LIMITED_MESSAGE =
   "驗證嘗試次數過多，已暫時鎖定。請稍後再試。";

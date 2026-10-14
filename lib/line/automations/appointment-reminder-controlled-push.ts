@@ -1,11 +1,9 @@
 /**
- * Phase 2E-3 controlled reminder Push design. SEND stays hardcoded closed.
- * This module only evaluates whether a future one-shot TEST Push would be
- * allowed. It never calls LINE, never opens Broadcast, and never reads a
- * formal customer list.
+ * Phase 2E-4 controlled reminder Push. SEND stays hardcoded closed.
+ * Preview TEST may evaluate a single designated fake customer. This module
+ * never calls LINE, never opens Broadcast, and never reads a formal list.
  */
 
-import { evaluateAppointmentReminderAudience } from "@/lib/line/automations/appointment-reminder-bindings";
 import {
   APPOINTMENT_REMINDER_CLAIM_GRACE_MS,
   LINE_APPOINTMENT_REMINDER_SEND_OPEN,
@@ -21,14 +19,20 @@ import type {
 } from "@/lib/line/automations/appointment-reminder-types";
 import { LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST } from "@/lib/line/line-flag";
 import { reminderChannelSnapshotAllowsSend } from "@/lib/line/automations/appointment-reminder-dispatcher";
-import type { LineQuotaPublic } from "@/lib/line/line-types";
+import { isLineUnknownHttpOutcome } from "@/lib/line/line-http-error";
+import type { LineHttpErrorClass, LineQuotaPublic } from "@/lib/line/line-types";
 import { ORG_BEAUTY_OS_TEST_ID } from "@/lib/tenant/constants";
 
 export const LINE_APPOINTMENT_REMINDER_CONTROLLED_PUSH_OPEN = false;
 export const CONTROLLED_REMINDER_PUSH_ALLOWED_ORG_ID = ORG_BEAUTY_OS_TEST_ID;
+export const CONTROLLED_REMINDER_PUSH_ALLOWED_ORG_LABEL = "Beauty OS TEST";
+export const CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID = "cust-2d2-fake-bound";
+export const CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_NAME =
+  "【假資料】2D2已綁定未同意測試客人";
 export const CONTROLLED_REMINDER_PUSH_DAILY_LIMIT = 1;
 export const CONTROLLED_REMINDER_PUSH_CONFIRM_PHRASE = "確認發送測試預約提醒";
 export const CONTROLLED_REMINDER_PUSH_ONESHOT_PREFIX = "larcq-";
+export const CONTROLLED_REMINDER_PUSH_KILL_SWITCH_OPEN = false;
 
 export type ControlledReminderPushReason =
   | AppointmentReminderSkipReason
@@ -38,6 +42,9 @@ export type ControlledReminderPushReason =
   | "duplicate"
   | "quota_exceeded"
   | "inflight";
+
+export type ControlledReminderBindStatus = "unbound" | "verified" | "blocked";
+export type ControlledReminderConsentStatus = "not_consented" | "consented" | "unsubscribed";
 
 export type ControlledReminderPushAudit = {
   organizationId: string;
@@ -60,6 +67,32 @@ export type ControlledReminderPushDecision = {
   audit: ControlledReminderPushAudit;
 };
 
+export type ControlledReminderPushView = {
+  visible: boolean;
+  organizationId: string;
+  organizationLabel: string;
+  customerId: string;
+  customerName: string;
+  bindStatus: ControlledReminderBindStatus;
+  consentStatus: ControlledReminderConsentStatus;
+  recipientHint: string;
+  previewText: string;
+  remainingToday: number;
+  confirmPhrase: string;
+  oneshotId: string;
+  killSwitchOpen: false;
+  sendOpen: false;
+  quotaLabel: string;
+  canSubmit: false;
+};
+
+export type ControlledReminderPreviousAttempt = {
+  oneshotId?: string | null;
+  status?: string | null;
+  errorClass?: LineHttpErrorClass | string | null;
+  httpStatus?: number | null;
+};
+
 function previewHost(env: NodeJS.Dict<string>): string | null {
   const raw = (env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
   if (!raw) return null;
@@ -78,8 +111,59 @@ function isPreviewControlledEnvironment(env: NodeJS.Dict<string>): boolean {
 
 function hintFromBinding(binding?: CustomerLineBinding | null): string {
   const hash = binding?.lineUserIdHash?.trim() ?? "";
-  if (hash.length >= 8) return `••••${hash.slice(-4)}`;
+  if (/^[0-9a-f]{16,}$/i.test(hash)) return `••••${hash.slice(-4)}`;
   return "••••";
+}
+
+export function isDesignatedControlledReminderCustomer(customerId: string | null | undefined): boolean {
+  return customerId === CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID;
+}
+
+export function isControlledReminderPushPanelVisible(organizationId: string | null | undefined): boolean {
+  return organizationId === CONTROLLED_REMINDER_PUSH_ALLOWED_ORG_ID;
+}
+
+export function newControlledReminderOneshotId(
+  random: () => string = () => crypto.randomUUID(),
+): string {
+  return `${CONTROLLED_REMINDER_PUSH_ONESHOT_PREFIX}${random().replace(/-/g, "").slice(0, 16)}`;
+}
+
+export function remainingControlledReminderPushesToday(sentToday: number): number {
+  return Math.max(0, CONTROLLED_REMINDER_PUSH_DAILY_LIMIT - Math.max(0, sentToday));
+}
+
+export function describeControlledReminderBindStatus(
+  binding?: CustomerLineBinding | null,
+): ControlledReminderBindStatus {
+  if (!binding || binding.unboundAt || !binding.verified || !binding.lineUserIdHash) {
+    return "unbound";
+  }
+  if (binding.blockedAt) return "blocked";
+  return "verified";
+}
+
+export function describeControlledReminderConsentStatus(
+  preference?: NotificationPreference | null,
+): ControlledReminderConsentStatus {
+  if (!preference || preference.unsubscribedAt) {
+    return preference?.unsubscribedAt ? "unsubscribed" : "not_consented";
+  }
+  return preference.appointmentReminderOptIn ? "consented" : "not_consented";
+}
+
+export function controlledReminderPushRefusesRetry(input: {
+  jobStatus?: string | null;
+  oneshotConsumed?: boolean;
+  previous?: ControlledReminderPreviousAttempt | null;
+}): boolean {
+  if (input.oneshotConsumed) return true;
+  if (input.jobStatus === "accepted" || input.jobStatus === "pending_confirmation") return true;
+  const previous = input.previous;
+  if (!previous) return false;
+  if (previous.status === "accepted" || previous.status === "pending_confirmation") return true;
+  if (previous.errorClass === "timeout" || previous.errorClass === "unknown") return true;
+  return isLineUnknownHttpOutcome(previous.httpStatus);
 }
 
 function refuse(
@@ -112,6 +196,64 @@ function refuse(
       sent: false,
     },
   };
+}
+
+/**
+ * Bind / consent for the designated TEST recipient. Never returns a LINE userId.
+ * Client-supplied plaintext IDs are refused. Hash + verified is required.
+ */
+export function evaluateControlledReminderAudience(input: {
+  organizationId: string;
+  customerId: string;
+  binding?: CustomerLineBinding | null;
+  preference?: NotificationPreference | null;
+  crmLineUserId?: string | null;
+  ownerRecipientLineUserId?: string | null;
+}): { ok: true } | { ok: false; skipReason: AppointmentReminderSkipReason; message: string } {
+  if (input.crmLineUserId) {
+    return {
+      ok: false,
+      skipReason: "plaintext_line_id_refused",
+      message: "客戶 CRM LINE ID 不是已驗證綁定，系統不會發送",
+    };
+  }
+  if (input.ownerRecipientLineUserId) {
+    return {
+      ok: false,
+      skipReason: "invalid_recipient",
+      message: "店長 LINE 綁定不能當作客人收件者",
+    };
+  }
+  if (!isDesignatedControlledReminderCustomer(input.customerId)) {
+    return { ok: false, skipReason: "invalid_recipient", message: "只能指定核准的測試假客戶" };
+  }
+  const binding = input.binding;
+  if (!binding) {
+    return { ok: false, skipReason: "unbound", message: "客人尚未完成已驗證的 LINE 綁定，系統不會發送" };
+  }
+  if (binding.organizationId !== input.organizationId || binding.customerId !== input.customerId) {
+    return { ok: false, skipReason: "cross_org", message: "不能使用其他店家或客人的 LINE 綁定" };
+  }
+  if (binding.unboundAt || !binding.verified || !binding.lineUserIdHash) {
+    return { ok: false, skipReason: "unbound", message: "客人尚未完成已驗證的 LINE 綁定，系統不會發送" };
+  }
+  if (binding.blockedAt) {
+    return { ok: false, skipReason: "blocked", message: "客人已封鎖官方帳號，系統不會發送" };
+  }
+  const preference = input.preference;
+  if (!preference || preference.organizationId !== input.organizationId) {
+    return { ok: false, skipReason: "not_consented", message: "客人尚未同意預約提醒通知" };
+  }
+  if (preference.customerId !== input.customerId) {
+    return { ok: false, skipReason: "cross_org", message: "不能使用其他客人的通知設定" };
+  }
+  if (preference.unsubscribedAt) {
+    return { ok: false, skipReason: "unsubscribed", message: "客人已退訂預約提醒，系統不會發送" };
+  }
+  if (!preference.appointmentReminderOptIn) {
+    return { ok: false, skipReason: "not_consented", message: "客人尚未同意預約提醒通知" };
+  }
+  return { ok: true };
 }
 
 /**
@@ -158,6 +300,36 @@ export function upcomingHoursBefore3StartAt(nowMs = Date.now(), slotMinutes = 30
   return { startAt, fireAt, waitMs: Math.max(fireAt.getTime() - nowMs, 0) };
 }
 
+export function buildControlledReminderPushView(input: {
+  organizationId: string;
+  binding?: CustomerLineBinding | null;
+  preference?: NotificationPreference | null;
+  previewText: string;
+  sentToday?: number;
+  oneshotId?: string;
+  quotaLabel?: string;
+}): ControlledReminderPushView {
+  const visible = isControlledReminderPushPanelVisible(input.organizationId);
+  return {
+    visible,
+    organizationId: CONTROLLED_REMINDER_PUSH_ALLOWED_ORG_ID,
+    organizationLabel: CONTROLLED_REMINDER_PUSH_ALLOWED_ORG_LABEL,
+    customerId: CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
+    customerName: CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_NAME,
+    bindStatus: describeControlledReminderBindStatus(input.binding),
+    consentStatus: describeControlledReminderConsentStatus(input.preference),
+    recipientHint: hintFromBinding(input.binding),
+    previewText: input.previewText,
+    remainingToday: remainingControlledReminderPushesToday(input.sentToday ?? 0),
+    confirmPhrase: CONTROLLED_REMINDER_PUSH_CONFIRM_PHRASE,
+    oneshotId: input.oneshotId ?? "",
+    killSwitchOpen: false,
+    sendOpen: false,
+    quotaLabel: input.quotaLabel ?? "本階段不查詢 LINE 額度，不會連接 LINE",
+    canSubmit: false,
+  };
+}
+
 export function evaluateControlledAppointmentReminderPush(input: {
   organizationId: string;
   designatedCustomerId: string;
@@ -176,6 +348,7 @@ export function evaluateControlledAppointmentReminderPush(input: {
   lineQuota?: LineQuotaPublic | null;
   quotaCheckedAt?: string | null;
   channelInflight?: boolean;
+  previousAttempt?: ControlledReminderPreviousAttempt | null;
   env?: NodeJS.Dict<string>;
   nowMs?: number;
 }): ControlledReminderPushDecision {
@@ -211,16 +384,16 @@ export function evaluateControlledAppointmentReminderPush(input: {
   if (input.job.organizationId !== input.organizationId) {
     return refuse(base, "unauthorized", "不能使用其他店家的提醒任務");
   }
-  if (!input.killSwitchOpen) {
-    return refuse(base, "send_closed", "受控測試停止開關已關閉");
-  }
   if (input.recipientCount !== 1) {
     return refuse(base, "invalid_input", "受控測試只能指定一位收件者，不能群發");
   }
-  if (!input.designatedCustomerId.startsWith("cust-")) {
+  if (!isDesignatedControlledReminderCustomer(input.designatedCustomerId)) {
     return refuse(base, "invalid_input", "缺少 Owner 指定的測試收件者");
   }
-  if (input.appointment.customerId !== input.designatedCustomerId) {
+  if (
+    !isDesignatedControlledReminderCustomer(input.appointment.customerId) ||
+    input.appointment.customerId !== input.designatedCustomerId
+  ) {
     return refuse(base, "unauthorized", "這則預約不是指定的測試收件者");
   }
   if (input.confirmPhrase.trim() !== CONTROLLED_REMINDER_PUSH_CONFIRM_PHRASE) {
@@ -229,8 +402,17 @@ export function evaluateControlledAppointmentReminderPush(input: {
   if (!input.oneshotId.startsWith(CONTROLLED_REMINDER_PUSH_ONESHOT_PREFIX)) {
     return refuse(base, "invalid_input", "缺少單次授權識別");
   }
-  if (input.oneshotConsumed) {
-    return refuse(base, "duplicate", "這次單次授權已使用，不會重送");
+  if (!input.killSwitchOpen) {
+    return refuse(base, "send_closed", "受控測試停止開關已關閉");
+  }
+  if (
+    controlledReminderPushRefusesRetry({
+      jobStatus: input.job.status,
+      oneshotConsumed: input.oneshotConsumed,
+      previous: input.previousAttempt,
+    })
+  ) {
+    return refuse(base, "duplicate", "這次單次授權已使用或結果待確認，不會重送");
   }
   if (input.sentToday >= CONTROLLED_REMINDER_PUSH_DAILY_LIMIT) {
     return refuse(base, "quota_exceeded", "今日受控測試發送次數已達上限");
@@ -244,7 +426,7 @@ export function evaluateControlledAppointmentReminderPush(input: {
     return refuse(base, "past_due", "提醒時間尚未到達");
   }
 
-  const audience = evaluateAppointmentReminderAudience({
+  const audience = evaluateControlledReminderAudience({
     organizationId: input.organizationId,
     customerId: input.appointment.customerId,
     binding: input.binding,

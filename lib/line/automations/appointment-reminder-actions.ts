@@ -7,8 +7,21 @@ import {
   LINE_AUTOMATION_PERSIST_CLOSED_MESSAGE,
   LINE_AUTOMATION_PERSIST_SAVED_MESSAGE,
 } from "@/lib/line/automations/copy";
+import {
+  CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
+  CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_NAME,
+  CONTROLLED_REMINDER_PUSH_KILL_SWITCH_OPEN,
+  buildControlledReminderPushView,
+  evaluateControlledAppointmentReminderPush,
+  isControlledReminderPushPanelVisible,
+  newControlledReminderOneshotId,
+  type ControlledReminderPushDecision,
+  type ControlledReminderPushView,
+} from "@/lib/line/automations/appointment-reminder-controlled-push";
+import { unknownLineQuota } from "@/lib/line/line-quota";
 import { interpretStartLineCustomerBindResult } from "@/lib/line/automations/customer-line-bind";
 import {
+  DEFAULT_APPOINTMENT_REMINDER_TEMPLATE,
   createDefaultAppointmentReminderRule,
   evaluateAppointmentReminderOwnerAccess,
   evaluateAppointmentReminderRuleSave,
@@ -24,11 +37,15 @@ import {
 import { createAppointmentReminderSupabaseRepository } from "@/lib/line/automations/appointment-reminder-supabase";
 import type { AppointmentReminderRpcClient } from "@/lib/line/automations/appointment-reminder-write-hook";
 import { previewAppointmentReminderTemplate } from "@/lib/line/automations/appointment-reminder-templates";
+import { ORG_BEAUTY_OS_TEST_ID } from "@/lib/tenant/constants";
 import type {
   AppointmentReminderAppointment,
   AppointmentReminderDelivery,
   AppointmentReminderDryRunRecord,
+  AppointmentReminderJob,
   AppointmentReminderRule,
+  CustomerLineBinding,
+  NotificationPreference,
 } from "@/lib/line/automations/appointment-reminder-types";
 import type { LineAutomationDraft } from "@/lib/line/automations/types";
 import type { LineActor } from "@/lib/line/line-command";
@@ -339,6 +356,231 @@ export async function unbindCustomerLineBindingAction(input: {
     return { ok: false, reason: "error", message: "無法解除客人 LINE 綁定", persisted: false };
   }
   return { ok: true, message: "已解除客人 LINE 綁定，系統不會再發送", persisted: true };
+}
+
+function previewControlledReminderAppointment(): AppointmentReminderAppointment {
+  return {
+    id: "apt-2e4-preview",
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    customerId: CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
+    customerName: CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_NAME,
+    serviceId: "svc-2d2-fake-facial",
+    serviceName: "【假資料】2D2 測試課程",
+    locationName: "Beauty OS TEST 主店",
+    startAt: "2026-10-14T11:00:00.000Z",
+    endAt: "2026-10-14T12:00:00.000Z",
+    status: "BOOKED",
+  };
+}
+
+function placeholderControlledReminderJob(): AppointmentReminderJob {
+  return {
+    id: "laj-2e4preview00001",
+    organizationId: ORG_BEAUTY_OS_TEST_ID,
+    appointmentId: "apt-2e4-preview",
+    customerId: CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
+    serviceId: "svc-2d2-fake-facial",
+    timingId: "hours_before_3",
+    fingerprint: "preview",
+    scheduledFor: "2026-10-14T08:00:00.000Z",
+    status: "scheduled",
+    requestId: "larq-2e4preview00001",
+    createdAt: "2026-10-14T07:00:00.000Z",
+    updatedAt: "2026-10-14T07:00:00.000Z",
+  };
+}
+
+function bindingFromRow(row: Record<string, unknown> | null): CustomerLineBinding | null {
+  if (!row) return null;
+  const verified = row.verified === true;
+  const unboundAt = typeof row.unbound_at === "string" ? row.unbound_at : null;
+  return {
+    organizationId: String(row.organization_id ?? ""),
+    customerId: String(row.customer_app_id ?? ""),
+    lineUserId: "",
+    lineUserIdHash: verified && !unboundAt ? "verified" : "",
+    verified,
+    unboundAt,
+    blockedAt: typeof row.blocked_at === "string" ? row.blocked_at : null,
+  };
+}
+
+function preferenceFromRow(row: Record<string, unknown> | null): NotificationPreference | null {
+  if (!row) return null;
+  return {
+    organizationId: String(row.organization_id ?? ""),
+    customerId: String(row.customer_app_id ?? ""),
+    appointmentReminderOptIn: row.appointment_reminder_opt_in === true,
+    unsubscribedAt: typeof row.unsubscribed_at === "string" ? row.unsubscribed_at : null,
+  };
+}
+
+async function loadDesignatedRecipientSnapshot(organizationId: string): Promise<{
+  binding: CustomerLineBinding | null;
+  preference: NotificationPreference | null;
+  appointment: AppointmentReminderAppointment;
+  job: AppointmentReminderJob;
+}> {
+  const appointment = previewControlledReminderAppointment();
+  const job = placeholderControlledReminderJob();
+  try {
+    const supabase = await createClient();
+    const [bindingResult, preferenceResult, jobResult] = await Promise.all([
+      supabase
+        .from("line_customer_bindings")
+        .select("organization_id,customer_app_id,verified,unbound_at,blocked_at")
+        .eq("organization_id", organizationId)
+        .eq("customer_app_id", CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID)
+        .maybeSingle(),
+      supabase
+        .from("line_notification_preferences")
+        .select("organization_id,customer_app_id,appointment_reminder_opt_in,unsubscribed_at")
+        .eq("organization_id", organizationId)
+        .eq("customer_app_id", CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID)
+        .maybeSingle(),
+      supabase
+        .from("line_automation_jobs")
+        .select(
+          "id,organization_id,appointment_app_id,customer_app_id,service_app_id,timing_id,fingerprint,scheduled_for,status,request_id,created_at,updated_at",
+        )
+        .eq("organization_id", organizationId)
+        .eq("customer_app_id", CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID)
+        .eq("status", "scheduled")
+        .order("scheduled_for", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    const liveJob = jobResult.data as Record<string, unknown> | null;
+    const liveCustomerId = String(liveJob?.customer_app_id ?? "");
+    if (liveJob?.id && liveCustomerId === CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID) {
+      job.id = String(liveJob.id);
+      job.appointmentId = String(liveJob.appointment_app_id ?? job.appointmentId);
+      job.customerId = CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID;
+      job.serviceId = String(liveJob.service_app_id ?? job.serviceId);
+      job.fingerprint = String(liveJob.fingerprint ?? job.fingerprint);
+      job.scheduledFor = String(liveJob.scheduled_for ?? job.scheduledFor);
+      job.requestId = String(liveJob.request_id ?? job.requestId);
+      job.status = (liveJob.status as AppointmentReminderJob["status"]) ?? "scheduled";
+      appointment.id = job.appointmentId;
+      appointment.customerId = CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID;
+      appointment.serviceId = job.serviceId;
+    }
+    return {
+      binding: bindingFromRow((bindingResult.data as Record<string, unknown> | null) ?? null),
+      preference: preferenceFromRow((preferenceResult.data as Record<string, unknown> | null) ?? null),
+      appointment,
+      job,
+    };
+  } catch {
+    return { binding: null, preference: null, appointment, job };
+  }
+}
+
+export async function loadControlledReminderPushViewAction(input: {
+  organizationId: string;
+  template?: string;
+}): Promise<AppointmentReminderActionResult<ControlledReminderPushView>> {
+  if (!isControlledReminderPushPanelVisible(input.organizationId)) {
+    return { ok: false, reason: "unauthorized", message: "受控測試發送只允許 Beauty OS TEST", persisted: false };
+  }
+  const actor = await loadReminderActor(input.organizationId);
+  const access = evaluateAppointmentReminderOwnerAccess({ organizationId: input.organizationId, actor });
+  if (!access.ok) {
+    return { ok: false, reason: access.reason, message: access.message, persisted: false };
+  }
+  const snapshot = await loadDesignatedRecipientSnapshot(input.organizationId);
+  const previewText = previewAppointmentReminderTemplate({
+    template: input.template || DEFAULT_APPOINTMENT_REMINDER_TEMPLATE,
+    appointment: snapshot.appointment,
+    organizationName: "Beauty OS TEST",
+  });
+  return {
+    ok: true,
+    message: "受控測試發送仍關閉。沒有連接 LINE Push。",
+    persisted: false,
+    data: buildControlledReminderPushView({
+      organizationId: input.organizationId,
+      binding: snapshot.binding,
+      preference: snapshot.preference,
+      previewText,
+      sentToday: 0,
+      oneshotId: newControlledReminderOneshotId(),
+    }),
+  };
+}
+
+export async function startDesignatedCustomerLineBindAction(
+  organizationId: string,
+): Promise<AppointmentReminderActionResult<{ code: string; expiresAt: string }>> {
+  if (!isControlledReminderPushPanelVisible(organizationId)) {
+    return { ok: false, reason: "unauthorized", message: "受控測試發送只允許 Beauty OS TEST", persisted: false };
+  }
+  return startCustomerLineBindAction({
+    organizationId,
+    customerId: CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
+  });
+}
+
+export async function evaluateControlledReminderPushAction(input: {
+  organizationId: string;
+  template?: string;
+  confirmPhrase: string;
+  oneshotId?: string;
+}): Promise<
+  AppointmentReminderActionResult<{
+    view: ControlledReminderPushView;
+    decision: ControlledReminderPushDecision;
+  }>
+> {
+  if (!isControlledReminderPushPanelVisible(input.organizationId)) {
+    return { ok: false, reason: "unauthorized", message: "受控測試發送只允許 Beauty OS TEST", persisted: false };
+  }
+  const actor = await loadReminderActor(input.organizationId);
+  const access = evaluateAppointmentReminderOwnerAccess({ organizationId: input.organizationId, actor });
+  if (!access.ok) {
+    return { ok: false, reason: access.reason, message: access.message, persisted: false };
+  }
+  const snapshot = await loadDesignatedRecipientSnapshot(input.organizationId);
+  const oneshotId = input.oneshotId?.startsWith("larcq-")
+    ? input.oneshotId
+    : newControlledReminderOneshotId();
+  const previewText = previewAppointmentReminderTemplate({
+    template: input.template || DEFAULT_APPOINTMENT_REMINDER_TEMPLATE,
+    appointment: snapshot.appointment,
+    organizationName: "Beauty OS TEST",
+  });
+  const decision = evaluateControlledAppointmentReminderPush({
+    organizationId: input.organizationId,
+    designatedCustomerId: CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
+    appointment: snapshot.appointment,
+    job: snapshot.job,
+    binding: snapshot.binding,
+    preference: snapshot.preference,
+    confirmPhrase: input.confirmPhrase,
+    oneshotId,
+    killSwitchOpen: CONTROLLED_REMINDER_PUSH_KILL_SWITCH_OPEN,
+    sentToday: 0,
+    recipientCount: 1,
+    lineQuota: unknownLineQuota("本階段不查詢 LINE 額度"),
+    channelInflight: false,
+  });
+  return {
+    ok: true,
+    message: decision.message,
+    persisted: false,
+    data: {
+      view: buildControlledReminderPushView({
+        organizationId: input.organizationId,
+        binding: snapshot.binding,
+        preference: snapshot.preference,
+        previewText,
+        sentToday: 0,
+        oneshotId,
+        quotaLabel: "本階段不查詢 LINE 額度，不會連接 LINE",
+      }),
+      decision,
+    },
+  };
 }
 
 export async function loadAppointmentReminderDeliveriesAction(
