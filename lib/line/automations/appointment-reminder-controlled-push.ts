@@ -116,7 +116,9 @@ function refuse(
 
 /**
  * hours_before_3 fire time is startAt - 3h. Due window is now-20min..now.
- * Used only to schedule a TEST UI appointment that Owner Dry-run can see.
+ * Use this only to evaluate an already-persisted job. Persist planning
+ * skips scheduledFor <= now as past_due, so a UI create must use a
+ * future fire time and wait.
  */
 export function dueWindowHoursBefore3StartAt(nowMs = Date.now(), skewMs = 2 * 60_000): {
   startAt: Date;
@@ -124,6 +126,36 @@ export function dueWindowHoursBefore3StartAt(nowMs = Date.now(), skewMs = 2 * 60
 } {
   const fireAt = new Date(nowMs - Math.min(skewMs, APPOINTMENT_REMINDER_CLAIM_GRACE_MS - 60_000));
   return { fireAt, startAt: new Date(fireAt.getTime() + 3 * 60 * 60_000) };
+}
+
+/** Next 30-min Taipei start whose hours_before_3 fire is still in the future. */
+export function upcomingHoursBefore3StartAt(nowMs = Date.now(), slotMinutes = 30): {
+  startAt: Date;
+  fireAt: Date;
+  waitMs: number;
+} {
+  const threeHours = 3 * 60 * 60_000;
+  const slotMs = slotMinutes * 60_000;
+  const taipeiOffset = 8 * 60 * 60_000;
+  const minStart = nowMs + threeHours + 60_000;
+  const taipei = new Date(minStart + taipeiOffset);
+  const alignedMinutes = Math.ceil((taipei.getUTCMinutes() || 0) / slotMinutes) * slotMinutes;
+  const aligned = new Date(
+    Date.UTC(
+      taipei.getUTCFullYear(),
+      taipei.getUTCMonth(),
+      taipei.getUTCDate(),
+      taipei.getUTCHours(),
+      0,
+      0,
+      0,
+    ) +
+      alignedMinutes * 60_000 -
+      taipeiOffset,
+  );
+  const startAt = aligned.getTime() <= minStart ? new Date(aligned.getTime() + slotMs) : aligned;
+  const fireAt = new Date(startAt.getTime() - threeHours);
+  return { startAt, fireAt, waitMs: Math.max(fireAt.getTime() - nowMs, 0) };
 }
 
 export function evaluateControlledAppointmentReminderPush(input: {

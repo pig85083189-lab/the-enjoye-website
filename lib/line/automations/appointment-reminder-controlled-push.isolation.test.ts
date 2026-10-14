@@ -11,6 +11,7 @@ import {
   LINE_APPOINTMENT_REMINDER_CONTROLLED_PUSH_OPEN,
   dueWindowHoursBefore3StartAt,
   evaluateControlledAppointmentReminderPush,
+  upcomingHoursBefore3StartAt,
 } from "@/lib/line/automations/appointment-reminder-controlled-push";
 import {
   LINE_APPOINTMENT_REMINDER_SEND_OPEN,
@@ -173,6 +174,19 @@ describe("Phase 2E-3 controlled reminder Push design", () => {
         nowMs: NOW,
       }),
     ).toEqual({ due: true, expired: false });
+  });
+
+  it("schedules a persistable future hours_before_3 slot instead of a past_due fire", () => {
+    const upcoming = upcomingHoursBefore3StartAt(NOW);
+    expect(upcoming.fireAt.getTime()).toBeGreaterThan(NOW);
+    expect(upcoming.startAt.getTime() - upcoming.fireAt.getTime()).toBe(3 * 60 * 60_000);
+    expect(upcoming.waitMs).toBeGreaterThan(0);
+    expect(
+      appointmentReminderJobIsDue({
+        job: job({ scheduledFor: upcoming.fireAt.toISOString() }),
+        nowMs: NOW,
+      }),
+    ).toEqual({ due: false, expired: false });
   });
 
   it("keeps webhook bind, consent, unbind, and unsubscribe as separate official texts", () => {
