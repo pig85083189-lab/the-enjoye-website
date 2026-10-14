@@ -1,7 +1,19 @@
 -- =============================================================================
 -- Beauty OS LINE appointment reminder (Phase 2D-3)
--- PostgREST service_role login uses session_user = authenticator.
--- GRANT/REVOKE is the privilege gate. Do not trust JWT / request claims.
+-- Privilege gate = PostgreSQL GRANT / effective EXECUTE, not caller identity
+-- inside SECURITY DEFINER.
+--
+-- Risk if session_user = authenticator is treated as service_role:
+--   PostgREST always logs in as authenticator, then SET ROLE to anon,
+--   authenticated, or service_role. authenticator is shared. A DEFINER
+--   wrapper granted to authenticated would also have session_user =
+--   authenticator and could pass an authenticator identity check.
+-- current_user inside SECURITY DEFINER is the function owner, not the
+-- requester. request.jwt is client-settable and is not used.
+--
+-- External callers are authorized only by EXECUTE on the entry RPC.
+-- Owner dry-run stays organization-scoped and does not call privileged
+-- service RPCs (closes the DEFINER internal path).
 -- Additive. Do not apply remotely without Owner approval.
 -- Does not change LINE Broadcast claim/send, tokens, or Production RLS.
 --
@@ -23,11 +35,14 @@ stable
 security definer
 set search_path = pg_catalog
 as $$
+declare
+  v_oid pg_catalog.regprocedure;
+  v_public_execute boolean;
 begin
-  -- p_function is the callee's GRANT lock, not a JWT role claim.
+  -- p_function is the callee GRANT lock. Not a JWT role and not session_user.
   if p_function is null
-     or position(';' in p_function) > 0
-     or position('--' in p_function) > 0
+     or pg_catalog.strpos(p_function, ';') > 0
+     or pg_catalog.strpos(p_function, '--') > 0
      or p_function not in (
        'public.finalize_stale_line_appointment_reminder_claimed(integer)',
        'public.run_line_appointment_reminder_cron_dry_run()',
@@ -42,27 +57,59 @@ begin
      ) then
     return false;
   end if;
-  -- Fail closed if EXECUTE leaked to browser roles, or if the
-  -- signature is unknown (has_function_privilege returns NULL).
+
+  begin
+    v_oid := p_function::pg_catalog.regprocedure;
+  exception when others then
+    return false;
+  end;
+
+  -- NULL proacl means PostgreSQL default PUBLIC EXECUTE.
+  select
+    case
+      when p.proacl is null then true
+      else exists (
+        select 1
+        from pg_catalog.aclexplode(p.proacl) a
+        where a.grantee = 0
+          and a.privilege_type = 'EXECUTE'
+      )
+    end
+  into v_public_execute
+  from pg_catalog.pg_proc p
+  where p.oid = v_oid;
+  if coalesce(v_public_execute, true) then
+    return false;
+  end if;
+
+  -- Fail closed if EXECUTE leaked to PUBLIC / browser / login roles,
+  -- or if the signature is unknown (has_function_privilege returns NULL).
   if coalesce(pg_catalog.has_function_privilege('anon', p_function, 'execute'), true)
      or coalesce(pg_catalog.has_function_privilege('authenticated', p_function, 'execute'), true) then
     return false;
   end if;
-  -- Direct admin / local SET SESSION AUTHORIZATION service_role.
-  if session_user in ('postgres', 'service_role', 'supabase_admin') then
-    return true;
+  if exists (select 1 from pg_catalog.pg_roles where rolname = 'authenticator')
+     and coalesce(
+       pg_catalog.has_function_privilege('authenticator', p_function, 'execute'),
+       false
+     ) then
+    return false;
   end if;
-  -- PostgREST login role only. SET ROLE is already enforced by GRANT
-  -- before this SECURITY DEFINER body runs. Do not read request.jwt.
-  if session_user = 'authenticator' then
-    return true;
+  if not coalesce(
+    pg_catalog.has_function_privilege('service_role', p_function, 'execute'),
+    false
+  ) then
+    return false;
   end if;
-  return false;
+
+  -- GRANT already ran as the PostgREST SET ROLE before this body.
+  -- Do not treat session_user, current_user, or request claims as the caller.
+  return true;
 end;
 $$;
 
 revoke all on function public.line_appointment_reminder_service_role_call_allowed(text)
-  from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
 
 create or replace function public.line_appointment_reminder_dry_run_internal(
   p_organization_id text
@@ -305,9 +352,7 @@ begin
      and not public.user_is_org_owner(p_organization_id) then
     raise exception 'unauthorized' using errcode = '42501';
   end if;
-  if session_user in ('postgres', 'service_role', 'supabase_admin') then
-    perform public.finalize_stale_line_appointment_reminder_claimed(30);
-  end if;
+  -- Do not call privileged service RPCs from this authenticated entry.
   return public.line_appointment_reminder_dry_run_internal(p_organization_id);
 end;
 $$;
@@ -792,9 +837,10 @@ revoke all on function public.unbind_line_customer_by_hash(text, text)
   from public, anon, authenticated;
 
 do $$
+declare
+  v_sig text;
 begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then
-    execute 'grant execute on function public.line_appointment_reminder_service_role_call_allowed(text) to service_role';
     execute 'grant execute on function public.finalize_stale_line_appointment_reminder_claimed(integer) to service_role';
     execute 'grant execute on function public.run_line_appointment_reminder_cron_dry_run() to service_role';
     execute 'grant execute on function public.list_due_line_appointment_reminder_jobs(text) to service_role';
@@ -806,5 +852,25 @@ begin
     execute 'grant execute on function public.mark_line_customer_blocked(text, text) to service_role';
     execute 'grant execute on function public.unbind_line_customer_by_hash(text, text) to service_role';
     execute 'grant execute on function public.run_line_appointment_reminder_dry_run(text) to service_role';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticator') then
+    foreach v_sig in array array[
+      'public.line_appointment_reminder_service_role_call_allowed(text)',
+      'public.line_appointment_reminder_dry_run_internal(text)',
+      'public.finalize_stale_line_appointment_reminder_claimed(integer)',
+      'public.run_line_appointment_reminder_cron_dry_run()',
+      'public.list_due_line_appointment_reminder_jobs(text)',
+      'public.claim_line_appointment_reminder_job(text, text, boolean, integer, timestamptz)',
+      'public.complete_line_appointment_reminder_job(text, text, text, text, integer, text, text)',
+      'public.consume_line_customer_bind_challenge(text, text, text, text, text, text)',
+      'public.set_line_appointment_reminder_consent(text, text, boolean)',
+      'public.mark_line_customer_unsubscribed(text, text)',
+      'public.mark_line_customer_blocked(text, text)',
+      'public.unbind_line_customer_by_hash(text, text)',
+      'public.run_line_appointment_reminder_dry_run(text)'
+    ]
+    loop
+      execute format('revoke all on function %s from authenticator', v_sig);
+    end loop;
   end if;
 end $$;

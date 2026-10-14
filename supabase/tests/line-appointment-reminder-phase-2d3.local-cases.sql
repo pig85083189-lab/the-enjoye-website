@@ -1,5 +1,5 @@
 -- Phase 2D-3 local-only cases. Unix socket. Never Preview / Production / LINE.
--- Verifies PostgREST authenticator + GRANT, not JWT claims.
+-- Verifies GRANT / effective EXECUTE. authenticator is not an identity.
 
 set session authorization postgres;
 select tests.become('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
@@ -154,6 +154,28 @@ begin
   reset role;
   reset session authorization;
 
+  begin
+    set session authorization authenticator;
+    set role authenticated;
+    perform public.run_line_appointment_reminder_cron_dry_run();
+    perform tests.assert(false, 'authenticator SET ROLE authenticated cannot cron');
+  exception when insufficient_privilege then
+    null;
+  end;
+  reset role;
+  reset session authorization;
+
+  begin
+    set session authorization authenticator;
+    set role anon;
+    perform public.run_line_appointment_reminder_cron_dry_run();
+    perform tests.assert(false, 'authenticator SET ROLE anon cannot cron');
+  exception when insufficient_privilege then
+    null;
+  end;
+  reset role;
+  reset session authorization;
+
   perform tests.become('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
   set session authorization authenticated;
   v_json := public.run_line_appointment_reminder_dry_run('org-the-enjoye');
@@ -184,9 +206,48 @@ begin
   reset session authorization;
   revoke execute on function public.finalize_stale_line_appointment_reminder_claimed(integer)
     from authenticated;
+
+  grant execute on function public.run_line_appointment_reminder_cron_dry_run() to public;
+  begin
+    set session authorization authenticated;
+    perform public.run_line_appointment_reminder_cron_dry_run();
+    perform tests.assert(false, 'PUBLIC EXECUTE still denied by helper');
+  exception when insufficient_privilege then
+    null;
+  end;
+  reset session authorization;
+  revoke execute on function public.run_line_appointment_reminder_cron_dry_run() from public;
+  grant execute on function public.run_line_appointment_reminder_cron_dry_run() to service_role;
+
+  set session authorization authenticator;
+  set role service_role;
+  v_json := public.run_line_appointment_reminder_cron_dry_run();
+  perform tests.assert(v_json->>'ok' = 'true', 'service_role cron still works after revoke PUBLIC');
+  perform tests.assert(v_json->>'sent' = 'false', 'repaired cron sent=false');
+  reset role;
+  reset session authorization;
 end $$;
 
 set session authorization postgres;
+
+create or replace function tests.public_has_execute(p_sig text)
+returns boolean
+language sql
+stable
+as $$
+  select
+    case
+      when p.proacl is null then true
+      else exists (
+        select 1
+        from pg_catalog.aclexplode(p.proacl) a
+        where a.grantee = 0
+          and a.privilege_type = 'EXECUTE'
+      )
+    end
+  from pg_catalog.pg_proc p
+  where p.oid = p_sig::regprocedure;
+$$;
 
 select tests.assert(
   not has_function_privilege('anon', 'public.run_line_appointment_reminder_cron_dry_run()', 'execute'),
@@ -263,6 +324,74 @@ select tests.assert(
     'public.line_appointment_reminder_service_role_call_allowed(text)'::regprocedure
   ) not like '%current_setting(%request.jwt%',
   'helper does not read JWT claims'
+);
+select tests.assert(
+  pg_get_functiondef(
+    'public.line_appointment_reminder_service_role_call_allowed(text)'::regprocedure
+  ) not like '%session_user = ''authenticator''%',
+  'helper does not treat authenticator as service_role'
+);
+select tests.assert(
+  pg_get_functiondef(
+    'public.run_line_appointment_reminder_dry_run(text)'::regprocedure
+  ) not like '%finalize_stale_line_appointment_reminder_claimed%',
+  'owner dry-run does not call privileged finalize'
+);
+select tests.assert(
+  not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.prokind = 'f'
+      and has_function_privilege('authenticated', p.oid, 'execute')
+      and pg_get_functiondef(p.oid) ~ 'finalize_stale_line_appointment_reminder_claimed|run_line_appointment_reminder_cron_dry_run|claim_line_appointment_reminder_job|complete_line_appointment_reminder_job|consume_line_customer_bind_challenge|set_line_appointment_reminder_consent|mark_line_customer_unsubscribed|mark_line_customer_blocked|unbind_line_customer_by_hash|line_appointment_reminder_service_role_call_allowed'
+  ),
+  'authenticated functions do not call privileged service RPCs'
+);
+select tests.assert(
+  not tests.public_has_execute('public.run_line_appointment_reminder_cron_dry_run()'),
+  'PUBLIC cannot execute cron dry-run'
+);
+select tests.assert(
+  not tests.public_has_execute('public.finalize_stale_line_appointment_reminder_claimed(integer)'),
+  'PUBLIC cannot execute finalize'
+);
+select tests.assert(
+  not tests.public_has_execute('public.line_appointment_reminder_dry_run_internal(text)'),
+  'PUBLIC cannot execute internal dry-run'
+);
+select tests.assert(
+  not has_function_privilege(
+    'authenticator',
+    'public.run_line_appointment_reminder_cron_dry_run()',
+    'execute'
+  ),
+  'authenticator cannot execute cron dry-run'
+);
+select tests.assert(
+  not has_function_privilege(
+    'authenticator',
+    'public.finalize_stale_line_appointment_reminder_claimed(integer)',
+    'execute'
+  ),
+  'authenticator cannot execute finalize'
+);
+select tests.assert(
+  not has_function_privilege(
+    'service_role',
+    'public.line_appointment_reminder_service_role_call_allowed(text)',
+    'execute'
+  ),
+  'service_role cannot execute privilege helper directly'
+);
+select tests.assert(
+  has_function_privilege(
+    'authenticated',
+    'public.run_line_appointment_reminder_dry_run(text)',
+    'execute'
+  ),
+  'authenticated keeps owner org dry-run'
 );
 select tests.assert(
   not exists (

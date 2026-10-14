@@ -81,9 +81,17 @@ describe("Phase 2D-3 PostgREST privilege and cron reporting", () => {
     );
     expect(sql).toMatch(/line_appointment_reminder_service_role_call_allowed/);
     expect(sql).toMatch(/p_function not in \(/);
-    expect(sql).toMatch(/session_user = 'authenticator'/);
+    expect(sql).not.toMatch(/session_user = 'authenticator'/);
+    expect(sql).toMatch(/aclexplode/);
     expect(sql).toMatch(/has_function_privilege\('anon'/);
     expect(sql).toMatch(/has_function_privilege\('authenticated'/);
+    expect(sql).toMatch(/has_function_privilege\('authenticator'/);
+    expect(sql).toMatch(/has_function_privilege\('service_role'/);
+    expect(sql).toMatch(/revoke all on function public\.line_appointment_reminder_service_role_call_allowed\(text\)[\s\S]*service_role/);
+    expect(sql).toMatch(/revoke all on function %s from authenticator/);
+    expect(source("supabase/migrations/20261014120000_line_appointment_reminder_postgrest_service_role.sql")).toMatch(
+      /Do not call privileged service RPCs from this authenticated entry/,
+    );
     expect(sql).toMatch(/run_line_appointment_reminder_cron_dry_run\(\)/);
     expect(sql).toMatch(/revoke all on function public\.run_line_appointment_reminder_cron_dry_run\(\)/);
     expect(sql).toMatch(/revoke all on function public\.line_appointment_reminder_dry_run_internal\(text\)/);
