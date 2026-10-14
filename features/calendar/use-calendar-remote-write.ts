@@ -13,6 +13,7 @@ import {
   type AppointmentWriteFormCatalog,
 } from "@/lib/appointments/appointment-write-form-catalog";
 import { appointmentWriteUserMessage } from "@/lib/appointments/appointment-write-ui-error";
+import { calendarRemoteSubmitEnv } from "@/features/calendar/calendar-remote-submit-env";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 
 export type CalendarRemoteWriteState =
@@ -31,7 +32,10 @@ function writeClient(): AppointmentWriteClient | null {
   return createBrowserClientOrNull() as AppointmentWriteClient | null;
 }
 
-export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteState {
+export function useCalendarRemoteWrite(
+  enabled: boolean,
+  organizationId?: string,
+): CalendarRemoteWriteState {
   const [result, setResult] = useState<Exclude<
     CalendarRemoteWriteState,
     { status: "off" } | { status: "loading" }
@@ -46,7 +50,9 @@ export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteSta
         if (!client) {
           throw new Error("Authenticated Supabase client is unavailable");
         }
-        const catalog = await loadAppointmentWriteFormCatalog(client);
+        const catalog = await loadAppointmentWriteFormCatalog(client, {
+          organizationId,
+        });
         if (cancelled) return;
         if (!catalog.canCreate) {
           setResult({
@@ -76,7 +82,7 @@ export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteSta
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, organizationId]);
 
   if (!enabled) return { status: "off", canCreate: false, canCancel: false };
   if (!result) return { status: "loading", canCreate: false, canCancel: false };
@@ -100,9 +106,13 @@ export async function submitCalendarRemoteAppointmentCreate(input: {
   if (!client) {
     throw new Error("Authenticated Supabase client is unavailable");
   }
-  return runAuthenticatedAppointmentWriteCreate(client, input, {
-    ...process.env,
-    [APPOINTMENT_REMOTE_WRITE_PILOT_ENV]: "1",
-    [CALENDAR_REMOTE_READ_PILOT_ENV]: "1",
-  });
+  return runAuthenticatedAppointmentWriteCreate(
+    client,
+    input,
+    calendarRemoteSubmitEnv({
+      [APPOINTMENT_REMOTE_WRITE_PILOT_ENV]: "1",
+      [CALENDAR_REMOTE_READ_PILOT_ENV]: "1",
+      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    }),
+  );
 }

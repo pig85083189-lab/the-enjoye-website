@@ -7,9 +7,19 @@ import { CALENDAR_REMOTE_READ_PILOT_ENV } from "./calendar-remote-read-flag";
 import { APPOINTMENT_REMOTE_MUTATE_PILOT_ENV } from "./appointment-remote-mutate-flag";
 import {
   isCalendarRemoteCancelEligible,
+  isCalendarRemoteRescheduleEligible,
   resolveCalendarCancelSurface,
   resolveCalendarQuickViewActions,
+  resolveCalendarRescheduleSurface,
 } from "./appointment-write-cancel-surface";
+import {
+  AppointmentRescheduleSubmission,
+  appointmentRescheduleDisabled,
+} from "./appointment-write-reschedule-submit";
+import {
+  APPOINTMENT_RESCHEDULE_UI,
+  appointmentRescheduleUserMessage,
+} from "./appointment-write-reschedule-ui-error";
 import {
   AppointmentCancelSubmission,
   appointmentCancelDisabled,
@@ -134,6 +144,14 @@ describe("Phase 1C-6D.2 calendar remote cancel surface", () => {
     expect(
       resolveCalendarQuickViewActions({
         readOnly: true,
+        allowRemoteCancel: true,
+        allowRemoteReschedule: true,
+        status: "BOOKED",
+      }),
+    ).toEqual({ canEdit: true, canCancel: true, canTransition: false });
+    expect(
+      resolveCalendarQuickViewActions({
+        readOnly: true,
         allowRemoteCancel: false,
         status: "BOOKED",
       }),
@@ -197,10 +215,12 @@ describe("Phase 1C-6D.2 calendar remote cancel surface", () => {
     expect(page).toMatch(/isAppointmentRemoteMutatePilotEnabled/);
     expect(page).not.toMatch(/appointment-remote-mutate-pilot|createBrowserClient/);
     expect(calendar).toMatch(/submitCalendarRemoteAppointmentCancel/);
+    expect(calendar).toMatch(/submitCalendarRemoteAppointmentReschedule/);
     expect(calendar).toMatch(/expectedUpdatedAt: cancelItem.updatedAt/);
     expect(calendar).toMatch(/kind: "cancel"|status: "CANCELLED"|submitCalendarRemoteAppointmentCancel/);
     expect(calendar).toMatch(/readOnly=\{calendarRemoteReadPilot\}/);
     expect(calendar).toMatch(/allowRemoteCancel=\{allowRemoteCancel\}/);
+    expect(calendar).toMatch(/allowRemoteReschedule=\{allowRemoteReschedule\}/);
     const remoteConfirm = calendar.slice(
       calendar.indexOf("await submitCalendarRemoteAppointmentCancel"),
       calendar.indexOf("if (!cancelSurface.localCancel)"),
@@ -211,8 +231,10 @@ describe("Phase 1C-6D.2 calendar remote cancel surface", () => {
     expect(remoteConfirm).not.toMatch(/setAppointmentStatus/);
     expect(remoteConfirm).not.toMatch(/createAppointment\(/);
     expect(quickView).toMatch(/allowRemoteCancel/);
+    expect(quickView).toMatch(/allowRemoteReschedule/);
     expect(quickView).toMatch(/行事曆遠端讀取試點為唯讀/);
     expect(quickView).toMatch(/遠端預約目前僅能取消/);
+    expect(quickView).toMatch(/遠端預約可改期或取消/);
     expect(quickView).toMatch(/AppointmentCancelSubmission/);
     expect(hook).toMatch(/kind: "cancel"/);
     expect(hook).toMatch(/expectedUpdatedAt/);
@@ -225,5 +247,95 @@ describe("Phase 1C-6D.2 calendar remote cancel surface", () => {
     expect(profile).not.toMatch(/submitCalendarRemoteAppointmentCancel/);
     expect(today).toMatch(/readOnly=\{todayRemoteReadPilot\}/);
     expect(profile).toMatch(/readOnly=\{remoteReadPilot\}/);
+  });
+
+  it("opens remote Reschedule only for mutate + Owner + generated appointment", () => {
+    expect(
+      resolveCalendarRescheduleSurface({
+        calendarRemoteReadPilot: true,
+        appointmentRemoteWritePilot: true,
+        appointmentRemoteMutatePilot: false,
+        authenticatedOwner: true,
+      }),
+    ).toEqual({ remoteRescheduleAvailable: false, localReschedule: false });
+    expect(
+      resolveCalendarRescheduleSurface({
+        calendarRemoteReadPilot: true,
+        appointmentRemoteWritePilot: true,
+        appointmentRemoteMutatePilot: true,
+        authenticatedOwner: true,
+      }),
+    ).toEqual({ remoteRescheduleAvailable: true, localReschedule: false });
+    expect(
+      resolveCalendarRescheduleSurface({
+        calendarRemoteReadPilot: false,
+        appointmentRemoteWritePilot: false,
+        appointmentRemoteMutatePilot: false,
+        authenticatedOwner: true,
+      }),
+    ).toEqual({ remoteRescheduleAvailable: false, localReschedule: true });
+    expect(
+      isCalendarRemoteRescheduleEligible({
+        remoteRescheduleAvailable: true,
+        appointmentId: "apt-muqrindw-yt0l5z",
+        status: "BOOKED",
+        updatedAt: "2026-10-02T00:00:00.000Z",
+      }),
+    ).toBe(true);
+    expect(
+      isCalendarRemoteRescheduleEligible({
+        remoteRescheduleAvailable: true,
+        appointmentId: "apt-muqrindw-yt0l5z",
+        status: "ARRIVED",
+        updatedAt: "2026-10-02T00:00:00.000Z",
+      }),
+    ).toBe(false);
+    expect(
+      isCalendarRemoteRescheduleEligible({
+        remoteRescheduleAvailable: true,
+        appointmentId: "b92c54a1-000e-4cf1-bbd3-837ce3312559",
+        status: "BOOKED",
+        updatedAt: "2026-10-02T00:00:00.000Z",
+      }),
+    ).toBe(false);
+  });
+
+  it("guards duplicate reschedule submit and never pretends a failed write succeeded", async () => {
+    const submission = new AppointmentRescheduleSubmission<string>();
+    const first = submission.submit(async () => "ok");
+    const second = submission.submit(async () => "again");
+    expect(await second).toBe("ignored");
+    expect(await first).toBe("success");
+    expect(submission.rescheduleRequests).toBe(1);
+    expect(appointmentRescheduleDisabled(submission.phase)).toBe(true);
+    const failed = new AppointmentRescheduleSubmission<string>();
+    expect(await failed.submit(async () => {
+      throw new AppointmentWriteStaleError();
+    })).toBe("error");
+    expect(failed.phase).toBe("error");
+    expect(appointmentRescheduleUserMessage(new AppointmentWriteStaleError())).toBe(
+      APPOINTMENT_RESCHEDULE_UI.stale,
+    );
+    const calendar = readFileSync(
+      path.join(process.cwd(), "features/calendar/CalendarPage.tsx"),
+      "utf8",
+    );
+    const hook = readFileSync(
+      path.join(process.cwd(), "features/calendar/use-calendar-remote-reschedule.ts"),
+      "utf8",
+    );
+    const remoteSave = calendar.slice(
+      calendar.indexOf("if (remoteReschedule)"),
+      calendar.indexOf("if (remoteCreate)"),
+    );
+    expect(remoteSave).toMatch(/submitCalendarRemoteAppointmentReschedule/);
+    expect(remoteSave).not.toMatch(/updateAppointment/);
+    expect(remoteSave).not.toMatch(/createAppointment\(/);
+    expect(remoteSave).toMatch(/appointmentRescheduleUserMessage/);
+    expect(hook).toMatch(/kind: "reschedule"/);
+    expect(hook).toMatch(/expectedUpdatedAt/);
+    expect(hook).toMatch(/runAuthenticatedAppointmentWriteMutate/);
+    expect(hook).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY|\.upsert\(/);
+    expect(hook).not.toMatch(/updateAppointment|localStorage/);
   });
 });
