@@ -45,6 +45,7 @@ const AUTOMATION_FILES = [
   "features/line/automations/LineAutomationStats.tsx",
   "features/line/automations/LineAutomationSwitch.tsx",
   "features/line/automations/LineControlledReminderPushCard.tsx",
+  "features/line/automations/LineOwnerSelfReminderCard.tsx",
   "lib/line/automations/access.ts",
   "lib/line/automations/catalog.ts",
   "lib/line/automations/copy.ts",

@@ -9,6 +9,7 @@ import { LineAutomationPhonePreview } from "@/features/line/automations/LineAuto
 import { LineAutomationRuleEditor } from "@/features/line/automations/LineAutomationRuleEditor";
 import { LineAutomationMonthlyStats } from "@/features/line/automations/LineAutomationStats";
 import { LineControlledReminderPushCard } from "@/features/line/automations/LineControlledReminderPushCard";
+import { LineOwnerSelfReminderCard } from "@/features/line/automations/LineOwnerSelfReminderCard";
 import { canShowLineAutomations } from "@/lib/line/automations/access";
 import {
   LINE_AUTOMATION_CATALOG,
@@ -389,10 +390,13 @@ export function LineAutomationsWorkspace() {
       ) : null}
 
       {selectedId === "appointment_reminder" && tab !== "history" ? (
-        <LineControlledReminderPushCard
-          organizationId={organization.id}
-          template={drafts.appointment_reminder.template}
-        />
+        <>
+          <LineControlledReminderPushCard
+            organizationId={organization.id}
+            template={drafts.appointment_reminder.template}
+          />
+          <LineOwnerSelfReminderCard organizationId={organization.id} />
+        </>
       ) : null}
 
       <LineAutomationMonthlyStats stats={stats} />

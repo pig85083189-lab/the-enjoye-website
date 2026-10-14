@@ -18,6 +18,17 @@ import {
   type ControlledReminderPushDecision,
   type ControlledReminderPushView,
 } from "@/lib/line/automations/appointment-reminder-controlled-push";
+import {
+  OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
+  OWNER_SELF_REMINDER_KILL_SWITCH_OPEN,
+  buildOwnerSelfReminderView,
+  evaluateOwnerSelfReminderPush,
+  isOwnerSelfReminderPanelVisible,
+  newOwnerSelfReminderOneshotId,
+  type OwnerSelfBindEvidence,
+  type OwnerSelfReminderDecision,
+  type OwnerSelfReminderView,
+} from "@/lib/line/automations/appointment-reminder-owner-self-push";
 import { unknownLineQuota } from "@/lib/line/line-quota";
 import { interpretStartLineCustomerBindResult } from "@/lib/line/automations/customer-line-bind";
 import {
@@ -577,6 +588,123 @@ export async function evaluateControlledReminderPushAction(input: {
         sentToday: 0,
         oneshotId,
         quotaLabel: "本階段不查詢 LINE 額度，不會連接 LINE",
+      }),
+      decision,
+    },
+  };
+}
+
+async function loadOwnerSelfBindEvidence(
+  organizationId: string,
+): Promise<OwnerSelfBindEvidence | null> {
+  try {
+    const supabase = await createClient();
+    const [recipient, secret, account] = await Promise.all([
+      supabase
+        .from("line_owner_recipients")
+        .select("organization_id,staff_user_id,line_user_id_hint,bind_method,bound_at")
+        .eq("organization_id", organizationId)
+        .maybeSingle(),
+      supabase
+        .from("line_owner_recipient_secrets")
+        .select("organization_id,key_id")
+        .eq("organization_id", organizationId)
+        .maybeSingle(),
+      supabase
+        .from("line_official_accounts")
+        .select("organization_id,test_push_enabled,channel_id")
+        .eq("organization_id", organizationId)
+        .maybeSingle(),
+    ]);
+    const row = recipient.data as Record<string, unknown> | null;
+    if (!row) return null;
+    const secretRow = secret.data as Record<string, unknown> | null;
+    const accountRow = account.data as Record<string, unknown> | null;
+    return {
+      organizationId: String(row.organization_id ?? ""),
+      staffUserId: String(row.staff_user_id ?? ""),
+      hint: typeof row.line_user_id_hint === "string" ? row.line_user_id_hint : "••••",
+      bindMethod: typeof row.bind_method === "string" ? row.bind_method : null,
+      keyId: typeof secretRow?.key_id === "string" ? secretRow.key_id : null,
+      secretPresent: Boolean(secretRow?.key_id),
+      boundAt: typeof row.bound_at === "string" ? row.bound_at : null,
+      testPushEnabled: accountRow?.test_push_enabled === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function loadOwnerSelfReminderViewAction(input: {
+  organizationId: string;
+}): Promise<AppointmentReminderActionResult<OwnerSelfReminderView>> {
+  if (!isOwnerSelfReminderPanelVisible(input.organizationId)) {
+    return { ok: false, reason: "unauthorized", message: "店長本人測試發送只允許 Beauty OS TEST", persisted: false };
+  }
+  const actor = await loadReminderActor(input.organizationId);
+  const access = evaluateAppointmentReminderOwnerAccess({ organizationId: input.organizationId, actor });
+  if (!access.ok) {
+    return { ok: false, reason: access.reason, message: access.message, persisted: false };
+  }
+  const evidence = await loadOwnerSelfBindEvidence(input.organizationId);
+  return {
+    ok: true,
+    message: "尚未有獨立的店長本人預約提醒授權。沒有連接 LINE Push。",
+    persisted: false,
+    data: buildOwnerSelfReminderView({
+      organizationId: input.organizationId,
+      evidence,
+      oneshotId: newOwnerSelfReminderOneshotId(),
+    }),
+  };
+}
+
+export async function evaluateOwnerSelfReminderPushAction(input: {
+  organizationId: string;
+  confirmPhrase: string;
+  oneshotId?: string;
+}): Promise<
+  AppointmentReminderActionResult<{
+    view: OwnerSelfReminderView;
+    decision: OwnerSelfReminderDecision;
+  }>
+> {
+  if (!isOwnerSelfReminderPanelVisible(input.organizationId)) {
+    return { ok: false, reason: "unauthorized", message: "店長本人測試發送只允許 Beauty OS TEST", persisted: false };
+  }
+  const actor = await loadReminderActor(input.organizationId);
+  const access = evaluateAppointmentReminderOwnerAccess({ organizationId: input.organizationId, actor });
+  if (!access.ok) {
+    return { ok: false, reason: access.reason, message: access.message, persisted: false };
+  }
+  const evidence = await loadOwnerSelfBindEvidence(input.organizationId);
+  const oneshotId = input.oneshotId?.startsWith("laros-")
+    ? input.oneshotId
+    : newOwnerSelfReminderOneshotId();
+  const decision = evaluateOwnerSelfReminderPush({
+    organizationId: input.organizationId,
+    actorStaffUserId: actor.userId,
+    channelId: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
+    evidence,
+    independentConsent: false,
+    testPushRecipientReused: evidence?.testPushEnabled === true,
+    confirmPhrase: input.confirmPhrase,
+    oneshotId,
+    killSwitchOpen: OWNER_SELF_REMINDER_KILL_SWITCH_OPEN,
+    sentToday: 0,
+    recipientCount: 1,
+    lineQuota: unknownLineQuota("本階段不查詢 LINE 額度"),
+    channelInflight: false,
+  });
+  return {
+    ok: true,
+    message: decision.message,
+    persisted: false,
+    data: {
+      view: buildOwnerSelfReminderView({
+        organizationId: input.organizationId,
+        evidence,
+        oneshotId,
       }),
       decision,
     },

@@ -53,6 +53,14 @@ export const LINE_CONTROLLED_PUSH_PREVIEW_LABEL = "預計發送內容";
 export const LINE_CONTROLLED_PUSH_KILL_LABEL = "停止開關";
 export const LINE_CONTROLLED_PUSH_BIND_STATUS_LABEL = "已驗證綁定";
 export const LINE_CONTROLLED_PUSH_CONSENT_STATUS_LABEL = "獨立同意預約提醒";
+export const LINE_OWNER_SELF_TITLE = "店長本人預約提醒測試（Preview）";
+export const LINE_OWNER_SELF_HINT =
+  "沿用 THE ENJOYE LINE，不改正式 Webhook。既有店長 test-push 綁定不能直接當預約提醒收件者。本階段只檢查，不會連接 LINE Push。";
+export const LINE_OWNER_SELF_CHECK_LABEL = "檢查店長本人發送（不會連接 LINE）";
+export const LINE_OWNER_SELF_CLOSED_LABEL = "正式發送、受控發送與店長本人測試都關閉";
+export const LINE_OWNER_SELF_BIND_LABEL = "既有店長 Webhook 綁定";
+export const LINE_OWNER_SELF_CONSENT_LABEL = "這次預約提醒測試的獨立同意";
+export const LINE_OWNER_SELF_TRUST_LABEL = "可信店長本人收件者";
 export const LINE_AUTOMATION_BIND_RATE_LIMITED_MESSAGE = "驗證碼產生過於頻繁，請稍後再試。";
 export const LINE_AUTOMATION_BIND_ATTEMPT_LIMITED_MESSAGE =
   "驗證嘗試次數過多，已暫時鎖定。請稍後再試。";
