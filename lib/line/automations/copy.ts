@@ -66,13 +66,20 @@ export const LINE_OWNER_SELF_ACK_LABEL =
 export const LINE_OWNER_SELF_ACK_NOTE =
   "勾選只是畫面提示。伺服器必須另外建立有期限的授權列才算同意，前端勾選、瀏覽器暫存或可偽造的 API 參數都不能代替。";
 export const LINE_OWNER_SELF_ONCE_ONLY_LABEL = "只限一次的預約提醒測試，不是全店自動提醒";
-export const LINE_OWNER_SELF_GRANT_LABEL = "建立本人測試授權（本階段不寫入）";
-export const LINE_OWNER_SELF_REVOKE_LABEL = "撤回本人測試授權（本階段不寫入）";
-export const LINE_OWNER_SELF_ISSUE_LABEL = "發行單次授權（本階段不寫入）";
+export const LINE_OWNER_SELF_GRANT_LABEL = "建立一次性測試授權";
+export const LINE_OWNER_SELF_REVOKE_LABEL = "撤回同意";
+export const LINE_OWNER_SELF_ISSUE_LABEL = "確認並發行單次授權";
 export const LINE_OWNER_SELF_FLOW_HINT =
-  "流程：登入 TEST → 確認遮罩綁定 → 主動同意只收一則測試 → 伺服器建立 24 小時授權 → 發行 2 小時 oneshot。發送尚未開放。";
+  "流程：登入 TEST → 確認遮罩綁定與本人匹配 → 主動同意只收一則測試 → 伺服器建立 24 小時授權 → 發行 2 小時 oneshot。LINE 發送尚未啟用。";
 export const LINE_OWNER_SELF_PERSIST_CLOSED =
   "Preview 授權寫入尚未開放。沒有寫入遠端 SQL，也沒有連接 LINE。";
+export const LINE_OWNER_SELF_PERSIST_OPEN_HINT =
+  "可建立 Preview 本人測試授權。勾選不能代替伺服器授權。LINE 發送尚未啟用。";
+export const LINE_OWNER_SELF_MATCH_LABEL = "目前登入是否為綁定本人";
+export const LINE_OWNER_SELF_PURPOSE_LABEL = "這次同意的目的";
+export const LINE_OWNER_SELF_GRANT_TTL_LABEL = "授權有效期限";
+export const LINE_OWNER_SELF_ONESHOT_TTL_LABEL = "單次授權有效期限";
+export const LINE_OWNER_SELF_WEBHOOK_LABEL = "官方 Webhook 驗證";
 export const LINE_AUTOMATION_BIND_RATE_LIMITED_MESSAGE = "驗證碼產生過於頻繁，請稍後再試。";
 export const LINE_AUTOMATION_BIND_ATTEMPT_LIMITED_MESSAGE =
   "驗證嘗試次數過多，已暫時鎖定。請稍後再試。";

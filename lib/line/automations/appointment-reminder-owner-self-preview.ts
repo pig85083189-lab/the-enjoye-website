@@ -15,7 +15,7 @@ import {
 
 export const OWNER_SELF_REMINDER_PREVIEW_SUPABASE_REF = "bfzquejrtgqzzarhkiya";
 export const OWNER_SELF_REMINDER_PRODUCTION_SUPABASE_REF = "knccefcxncglgpmvgqlp";
-export const OWNER_SELF_REMINDER_GRANT_PERSIST_OPEN = false;
+export const OWNER_SELF_REMINDER_GRANT_PERSIST_OPEN = true;
 
 export type OwnerSelfPreviewRuntimeDecision =
   | { ok: true; host: string }
@@ -51,6 +51,48 @@ export function evaluateOwnerSelfPreviewRuntime(
     };
   }
   return { ok: true, host };
+}
+
+export function confirmTrustedOwnerSelfPreviewTarget(input: {
+  managementProjectId?: string | null;
+  managementDbHost?: string | null;
+  vercelEnv?: string | null;
+  supabaseUrl?: string | null;
+  linkedProjectRef?: string | null;
+}): { ok: true; ref: string } | { ok: false; reason: "send_closed"; message: string } {
+  const refuse = (
+    message: string,
+  ): { ok: false; reason: "send_closed"; message: string } => ({
+    ok: false,
+    reason: "send_closed",
+    message,
+  });
+  const ref = (input.managementProjectId ?? "").trim();
+  if (!ref) {
+    return refuse("缺少可信的管理端 Preview 專案識別，未設定時拒絕");
+  }
+  if (ref === OWNER_SELF_REMINDER_PRODUCTION_SUPABASE_REF) {
+    return refuse("店長本人測試授權不可在 Production 執行");
+  }
+  if (ref !== OWNER_SELF_REMINDER_PREVIEW_SUPABASE_REF) {
+    return refuse("管理端專案識別不是指定 Preview Supabase");
+  }
+  const linked = (input.linkedProjectRef ?? "").trim();
+  if (linked && linked !== ref) {
+    return refuse("CLI 連結的專案與管理端 Preview 不一致");
+  }
+  const host = hostnameOf(input.supabaseUrl);
+  if (host !== `${ref}.supabase.co`) {
+    return refuse("環境變數 host 與管理端 Preview 專案不一致");
+  }
+  if ((input.vercelEnv ?? "").trim() !== "preview") {
+    return refuse("部署環境不是 Preview");
+  }
+  const dbHost = (input.managementDbHost ?? "").trim();
+  if (dbHost && dbHost !== `db.${ref}.supabase.co`) {
+    return refuse("資料庫 host 不是指定 Preview");
+  }
+  return { ok: true, ref };
 }
 
 export const OWNER_SELF_REMINDER_PREVIEW_COMPAT = {
@@ -96,8 +138,8 @@ export const OWNER_SELF_REMINDER_PREVIEW_COMPAT = {
     enjoyeSharesChannel: true,
     ownerSelfTablesPresent: true,
     ownerSelfRowsEmpty: true,
-    runtimeArmed: false,
-    persistOpen: false,
+    runtimeArmed: true,
+    persistOpen: true,
     appliedDraftSha256:
       "fde24612e6ab1de1678430f61edc5e40aaeb9a1cb05cebadf3f8ef24c10abffb",
     phase2d3ReplayRequired: false,

@@ -30,10 +30,16 @@ import {
   LINE_OWNER_SELF_HINT,
   LINE_OWNER_SELF_ISSUE_LABEL,
   LINE_OWNER_SELF_ONCE_ONLY_LABEL,
+  LINE_OWNER_SELF_GRANT_TTL_LABEL,
+  LINE_OWNER_SELF_MATCH_LABEL,
+  LINE_OWNER_SELF_ONESHOT_TTL_LABEL,
   LINE_OWNER_SELF_PERSIST_CLOSED,
+  LINE_OWNER_SELF_PERSIST_OPEN_HINT,
+  LINE_OWNER_SELF_PURPOSE_LABEL,
   LINE_OWNER_SELF_REVOKE_LABEL,
   LINE_OWNER_SELF_TITLE,
   LINE_OWNER_SELF_TRUST_LABEL,
+  LINE_OWNER_SELF_WEBHOOK_LABEL,
 } from "@/lib/line/automations/copy";
 
 export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
@@ -91,15 +97,39 @@ export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
           </dd>
         </div>
         <div>
+          <dt className="text-secondary-text">{LINE_OWNER_SELF_WEBHOOK_LABEL}</dt>
+          <dd className="font-medium text-text" data-line-owner-self-webhook>
+            {view?.bindWebhookVerified ? "已由官方 Webhook 驗證碼綁定" : "尚未由官方 Webhook 驗證"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-secondary-text">{LINE_OWNER_SELF_MATCH_LABEL}</dt>
+          <dd className="font-medium text-text" data-line-owner-self-match>
+            {view?.actorMatchesBind ? "是，綁定屬於目前登入店長" : "否，不能建立授權"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-secondary-text">{LINE_OWNER_SELF_PURPOSE_LABEL}</dt>
+          <dd className="font-medium text-text" data-line-owner-self-purpose>
+            {view?.purposeLabel ?? "僅接收一則測試預約提醒"}
+          </dd>
+        </div>
+        <div>
           <dt className="text-secondary-text">{LINE_OWNER_SELF_CONSENT_LABEL}</dt>
           <dd className="font-medium text-text" data-line-owner-self-consent>
             {view?.independentConsent ? "已有伺服器授權列" : "尚未同意（test-push 不算）"}
           </dd>
         </div>
         <div>
+          <dt className="text-secondary-text">{LINE_OWNER_SELF_GRANT_TTL_LABEL}</dt>
+          <dd className="font-medium text-text" data-line-owner-self-grant-ttl>
+            {view?.grantExpiresAt ? view.grantExpiresAt : "尚未建立 24 小時授權"}
+          </dd>
+        </div>
+        <div>
           <dt className="text-secondary-text">{LINE_OWNER_SELF_TRUST_LABEL}</dt>
           <dd className="font-medium text-text" data-line-owner-self-trust>
-            尚未指定
+            尚未指定可發送收件者
           </dd>
         </div>
         <div>
@@ -108,7 +138,13 @@ export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
         </div>
         <div>
           <dt className="text-secondary-text">{LINE_CONTROLLED_PUSH_ONESHOT_LABEL}</dt>
-          <dd className="font-medium text-text">{view?.oneshotId || "檢查時會產生"}</dd>
+          <dd className="font-medium text-text">{view?.oneshotId || "尚未發行"}</dd>
+        </div>
+        <div>
+          <dt className="text-secondary-text">{LINE_OWNER_SELF_ONESHOT_TTL_LABEL}</dt>
+          <dd className="font-medium text-text" data-line-owner-self-oneshot-ttl>
+            {view?.oneshotExpiresAt ? view.oneshotExpiresAt : "尚未發行 2 小時 oneshot"}
+          </dd>
         </div>
       </dl>
       <label className="mt-4 flex items-start gap-2 text-[13px] text-text">
@@ -182,6 +218,9 @@ export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
                 intent,
               }).then((result) => {
                 setMessage(result.message);
+                if (result.ok && result.data?.view) {
+                  setView(result.data.view);
+                }
               });
             }}
           >
@@ -189,7 +228,9 @@ export function LineOwnerSelfReminderCard(input: { organizationId: string }) {
           </button>
         ))}
       </div>
-      <p className="mt-2 text-[12px] text-secondary-text">{LINE_OWNER_SELF_PERSIST_CLOSED}</p>
+      <p className="mt-2 text-[12px] text-secondary-text">
+        {view?.persistOpen ? LINE_OWNER_SELF_PERSIST_OPEN_HINT : LINE_OWNER_SELF_PERSIST_CLOSED}
+      </p>
       {message ? <p className="mt-3 text-[13px] text-secondary-text">{message}</p> : null}
       {decision ? (
         <p className="mt-2 text-[13px] font-medium text-text">

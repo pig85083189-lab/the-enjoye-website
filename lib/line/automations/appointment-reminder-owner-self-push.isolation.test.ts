@@ -331,8 +331,11 @@ describe("Phase 2E-8 Owner-self reminder consent + oneshot", () => {
     expect(source("lib/line/automations/appointment-reminder-actions.ts")).toMatch(
       /killSwitchOpen: OWNER_SELF_REMINDER_KILL_SWITCH_OPEN/,
     );
+    expect(source("lib/line/automations/appointment-reminder-actions.ts")).toMatch(
+      /GRANT_LINE_OWNER_SELF_REMINDER_TEST_RPC/,
+    );
     expect(source("lib/line/automations/appointment-reminder-actions.ts")).not.toMatch(
-      /grant_line_owner_self_reminder_test|claim_line_owner_self_reminder_oneshot/,
+      /claim_line_owner_self_reminder_oneshot/,
     );
     const ui = source("features/line/automations/LineOwnerSelfReminderCard.tsx");
     expect(ui).toMatch(/data-line-owner-self-reminder/);

@@ -108,12 +108,19 @@ export type OwnerSelfReminderView = {
   channelLast4: string;
   ownerBindPresent: boolean;
   ownerBindHint: string;
+  ownerBindMethod: string;
+  bindWebhookVerified: boolean;
+  actorMatchesBind: boolean;
   ownerBindReusableAsReminder: false;
   independentConsent: boolean;
+  purposeLabel: string;
+  grantExpiresAt: string | null;
+  oneshotExpiresAt: string | null;
   trustworthyRecipient: false;
   remainingToday: number;
   confirmPhrase: string;
   oneshotId: string;
+  persistOpen: boolean;
   killSwitchOpen: false;
   sendOpen: false;
   canSubmit: false;
@@ -459,14 +466,17 @@ export function buildOwnerSelfReminderView(input: {
   organizationId: string;
   evidence?: OwnerSelfBindEvidence | null;
   grant?: OwnerSelfReminderGrant | null;
+  oneshot?: OwnerSelfReminderOneshot | null;
+  actorStaffUserId?: string | null;
   oneshotId?: string;
+  persistOpen?: boolean;
   quotaLabel?: string;
   nowMs?: number;
 }): OwnerSelfReminderView {
   const evidence = input.evidence;
   const grantOk = evaluateOwnerSelfGrant({
     organizationId: input.organizationId,
-    actorStaffUserId: evidence?.staffUserId,
+    actorStaffUserId: input.actorStaffUserId ?? evidence?.staffUserId,
     channelId: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
     evidence,
     grant: input.grant,
@@ -478,12 +488,21 @@ export function buildOwnerSelfReminderView(input: {
     channelLast4: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID.slice(-4),
     ownerBindPresent: Boolean(evidence?.bindMethod === "webhook_code" && evidence.hint),
     ownerBindHint: evidence?.hint?.startsWith("••••") ? evidence.hint : "••••",
+    ownerBindMethod: evidence?.bindMethod === "webhook_code" ? "webhook_code" : "none",
+    bindWebhookVerified: evidence?.bindMethod === "webhook_code",
+    actorMatchesBind: Boolean(
+      input.actorStaffUserId && evidence?.staffUserId === input.actorStaffUserId,
+    ),
     ownerBindReusableAsReminder: false,
     independentConsent: grantOk,
+    purposeLabel: "僅接收一則測試預約提醒",
+    grantExpiresAt: grantOk ? input.grant?.expiresAt ?? null : null,
+    oneshotExpiresAt: input.oneshot?.status === "issued" ? input.oneshot.expiresAt : null,
     trustworthyRecipient: false,
     remainingToday: OWNER_SELF_REMINDER_DAILY_LIMIT,
     confirmPhrase: OWNER_SELF_REMINDER_CONFIRM_PHRASE,
-    oneshotId: input.oneshotId ?? "",
+    oneshotId: input.oneshot?.id ?? input.oneshotId ?? "",
+    persistOpen: input.persistOpen === true,
     killSwitchOpen: false,
     sendOpen: false,
     canSubmit: false,

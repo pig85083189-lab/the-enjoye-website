@@ -7,6 +7,7 @@ import {
   LINE_AUTOMATION_PERSIST_CLOSED_MESSAGE,
   LINE_AUTOMATION_PERSIST_SAVED_MESSAGE,
   LINE_OWNER_SELF_PERSIST_CLOSED,
+  LINE_OWNER_SELF_PERSIST_OPEN_HINT,
 } from "@/lib/line/automations/copy";
 import {
   CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
@@ -23,13 +24,28 @@ import {
   OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
   OWNER_SELF_REMINDER_KILL_SWITCH_OPEN,
   buildOwnerSelfReminderView,
+  evaluateOwnerSelfIdentity,
   evaluateOwnerSelfReminderPush,
   isOwnerSelfReminderPanelVisible,
   newOwnerSelfReminderOneshotId,
   type OwnerSelfBindEvidence,
   type OwnerSelfReminderDecision,
+  type OwnerSelfReminderGrant,
+  type OwnerSelfReminderOneshot,
   type OwnerSelfReminderView,
 } from "@/lib/line/automations/appointment-reminder-owner-self-push";
+import {
+  GRANT_LINE_OWNER_SELF_REMINDER_TEST_RPC,
+  ISSUE_LINE_OWNER_SELF_REMINDER_ONESHOT_RPC,
+  REVOKE_LINE_OWNER_SELF_REMINDER_TEST_RPC,
+  interpretOwnerSelfGrantRpc,
+  mapOwnerSelfGrantRow,
+  mapOwnerSelfOneshotRow,
+} from "@/lib/line/automations/appointment-reminder-owner-self-persist";
+import {
+  OWNER_SELF_REMINDER_GRANT_PERSIST_OPEN,
+  evaluateOwnerSelfPreviewRuntime,
+} from "@/lib/line/automations/appointment-reminder-owner-self-preview";
 import { unknownLineQuota } from "@/lib/line/line-quota";
 import { interpretStartLineCustomerBindResult } from "@/lib/line/automations/customer-line-bind";
 import {
@@ -636,28 +652,91 @@ async function loadOwnerSelfBindEvidence(
   }
 }
 
+async function loadOwnerSelfGrantState(input: {
+  organizationId: string;
+  actorStaffUserId?: string | null;
+}): Promise<{ grant: OwnerSelfReminderGrant | null; oneshot: OwnerSelfReminderOneshot | null }> {
+  const supabase = await createClient();
+  const grants = await supabase
+    .from("line_owner_self_reminder_grants")
+    .select(
+      "id,organization_id,staff_user_id,channel_id,purpose,appointment_id,bind_bound_at,bind_hint,bind_key_id,acknowledged_once_only,authorized_via_test_push,created_at,expires_at,revoked_at",
+    )
+    .eq("organization_id", input.organizationId)
+    .is("revoked_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const grant = mapOwnerSelfGrantRow((grants.data?.[0] ?? null) as Record<string, unknown> | null);
+  if (!grant || (input.actorStaffUserId && grant.staffUserId !== input.actorStaffUserId)) {
+    return { grant: null, oneshot: null };
+  }
+  const oneshots = await supabase
+    .from("line_owner_self_reminder_oneshots")
+    .select(
+      "id,grant_id,organization_id,staff_user_id,channel_id,appointment_id,bind_bound_at,bind_hint,bind_key_id,status,expires_at,claimed_at,consumed_at",
+    )
+    .eq("grant_id", grant.id)
+    .eq("status", "issued")
+    .is("consumed_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  return {
+    grant,
+    oneshot: mapOwnerSelfOneshotRow((oneshots.data?.[0] ?? null) as Record<string, unknown> | null),
+  };
+}
+
+async function buildOwnerSelfReminderWorkspace(input: {
+  organizationId: string;
+  actorStaffUserId?: string | null;
+}): Promise<{
+  evidence: OwnerSelfBindEvidence | null;
+  grant: OwnerSelfReminderGrant | null;
+  oneshot: OwnerSelfReminderOneshot | null;
+  view: OwnerSelfReminderView;
+}> {
+  const evidence = await loadOwnerSelfBindEvidence(input.organizationId);
+  const state = await loadOwnerSelfGrantState(input);
+  return {
+    evidence,
+    grant: state.grant,
+    oneshot: state.oneshot,
+    view: buildOwnerSelfReminderView({
+      organizationId: input.organizationId,
+      evidence,
+      grant: state.grant,
+      oneshot: state.oneshot,
+      actorStaffUserId: input.actorStaffUserId,
+      persistOpen: OWNER_SELF_REMINDER_GRANT_PERSIST_OPEN,
+    }),
+  };
+}
+
 export async function loadOwnerSelfReminderViewAction(input: {
   organizationId: string;
 }): Promise<AppointmentReminderActionResult<OwnerSelfReminderView>> {
   if (!isOwnerSelfReminderPanelVisible(input.organizationId)) {
     return { ok: false, reason: "unauthorized", message: "店長本人測試發送只允許 Beauty OS TEST", persisted: false };
   }
+  const runtime = evaluateOwnerSelfPreviewRuntime();
   const actor = await loadReminderActor(input.organizationId);
   const access = evaluateAppointmentReminderOwnerAccess({ organizationId: input.organizationId, actor });
   if (!access.ok) {
     return { ok: false, reason: access.reason, message: access.message, persisted: false };
   }
-  const evidence = await loadOwnerSelfBindEvidence(input.organizationId);
+  const workspace = await buildOwnerSelfReminderWorkspace({
+    organizationId: input.organizationId,
+    actorStaffUserId: actor.userId,
+  });
   return {
     ok: true,
-    message: "尚未有獨立的店長本人預約提醒授權。前端勾選不算同意。沒有連接 LINE Push。",
+    message: runtime.ok
+      ? workspace.view.independentConsent
+        ? LINE_OWNER_SELF_PERSIST_OPEN_HINT
+        : "尚未有獨立的店長本人預約提醒授權。前端勾選不算同意。LINE 發送尚未啟用。"
+      : runtime.message,
     persisted: false,
-    data: buildOwnerSelfReminderView({
-      organizationId: input.organizationId,
-      evidence,
-      grant: null,
-      oneshotId: newOwnerSelfReminderOneshotId(),
-    }),
+    data: workspace.view,
   };
 }
 
@@ -680,17 +759,20 @@ export async function evaluateOwnerSelfReminderPushAction(input: {
   if (!access.ok) {
     return { ok: false, reason: access.reason, message: access.message, persisted: false };
   }
-  const evidence = await loadOwnerSelfBindEvidence(input.organizationId);
-  const oneshotId = input.oneshotId?.startsWith("laros-")
-    ? input.oneshotId
-    : newOwnerSelfReminderOneshotId();
+  const workspace = await buildOwnerSelfReminderWorkspace({
+    organizationId: input.organizationId,
+    actorStaffUserId: actor.userId,
+  });
+  const oneshotId =
+    workspace.oneshot?.id ??
+    (input.oneshotId?.startsWith("laros-") ? input.oneshotId : newOwnerSelfReminderOneshotId());
   const decision = evaluateOwnerSelfReminderPush({
     organizationId: input.organizationId,
     actorStaffUserId: actor.userId,
     channelId: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
-    evidence,
-    grant: null,
-    oneshot: null,
+    evidence: workspace.evidence,
+    grant: workspace.grant,
+    oneshot: workspace.oneshot,
     clientAcknowledged: input.clientAcknowledged === true,
     authorizeWithTestPushEnabled: false,
     trustClientGrant: false,
@@ -710,12 +792,7 @@ export async function evaluateOwnerSelfReminderPushAction(input: {
     message: decision.message,
     persisted: false,
     data: {
-      view: buildOwnerSelfReminderView({
-        organizationId: input.organizationId,
-        evidence,
-        grant: null,
-        oneshotId,
-      }),
+      view: workspace.view,
       decision,
     },
   };
@@ -725,23 +802,121 @@ export async function prepareOwnerSelfReminderGrantAction(input: {
   organizationId: string;
   clientAcknowledged?: boolean;
   intent: "grant" | "revoke" | "issue";
-}): Promise<AppointmentReminderActionResult<{ persisted: false }>> {
+}): Promise<
+  AppointmentReminderActionResult<{
+    persisted: boolean;
+    grantId?: string | null;
+    oneshotId?: string | null;
+    view?: OwnerSelfReminderView;
+  }>
+> {
   if (!isOwnerSelfReminderPanelVisible(input.organizationId)) {
     return { ok: false, reason: "unauthorized", message: "店長本人測試發送只允許 Beauty OS TEST", persisted: false };
+  }
+  const runtime = evaluateOwnerSelfPreviewRuntime();
+  if (!runtime.ok) {
+    return { ok: false, reason: runtime.reason, message: runtime.message, persisted: false };
+  }
+  if (!OWNER_SELF_REMINDER_GRANT_PERSIST_OPEN) {
+    return { ok: false, reason: "send_closed", message: LINE_OWNER_SELF_PERSIST_CLOSED, persisted: false };
   }
   const actor = await loadReminderActor(input.organizationId);
   const access = evaluateAppointmentReminderOwnerAccess({ organizationId: input.organizationId, actor });
   if (!access.ok) {
     return { ok: false, reason: access.reason, message: access.message, persisted: false };
   }
+  const evidence = await loadOwnerSelfBindEvidence(input.organizationId);
+  const identity = evaluateOwnerSelfIdentity({
+    organizationId: input.organizationId,
+    actorStaffUserId: actor.userId,
+    evidence,
+  });
+  if (!identity.ok) {
+    const reason =
+      identity.reason === "unauthorized" || identity.reason === "invalid_input" || identity.reason === "send_closed"
+        ? identity.reason
+        : identity.reason === "unbound"
+          ? "not_configured"
+          : "invalid_input";
+    return { ok: false, reason, message: identity.message, persisted: false };
+  }
   if (input.intent === "grant" && input.clientAcknowledged !== true) {
     return { ok: false, reason: "invalid_input", message: "必須主動同意這是只限一次的預約提醒測試", persisted: false };
   }
+
+  const current = await loadOwnerSelfGrantState({
+    organizationId: input.organizationId,
+    actorStaffUserId: actor.userId,
+  });
+  const supabase = await createClient();
+  let rpcName = GRANT_LINE_OWNER_SELF_REMINDER_TEST_RPC;
+  let rpcArgs: Record<string, unknown> = {
+    p_organization_id: input.organizationId,
+    p_acknowledged_once_only: true,
+  };
+  if (input.intent === "revoke") {
+    if (!current.grant) {
+      return { ok: false, reason: "invalid_input", message: "找不到店長本人測試同意", persisted: false };
+    }
+    rpcName = REVOKE_LINE_OWNER_SELF_REMINDER_TEST_RPC;
+    rpcArgs = {
+      p_organization_id: input.organizationId,
+      p_grant_id: current.grant.id,
+    };
+  }
+  if (input.intent === "issue") {
+    if (!current.grant) {
+      return { ok: false, reason: "invalid_input", message: "沒有有效、未撤回的店長本人測試同意", persisted: false };
+    }
+    rpcName = ISSUE_LINE_OWNER_SELF_REMINDER_ONESHOT_RPC;
+    rpcArgs = {
+      p_organization_id: input.organizationId,
+      p_grant_id: current.grant.id,
+    };
+  }
+
+  const invoked = await supabase.rpc(rpcName, rpcArgs);
+  if (invoked.error) {
+    const duplicate = /oneshots_one_open|duplicate key|unique/i.test(invoked.error.message);
+    return {
+      ok: false,
+      reason: duplicate ? "duplicate" : "error",
+      message: duplicate ? "已有未使用的單次授權，不會重複發行" : invoked.error.message,
+      persisted: false,
+    };
+  }
+  const parsed = interpretOwnerSelfGrantRpc(invoked.data);
+  if (parsed.ok !== true) {
+    const reason = parsed.reason === "unauthorized" || parsed.reason === "invalid_input" || parsed.reason === "send_closed" || parsed.reason === "quota_exceeded" || parsed.reason === "duplicate"
+      ? parsed.reason
+      : "error";
+    return {
+      ok: false,
+      reason,
+      message: parsed.message ?? "授權未寫入",
+      persisted: false,
+    };
+  }
+
+  const workspace = await buildOwnerSelfReminderWorkspace({
+    organizationId: input.organizationId,
+    actorStaffUserId: actor.userId,
+  });
   return {
     ok: true,
-    message: LINE_OWNER_SELF_PERSIST_CLOSED,
-    persisted: false,
-    data: { persisted: false },
+    message:
+      input.intent === "revoke"
+        ? "已撤回本人測試授權。LINE 發送尚未啟用。"
+        : input.intent === "issue"
+          ? "已發行 2 小時單次授權。LINE 發送尚未啟用。"
+        : "已建立 24 小時本人測試授權。LINE 發送尚未啟用。",
+    persisted: true,
+    data: {
+      persisted: true,
+      grantId: workspace.grant?.id ?? parsed.grant_id ?? null,
+      oneshotId: workspace.oneshot?.id ?? parsed.oneshot_id ?? null,
+      view: workspace.view,
+    },
   };
 }
 

@@ -14,6 +14,7 @@ import {
   OWNER_SELF_REMINDER_PREVIEW_COMPAT,
   OWNER_SELF_REMINDER_PRODUCTION_SUPABASE_REF,
   OWNER_SELF_REMINDER_PREVIEW_SUPABASE_REF,
+  confirmTrustedOwnerSelfPreviewTarget,
   evaluateOwnerSelfPreviewRuntime,
 } from "@/lib/line/automations/appointment-reminder-owner-self-preview";
 import {
@@ -50,8 +51,8 @@ describe("Phase 2E-10A Preview structure install record", () => {
     );
     expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.ownerSelfTablesPresent).toBe(true);
     expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.ownerSelfRowsEmpty).toBe(true);
-    expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.runtimeArmed).toBe(false);
-    expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.persistOpen).toBe(false);
+    expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.runtimeArmed).toBe(true);
+    expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.persistOpen).toBe(true);
     expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.appliedDraftSha256).toBe(
       "fde24612e6ab1de1678430f61edc5e40aaeb9a1cb05cebadf3f8ef24c10abffb",
     );
@@ -66,7 +67,29 @@ describe("Phase 2E-10A Preview structure install record", () => {
       bindMethod: "webhook_code",
       keyId: "line-cred-v1",
     });
-    expect(OWNER_SELF_REMINDER_GRANT_PERSIST_OPEN).toBe(false);
+    expect(OWNER_SELF_REMINDER_GRANT_PERSIST_OPEN).toBe(true);
+    expect(
+      confirmTrustedOwnerSelfPreviewTarget({
+        managementProjectId: "bfzquejrtgqzzarhkiya",
+        managementDbHost: "db.bfzquejrtgqzzarhkiya.supabase.co",
+        vercelEnv: "preview",
+        supabaseUrl: `https://${LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST}`,
+        linkedProjectRef: "bfzquejrtgqzzarhkiya",
+      }).ok,
+    ).toBe(true);
+    expect(
+      confirmTrustedOwnerSelfPreviewTarget({
+        vercelEnv: "preview",
+        supabaseUrl: `https://${LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST}`,
+      }).ok,
+    ).toBe(false);
+    expect(
+      confirmTrustedOwnerSelfPreviewTarget({
+        managementProjectId: "knccefcxncglgpmvgqlp",
+        vercelEnv: "preview",
+        supabaseUrl: `https://${LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST}`,
+      }).ok,
+    ).toBe(false);
   });
 
   it("fails closed unless the app server can prove Preview", () => {
@@ -161,10 +184,10 @@ describe("Phase 2E-10A Preview structure install record", () => {
       /fetchLineMessageQuota|api\.line\.me/,
     );
     const actions = source("lib/line/automations/appointment-reminder-actions.ts");
-    expect(actions).toMatch(/LINE_OWNER_SELF_PERSIST_CLOSED/);
-    expect(actions).toMatch(/persisted: false/);
+    expect(actions).toMatch(/GRANT_LINE_OWNER_SELF_REMINDER_TEST_RPC/);
+    expect(actions).toMatch(/ISSUE_LINE_OWNER_SELF_REMINDER_ONESHOT_RPC/);
     expect(actions).not.toMatch(
-      /fetchLineMessageQuota|loadOwnerSelfReminderOfficialQuota|arm_line_owner_self_reminder_preview_runtime|grant_line_owner_self_reminder_test|claim_line_owner_self_reminder_oneshot/,
+      /fetchLineMessageQuota|loadOwnerSelfReminderOfficialQuota|arm_line_owner_self_reminder_preview_runtime|claim_line_owner_self_reminder_oneshot|record_line_owner_self_reminder_quota_snapshot/,
     );
     expect(source("features/line/automations/LineOwnerSelfReminderCard.tsx")).toMatch(
       /LINE_OWNER_SELF_FLOW_HINT/,
