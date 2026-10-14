@@ -20,6 +20,7 @@ import {
 } from "@/lib/persistence/authenticated-appointment-store";
 import {
   loadAuthenticatedIdentityCatalog,
+  type AuthenticatedIdentityLoadOptions,
   type IdentitySupabaseClient,
   type LoadedAuthenticatedIdentity,
 } from "@/lib/persistence/authenticated-identity-catalog";
@@ -80,8 +81,9 @@ export interface AuthenticatedAppointmentMutatePersistence {
 
 export async function createAuthenticatedAppointmentMutatePersistence(
   client: AppointmentMutateClient,
+  options: AuthenticatedIdentityLoadOptions = {},
 ): Promise<AuthenticatedAppointmentMutatePersistence> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, options);
   const snapshots = await loadAppointmentWriteSnapshots(client, identity);
   const appointments = new AppointmentRemoteAdapter(
     identity.mapper,
@@ -114,7 +116,9 @@ export async function runAuthenticatedAppointmentWriteMutate(
   if (!isAppointmentRemoteMutatePilotEnabled(env)) {
     throw new Error("Appointment remote mutate pilot is off");
   }
-  const persistence = await createAuthenticatedAppointmentMutatePersistence(client);
+  const persistence = await createAuthenticatedAppointmentMutatePersistence(client, {
+    organizationId: input.organizationId,
+  });
   const staff = persistence.identity.catalog.findStaffByAppId(
     persistence.identity.organizationDbId,
     persistence.identity.operationalStaffId,
