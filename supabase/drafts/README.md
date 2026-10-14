@@ -11,4 +11,4 @@ Rules:
 Current drafts:
 
 - `20261013120000_line_appointment_reminder_automation.sql` — Phase 2A/2B reminder tables (historical copy; a later published migration may already exist).
-- `20261014180000_line_owner_self_reminder_grant.sql` — Phase 2E-7 Owner-self independent consent + `laros-` oneshot. Never inserts a grant or oneshot row. Never calls LINE.
+- `20261014180000_line_owner_self_reminder_grant.sql` — Phase 2E-8 hardened Owner-self grant + `laros-` oneshot. Trusted service-role quota snapshots only. Same Channel lock as Broadcast. Never inserts a grant, oneshot, or snapshot row. Never calls LINE.

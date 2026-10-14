@@ -1,16 +1,20 @@
 /**
- * Phase 2E-7 Owner-self reminder consent + oneshot. SEND stays closed.
+ * Phase 2E-8 Owner-self reminder consent + oneshot. SEND stays closed.
  * Test-push bind is identity evidence only. Independent grant + oneshot
- * authorize the reminder test. This module never writes remotely or
- * calls LINE.
+ * authorize the reminder test. Quota must come from a service-role
+ * snapshot, never a client-supplied hint. This module never writes
+ * remotely or calls LINE.
  */
 
 import {
   LINE_APPOINTMENT_REMINDER_SEND_OPEN,
   isAppointmentReminderSendOpen,
 } from "@/lib/line/automations/appointment-reminder-flag";
-import { reminderChannelSnapshotAllowsSend } from "@/lib/line/automations/appointment-reminder-dispatcher";
 import { isLineUnknownHttpOutcome } from "@/lib/line/line-http-error";
+import {
+  LINE_BROADCAST_CHANNEL_LOCK_NAMESPACE,
+  lineBroadcastQuotaSnapshotAllowsClaim,
+} from "@/lib/line/line-channel-lock";
 import {
   LINE_BROADCAST_ONESHOT_CHANNEL_ID,
   LINE_BROADCAST_ONESHOT_PREVIEW_SUPABASE_HOST,
@@ -82,10 +86,20 @@ export type OwnerSelfReminderOneshot = {
   channelId: string;
   appointmentId: string;
   bindBoundAt: string;
+  bindHint?: string;
+  bindKeyId?: string;
   status: "issued" | "claimed" | "accepted" | "pending_confirmation" | "expired" | "canceled";
   expiresAt: string;
   claimedAt?: string | null;
   consumedAt?: string | null;
+};
+
+export type OwnerSelfTrustedQuotaSnapshot = {
+  source: "service_role_snapshot";
+  channelId: string;
+  known: true;
+  remaining: number | null;
+  checkedAt: string;
 };
 
 export type OwnerSelfReminderView = {
@@ -248,9 +262,66 @@ export function createOwnerSelfReminderOneshotDraft(input: {
     channelId: input.grant.channelId,
     appointmentId: input.grant.appointmentId,
     bindBoundAt: input.grant.bindBoundAt,
+    bindHint: input.grant.bindHint,
+    bindKeyId: input.grant.bindKeyId,
     status: "issued",
     expiresAt: new Date(nowMs + OWNER_SELF_REMINDER_ONESHOT_TTL_MS).toISOString(),
   };
+}
+
+export function ownerSelfReminderChannelLockSpec(): {
+  namespace: number;
+  channelId: string;
+  lockAllOrgsOnChannel: true;
+  usesBroadcastInflight: true;
+} {
+  return {
+    namespace: LINE_BROADCAST_CHANNEL_LOCK_NAMESPACE,
+    channelId: OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID,
+    lockAllOrgsOnChannel: true,
+    usesBroadcastInflight: true,
+  };
+}
+
+export function evaluateOwnerSelfTrustedQuota(input: {
+  snapshot?: OwnerSelfTrustedQuotaSnapshot | null;
+  authorizeWithClientQuota?: boolean;
+  nowMs?: number;
+}): { ok: true } | { ok: false; reason: "quota_exceeded"; message: string } {
+  if (input.authorizeWithClientQuota) {
+    return { ok: false, reason: "quota_exceeded", message: "不能信任呼叫端自填的 LINE 額度" };
+  }
+  const snapshot = input.snapshot;
+  if (!snapshot || snapshot.source !== "service_role_snapshot" || snapshot.known !== true) {
+    return { ok: false, reason: "quota_exceeded", message: "LINE 額度未知時拒絕發送" };
+  }
+  if (snapshot.channelId !== OWNER_SELF_REMINDER_ALLOWED_CHANNEL_ID) {
+    return { ok: false, reason: "quota_exceeded", message: "LINE 額度快照與授權 Channel 不符" };
+  }
+  return lineBroadcastQuotaSnapshotAllowsClaim({
+    quotaKnown: true,
+    quotaRemaining: snapshot.remaining,
+    quotaCheckedAt: snapshot.checkedAt,
+    nowMs: input.nowMs,
+  });
+}
+
+export function evaluateOwnerSelfRevoke(input: {
+  organizationId: string;
+  actorStaffUserId?: string | null;
+  grant?: OwnerSelfReminderGrant | null;
+}): { ok: true } | { ok: false; reason: OwnerSelfReminderReason; message: string } {
+  if (!input.grant) {
+    return { ok: false, reason: "not_consented", message: "找不到店長本人測試同意" };
+  }
+  if (
+    input.grant.organizationId !== input.organizationId ||
+    !input.actorStaffUserId ||
+    input.grant.staffUserId !== input.actorStaffUserId
+  ) {
+    return { ok: false, reason: "unauthorized", message: "非本人不能撤回這次店長本人測試同意" };
+  }
+  return { ok: true };
 }
 
 export function evaluateOwnerSelfGrant(input: {
@@ -261,8 +332,16 @@ export function evaluateOwnerSelfGrant(input: {
   grant?: OwnerSelfReminderGrant | null;
   clientAcknowledged?: boolean;
   authorizeWithTestPushEnabled?: boolean;
+  trustClientGrant?: boolean;
   nowMs?: number;
 }): { ok: true } | { ok: false; reason: OwnerSelfReminderReason; message: string } {
+  if (input.trustClientGrant) {
+    return {
+      ok: false,
+      reason: "not_consented",
+      message: "不能接受前端自製授權物件作為唯一證據",
+    };
+  }
   if (input.authorizeWithTestPushEnabled) {
     return {
       ok: false,
@@ -337,21 +416,35 @@ export function evaluateOwnerSelfOneshotClaim(input: {
   if (!input.grant || oneshot.grantId !== input.grant.id) {
     return { ok: false, reason: "invalid_input", message: "單次授權與同意列不符" };
   }
+  if (input.grant.purpose !== OWNER_SELF_REMINDER_PURPOSE) {
+    return { ok: false, reason: "not_consented", message: "這次授權不是單次預約提醒測試" };
+  }
+  if (input.grant.revokedAt) {
+    return { ok: false, reason: "not_consented", message: "店長本人測試同意已撤回" };
+  }
   if (
     oneshot.organizationId !== input.grant.organizationId ||
     oneshot.staffUserId !== input.grant.staffUserId ||
     oneshot.channelId !== input.grant.channelId ||
-    oneshot.bindBoundAt !== input.grant.bindBoundAt
+    oneshot.bindBoundAt !== input.grant.bindBoundAt ||
+    (oneshot.bindHint != null && oneshot.bindHint !== input.grant.bindHint) ||
+    (oneshot.bindKeyId != null && oneshot.bindKeyId !== input.grant.bindKeyId)
   ) {
     return { ok: false, reason: "duplicate", message: "單次授權不能在更改收件者後重用" };
   }
   if (
     oneshot.appointmentId !== OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID ||
+    input.grant.appointmentId !== OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID ||
     (input.appointmentId && input.appointmentId !== oneshot.appointmentId)
   ) {
     return { ok: false, reason: "invalid_input", message: "單次授權只能用於固定的測試預約" };
   }
-  if (input.evidence && oneshot.bindBoundAt !== input.evidence.boundAt) {
+  if (
+    input.evidence &&
+    (oneshot.bindBoundAt !== input.evidence.boundAt ||
+      (oneshot.bindHint != null && oneshot.bindHint !== input.evidence.hint) ||
+      (oneshot.bindKeyId != null && oneshot.bindKeyId !== input.evidence.keyId))
+  ) {
     return { ok: false, reason: "duplicate", message: "單次授權不能在更改收件者後重用" };
   }
   if (oneshot.consumedAt || input.oneshotConsumed || oneshot.status === "claimed") {
@@ -442,6 +535,9 @@ export function evaluateOwnerSelfReminderPush(input: {
   oneshot?: OwnerSelfReminderOneshot | null;
   clientAcknowledged?: boolean;
   authorizeWithTestPushEnabled?: boolean;
+  trustClientGrant?: boolean;
+  trustedQuotaSnapshot?: OwnerSelfTrustedQuotaSnapshot | null;
+  authorizeWithClientQuota?: boolean;
   fakeCustomerId?: string | null;
   plaintextLineUserId?: string | null;
   confirmPhrase: string;
@@ -523,6 +619,7 @@ export function evaluateOwnerSelfReminderPush(input: {
     grant: input.grant,
     clientAcknowledged: input.clientAcknowledged,
     authorizeWithTestPushEnabled: input.authorizeWithTestPushEnabled,
+    trustClientGrant: input.trustClientGrant,
     nowMs: input.nowMs,
   });
   if (!consent.ok) {
@@ -530,19 +627,7 @@ export function evaluateOwnerSelfReminderPush(input: {
   }
 
   const oneshot = evaluateOwnerSelfOneshotClaim({
-    oneshot:
-      input.oneshot ??
-      ({
-        id: input.oneshotId,
-        grantId: input.grant!.id,
-        organizationId: input.organizationId,
-        staffUserId: input.actorStaffUserId ?? "",
-        channelId: input.channelId ?? "",
-        appointmentId: input.appointmentId ?? OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID,
-        bindBoundAt: input.evidence?.boundAt ?? "",
-        status: "issued",
-        expiresAt: new Date((input.nowMs ?? Date.now()) + OWNER_SELF_REMINDER_ONESHOT_TTL_MS).toISOString(),
-      } satisfies OwnerSelfReminderOneshot),
+    oneshot: input.oneshot,
     grant: input.grant,
     evidence: input.evidence,
     appointmentId: input.appointmentId ?? OWNER_SELF_REMINDER_TEST_APPOINTMENT_ID,
@@ -556,18 +641,17 @@ export function evaluateOwnerSelfReminderPush(input: {
     return refuse(base, oneshot.reason, oneshot.message);
   }
 
-  const snapshot = reminderChannelSnapshotAllowsSend({
-    quota: input.lineQuota,
-    quotaCheckedAt: input.quotaCheckedAt,
+  if (input.channelInflight) {
+    return refuse(base, "inflight", "同一 LINE Channel 尚有發送進行中，已停止以免超額");
+  }
+
+  const snapshot = evaluateOwnerSelfTrustedQuota({
+    snapshot: input.trustedQuotaSnapshot,
+    authorizeWithClientQuota: input.authorizeWithClientQuota,
     nowMs: input.nowMs,
-    channelInflight: input.channelInflight,
   });
   if (!snapshot.ok) {
-    return refuse(
-      base,
-      snapshot.reason === "inflight" ? "inflight" : "quota_exceeded",
-      snapshot.message,
-    );
+    return refuse(base, snapshot.reason, snapshot.message);
   }
 
   return {
