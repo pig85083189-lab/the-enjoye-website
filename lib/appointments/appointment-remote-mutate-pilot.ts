@@ -5,8 +5,8 @@
  * appointment-remote-mutate-flag.ts so the adapter graph stays out of RSC.
  *
  * Does not enable BEAUTY_OS_PERSISTENCE or BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
- * Does not wire Calendar edit / Cancel / Reschedule / status buttons.
- * No service role. No localStorage fallback. No dual write.
+ * Calendar Cancel and Reschedule use this runner. Status buttons stay local-off
+ * while remote-read is on. No service role. No localStorage fallback. No dual write.
  */
 
 import {

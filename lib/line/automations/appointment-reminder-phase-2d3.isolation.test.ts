@@ -112,21 +112,25 @@ describe("Phase 2D-3 PostgREST privilege and cron reporting", () => {
     expect(source("vercel.json")).not.toMatch(/\*\/15 \* \* \* \*/);
   });
 
-  it("keeps Calendar create/cancel on the persist hook and reports local reschedule", () => {
+  it("keeps Calendar create/cancel/reschedule on the persist hook", () => {
     const calendar = source("features/calendar/CalendarPage.tsx");
     const createHook = source("features/calendar/use-calendar-remote-write.ts");
     const cancelHook = source("features/calendar/use-calendar-remote-cancel.ts");
+    const rescheduleHook = source("features/calendar/use-calendar-remote-reschedule.ts");
     const writePilot = source("lib/appointments/appointment-remote-write-pilot.ts");
     const mutatePilot = source("lib/appointments/appointment-remote-mutate-pilot.ts");
     const persist = source("lib/line/automations/appointment-reminder-write-hook.ts");
     expect(calendar).toMatch(/submitCalendarRemoteAppointmentCreate/);
     expect(calendar).toMatch(/submitCalendarRemoteAppointmentCancel/);
+    expect(calendar).toMatch(/submitCalendarRemoteAppointmentReschedule/);
     expect(calendar).not.toMatch(/appointment-remote-mutate-pilot|appointment-remote-write-pilot/);
     expect(calendar).toMatch(/if \(initial\) updateAppointment/);
     expect(calendar).toMatch(/readOnly=\{calendarRemoteReadPilot\}/);
     expect(createHook).toMatch(/runAuthenticatedAppointmentWriteCreate/);
     expect(cancelHook).toMatch(/runAuthenticatedAppointmentWriteMutate/);
     expect(cancelHook).toMatch(/kind: "cancel"/);
+    expect(rescheduleHook).toMatch(/runAuthenticatedAppointmentWriteMutate/);
+    expect(rescheduleHook).toMatch(/kind: "reschedule"/);
     expect(writePilot).toMatch(/notifyAppointmentWrittenForReminders/);
     expect(mutatePilot).toMatch(/notifyAppointmentWrittenForReminders/);
     expect(persist).toMatch(/syncAppointment|sync_line_appointment_reminder_jobs/);
