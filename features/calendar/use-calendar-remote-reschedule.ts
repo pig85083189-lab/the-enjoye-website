@@ -7,6 +7,7 @@ import { CALENDAR_REMOTE_READ_PILOT_ENV } from "@/lib/appointments/calendar-remo
 import { AppointmentWriteStaleError } from "@/lib/appointments/appointment-write-mutate-errors";
 import { emitAppointmentRemoteWriteRefresh } from "@/lib/appointments/appointment-write-refresh";
 import type { AppointmentMutateClient } from "@/lib/appointments/appointment-remote-mutate-pilot";
+import { calendarRemoteSubmitEnv } from "@/features/calendar/calendar-remote-submit-env";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 
 function mutateClient(): AppointmentMutateClient | null {
@@ -50,12 +51,11 @@ export async function submitCalendarRemoteAppointmentReschedule(input: {
         customerNote: input.customerNote,
         internalNote: input.internalNote,
       },
-      {
-        ...process.env,
+      calendarRemoteSubmitEnv({
         [APPOINTMENT_REMOTE_MUTATE_PILOT_ENV]: "1",
         [APPOINTMENT_REMOTE_WRITE_PILOT_ENV]: "1",
         [CALENDAR_REMOTE_READ_PILOT_ENV]: "1",
-      },
+      }),
     );
   } catch (error) {
     if (error instanceof AppointmentWriteStaleError) {

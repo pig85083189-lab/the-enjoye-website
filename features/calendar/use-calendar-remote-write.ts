@@ -13,6 +13,7 @@ import {
   type AppointmentWriteFormCatalog,
 } from "@/lib/appointments/appointment-write-form-catalog";
 import { appointmentWriteUserMessage } from "@/lib/appointments/appointment-write-ui-error";
+import { calendarRemoteSubmitEnv } from "@/features/calendar/calendar-remote-submit-env";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 
 export type CalendarRemoteWriteState =
@@ -105,9 +106,12 @@ export async function submitCalendarRemoteAppointmentCreate(input: {
   if (!client) {
     throw new Error("Authenticated Supabase client is unavailable");
   }
-  return runAuthenticatedAppointmentWriteCreate(client, input, {
-    ...process.env,
-    [APPOINTMENT_REMOTE_WRITE_PILOT_ENV]: "1",
-    [CALENDAR_REMOTE_READ_PILOT_ENV]: "1",
-  });
+  return runAuthenticatedAppointmentWriteCreate(
+    client,
+    input,
+    calendarRemoteSubmitEnv({
+      [APPOINTMENT_REMOTE_WRITE_PILOT_ENV]: "1",
+      [CALENDAR_REMOTE_READ_PILOT_ENV]: "1",
+    }),
+  );
 }

@@ -133,6 +133,9 @@ describe("Phase 2D-3 PostgREST privilege and cron reporting", () => {
     expect(rescheduleHook).toMatch(/kind: "reschedule"/);
     expect(writePilot).toMatch(/notifyAppointmentWrittenForReminders/);
     expect(mutatePilot).toMatch(/notifyAppointmentWrittenForReminders/);
+    expect(createHook).toMatch(/calendarRemoteSubmitEnv/);
+    expect(cancelHook).toMatch(/calendarRemoteSubmitEnv/);
+    expect(rescheduleHook).toMatch(/calendarRemoteSubmitEnv/);
     expect(persist).toMatch(/syncAppointment|sync_line_appointment_reminder_jobs/);
     expect(persist).not.toMatch(/executeCustomerLinePushHttp|api\.line\.me/);
     expect(source("scripts/line-appointment-reminder-local-pg.sh")).toMatch(
