@@ -51,6 +51,7 @@ const EXPECTED_CHAIN = [
   "20261012120000_line_broadcast_channel_lock.sql",
   "20261013120000_line_appointment_reminder_automation.sql",
   "20261013140000_line_appointment_reminder_phase_2c.sql",
+  "20261014120000_line_appointment_reminder_postgrest_service_role.sql",
 ] as const;
 
 function read(rel: string): string {

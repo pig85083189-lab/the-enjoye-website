@@ -29,7 +29,14 @@ Migration order after Owner approval
 1. Confirm Preview already has through 20261012120000_line_broadcast_channel_lock.sql
 2. Apply 20261013120000_line_appointment_reminder_automation.sql
 3. Apply 20261013140000_line_appointment_reminder_phase_2c.sql
-Do not apply either file to Production.
+4. Apply 20261014120000_line_appointment_reminder_postgrest_service_role.sql
+   only after Phase 2D-3 Owner approval. Do not apply it in 2D-3 local-only work.
+Do not apply any of these files to Production.
+
+Hobby Cron
+- vercel.json stays 0 3 * * *
+- Manual trigger: scripts/line-appointment-reminder-hobby-dry-run.sh
+- Cron calls run_line_appointment_reminder_cron_dry_run(), not the owner RPC.
 
 Dry-run acceptance (Preview TEST org only, fake customers only)
 1. Create a Preview-only test customer. Never use Production / official LINE customers.

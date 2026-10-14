@@ -675,6 +675,7 @@ describe("appointment reminder UI and draft migration safety", () => {
     );
     expect(published).toContain("20261013120000_line_appointment_reminder_automation.sql");
     expect(published).toContain("20261013140000_line_appointment_reminder_phase_2c.sql");
+    expect(published).toContain("20261014120000_line_appointment_reminder_postgrest_service_role.sql");
     const sql = source("supabase/migrations/20261013120000_line_appointment_reminder_automation.sql");
     const sql2c = source("supabase/migrations/20261013140000_line_appointment_reminder_phase_2c.sql");
     expect(sql).toMatch(/Owner approval is required/);
@@ -690,6 +691,9 @@ describe("appointment reminder UI and draft migration safety", () => {
     expect(sql).not.toMatch(/from public\.customers/i);
     expect(source("lib/persistence/fresh-migration-chain.isolation.test.ts")).toMatch(
       /20261013120000_line_appointment_reminder_automation\.sql/,
+    );
+    expect(source("lib/persistence/fresh-migration-chain.isolation.test.ts")).toMatch(
+      /20261014120000_line_appointment_reminder_postgrest_service_role\.sql/,
     );
     expect(sql2c).toMatch(/set_line_appointment_reminder_consent/);
     expect(sql2c).toMatch(/bind_does_not_opt_in/);

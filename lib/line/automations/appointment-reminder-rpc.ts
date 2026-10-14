@@ -26,5 +26,7 @@ export const UNBIND_LINE_CUSTOMER_BINDING_RPC = "unbind_line_customer_binding";
 export const UNBIND_LINE_CUSTOMER_BY_HASH_RPC = "unbind_line_customer_by_hash";
 export const RUN_LINE_APPOINTMENT_REMINDER_DRY_RUN_RPC =
   "run_line_appointment_reminder_dry_run";
+export const RUN_LINE_APPOINTMENT_REMINDER_CRON_DRY_RUN_RPC =
+  "run_line_appointment_reminder_cron_dry_run";
 export const LIST_DUE_LINE_APPOINTMENT_REMINDER_JOBS_RPC =
   "list_due_line_appointment_reminder_jobs";

@@ -172,7 +172,11 @@ begin
   );
   perform tests.assert(v_claim2->>'ok' = 'false', 'pending_confirmation is not retried');
 
+  reset session authorization;
+  perform tests.become('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  set session authorization authenticated;
   v_dry := public.run_line_appointment_reminder_dry_run('org-the-enjoye');
+  reset session authorization;
   set session authorization postgres;
   perform tests.assert(v_dry->>'sent' = 'false', 'dry-run never sent');
   perform tests.assert(

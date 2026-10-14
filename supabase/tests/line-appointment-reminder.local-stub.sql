@@ -18,6 +18,41 @@ begin
   if not exists (select 1 from pg_roles where rolname = 'postgres') then
     create role postgres;
   end if;
+  -- PostgREST login role is NOINHERIT. GRANT is checked after SET ROLE.
+  if not exists (select 1 from pg_roles where rolname = 'authenticator') then
+    create role authenticator nologin noinherit;
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_auth_members m
+    join pg_roles r on r.oid = m.roleid
+    join pg_roles u on u.oid = m.member
+    where r.rolname = 'service_role' and u.rolname = 'authenticator'
+  ) then
+    execute 'grant service_role to authenticator';
+  end if;
+  if not exists (
+    select 1
+    from pg_auth_members m
+    join pg_roles r on r.oid = m.roleid
+    join pg_roles u on u.oid = m.member
+    where r.rolname = 'authenticated' and u.rolname = 'authenticator'
+  ) then
+    execute 'grant authenticated to authenticator';
+  end if;
+  if not exists (
+    select 1
+    from pg_auth_members m
+    join pg_roles r on r.oid = m.roleid
+    join pg_roles u on u.oid = m.member
+    where r.rolname = 'anon' and u.rolname = 'authenticator'
+  ) then
+    execute 'grant anon to authenticator';
+  end if;
 end $$;
 
 create or replace function auth.uid()

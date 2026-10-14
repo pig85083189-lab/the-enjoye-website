@@ -18,8 +18,10 @@ createdb "$DB"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/line-appointment-reminder.local-stub.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261013120000_line_appointment_reminder_automation.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261013140000_line_appointment_reminder_phase_2c.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261014120000_line_appointment_reminder_postgrest_service_role.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/line-appointment-reminder.local-cases.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/line-appointment-reminder-phase-2c.local-cases.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/tests/line-appointment-reminder-phase-2d3.local-cases.sql"
 
 "${PSQL[@]}" <<'SQL'
 update public.line_automation_jobs
