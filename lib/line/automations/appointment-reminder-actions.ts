@@ -2,10 +2,12 @@
 
 import { canShowLineAutomations } from "@/lib/line/automations/access";
 import {
+  LINE_AUTOMATION_BIND_CREATED_MESSAGE,
   LINE_AUTOMATION_DB_NOT_READY,
   LINE_AUTOMATION_PERSIST_CLOSED_MESSAGE,
   LINE_AUTOMATION_PERSIST_SAVED_MESSAGE,
 } from "@/lib/line/automations/copy";
+import { interpretStartLineCustomerBindResult } from "@/lib/line/automations/customer-line-bind";
 import {
   createDefaultAppointmentReminderRule,
   evaluateAppointmentReminderOwnerAccess,
@@ -42,6 +44,7 @@ export type AppointmentReminderWorkspacePublic = {
   rule: AppointmentReminderRule;
   plannedCount: number | null;
   bindCount: number | null;
+  consentCount: number | null;
   deliveries: AppointmentReminderDelivery[];
   dryRuns: AppointmentReminderDryRunRecord[];
   persistOpen: boolean;
@@ -90,6 +93,7 @@ export async function loadAppointmentReminderWorkspaceAction(
         rule: createDefaultAppointmentReminderRule(organizationId),
         plannedCount: null,
         bindCount: null,
+        consentCount: null,
         deliveries: [],
         dryRuns: [],
         persistOpen: false,
@@ -113,6 +117,7 @@ export async function loadAppointmentReminderWorkspaceAction(
           rule: createDefaultAppointmentReminderRule(organizationId),
           plannedCount: null,
           bindCount: null,
+          consentCount: null,
           deliveries: [],
           dryRuns: [],
           persistOpen: true,
@@ -141,6 +146,7 @@ export async function loadAppointmentReminderWorkspaceAction(
         rule: workspace.rule,
         plannedCount: workspace.plannedCount,
         bindCount: workspace.bindCount,
+        consentCount: workspace.consentCount,
         deliveries: (deliveries.data ?? []).map((row) => ({
           id: row.id,
           organizationId: row.organization_id,
@@ -176,6 +182,7 @@ export async function loadAppointmentReminderWorkspaceAction(
         rule: createDefaultAppointmentReminderRule(organizationId),
         plannedCount: null,
         bindCount: null,
+        consentCount: null,
         deliveries: [],
         dryRuns: [],
         persistOpen,
@@ -268,17 +275,18 @@ export async function startCustomerLineBindAction(input: {
     p_organization_id: input.organizationId,
     p_customer_app_id: input.customerId,
   });
-  const payload = started.data && typeof started.data === "object" ? started.data : {};
-  const code = String((payload as { code?: unknown }).code ?? "");
-  const expiresAt = String((payload as { expires_at?: unknown }).expires_at ?? "");
-  if (started.error || !/^[0-9A-F]{8}$/.test(code)) {
-    return { ok: false, reason: "error", message: "無法產生客人綁定驗證碼", persisted: false };
+  const interpreted = interpretStartLineCustomerBindResult({
+    error: started.error,
+    data: started.data,
+  });
+  if (!interpreted.ok) {
+    return { ok: false, reason: "error", message: interpreted.message, persisted: false };
   }
   return {
     ok: true,
-    message: "請請客人用自己的 LINE 把驗證碼傳給本官方帳號。傳送即表示同意預約提醒。",
+    message: LINE_AUTOMATION_BIND_CREATED_MESSAGE,
     persisted: true,
-    data: { code, expiresAt },
+    data: { code: interpreted.code, expiresAt: interpreted.expiresAt },
   };
 }
 

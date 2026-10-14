@@ -106,7 +106,7 @@ begin
     'org-the-enjoye', v_code, 'v1.cipher-user', v_hash, '••••cdef', 'k1'
   );
   perform tests.assert(v_bind->>'bound' = 'true', 'consume bind');
-  perform tests.assert(v_bind->>'consented' = 'true', 'sending code opts in');
+  perform tests.assert(v_bind->>'consented' = 'false', 'bind does not opt in');
   set session authorization postgres;
 
   update public.line_automation_jobs

@@ -18,6 +18,8 @@ export const RECORD_LINE_APPOINTMENT_REMINDER_DRY_RUN_RPC =
   "record_line_appointment_reminder_dry_run";
 export const START_LINE_CUSTOMER_BIND_RPC = "start_line_customer_bind_challenge";
 export const CONSUME_LINE_CUSTOMER_BIND_RPC = "consume_line_customer_bind_challenge";
+export const SET_LINE_APPOINTMENT_REMINDER_CONSENT_RPC =
+  "set_line_appointment_reminder_consent";
 export const MARK_LINE_CUSTOMER_UNSUBSCRIBED_RPC = "mark_line_customer_unsubscribed";
 export const MARK_LINE_CUSTOMER_BLOCKED_RPC = "mark_line_customer_blocked";
 export const UNBIND_LINE_CUSTOMER_BINDING_RPC = "unbind_line_customer_binding";

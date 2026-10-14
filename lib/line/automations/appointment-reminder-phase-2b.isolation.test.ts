@@ -43,6 +43,8 @@ import type { AppointmentReminderAppointment, AppointmentReminderJob } from "@/l
 const ROOT = process.cwd();
 const LINE_USER = "U0123456789abcdef0123456789abcdef";
 const OTHER_USER = "Uabcdef0123456789abcdef0123456789";
+const TEST_LINE_CREDENTIAL_KEY = Buffer.alloc(32, 9).toString("base64");
+process.env.BEAUTY_OS_LINE_CREDENTIAL_KEY ??= TEST_LINE_CREDENTIAL_KEY;
 
 function source(rel: string): string {
   return readFileSync(path.join(ROOT, rel), "utf8");
@@ -173,6 +175,7 @@ describe("Phase 2B customer LINE identity", () => {
       },
     });
     expect(bound.bound).toBe(true);
+    expect(bound.consented).toBe(false);
 
     expect(
       selectCustomerUnsubscribeEvent([
@@ -432,6 +435,9 @@ describe("Phase 2B persist hook, dry-run, and Broadcast regression", () => {
     );
     expect(source("app/api/cron/line-appointment-reminders/route.ts")).toMatch(
       /RUN_LINE_APPOINTMENT_REMINDER_DRY_RUN_RPC/,
+    );
+    expect(source("app/api/cron/line-appointment-reminders/route.ts")).toMatch(
+      /evaluateAppointmentReminderCronRpcResults/,
     );
     expect(source("features/line/automations/LineAutomationsWorkspace.tsx")).toMatch(
       /LINE_AUTOMATION_DB_NOT_READY/,

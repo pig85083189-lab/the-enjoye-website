@@ -27,6 +27,8 @@ import type {
 import {
   LINE_AUTOMATION_BIND_COUNT_LABEL,
   LINE_AUTOMATION_BIND_HINT,
+  LINE_AUTOMATION_CONSENT_COUNT_LABEL,
+  LINE_AUTOMATION_CONSENT_HINT,
   LINE_AUTOMATION_DB_NOT_READY,
   LINE_AUTOMATION_DRY_RUN_ACTION_LABEL,
   LINE_AUTOMATION_DRY_RUN_EMPTY,
@@ -64,6 +66,7 @@ export function LineAutomationsWorkspace() {
   const [saved, setSaved] = useState(false);
   const [persistOpen, setPersistOpen] = useState(false);
   const [bindCount, setBindCount] = useState<number | null>(null);
+  const [consentCount, setConsentCount] = useState<number | null>(null);
   const [plannedCount, setPlannedCount] = useState<number | null>(null);
   const [bindCustomerId, setBindCustomerId] = useState("");
   const [bindCode, setBindCode] = useState<string | null>(null);
@@ -92,6 +95,7 @@ export function LineAutomationsWorkspace() {
       setSaved(false);
       setPersistOpen(false);
       setBindCount(null);
+      setConsentCount(null);
       setPlannedCount(null);
       setBindCode(null);
     }
@@ -105,6 +109,7 @@ export function LineAutomationsWorkspace() {
       setSaved(result.data.saved);
       setPersistOpen(result.data.persistOpen);
       setBindCount(result.data.bindCount);
+      setConsentCount(result.data.consentCount);
       setPlannedCount(result.data.plannedCount);
       setDeliveries(result.data.deliveries);
       setDryRuns(result.data.dryRuns);
@@ -275,6 +280,7 @@ export function LineAutomationsWorkspace() {
                 saved={definition.id === "appointment_reminder" ? saved : false}
                 plannedCount={definition.id === "appointment_reminder" ? plannedCount : null}
                 bindCount={definition.id === "appointment_reminder" ? bindCount : null}
+                consentCount={definition.id === "appointment_reminder" ? consentCount : null}
                 onSelect={() => setSelectedId(definition.id)}
                 onToggle={(enabled) =>
                   setDrafts((current) =>
@@ -314,6 +320,12 @@ export function LineAutomationsWorkspace() {
             <div>
               <dt className="text-secondary-text">{LINE_AUTOMATION_BIND_COUNT_LABEL}</dt>
               <dd className="font-medium text-text">{bindCount ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-secondary-text">{LINE_AUTOMATION_CONSENT_COUNT_LABEL}</dt>
+              <dd className="font-medium text-text" data-line-automation-consent-count>
+                {consentCount ?? "—"}
+              </dd>
             </div>
             <div>
               <dt className="text-secondary-text">{LINE_AUTOMATION_PLANNED_COUNT_LABEL}</dt>
@@ -362,6 +374,7 @@ export function LineAutomationsWorkspace() {
                 </button>
               </div>
               <p className="text-[12px] text-secondary-text">{LINE_AUTOMATION_BIND_HINT}</p>
+              <p className="text-[12px] text-secondary-text">{LINE_AUTOMATION_CONSENT_HINT}</p>
               {bindCode ? (
                 <p className="text-[13px] font-medium text-text" data-line-automation-bind-code>
                   驗證碼：{bindCode}
@@ -402,6 +415,7 @@ export function LineAutomationsWorkspace() {
                   if (!loaded.ok || !loaded.data) return;
                   setPlannedCount(loaded.data.plannedCount);
                   setBindCount(loaded.data.bindCount);
+                  setConsentCount(loaded.data.consentCount);
                   setDryRuns(loaded.data.dryRuns);
                   setDeliveries(loaded.data.deliveries);
                 });

@@ -28,10 +28,18 @@ export const LINE_AUTOMATION_EDITOR_WARNING =
 export const LINE_AUTOMATION_REMINDER_EDITOR_WARNING =
   "預約提醒可送出後端檢查，但正式寫入與正式發送仍關閉，系統不會呼叫 LINE API。";
 export const LINE_AUTOMATION_SAVED_BADGE = "已儲存";
-export const LINE_AUTOMATION_BIND_COUNT_LABEL = "已驗證且同意的客人綁定";
+export const LINE_AUTOMATION_BIND_COUNT_LABEL = "已驗證的客人綁定";
+export const LINE_AUTOMATION_CONSENT_COUNT_LABEL = "已同意接收預約提醒";
 export const LINE_AUTOMATION_PLANNED_COUNT_LABEL = "預定提醒";
 export const LINE_AUTOMATION_DRY_RUN_EMPTY = "尚無 Dry-run 紀錄。正式發送關閉，不會連接 LINE Push。";
 export const LINE_AUTOMATION_START_BIND_LABEL = "產生客人綁定驗證碼";
 export const LINE_AUTOMATION_DRY_RUN_ACTION_LABEL = "執行 Dry-run 檢查";
 export const LINE_AUTOMATION_BIND_HINT =
-  "請請客人用自己的 LINE 把驗證碼傳給本官方帳號。傳送即表示同意預約提醒。";
+  "請請客人用自己的 LINE 把驗證碼傳給本官方帳號。傳送驗證碼只完成綁定，不會自動同意預約提醒。";
+export const LINE_AUTOMATION_CONSENT_HINT =
+  "客人綁定後，需另外傳送「同意預約提醒」才會收到提醒。傳送「退訂」可取消訂閱，傳送「解除綁定」可解除綁定。";
+export const LINE_AUTOMATION_BIND_CREATED_MESSAGE =
+  "驗證碼已產生。客人傳送驗證碼只完成綁定，不會自動同意預約提醒。";
+export const LINE_AUTOMATION_BIND_RATE_LIMITED_MESSAGE = "驗證碼產生過於頻繁，請稍後再試。";
+export const LINE_AUTOMATION_BIND_ATTEMPT_LIMITED_MESSAGE =
+  "驗證嘗試次數過多，已暫時鎖定。請稍後再試。";

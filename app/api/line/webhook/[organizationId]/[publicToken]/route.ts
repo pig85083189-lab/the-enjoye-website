@@ -11,6 +11,7 @@ import {
   CONSUME_LINE_CUSTOMER_BIND_RPC,
   MARK_LINE_CUSTOMER_BLOCKED_RPC,
   MARK_LINE_CUSTOMER_UNSUBSCRIBED_RPC,
+  SET_LINE_APPOINTMENT_REMINDER_CONSENT_RPC,
   UNBIND_LINE_CUSTOMER_BY_HASH_RPC,
 } from "@/lib/line/automations/appointment-reminder-rpc";
 import { processLineWebhookBind } from "@/lib/line/line-webhook";
@@ -132,6 +133,13 @@ export async function POST(
         const row = consumed.data && typeof consumed.data === "object" ? consumed.data : {};
         return { bound: (row as { bound?: unknown }).bound === true };
       },
+      setConsent: async (hash, optIn) => {
+        await admin.rpc(SET_LINE_APPOINTMENT_REMINDER_CONSENT_RPC, {
+          p_organization_id: organizationId,
+          p_line_user_id_hash: hash,
+          p_opt_in: optIn,
+        });
+      },
       markUnsubscribed: async (hash) => {
         await admin.rpc(MARK_LINE_CUSTOMER_UNSUBSCRIBED_RPC, {
           p_organization_id: organizationId,
@@ -149,6 +157,15 @@ export async function POST(
           p_organization_id: organizationId,
           p_line_user_id_hash: hash,
         });
+      },
+      claimEvent: async (eventId) => {
+        const claimed = await supabase.rpc(CLAIM_LINE_WEBHOOK_EVENT_RPC, {
+          p_organization_id: organizationId,
+          p_public_token: token,
+          p_event_id: eventId,
+        });
+        const row = claimed.data && typeof claimed.data === "object" ? claimed.data : {};
+        return { duplicate: (row as { duplicate?: unknown }).duplicate === true };
       },
     });
   }

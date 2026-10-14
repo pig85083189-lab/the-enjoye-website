@@ -19,6 +19,7 @@ export function LineAutomationCard({
   saved,
   plannedCount,
   bindCount,
+  consentCount,
   onSelect,
   onToggle,
   onOpenSettings,
@@ -29,6 +30,7 @@ export function LineAutomationCard({
   saved?: boolean;
   plannedCount?: number | null;
   bindCount?: number | null;
+  consentCount?: number | null;
   onSelect?: () => void;
   onToggle: (enabled: boolean) => void;
   onOpenSettings: () => void;
@@ -112,6 +114,7 @@ export function LineAutomationCard({
           <LineAutomationCardMetrics
             plannedCount={definition.id === "appointment_reminder" ? plannedCount : null}
             bindCount={definition.id === "appointment_reminder" ? bindCount : null}
+            consentCount={definition.id === "appointment_reminder" ? consentCount : null}
           />
         </div>
       </div>
