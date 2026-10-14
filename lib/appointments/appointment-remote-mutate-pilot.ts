@@ -5,10 +5,14 @@
  * appointment-remote-mutate-flag.ts so the adapter graph stays out of RSC.
  *
  * Does not enable BEAUTY_OS_PERSISTENCE or BEAUTY_OS_PERSISTENCE_ALLOW_REMOTE.
- * Does not wire Calendar edit / Cancel / Reschedule / status buttons.
- * No service role. No localStorage fallback. No dual write.
+ * Calendar Cancel and Reschedule use this runner. Status buttons stay local-off
+ * while remote-read is on. No service role. No localStorage fallback. No dual write.
  */
 
+import {
+  notifyAppointmentWrittenForReminders,
+  type AppointmentReminderRpcClient,
+} from "@/lib/line/automations/appointment-reminder-write-hook";
 import { AppointmentRemoteAdapter } from "@/lib/persistence/appointment-remote-adapter";
 import {
   AuthenticatedAppointmentTableStore,
@@ -16,6 +20,7 @@ import {
 } from "@/lib/persistence/authenticated-appointment-store";
 import {
   loadAuthenticatedIdentityCatalog,
+  type AuthenticatedIdentityLoadOptions,
   type IdentitySupabaseClient,
   type LoadedAuthenticatedIdentity,
 } from "@/lib/persistence/authenticated-identity-catalog";
@@ -76,8 +81,9 @@ export interface AuthenticatedAppointmentMutatePersistence {
 
 export async function createAuthenticatedAppointmentMutatePersistence(
   client: AppointmentMutateClient,
+  options: AuthenticatedIdentityLoadOptions = {},
 ): Promise<AuthenticatedAppointmentMutatePersistence> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, options);
   const snapshots = await loadAppointmentWriteSnapshots(client, identity);
   const appointments = new AppointmentRemoteAdapter(
     identity.mapper,
@@ -110,7 +116,9 @@ export async function runAuthenticatedAppointmentWriteMutate(
   if (!isAppointmentRemoteMutatePilotEnabled(env)) {
     throw new Error("Appointment remote mutate pilot is off");
   }
-  const persistence = await createAuthenticatedAppointmentMutatePersistence(client);
+  const persistence = await createAuthenticatedAppointmentMutatePersistence(client, {
+    organizationId: input.organizationId,
+  });
   const staff = persistence.identity.catalog.findStaffByAppId(
     persistence.identity.organizationDbId,
     persistence.identity.operationalStaffId,
@@ -131,6 +139,24 @@ export async function runAuthenticatedAppointmentWriteMutate(
   }
   const command = persistence.prepare(input, current);
   const mutated = await persistence.mutate(command);
+  await notifyAppointmentWrittenForReminders({
+    organizationId: command.organizationId,
+    appointment: mutated.appointment,
+    change:
+      command.status === "CANCELLED"
+        ? "cancelled"
+        : command.status === "COMPLETED"
+          ? "completed"
+          : command.startAt !== current.startAt
+            ? "rescheduled"
+            : command.customerId !== current.customerId
+              ? "customer_changed"
+              : command.serviceId !== current.serviceId
+                ? "service_changed"
+                : "status_changed",
+    client: client as unknown as AppointmentReminderRpcClient,
+    env,
+  });
   emitAppointmentRemoteWriteRefresh({
     organizationId: command.organizationId,
     customerId: command.customerId,

@@ -9,6 +9,7 @@ import { CustomerRemoteAdapter } from "@/lib/persistence/customer-remote-adapter
 import { IdentityCatalogError } from "@/lib/persistence/identity-errors";
 import {
   loadAuthenticatedIdentityCatalog,
+  type AuthenticatedIdentityLoadOptions,
   type IdentityQueryBuilder,
   type IdentityQueryResult,
   type IdentitySupabaseClient,
@@ -100,8 +101,9 @@ function asName(value: unknown): string {
 
 export async function loadAppointmentWriteFormCatalog(
   client: IdentitySupabaseClient,
+  options: AuthenticatedIdentityLoadOptions = {},
 ): Promise<AppointmentWriteFormCatalog> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, options);
   const staffRow = identity.catalog.findStaffByAppId(
     identity.organizationDbId,
     identity.operationalStaffId,

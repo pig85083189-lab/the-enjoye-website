@@ -5,6 +5,7 @@
  */
 
 import { isAuthUuid } from "@/lib/staff-auth/staff-id";
+import { CURRENT_ORG_STORAGE_KEY } from "@/lib/tenant/constants";
 import { IdentityCatalogError } from "./identity-errors";
 import { CanonicalIdMapper } from "./identity-map";
 import { SnapshotIdentityCatalog } from "./snapshot-identity-catalog";
@@ -59,6 +60,59 @@ export interface LoadedAuthenticatedIdentity {
   operationalStaffId: string;
 }
 
+export type AuthenticatedIdentityLoadOptions = {
+  organizationId?: string;
+};
+
+function readStoredOrganizationId(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const stored = window.localStorage.getItem(CURRENT_ORG_STORAGE_KEY)?.trim();
+    return stored || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function resolveRequestedOrganizationId(
+  explicit?: string,
+): string | undefined {
+  const trimmed = explicit?.trim();
+  if (trimmed) return trimmed;
+  return readStoredOrganizationId();
+}
+
+export function selectAuthenticatedMembership<
+  T extends { organization_id: string },
+>(memberships: T[], organizationId?: string): T {
+  if (memberships.length === 0) {
+    throw new IdentityCatalogError(
+      "missing_membership",
+      "No authenticated staff_auth_memberships row for this Auth user",
+    );
+  }
+  const scoped = organizationId
+    ? memberships.filter((row) => row.organization_id === organizationId)
+    : memberships;
+  if (scoped.length === 0) {
+    throw new IdentityCatalogError(
+      "missing_membership",
+      organizationId
+        ? "No authenticated staff_auth_memberships row for the requested organization"
+        : "No authenticated staff_auth_memberships row for this Auth user",
+    );
+  }
+  if (scoped.length > 1) {
+    throw new IdentityCatalogError(
+      "ambiguous_membership",
+      organizationId
+        ? "Authenticated membership mapping is ambiguous for the requested organization"
+        : "Authenticated membership mapping is ambiguous",
+    );
+  }
+  return scoped[0]!;
+}
+
 async function readRows<T>(builder: IdentityQueryBuilder): Promise<T[]> {
   const result = await builder;
   if (result.error) {
@@ -93,6 +147,7 @@ function toScoped(row: { id: string; app_id: string | null; organization_id: str
  */
 export async function loadAuthenticatedIdentityCatalog(
   client: IdentitySupabaseClient,
+  options: AuthenticatedIdentityLoadOptions = {},
 ): Promise<LoadedAuthenticatedIdentity> {
   const session = await client.auth.getUser();
   if (session.error) {
@@ -112,20 +167,10 @@ export async function loadAuthenticatedIdentityCatalog(
     )
   ).filter((row) => row.is_active && row.auth_user_id === authUserId);
 
-  if (memberships.length === 0) {
-    throw new IdentityCatalogError(
-      "missing_membership",
-      "No authenticated staff_auth_memberships row for this Auth user",
-    );
-  }
-  if (memberships.length > 1) {
-    throw new IdentityCatalogError(
-      "ambiguous_membership",
-      "Authenticated membership mapping is ambiguous",
-    );
-  }
-
-  const membership = memberships[0]!;
+  const membership = selectAuthenticatedMembership(
+    memberships,
+    resolveRequestedOrganizationId(options.organizationId),
+  );
   if (isAuthUuid(membership.user_id) || membership.user_id === authUserId) {
     throw new IdentityCatalogError(
       "invalid_operational_staff",

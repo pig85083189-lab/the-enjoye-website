@@ -56,6 +56,11 @@ export default function MorePage() {
                       <div className="min-w-0 flex-1">
                         <p className="text-[15px] font-semibold text-text">
                           {item.moreHubPrimary && item.clusterLabel ? item.clusterLabel : item.label}
+                          {item.badge ? (
+                            <span className="ml-2 rounded-full bg-primary-light px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-primary">
+                              {item.badge}
+                            </span>
+                          ) : null}
                         </p>
                         <p className="mt-0.5 text-sm text-secondary-text">
                           {item.description}
