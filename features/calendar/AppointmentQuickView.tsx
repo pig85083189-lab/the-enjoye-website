@@ -64,6 +64,7 @@ interface AppointmentQuickViewProps {
   locationName?: string;
   readOnly?: boolean;
   allowRemoteCancel?: boolean;
+  allowRemoteReschedule?: boolean;
   useTaipeiTime?: boolean;
   treatmentRemoteReadPilot?: boolean;
   commerceRemoteReadPilot?: boolean;
@@ -80,6 +81,7 @@ export function AppointmentQuickView({
   locationName,
   readOnly = false,
   allowRemoteCancel = false,
+  allowRemoteReschedule = false,
   useTaipeiTime = false,
   treatmentRemoteReadPilot = false,
   commerceRemoteReadPilot = false,
@@ -123,6 +125,7 @@ export function AppointmentQuickView({
   const actions = resolveCalendarQuickViewActions({
     readOnly,
     allowRemoteCancel,
+    allowRemoteReschedule,
     status: item.status,
   });
   const canEdit = actions.canEdit;
@@ -339,12 +342,17 @@ export function AppointmentQuickView({
         </div>
 
         <div className="shrink-0 space-y-1.5 px-5 pt-1.5 pb-5">
-          {readOnly && allowRemoteCancel ? (
+          {readOnly && allowRemoteReschedule ? (
+            <p className="rounded-2xl bg-[#FAF7F5] px-3.5 py-2.5 text-center text-[12px] text-secondary-text">
+              遠端預約可改期或取消
+            </p>
+          ) : null}
+          {readOnly && allowRemoteCancel && !allowRemoteReschedule ? (
             <p className="rounded-2xl bg-[#FAF7F5] px-3.5 py-2.5 text-center text-[12px] text-secondary-text">
               遠端預約目前僅能取消
             </p>
           ) : null}
-          {readOnly && !allowRemoteCancel ? (
+          {readOnly && !allowRemoteCancel && !allowRemoteReschedule ? (
             <p className="rounded-2xl bg-[#FAF7F5] px-3.5 py-2.5 text-center text-[12px] text-secondary-text">
               行事曆遠端讀取試點為唯讀
             </p>

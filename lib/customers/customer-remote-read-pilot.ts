@@ -11,6 +11,7 @@
 import { getCustomer, listCustomers } from "@/lib/customers/customer-queries";
 import {
   loadAuthenticatedIdentityCatalog,
+  type AuthenticatedIdentityLoadOptions,
   type IdentitySupabaseClient,
 } from "@/lib/persistence/authenticated-identity-catalog";
 import { AuthenticatedCustomerReadStore } from "@/lib/persistence/authenticated-customer-read-store";
@@ -29,8 +30,9 @@ export {
 
 export async function createAuthenticatedCustomerReadPersistence(
   client: IdentitySupabaseClient,
+  options: AuthenticatedIdentityLoadOptions = {},
 ) {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, options);
   return {
     identity,
     customers: new CustomerRemoteAdapter(
@@ -44,7 +46,9 @@ export async function listRemotePilotCustomers(
   organizationId: string,
   client: IdentitySupabaseClient,
 ): Promise<Customer[]> {
-  const persistence = await createAuthenticatedCustomerReadPersistence(client);
+  const persistence = await createAuthenticatedCustomerReadPersistence(client, {
+    organizationId,
+  });
   return listCustomers(organizationId, persistence);
 }
 
@@ -53,6 +57,8 @@ export async function getRemotePilotCustomer(
   customerId: string,
   client: IdentitySupabaseClient,
 ): Promise<Customer | undefined> {
-  const persistence = await createAuthenticatedCustomerReadPersistence(client);
+  const persistence = await createAuthenticatedCustomerReadPersistence(client, {
+    organizationId,
+  });
   return getCustomer(organizationId, customerId, persistence);
 }
