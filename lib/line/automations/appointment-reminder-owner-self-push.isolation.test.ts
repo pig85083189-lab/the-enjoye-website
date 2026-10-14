@@ -377,7 +377,8 @@ describe("Phase 2E-8 Owner-self reminder consent + oneshot", () => {
     expect(source("lib/persistence/fresh-migration-chain.isolation.test.ts")).not.toMatch(
       /20261014180000_line_owner_self_reminder_grant/,
     );
-    expect(source("supabase/drafts/README.md")).toMatch(/Do not apply these drafts to Preview or Production/);
+    expect(source("supabase/drafts/README.md")).toMatch(/Do not apply these drafts to Production/);
+    expect(source("supabase/drafts/README.md")).toMatch(/Do not blindly re-run it/);
   });
 });
 

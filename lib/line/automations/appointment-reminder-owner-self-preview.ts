@@ -69,12 +69,14 @@ export const OWNER_SELF_REMINDER_PREVIEW_COMPAT = {
     "line_broadcast_channel_has_inflight",
     "claim_line_broadcast_send",
   ] as const,
-  ownerSelfObjectsMustBeAbsentBeforeApply: [
+  ownerSelfObjectsInstalledOnPreview: [
     "line_owner_self_reminder_grants",
     "line_owner_self_reminder_oneshots",
     "line_owner_self_reminder_quota_snapshots",
+    "line_owner_self_reminder_runtime_identity",
     "grant_line_owner_self_reminder_test",
     "claim_line_owner_self_reminder_oneshot",
+    "arm_line_owner_self_reminder_preview_runtime",
   ] as const,
   phase2d3ObjectsPresentDoNotReplay: [
     "claim_line_appointment_reminder_job",
@@ -92,7 +94,13 @@ export const OWNER_SELF_REMINDER_PREVIEW_COMPAT = {
     },
     sharedChannelId: "2009219238",
     enjoyeSharesChannel: true,
-    ownerSelfTablesPresent: false,
+    ownerSelfTablesPresent: true,
+    ownerSelfRowsEmpty: true,
+    runtimeArmed: false,
+    persistOpen: false,
+    appliedDraftSha256:
+      "fde24612e6ab1de1678430f61edc5e40aaeb9a1cb05cebadf3f8ef24c10abffb",
     phase2d3ReplayRequired: false,
+    productionUnchanged: true,
   },
 } as const;

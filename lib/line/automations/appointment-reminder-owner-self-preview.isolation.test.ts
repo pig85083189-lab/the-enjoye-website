@@ -38,8 +38,8 @@ function source(rel: string): string {
   return readFileSync(path.join(ROOT, rel), "utf8");
 }
 
-describe("Phase 2E-9 Preview compatibility and runtime", () => {
-  it("records Preview read-only compatibility without applying SQL", () => {
+describe("Phase 2E-10A Preview structure install record", () => {
+  it("records Preview-only structure install without arming or persisting rows", () => {
     expect(OWNER_SELF_REMINDER_PREVIEW_SUPABASE_REF).toBe("bfzquejrtgqzzarhkiya");
     expect(OWNER_SELF_REMINDER_PRODUCTION_SUPABASE_REF).toBe("knccefcxncglgpmvgqlp");
     expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.previewHost).toBe(
@@ -48,7 +48,14 @@ describe("Phase 2E-9 Preview compatibility and runtime", () => {
     expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.productionHost).toBe(
       LINE_BROADCAST_FORMAL_PRODUCTION_SUPABASE_HOST,
     );
-    expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.ownerSelfTablesPresent).toBe(false);
+    expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.ownerSelfTablesPresent).toBe(true);
+    expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.ownerSelfRowsEmpty).toBe(true);
+    expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.runtimeArmed).toBe(false);
+    expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.persistOpen).toBe(false);
+    expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.appliedDraftSha256).toBe(
+      "fde24612e6ab1de1678430f61edc5e40aaeb9a1cb05cebadf3f8ef24c10abffb",
+    );
+    expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.productionUnchanged).toBe(true);
     expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.phase2d3ReplayRequired).toBe(false);
     expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.sharedChannelId).toBe("2009219238");
     expect(OWNER_SELF_REMINDER_PREVIEW_COMPAT.readOnlyFindings.enjoyeSharesChannel).toBe(true);
