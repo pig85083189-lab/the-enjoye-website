@@ -66,6 +66,7 @@ function job(overrides: Record<string, unknown> = {}) {
     organizationId: ORG_BEAUTY_OS_TEST_ID,
     appointmentId: "apt-2e4-due-0001",
     customerId: CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
+    serviceId: "svc-2d2-fake-facial",
     timingId: "hours_before_3" as const,
     fingerprint: "fp",
     scheduledFor: "2026-10-14T07:28:00.000Z",
@@ -215,22 +216,22 @@ describe("Phase 2E-4 controlled reminder Push", () => {
         organizationId: ORG_BEAUTY_OS_TEST_ID,
         customerId: CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
         crmLineUserId: LINE_USER,
-      }).skipReason,
-    ).toBe("plaintext_line_id_refused");
+      }),
+    ).toMatchObject({ ok: false, skipReason: "plaintext_line_id_refused" });
     expect(
       evaluateControlledReminderAudience({
         organizationId: ORG_BEAUTY_OS_TEST_ID,
         customerId: CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
         ownerRecipientLineUserId: LINE_USER,
-      }).skipReason,
-    ).toBe("invalid_recipient");
+      }),
+    ).toMatchObject({ ok: false, skipReason: "invalid_recipient" });
     expect(
       evaluateAppointmentReminderAudience({
         organizationId: ORG_BEAUTY_OS_TEST_ID,
         customerId: CONTROLLED_REMINDER_PUSH_DESIGNATED_CUSTOMER_ID,
         crmLineUserId: LINE_USER,
-      }).skipReason,
-    ).toBe("plaintext_line_id_refused");
+      }),
+    ).toMatchObject({ ok: false, skipReason: "plaintext_line_id_refused" });
   });
 
   it("computes a TEST hours_before_3 start that lands inside the due window", () => {
