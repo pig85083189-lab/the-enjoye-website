@@ -8,6 +8,7 @@ import { LineAutomationCard } from "@/features/line/automations/LineAutomationCa
 import { LineAutomationPhonePreview } from "@/features/line/automations/LineAutomationPhonePreview";
 import { LineAutomationRuleEditor } from "@/features/line/automations/LineAutomationRuleEditor";
 import { LineAutomationMonthlyStats } from "@/features/line/automations/LineAutomationStats";
+import { LineOwnerSelfReminderCard } from "@/features/line/automations/LineOwnerSelfReminderCard";
 import { canShowLineAutomations } from "@/lib/line/automations/access";
 import {
   LINE_AUTOMATION_CATALOG,
@@ -15,12 +16,24 @@ import {
   lineAutomationById,
 } from "@/lib/line/automations/catalog";
 import {
+  LINE_AUTOMATION_FLAG_CLOSED,
+  LINE_AUTOMATION_FLAG_KILL_LABEL,
+  LINE_AUTOMATION_FLAG_OWNER_SELF_LABEL,
+  LINE_AUTOMATION_FLAG_SEND_LABEL,
   LINE_AUTOMATION_HISTORY_EMPTY,
   LINE_AUTOMATION_LOCAL_DRAFT_HINT,
   LINE_AUTOMATION_NOT_LIVE_HINT,
   LINE_AUTOMATION_PAGE_SUBTITLE,
   LINE_AUTOMATION_PAGE_TITLE,
+  LINE_AUTOMATION_REMINDER_DEV_HINT,
+  LINE_AUTOMATION_REMINDER_DEV_TITLE,
+  LINE_AUTOMATION_WRITE_CLOSED_LABEL,
 } from "@/lib/line/automations/copy";
+import {
+  LINE_AUTOMATION_KILL_SWITCH,
+  LINE_AUTOMATION_SEND_OPEN,
+  LINE_OWNER_SELF_PUSH_OPEN,
+} from "@/lib/line/automations/production-safe-flags";
 import {
   applyLineAutomationEditor,
   createDefaultLineAutomationDrafts,
@@ -123,6 +136,7 @@ export function LineAutomationsWorkspace() {
         className="rounded-2xl bg-primary-light/70 px-4 py-3 text-[13px] leading-relaxed text-text"
       >
         <p>{LINE_AUTOMATION_NOT_LIVE_HINT}</p>
+        <p className="mt-1 text-secondary-text">{LINE_AUTOMATION_REMINDER_DEV_HINT}</p>
         <p className="mt-1 text-secondary-text">{LINE_AUTOMATION_LOCAL_DRAFT_HINT}</p>
       </div>
 
@@ -205,6 +219,42 @@ export function LineAutomationsWorkspace() {
           </div>
         </div>
       )}
+
+      {selectedId === "appointment_reminder" && tab !== "history" ? (
+        <>
+          <Card padding="lg" data-line-automation-reminder-status>
+            <h2 className="text-[16px] font-semibold text-text">
+              {LINE_AUTOMATION_REMINDER_DEV_TITLE}
+            </h2>
+            <p className="mt-2 text-[13px] text-secondary-text">{LINE_AUTOMATION_REMINDER_DEV_HINT}</p>
+            <dl className="mt-3 grid gap-2 text-[13px] sm:grid-cols-2">
+              <div>
+                <dt className="text-secondary-text">{LINE_AUTOMATION_WRITE_CLOSED_LABEL}</dt>
+                <dd className="font-medium text-text">{LINE_AUTOMATION_FLAG_CLOSED}</dd>
+              </div>
+              <div>
+                <dt className="text-secondary-text">{LINE_AUTOMATION_FLAG_SEND_LABEL}</dt>
+                <dd className="font-medium text-text" data-line-automation-flag-send>
+                  {LINE_AUTOMATION_SEND_OPEN ? "開啟" : LINE_AUTOMATION_FLAG_CLOSED}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-secondary-text">{LINE_AUTOMATION_FLAG_OWNER_SELF_LABEL}</dt>
+                <dd className="font-medium text-text" data-line-automation-flag-owner-self>
+                  {LINE_OWNER_SELF_PUSH_OPEN ? "開啟" : LINE_AUTOMATION_FLAG_CLOSED}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-secondary-text">{LINE_AUTOMATION_FLAG_KILL_LABEL}</dt>
+                <dd className="font-medium text-text" data-line-automation-flag-kill>
+                  {LINE_AUTOMATION_KILL_SWITCH ? "開啟" : LINE_AUTOMATION_FLAG_CLOSED}
+                </dd>
+              </div>
+            </dl>
+          </Card>
+          <LineOwnerSelfReminderCard />
+        </>
+      ) : null}
 
       <LineAutomationMonthlyStats stats={stats} />
 

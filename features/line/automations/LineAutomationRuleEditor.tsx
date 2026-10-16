@@ -7,6 +7,8 @@ import {
   LINE_AUTOMATION_APPLY_LOCAL_LABEL,
   LINE_AUTOMATION_EDITOR_WARNING,
   LINE_AUTOMATION_LOCAL_DRAFT_HINT,
+  LINE_AUTOMATION_REMINDER_DEV_HINT,
+  LINE_AUTOMATION_REMINDER_EDITOR_WARNING,
 } from "@/lib/line/automations/copy";
 import {
   addLineAutomationCustomTiming,
@@ -30,6 +32,7 @@ export function LineAutomationRuleEditor({
   const [next, setNext] = useState(draft);
   const [customLabel, setCustomLabel] = useState("");
   const timings = lineAutomationTimingsForDraft(definition.timings, next);
+  const isReminder = definition.id === "appointment_reminder";
 
   return (
     <div
@@ -50,7 +53,9 @@ export function LineAutomationRuleEditor({
             <h2 id="line-automation-editor-title" className="text-[18px] font-semibold text-text">
               設定{definition.title}規則
             </h2>
-            <p className="mt-1 text-[13px] text-secondary-text">{LINE_AUTOMATION_LOCAL_DRAFT_HINT}</p>
+            <p className="mt-1 text-[13px] text-secondary-text">
+              {isReminder ? LINE_AUTOMATION_REMINDER_DEV_HINT : LINE_AUTOMATION_LOCAL_DRAFT_HINT}
+            </p>
           </div>
           <LineAutomationSwitch
             checked={next.enabled}
@@ -113,7 +118,7 @@ export function LineAutomationRuleEditor({
         </label>
 
         <p className="mt-3 text-[12px] leading-relaxed text-secondary-text">
-          {LINE_AUTOMATION_EDITOR_WARNING}
+          {isReminder ? LINE_AUTOMATION_REMINDER_EDITOR_WARNING : LINE_AUTOMATION_EDITOR_WARNING}
         </p>
 
         <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
