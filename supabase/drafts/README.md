@@ -6,6 +6,7 @@ Do not apply them to Preview or Production until Owner explicitly approves that 
 | File | Scope | Applied? |
 | --- | --- | --- |
 | `20261016120000_line_owner_self_reminder_grant_production.sql` | Production THE ENJOYE Owner-self grant / oneshot / quota. Phase 2F-1 draft only. | No |
+| `PHASE_2F2_READONLY_FINDINGS.md` | Phase 2F-2 read-only webhook / bind / SQL verification. | N/A |
 
 Phase 2F-1 does not arm Production, does not insert grant/oneshot rows on Preview or Production, and does not call LINE.
 
