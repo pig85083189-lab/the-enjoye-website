@@ -30,13 +30,14 @@ export const LINE_AUTOMATION_FLAG_KILL_LABEL = "KILL_SWITCH";
 export const LINE_AUTOMATION_WRITE_CLOSED_LABEL = "正式寫入";
 export const LINE_OWNER_SELF_TITLE = "店長本人預約提醒測試";
 export const LINE_OWNER_SELF_HINT =
-  "此區塊只顯示正式環境安全說明。不會寫入測試授權，也不會連接 LINE Push。";
+  "此區塊只顯示正式網站 THE ENJOYE 店長本人授權規劃。不會寫入測試授權，也不會連接 LINE Push。";
 export const LINE_OWNER_SELF_CLOSED_LABEL = "正式發送、授權寫入與店長本人測試都關閉";
 export const LINE_OWNER_SELF_ONCE_ONLY_LABEL = "只限一次的預約提醒測試，不是全店自動提醒";
 export const LINE_OWNER_SELF_FLOW_HINT =
-  "正式環境只顯示流程說明：確認本人綁定 → 建立有期限授權 → 發行單次授權。此站不會執行授權或發送。";
+  "正式規劃：查看本人 LINE 綁定 → 獨立同意接收一則測試 → 建立一次性授權 → 可撤回同意 → 查看發送是否開放。此站全部停用，不會執行授權或發送。";
 export const LINE_OWNER_SELF_DISABLED_HINT =
-  "正式環境已停用授權、oneshot 與發送操作。";
+  "正式環境已停用授權、oneshot 與發送操作。不可假裝已經可以發送。";
+export const LINE_OWNER_SELF_SEND_OPEN_LABEL = "發送是否開放";
 export const LINE_OWNER_SELF_GRANT_LABEL = "建立一次性測試授權";
 export const LINE_OWNER_SELF_REVOKE_LABEL = "撤回同意";
 export const LINE_OWNER_SELF_ISSUE_LABEL = "確認並發行單次授權";

@@ -19,6 +19,7 @@ import {
   LINE_AUTOMATION_STATS_EMPTY_HINT,
   LINE_OWNER_SELF_DISABLED_HINT,
   LINE_OWNER_SELF_GRANT_LABEL,
+  LINE_OWNER_SELF_SEND_OPEN_LABEL,
   LINE_OWNER_SELF_TITLE,
 } from "@/lib/line/automations/copy";
 import {
@@ -217,7 +218,10 @@ describe("LINE automation safety", () => {
     expect(panel).toContain(LINE_OWNER_SELF_TITLE);
     expect(panel).toContain(LINE_OWNER_SELF_DISABLED_HINT);
     expect(panel).toContain(LINE_OWNER_SELF_GRANT_LABEL);
+    expect(panel).toContain(LINE_OWNER_SELF_SEND_OPEN_LABEL);
     expect(panel).toContain(LINE_AUTOMATION_FLAG_CLOSED);
+    expect(panel).toMatch(/data-line-owner-self-send-open/);
+    expect(panel).toContain("不可假裝已經可以發送");
     expect(panel).toMatch(/data-line-owner-self-persist-open="false"/);
     expect(panel).toMatch(/disabled[^>]*data-line-owner-self-intent="grant"|data-line-owner-self-intent="grant"[^>]*disabled/);
     expect(panel).toMatch(/disabled[^>]*data-line-owner-self-intent="issue"|data-line-owner-self-intent="issue"[^>]*disabled/);

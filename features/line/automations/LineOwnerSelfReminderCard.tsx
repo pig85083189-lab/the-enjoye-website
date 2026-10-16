@@ -2,6 +2,7 @@
 
 import { Card } from "@/components/ui/Card";
 import {
+  LINE_AUTOMATION_FLAG_CLOSED,
   LINE_OWNER_SELF_ACK_LABEL,
   LINE_OWNER_SELF_ACK_NOTE,
   LINE_OWNER_SELF_BIND_LABEL,
@@ -22,6 +23,7 @@ import {
   LINE_OWNER_SELF_PURPOSE_LABEL,
   LINE_OWNER_SELF_REMAINING_LABEL,
   LINE_OWNER_SELF_REVOKE_LABEL,
+  LINE_OWNER_SELF_SEND_OPEN_LABEL,
   LINE_OWNER_SELF_TITLE,
   LINE_OWNER_SELF_TRUST_LABEL,
   LINE_OWNER_SELF_UNAVAILABLE,
@@ -110,6 +112,12 @@ export function LineOwnerSelfReminderCard() {
           <dt className="text-secondary-text">{LINE_OWNER_SELF_ONESHOT_TTL_LABEL}</dt>
           <dd className="font-medium text-text" data-line-owner-self-oneshot-ttl>
             {LINE_OWNER_SELF_UNAVAILABLE}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-secondary-text">{LINE_OWNER_SELF_SEND_OPEN_LABEL}</dt>
+          <dd className="font-medium text-text" data-line-owner-self-send-open>
+            {LINE_AUTOMATION_FLAG_CLOSED}
           </dd>
         </div>
       </dl>
