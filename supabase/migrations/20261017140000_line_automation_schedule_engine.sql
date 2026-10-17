@@ -688,7 +688,9 @@ security definer
 set search_path = public
 as $$
 begin
-  -- Never trust RPC payload or customers.line_user_id.
+  -- Phase 2B scheduled appointment jobs without a customer LINE binding table.
+  -- Phase 2A must not invent ready from RPC payload or customers.line_user_id.
+  -- A future trusted binding table may confirm ready; missing source stays false.
   if not public.line_automation_schedule_customer_belongs(p_organization_id, p_customer_id) then
     return false;
   end if;
@@ -705,6 +707,62 @@ begin
       and b.verified is true
       and coalesce(b.status, 'active') = 'active'
   );
+end;
+$$;
+
+create or replace function public.line_automation_schedule_apply_recipient(
+  p_existing_status text,
+  p_confirmed_ready boolean
+)
+returns table(status text, recipient_ready boolean)
+language sql
+immutable
+as $$
+  select
+    case
+      when p_confirmed_ready then 'scheduled'
+      when p_existing_status = 'scheduled' then 'scheduled'
+      else 'pending_recipient'
+    end,
+    p_confirmed_ready is true;
+$$;
+
+create or replace function public.line_automation_schedule_assert_job_identity(
+  p_organization_id text,
+  p_item jsonb,
+  p_job public.line_automation_jobs
+)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if p_item->>'organization_id' is distinct from p_organization_id
+    or p_job.organization_id is distinct from p_organization_id
+  then
+    raise exception 'job identity mismatch' using errcode = '22023';
+  end if;
+  if p_item->>'fingerprint' is distinct from p_job.fingerprint then
+    raise exception 'job identity mismatch' using errcode = '22023';
+  end if;
+  if p_item->>'automation_type' is distinct from p_job.automation_type then
+    raise exception 'job identity mismatch' using errcode = '22023';
+  end if;
+  if p_item->>'event_id' is distinct from p_job.event_id
+    and p_item->>'event_id' is distinct from p_job.appointment_app_id
+  then
+    raise exception 'job identity mismatch' using errcode = '22023';
+  end if;
+  if p_item->>'customer_id' is distinct from p_job.customer_id
+    and p_item->>'customer_id' is distinct from p_job.customer_app_id
+  then
+    raise exception 'job identity mismatch' using errcode = '22023';
+  end if;
+  if p_item->>'timing_id' is distinct from p_job.timing_id then
+    raise exception 'job identity mismatch' using errcode = '22023';
+  end if;
 end;
 $$;
 
@@ -1119,31 +1177,61 @@ begin
   for v_item in
     select value from jsonb_array_elements(coalesce(p_mutations->'update', '[]'::jsonb))
   loop
-    perform public.line_automation_schedule_validate_item(p_organization_id, v_item);
-    v_customer_id := v_item->>'customer_id';
+    if v_item->>'organization_id' is distinct from p_organization_id then
+      raise exception 'organization mismatch' using errcode = '42501';
+    end if;
+    select *
+    into v_existing
+    from public.line_automation_jobs
+    where organization_id = p_organization_id
+      and id = v_item->>'id'
+    for update;
+    if not found then
+      raise exception 'invalid job' using errcode = '22023';
+    end if;
+    if v_existing.status not in ('scheduled', 'pending_recipient') then
+      continue;
+    end if;
+    perform public.line_automation_schedule_assert_job_identity(
+      p_organization_id, v_item, v_existing
+    );
+    perform public.line_automation_schedule_validate_item(
+      p_organization_id,
+      jsonb_strip_nulls(
+        jsonb_build_object(
+          'organization_id', p_organization_id,
+          'automation_type', v_existing.automation_type,
+          'event_kind', coalesce(v_existing.event_kind, public.line_automation_schedule_event_kind(v_existing.automation_type)),
+          'event_id', v_existing.event_id,
+          'customer_id', v_existing.customer_id,
+          'timing_id', v_existing.timing_id,
+          'fingerprint', p_organization_id || '|' || v_existing.automation_type || '|' || v_existing.event_id || '|' || v_existing.timing_id,
+          'scheduled_for', v_item->>'scheduled_for',
+          'message_snapshot', coalesce(v_item->>'message_snapshot', v_existing.message_snapshot, ''),
+          'status', v_item->>'status'
+        )
+      )
+    );
+    v_customer_id := v_existing.customer_id;
     v_ready := public.line_automation_schedule_recipient_ready(p_organization_id, v_customer_id);
-    v_status := case when v_ready then 'scheduled' else 'pending_recipient' end;
+    select s.status, s.recipient_ready
+    into v_status, v_ready
+    from public.line_automation_schedule_apply_recipient(v_existing.status, v_ready) s;
     update public.line_automation_jobs
     set
-      automation_type = v_item->>'automation_type',
-      event_kind = v_item->>'event_kind',
-      event_id = v_item->>'event_id',
-      appointment_app_id = case
-        when v_item->>'event_kind' = 'appointment' then v_item->>'event_id'
-        else appointment_app_id
-      end,
-      customer_id = v_customer_id,
-      customer_app_id = v_customer_id,
-      timing_id = v_item->>'timing_id',
-      fingerprint = v_item->>'fingerprint',
       scheduled_for = (v_item->>'scheduled_for')::timestamptz,
-      message_snapshot = coalesce(v_item->>'message_snapshot', ''),
+      message_snapshot = coalesce(v_item->>'message_snapshot', message_snapshot),
       recipient_ready = v_ready,
       status = v_status,
       skip_reason = null,
       updated_at = now()
     where organization_id = p_organization_id
-      and id = v_item->>'id'
+      and id = v_existing.id
+      and fingerprint = v_existing.fingerprint
+      and automation_type = v_existing.automation_type
+      and event_id = v_existing.event_id
+      and customer_id = v_existing.customer_id
+      and timing_id = v_existing.timing_id
       and status in ('scheduled', 'pending_recipient');
     if found then
       v_updated := v_updated + 1;
@@ -1257,6 +1345,8 @@ revoke all on function public.line_automation_schedule_taipei_morning(date) from
 revoke all on function public.line_automation_schedule_next_birthday(date, date) from public, anon, authenticated;
 revoke all on function public.line_automation_schedule_expected_fire_at(text, text, text, text, text, text) from public, anon, authenticated;
 revoke all on function public.line_automation_schedule_recipient_ready(text, text) from public, anon, authenticated;
+revoke all on function public.line_automation_schedule_apply_recipient(text, boolean) from public, anon, authenticated;
+revoke all on function public.line_automation_schedule_assert_job_identity(text, jsonb, public.line_automation_jobs) from public, anon, authenticated;
 revoke all on function public.line_automation_schedule_event_state(text, text, text, text) from public, anon, authenticated;
 revoke all on function public.line_automation_schedule_assert_cancelable(text, public.line_automation_jobs) from public, anon, authenticated;
 revoke all on function public.line_automation_schedule_validate_item(text, jsonb) from public, anon, authenticated;

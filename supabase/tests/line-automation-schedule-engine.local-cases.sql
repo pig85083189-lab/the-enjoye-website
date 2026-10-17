@@ -28,6 +28,20 @@ begin
   if v_org is distinct from 'appointment_reminder' then
     raise exception 'legacy job automation_type not backfilled';
   end if;
+  if not exists (
+    select 1
+    from public.line_automation_jobs
+    where id = 'laj-keep-day'
+      and organization_id = 'org-the-enjoye'
+      and appointment_app_id = 'appt-keep'
+      and customer_app_id = 'cust-1'
+      and timing_id = 'day_before_morning'
+      and fingerprint = 'org-the-enjoye|appointment_reminder|appt-keep|day_before_morning'
+      and status = 'scheduled'
+      and recipient_ready is false
+  ) then
+    raise exception 'Phase 2B appointment job was not preserved by re-runnable upgrade';
+  end if;
 
   v_payload := jsonb_build_object(
     'organization_id', 'org-the-enjoye',
@@ -577,6 +591,74 @@ begin
     raise exception 'forged recipient_ready was accepted: % %', v_status, v_ready;
   end if;
 
+  begin
+    perform public.apply_line_automation_schedule(
+      'org-the-enjoye',
+      jsonb_build_object(
+        'organization_id', 'org-the-enjoye',
+        'insert', '[]'::jsonb,
+        'update', jsonb_build_array(
+          jsonb_build_object(
+            'id', 'laj-keep-day',
+            'organization_id', 'org-the-enjoye',
+            'automation_type', 'appointment_reminder',
+            'event_kind', 'appointment',
+            'event_id', 'appt-other',
+            'customer_id', 'cust-1',
+            'timing_id', 'day_before_morning',
+            'fingerprint', 'org-the-enjoye|appointment_reminder|appt-other|day_before_morning',
+            'scheduled_for', public.line_automation_schedule_expected_fire_at(
+              'org-the-enjoye', 'appointment_reminder', 'appointment', 'appt-other', 'cust-1', 'day_before_morning'
+            ),
+            'message_snapshot', '預約提醒',
+            'recipient_ready', true
+          )
+        ),
+        'cancel', '[]'::jsonb
+      )
+    );
+    raise exception 'update event/customer/fingerprint swap was accepted';
+  exception
+    when others then
+      if sqlerrm not ilike '%job identity mismatch%' then
+        raise;
+      end if;
+  end;
+
+  begin
+    perform public.apply_line_automation_schedule(
+      'org-the-enjoye',
+      jsonb_build_object(
+        'organization_id', 'org-the-enjoye',
+        'insert', '[]'::jsonb,
+        'update', jsonb_build_array(
+          jsonb_build_object(
+            'id', 'laj-keep-day',
+            'organization_id', 'org-the-enjoye',
+            'automation_type', 'appointment_reminder',
+            'event_kind', 'appointment',
+            'event_id', 'appt-keep',
+            'customer_id', 'cust-2',
+            'timing_id', 'day_before_morning',
+            'fingerprint', 'org-the-enjoye|appointment_reminder|appt-keep|day_before_morning',
+            'scheduled_for', public.line_automation_schedule_expected_fire_at(
+              'org-the-enjoye', 'appointment_reminder', 'appointment', 'appt-keep', 'cust-1', 'day_before_morning'
+            ),
+            'message_snapshot', '預約提醒',
+            'recipient_ready', true
+          )
+        ),
+        'cancel', '[]'::jsonb
+      )
+    );
+    raise exception 'update customer swap was accepted';
+  exception
+    when others then
+      if sqlerrm not ilike '%job identity mismatch%' then
+        raise;
+      end if;
+  end;
+
   perform public.apply_line_automation_schedule(
     'org-the-enjoye',
     jsonb_build_object(
@@ -596,15 +678,15 @@ begin
             'org-the-enjoye', 'appointment_reminder', 'appointment', 'appt-keep', 'cust-1', 'day_before_morning'
           ),
           'message_snapshot', '預約提醒',
-          'recipient_ready', false
+          'recipient_ready', true
         )
       ),
       'cancel', '[]'::jsonb
     )
   );
 
-  select status, appointment_app_id, automation_type
-  into v_status, v_app_id, v_type
+  select status, appointment_app_id, automation_type, recipient_ready
+  into v_status, v_app_id, v_type, v_ready
   from public.line_automation_jobs
   where id = 'laj-keep-day';
   if v_status is distinct from 'scheduled' then
@@ -616,15 +698,23 @@ begin
   if v_type is distinct from 'appointment_reminder' then
     raise exception 'Phase 2B automation_type changed: %', v_type;
   end if;
+  if v_ready is not false then
+    raise exception 'Phase 2B recipient_ready was forged: %', v_ready;
+  end if;
   if not exists (
     select 1
     from public.line_automation_jobs
     where id = 'laj-keep-day'
+      and event_id = 'appt-keep'
+      and customer_id = 'cust-1'
+      and fingerprint = 'org-the-enjoye|appointment_reminder|appt-keep|day_before_morning'
+      and timing_id = 'day_before_morning'
       and scheduled_for = public.line_automation_schedule_expected_fire_at(
         'org-the-enjoye', 'appointment_reminder', 'appointment', 'appt-keep', 'cust-1', 'day_before_morning'
       )
-      and recipient_ready is true
+      and recipient_ready is false
+      and status = 'scheduled'
   ) then
-    raise exception 'Phase 2B appointment job was not updated from trusted sources';
+    raise exception 'Phase 2B appointment job lost original identity or safe status';
   end if;
 end $$;

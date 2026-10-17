@@ -79,10 +79,14 @@ export function diffLineAutomationSchedule(input: {
       continue;
     }
     desired.delete(job.fingerprint);
+    const nextStatus = proposedJobStatus(next);
+    const statusUnchanged =
+      job.status === nextStatus ||
+      (job.status === "scheduled" && nextStatus === "pending_recipient");
     if (
       job.scheduledFor === next.fireAt &&
       job.messageSnapshot === next.messageSnapshot &&
-      job.status === proposedJobStatus(next)
+      statusUnchanged
     ) {
       unchanged.push(job);
       continue;

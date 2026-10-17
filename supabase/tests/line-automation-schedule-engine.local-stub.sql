@@ -133,14 +133,6 @@ create table if not exists public.customer_packages (
   expires_at timestamptz
 );
 
-create table if not exists public.line_customer_bindings (
-  id uuid primary key,
-  organization_id uuid not null references public.organizations (id),
-  customer_id uuid not null references public.customers (id),
-  verified boolean not null default false,
-  status text not null default 'active'
-);
-
 create table if not exists public.line_automation_rules (
   organization_id text not null,
   automation_type text not null,
@@ -164,6 +156,14 @@ insert into public.appointments (id, organization_id, customer_id, app_id, statu
     'appt-keep',
     'BOOKED',
     timestamptz '2026-10-20 08:00:00+00'
+  ),
+  (
+    '99999999-eeee-eeee-eeee-eeeeeeeeeeee',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    'appt-other',
+    'BOOKED',
+    timestamptz '2026-10-22 08:00:00+00'
   );
 
 insert into public.treatments (id, organization_id, customer_id, app_id, status, completed_at) values
@@ -184,15 +184,6 @@ insert into public.customer_packages (id, organization_id, customer_id, app_id, 
     'pkg-1',
     'ACTIVE',
     timestamptz '2026-10-31 16:00:00+00'
-  );
-
-insert into public.line_customer_bindings (id, organization_id, customer_id, verified, status) values
-  (
-    '33333333-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    'cccccccc-cccc-cccc-cccc-cccccccccccc',
-    true,
-    'active'
   );
 
 insert into public.line_automation_rules (

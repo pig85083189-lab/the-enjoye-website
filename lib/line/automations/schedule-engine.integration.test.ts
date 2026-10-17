@@ -51,7 +51,9 @@ describe("Phase 2A line_automation_jobs upgrade", () => {
     expect(cases).toMatch(/same-org customer event mismatch was accepted/);
     expect(cases).toMatch(/forged scheduled_for was accepted/);
     expect(cases).toMatch(/forged recipient_ready was accepted/);
-    expect(cases).toMatch(/Phase 2B appointment job/);
+    expect(cases).toMatch(/update event\/customer\/fingerprint swap was accepted/);
+    expect(cases).toMatch(/Phase 2B appointment job was not preserved by re-runnable upgrade|Phase 2B appointment job lost original identity/);
+    expect(cases).toMatch(/Phase 2B recipient_ready was forged/);
     expect(runner).toMatch(/concurrent apply created/);
     expect(migration).toMatch(/line_automation_jobs_active_fingerprint_key/);
     expect(migration).toMatch(/pg_advisory_xact_lock/);
@@ -59,7 +61,9 @@ describe("Phase 2A line_automation_jobs upgrade", () => {
     expect(migration).toMatch(/line_automation_schedule_expected_fire_at/);
     expect(migration).toMatch(/line_automation_schedule_recipient_ready/);
     expect(migration).toMatch(/line_automation_schedule_assert_cancelable/);
+    expect(migration).toMatch(/line_automation_schedule_assert_job_identity/);
     expect(migration).not.toMatch(/v_item->>'recipient_ready'/);
+    expect(migration).not.toMatch(/create table if not exists public\.line_customer_bindings/);
     expect(migration).toMatch(/Do not apply on Production until Owner confirms/);
   });
 

@@ -727,10 +727,63 @@ describe("Phase 2A LINE automation schedule engine", () => {
     expect(sql).toMatch(/line_automation_schedule_expected_fire_at/);
     expect(sql).toMatch(/line_automation_schedule_recipient_ready/);
     expect(sql).toMatch(/line_automation_schedule_assert_cancelable/);
+    expect(sql).toMatch(/line_automation_schedule_assert_job_identity/);
+    expect(sql).toMatch(/line_automation_schedule_apply_recipient/);
+    expect(sql).toMatch(/job identity mismatch/);
     expect(sql).toMatch(/cancel not allowed/);
     expect(sql).toMatch(/cancel source incomplete/);
     expect(sql).toMatch(/invalid scheduled_for/);
     expect(sql).not.toMatch(/v_item->>'recipient_ready'/);
     expect(sql).not.toMatch(/customers\.line_user_id/);
+    expect(sql).not.toMatch(/create table if not exists public\.line_customer_bindings/);
+  });
+
+  it("does not downgrade an existing Phase 2B scheduled appointment when binding is unconfirmed", () => {
+    const fingerprint = automationJobFingerprint({
+      organizationId: ORG_ENJOYE_ID,
+      automationType: "appointment_reminder",
+      eventId: "apt-1",
+      timingId: "day_before_morning",
+    });
+    const fireAt = taipeiLocalToUtcIso("2026-10-19", "10:00");
+    const result = simulateLineAutomationSchedule({
+      organizationId: ORG_ENJOYE_ID,
+      nowMs: NOW_MS,
+      rules: [rule(ORG_ENJOYE_ID, "appointment_reminder", ["day_before_morning"])],
+      customers: [
+        {
+          id: "cust-1",
+          organizationId: ORG_ENJOYE_ID,
+          verifiedLineBinding: false,
+        },
+      ],
+      appointments: [
+        {
+          id: "apt-1",
+          organizationId: ORG_ENJOYE_ID,
+          customerId: "cust-1",
+          startAt: taipeiLocalToUtcIso("2026-10-20", "16:00"),
+          status: "BOOKED",
+        },
+      ],
+      existingJobs: [
+        {
+          id: "laj-phase2b",
+          organizationId: ORG_ENJOYE_ID,
+          automationType: "appointment_reminder",
+          eventId: "apt-1",
+          customerId: "cust-1",
+          timingId: "day_before_morning",
+          fingerprint,
+          scheduledFor: fireAt,
+          status: "scheduled",
+          messageSnapshot: "appointment_reminder template",
+        },
+      ],
+    });
+    expect(result.plan.proposed[0]?.decision).toBe("pending_recipient");
+    expect(result.mutation.update).toEqual([]);
+    expect(result.mutation.cancel).toEqual([]);
+    expect(result.mutation.unchanged.map((job) => job.id)).toEqual(["laj-phase2b"]);
   });
 });
