@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { LineAutomationCard } from "@/features/line/automations/LineAutomationCard";
 import { LineAutomationPhonePreview } from "@/features/line/automations/LineAutomationPhonePreview";
 import { LineAutomationMonthlyStats } from "@/features/line/automations/LineAutomationStats";
+import { LineAppointmentReminderPlanCard } from "@/features/line/automations/LineAppointmentReminderPlanCard";
 import { LineOwnerSelfReminderCard } from "@/features/line/automations/LineOwnerSelfReminderCard";
 import { canShowLineAutomations, LINE_AUTOMATION_ROLES } from "@/lib/line/automations/access";
 import { LINE_AUTOMATION_CATALOG, LINE_AUTOMATION_TABS } from "@/lib/line/automations/catalog";
@@ -56,6 +57,7 @@ const AUTOMATION_FILES = [
   "features/line/automations/LineAutomationStats.tsx",
   "features/line/automations/LineAutomationSwitch.tsx",
   "features/line/automations/LineOwnerSelfReminderCard.tsx",
+  "features/line/automations/LineAppointmentReminderPlanCard.tsx",
   "lib/line/automations/access.ts",
   "lib/line/automations/catalog.ts",
   "lib/line/automations/copy.ts",
@@ -176,6 +178,13 @@ describe("LINE automation access and page wiring", () => {
     expect(stats).toContain(LINE_AUTOMATION_EMPTY_STAT);
     expect(stats).not.toContain("+35%");
     expect(LINE_AUTOMATION_TABS.map((tab) => tab.id)).toContain("history");
+
+    const plan = renderToStaticMarkup(
+      createElement(LineAppointmentReminderPlanCard, { enabled: true }),
+    );
+    expect(plan).toContain("預約提醒本機排程");
+    expect(plan).toContain("data-line-reminder-status=\"planned\"");
+    expect(plan).not.toMatch(/cust-|U[0-9a-f]{32}/i);
   });
 });
 
