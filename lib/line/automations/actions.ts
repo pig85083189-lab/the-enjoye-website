@@ -3,20 +3,15 @@
 import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import {
   countEnabledAutomationRules,
-  draftFromStoredRule,
   evaluateLineAutomationOwnerAccess,
   mergeStoredAutomationRules,
   parseLineAutomationTimingConfig,
   SET_LINE_AUTOMATION_ENABLED_RPC,
-  timingConfigFromDraft,
   UPSERT_LINE_AUTOMATION_RULE_RPC,
   validateLineAutomationRuleInput,
   type LineAutomationRulePublic,
 } from "@/lib/line/automations/rules";
-import {
-  createDefaultLineAutomationDraft,
-  createDefaultLineAutomationDrafts,
-} from "@/lib/line/automations/draft";
+import { createDefaultLineAutomationDraft } from "@/lib/line/automations/draft";
 import { isLineAutomationId } from "@/lib/line/automations/catalog";
 import type { LineAutomationDraft, LineAutomationId } from "@/lib/line/automations/types";
 import {
@@ -216,16 +211,4 @@ export async function setLineAutomationEnabled(input: {
   } catch {
     return { ok: false, reason: "error", message: "無法更新啟用狀態" };
   }
-}
-
-export function emptyAutomationDrafts() {
-  return createDefaultLineAutomationDrafts();
-}
-
-export function timingConfigForDraft(draft: LineAutomationDraft) {
-  return timingConfigFromDraft(draft);
-}
-
-export function storedRuleToDraft(rule: LineAutomationRulePublic) {
-  return draftFromStoredRule(rule);
 }
