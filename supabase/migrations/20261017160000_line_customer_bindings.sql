@@ -291,6 +291,66 @@ $$;
 comment on function public.line_customer_binding_identity_taken(text, text, text) is
   'True when another customer or organization already holds this LINE hash as pending, active, or staged rebind.';
 
+create or replace function public.line_customer_binding_lock_identity(p_line_user_id_hash text)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+begin
+  if p_line_user_id_hash is null or p_line_user_id_hash !~ '^[0-9a-f]{64}$' then
+    return;
+  end if;
+  perform pg_advisory_xact_lock(hashtext('line-customer-bind:' || p_line_user_id_hash));
+end;
+$$;
+
+create or replace function public.line_customer_binding_lock_identities(p_hashes text[])
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_hash text;
+begin
+  for v_hash in
+    select distinct h
+    from unnest(coalesce(p_hashes, '{}'::text[])) as h
+    where h ~ '^[0-9a-f]{64}$'
+    order by 1
+  loop
+    perform public.line_customer_binding_lock_identity(v_hash);
+  end loop;
+end;
+$$;
+
+create or replace function public.line_customer_binding_purge_expired(p_organization_id text)
+returns integer
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_deleted integer := 0;
+begin
+  if p_organization_id is null or p_organization_id not like 'org-%' then
+    return 0;
+  end if;
+  delete from public.line_customer_binding_rebinds
+  where organization_id = p_organization_id
+    and expires_at <= now();
+  get diagnostics v_deleted = row_count;
+  return v_deleted;
+end;
+$$;
+
+comment on function public.line_customer_binding_purge_expired(text) is
+  'Deletes expired staged rebinds for one organization. Does not touch active bindings or secrets. Must not be paired with RAISE in the same failed transaction.';
+
 drop function if exists public.start_line_customer_bind_challenge(text, text);
 
 create or replace function public.start_line_customer_bind_challenge(
@@ -335,6 +395,7 @@ begin
   if not found or not public.is_operational_staff_id(v_actor.user_id) then
     raise exception 'unauthorized' using errcode = '42501';
   end if;
+  perform public.line_customer_binding_purge_expired(p_organization_id);
 
   select r.customer_id, r.customer_uuid
   into v_customer
@@ -444,6 +505,8 @@ begin
   if p_line_user_id_hash is null or p_line_user_id_hash !~ '^[0-9a-f]{64}$' then
     return jsonb_build_object('captured', false, 'bound', false, 'reason', 'invalid_input');
   end if;
+  perform public.line_customer_binding_lock_identity(p_line_user_id_hash);
+  perform public.line_customer_binding_purge_expired(p_organization_id);
 
   v_code_hash := encode(
     sha256(convert_to(p_organization_id || ':' || upper(btrim(p_code)), 'utf8')),
@@ -682,6 +745,8 @@ declare
   v_binding public.line_customer_bindings%rowtype;
   v_rebind public.line_customer_binding_rebinds%rowtype;
   v_id text;
+  v_current_hash text;
+  v_next_hash text;
 begin
   if v_uid is null then
     raise exception 'not authenticated' using errcode = '42501';
@@ -707,6 +772,16 @@ begin
     raise exception 'invalid customer' using errcode = '22023';
   end if;
 
+  select b.line_user_id_hash, r.line_user_id_hash
+  into v_current_hash, v_next_hash
+  from public.line_customer_bindings b
+  left join public.line_customer_binding_rebinds r on r.binding_id = b.id
+  where b.organization_id = p_organization_id
+    and b.customer_id = v_customer.customer_id;
+  perform public.line_customer_binding_lock_identities(
+    array[v_current_hash, v_next_hash]
+  );
+
   select *
   into v_binding
   from public.line_customer_bindings
@@ -723,10 +798,20 @@ begin
   where binding_id = v_binding.id
   for update;
 
+  perform public.line_customer_binding_lock_identities(
+    array[v_binding.line_user_id_hash, v_rebind.line_user_id_hash]
+  );
+
   if v_rebind.binding_id is not null then
     if v_rebind.expires_at <= now() then
       delete from public.line_customer_binding_rebinds where binding_id = v_binding.id;
-      raise exception 'rebind expired' using errcode = '22023';
+      return jsonb_build_object(
+        'organization_id', p_organization_id,
+        'customer_id', v_customer.customer_id,
+        'verified', v_binding.verified is true,
+        'status', v_binding.status,
+        'reason', 'expired'
+      );
     end if;
     if v_binding.status is distinct from 'active' or v_binding.verified is not true then
       raise exception 'binding not capturable' using errcode = '22023';
@@ -736,7 +821,13 @@ begin
          p_organization_id, v_customer.customer_id, v_rebind.line_user_id_hash
        ) then
       delete from public.line_customer_binding_rebinds where binding_id = v_binding.id;
-      raise exception 'duplicate LINE identity' using errcode = '23505';
+      return jsonb_build_object(
+        'organization_id', p_organization_id,
+        'customer_id', v_customer.customer_id,
+        'verified', true,
+        'status', 'active',
+        'reason', 'duplicate'
+      );
     end if;
     if not exists (
       select 1 from public.line_customer_binding_secrets where binding_id = v_binding.id
@@ -773,7 +864,14 @@ begin
       delete from public.line_customer_binding_rebinds where binding_id = v_binding.id;
     exception
       when unique_violation then
-        raise exception 'duplicate LINE identity' using errcode = '23505';
+        delete from public.line_customer_binding_rebinds where binding_id = v_binding.id;
+        return jsonb_build_object(
+          'organization_id', p_organization_id,
+          'customer_id', v_customer.customer_id,
+          'verified', true,
+          'status', 'active',
+          'reason', 'duplicate'
+        );
     end;
 
     if not exists (
@@ -790,6 +888,7 @@ begin
       raise exception 'binding secret missing' using errcode = '22023';
     end if;
 
+    perform public.line_customer_binding_purge_expired(p_organization_id);
     return jsonb_build_object(
       'organization_id', p_organization_id,
       'customer_id', v_customer.customer_id,
@@ -808,6 +907,7 @@ begin
   if v_binding.pending_expires_at is not null and v_binding.pending_expires_at <= now() then
     raise exception 'binding expired' using errcode = '22023';
   end if;
+  perform public.line_customer_binding_lock_identity(v_binding.line_user_id_hash);
   if public.line_customer_binding_identity_taken(
     p_organization_id, v_customer.customer_id, v_binding.line_user_id_hash
   ) then
@@ -848,6 +948,7 @@ begin
     raise exception 'binding secret missing' using errcode = '22023';
   end if;
 
+  perform public.line_customer_binding_purge_expired(p_organization_id);
   return jsonb_build_object(
     'organization_id', p_organization_id,
     'customer_id', v_customer.customer_id,
@@ -1138,6 +1239,12 @@ comment on function public.line_automation_send_recipient_allowed(text, text) is
 
 revoke all on function public.line_customer_binding_resolve(text, text) from public, anon, authenticated;
 revoke all on function public.line_customer_binding_identity_taken(text, text, text)
+  from public, anon, authenticated;
+revoke all on function public.line_customer_binding_lock_identity(text)
+  from public, anon, authenticated;
+revoke all on function public.line_customer_binding_lock_identities(text[])
+  from public, anon, authenticated;
+revoke all on function public.line_customer_binding_purge_expired(text)
   from public, anon, authenticated;
 revoke all on function public.start_line_customer_bind_challenge(text, text, boolean, text) from public, anon;
 grant execute on function public.start_line_customer_bind_challenge(text, text, boolean, text) to authenticated;

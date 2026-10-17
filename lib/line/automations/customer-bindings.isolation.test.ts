@@ -197,6 +197,9 @@ describe("LINE customer bindings", () => {
     expect(sql).toMatch(/line_customer_binding_rebinds/);
     expect(sql).toMatch(/pending_expires_at/);
     expect(sql).toMatch(/cancel_line_customer_rebind/);
+    expect(sql).toMatch(/pg_advisory_xact_lock/);
+    expect(sql).toMatch(/line_customer_binding_purge_expired/);
+    expect(sql).not.toMatch(/delete from public\.line_customer_binding_rebinds where binding_id = v_binding\.id;\s*raise exception 'rebind expired'/);
     expect(sql).toMatch(/p_identity_confirmed/);
     expect(sql).toMatch(/p_proof/);
     expect(sql).toMatch(/confirm_line_customer_binding/);

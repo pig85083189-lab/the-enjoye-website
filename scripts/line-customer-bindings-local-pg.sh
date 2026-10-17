@@ -117,4 +117,69 @@ if "${PSQL[@]}" -c "select tests.become('11111111-1111-1111-1111-111111111111');
   exit 1
 fi
 
+HASH_Z="$("${PSQL[@]}" -At -c "select encode(sha256(convert_to('Uzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz', 'utf8')), 'hex');")"
+"${PSQL[@]}" -c "
+insert into public.line_customer_binding_rebinds (
+  binding_id, organization_id, customer_id,
+  line_user_id_hint, line_user_id_hash, line_user_id_cipher, key_id,
+  captured_at, expires_at
+)
+select
+  id, organization_id, customer_id,
+  '••••zzzz', '${HASH_Z}', 'v1.cipher-cross-rebind', 'line-cred-v1',
+  now(), now() + interval '10 minutes'
+from public.line_customer_bindings
+where organization_id = 'org-the-enjoye' and customer_id = 'cust-1';
+
+update public.line_customer_bindings
+set
+  line_user_id_hint = '••••zzzz',
+  line_user_id_hash = '${HASH_Z}',
+  verified = false,
+  status = 'pending',
+  bound_at = null,
+  confirmed_at = null,
+  confirmed_by = null,
+  pending_expires_at = now() + interval '10 minutes',
+  updated_at = now()
+where organization_id = 'org-the-enjoye' and customer_id = 'cust-2';
+"
+
+cross_confirm_sql() {
+  local customer_id="$1"
+  cat <<EOF
+select tests.become('11111111-1111-1111-1111-111111111111');
+select public.confirm_line_customer_binding('org-the-enjoye', '${customer_id}');
+EOF
+}
+
+psql -d "$DB" -X -q -c "$(cross_confirm_sql cust-1)" >/tmp/line-customer-cross-a.out 2>/tmp/line-customer-cross-a.err &
+psql -d "$DB" -X -q -c "$(cross_confirm_sql cust-2)" >/tmp/line-customer-cross-b.out 2>/tmp/line-customer-cross-b.err &
+wait || true
+
+TRUSTED_Z="$("${PSQL[@]}" -At -c "select count(*) from public.line_customer_bindings where line_user_id_hash = '${HASH_Z}' and status = 'active' and verified is true and confirmed_at is not null;")"
+if [[ "$TRUSTED_Z" != "1" ]]; then
+  echo "REFUSE: cross-table concurrent confirm left $TRUSTED_Z trusted bindings for the same LINE hash." >&2
+  exit 1
+fi
+INCONSISTENT="$("${PSQL[@]}" -At -c "
+select count(*)
+from public.line_customer_bindings b
+left join public.line_customer_binding_secrets s on s.binding_id = b.id
+where b.organization_id = 'org-the-enjoye'
+  and (
+    (b.verified is true and (b.status is distinct from 'active' or b.confirmed_at is null or s.binding_id is null))
+    or (b.status = 'active' and (b.verified is not true or b.confirmed_at is null or s.binding_id is null))
+  );
+")"
+if [[ "$INCONSISTENT" != "0" ]]; then
+  echo "REFUSE: cross-table concurrent confirm left inconsistent verified/status/secret rows." >&2
+  exit 1
+fi
+JOB="$("${PSQL[@]}" -At -c "select count(*) from public.line_automation_jobs where id = 'laj-keep-day' and appointment_app_id = 'appt-keep' and status = 'scheduled';")"
+if [[ "$JOB" != "1" ]]; then
+  echo "REFUSE: Phase 2B appointment job was lost during cross-table confirm." >&2
+  exit 1
+fi
+
 echo "PASS: local LINE customer bindings verified without dropping Phase 2B jobs or sending LINE."

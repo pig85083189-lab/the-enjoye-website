@@ -395,6 +395,83 @@ begin
       null;
   end;
 
+  insert into public.line_customer_binding_rebinds (
+    binding_id, organization_id, customer_id,
+    line_user_id_hint, line_user_id_hash, line_user_id_cipher, key_id,
+    captured_at, expires_at
+  )
+  select
+    b.id, b.organization_id, b.customer_id,
+    '••••zzzz',
+    encode(sha256(convert_to('Uzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz', 'utf8')), 'hex'),
+    'v1.expired-rebind',
+    'line-cred-v1',
+    now(),
+    now() - interval '1 second'
+  from public.line_customer_bindings b
+  where b.organization_id = 'org-the-enjoye' and b.customer_id = 'cust-1';
+  v_payload := public.confirm_line_customer_binding('org-the-enjoye', 'cust-1');
+  if v_payload->>'reason' is distinct from 'expired' then
+    raise exception 'expired rebind confirm did not return expired: %', v_payload;
+  end if;
+  if exists (
+    select 1 from public.line_customer_binding_rebinds
+    where organization_id = 'org-the-enjoye' and customer_id = 'cust-1'
+  ) then
+    raise exception 'expired rebind was not purged after confirm';
+  end if;
+  if not exists (
+    select 1
+    from public.line_customer_bindings b
+    join public.line_customer_binding_secrets s on s.binding_id = b.id
+    where b.organization_id = 'org-the-enjoye'
+      and b.customer_id = 'cust-1'
+      and b.line_user_id_hash = v_hash
+      and b.status = 'active'
+      and b.verified is true
+      and b.confirmed_at is not null
+      and s.line_user_id_cipher = 'v1.cipher-cust-1'
+  ) then
+    raise exception 'expired rebind cleanup mutated the active binding';
+  end if;
+
+  insert into public.line_customer_binding_rebinds (
+    binding_id, organization_id, customer_id,
+    line_user_id_hint, line_user_id_hash, line_user_id_cipher, key_id,
+    captured_at, expires_at
+  )
+  select
+    b.id, b.organization_id, b.customer_id,
+    '••••yyyy',
+    encode(sha256(convert_to('Uyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy', 'utf8')), 'hex'),
+    'v1.purge-rebind',
+    'line-cred-v1',
+    now(),
+    now() - interval '2 seconds'
+  from public.line_customer_bindings b
+  where b.organization_id = 'org-the-enjoye' and b.customer_id = 'cust-1';
+  if public.line_customer_binding_purge_expired('org-the-enjoye') < 1 then
+    raise exception 'expired rebind purge deleted nothing';
+  end if;
+  if exists (
+    select 1 from public.line_customer_binding_rebinds
+    where organization_id = 'org-the-enjoye' and customer_id = 'cust-1'
+  ) then
+    raise exception 'expired rebind survived purge';
+  end if;
+  if not exists (
+    select 1
+    from public.line_customer_bindings
+    where organization_id = 'org-the-enjoye'
+      and customer_id = 'cust-1'
+      and line_user_id_hash = v_hash
+      and status = 'active'
+      and verified is true
+      and confirmed_at is not null
+  ) then
+    raise exception 'expired rebind purge mutated the active binding';
+  end if;
+
   select id into v_job_id
   from public.line_automation_jobs
   where fingerprint = 'org-the-enjoye|birthday_greeting|cust-1|birthday_morning';

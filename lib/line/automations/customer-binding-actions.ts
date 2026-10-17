@@ -175,8 +175,16 @@ export async function confirmLineCustomerBindingAction(input: {
     p_organization_id: verified.organizationId,
     p_customer_id: input.customerId.trim(),
   });
+  const payload = confirmed.data && typeof confirmed.data === "object" ? confirmed.data : {};
+  const reason = String((payload as { reason?: unknown }).reason ?? "");
   if (confirmed.error) {
     return { ok: false, reason: "error", message: "無法確認顧客 LINE 綁定", sentLine: false };
+  }
+  if (reason === "expired") {
+    return { ok: false, reason: "invalid_input", message: "重新綁定已逾期，原現場確認綁定維持有效", sentLine: false };
+  }
+  if (reason === "duplicate") {
+    return { ok: false, reason: "invalid_input", message: "此 LINE 身分已被確認，原綁定維持有效", sentLine: false };
   }
   return { ok: true, message: "已現場確認並啟用顧客 LINE 綁定", sentLine: false };
 }

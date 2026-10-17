@@ -56,7 +56,11 @@ describe("Phase 2B LINE customer bindings", () => {
     expect(cases).toMatch(/pending rebind overwrote the active binding/);
     expect(cases).toMatch(/rebind cancel left a staged identity/);
     expect(cases).toMatch(/expired pending confirm was accepted/);
+    expect(cases).toMatch(/expired rebind confirm did not return expired/);
+    expect(cases).toMatch(/expired rebind was not purged after confirm/);
+    expect(cases).toMatch(/expired rebind purge mutated the active binding/);
     expect(cases).toMatch(/duplicate confirm was accepted/);
+    expect(runner).toMatch(/cross-table concurrent confirm left/);
     expect(cases).toMatch(/confirmed rebind did not switch identity atomically/);
     expect(runner).toMatch(/concurrent confirm left active/);
     expect(cases).toMatch(/unbind left a verified secret/);
