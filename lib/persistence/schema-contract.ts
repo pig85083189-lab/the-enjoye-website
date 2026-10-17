@@ -123,6 +123,10 @@ export const LINE_AUTOMATION_SCHEDULE_MIGRATION_FILE =
 export const LINE_CUSTOMER_BINDINGS_MIGRATION_FILE =
   "supabase/migrations/20261017160000_line_customer_bindings.sql";
 
+/** Preview leftover bind-table upgrade. Re-applies the compatible 160000 body. Additive. Do not apply on Production until Owner confirms. */
+export const LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE =
+  "supabase/migrations/20261017161000_line_customer_bindings_preview_upgrade.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",

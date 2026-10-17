@@ -203,6 +203,10 @@ describe("LINE customer bindings", () => {
     expect(sql).toMatch(/p_identity_confirmed/);
     expect(sql).toMatch(/p_proof/);
     expect(sql).toMatch(/confirm_line_customer_binding/);
+    expect(sql).toMatch(/add column customer_id text/);
+    expect(sql).toMatch(/set customer_id = customer_app_id/);
+    expect(sql).toMatch(/where verified is true\s+and confirmed_at is null/);
+    expect(sql).toMatch(/and captured_at is not null/);
     expect(sql).toMatch(/line_automation_send_recipient_allowed/);
     expect(sql).toMatch(/where line_customer_bindings\.status is distinct from 'active'/);
     expect(sql).toMatch(/failed_attempts/);

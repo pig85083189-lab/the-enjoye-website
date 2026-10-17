@@ -3,7 +3,11 @@
 -- Trusted recipient requires owner in-person identity confirmation.
 -- Consume requires a Channel-Secret-derived server proof, not only the
 -- public webhook URL token. Does not send LINE, open Cron, or rewrite
--- Broadcast. Do not apply on Production until Owner confirms.
+-- Broadcast. CREATE TABLE IF NOT EXISTS is a no-op on leftover Preview
+-- tables; additive column / demote steps below make that leftover shape
+-- compatible. Does not DROP TABLE, DROP COLUMN, TRUNCATE, or DELETE
+-- existing binding, job, or rule rows.
+-- Do not apply on Production until Owner confirms.
 
 create table if not exists public.line_customer_bindings (
   id text primary key,
@@ -65,6 +69,190 @@ comment on table public.line_customer_bindings is
 do $$
 begin
   if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'customer_id'
+  ) then
+    alter table public.line_customer_bindings add column customer_id text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'customer_app_id'
+  ) then
+    alter table public.line_customer_bindings add column customer_app_id text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'customer_uuid'
+  ) then
+    alter table public.line_customer_bindings add column customer_uuid uuid;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'captured_at'
+  ) then
+    alter table public.line_customer_bindings add column captured_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'confirmed_at'
+  ) then
+    alter table public.line_customer_bindings add column confirmed_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'confirmed_by'
+  ) then
+    alter table public.line_customer_bindings add column confirmed_by text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'pending_expires_at'
+  ) then
+    alter table public.line_customer_bindings add column pending_expires_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'status'
+  ) then
+    alter table public.line_customer_bindings add column status text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'bind_method'
+  ) then
+    alter table public.line_customer_bindings add column bind_method text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'key_id'
+  ) then
+    alter table public.line_customer_bindings add column key_id text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'line_user_id_cipher'
+  ) then
+    alter table public.line_customer_bindings add column line_user_id_cipher text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'bound_at'
+  ) then
+    alter table public.line_customer_bindings add column bound_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'unbound_at'
+  ) then
+    alter table public.line_customer_bindings add column unbound_at timestamptz;
+  end if;
+end $$;
+
+do $$
+begin
+  if to_regclass('public.organizations') is not null then
+    update public.line_customer_bindings b
+    set organization_id = o.app_id
+    from public.organizations o
+    where b.organization_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      and o.id::text = b.organization_id
+      and o.app_id like 'org-%';
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'line_customer_bindings'
+      and column_name = 'customer_app_id'
+  ) then
+    execute $sql$
+      update public.line_customer_bindings
+      set customer_id = customer_app_id
+      where customer_id is null
+        and customer_app_id is not null
+        and btrim(customer_app_id) <> ''
+    $sql$;
+    execute $sql$
+      update public.line_customer_bindings
+      set customer_app_id = customer_id
+      where customer_app_id is null
+        and customer_id is not null
+    $sql$;
+  end if;
+end $$;
+
+do $$
+begin
+  if to_regclass('public.customers') is not null
+     and to_regclass('public.organizations') is not null then
+    update public.line_customer_bindings b
+    set
+      customer_id = coalesce(nullif(c.app_id, ''), c.id::text),
+      customer_uuid = c.id
+    from public.customers c
+    join public.organizations o on o.id = c.organization_id
+    where b.organization_id = o.app_id
+      and (
+        b.customer_id = c.app_id
+        or b.customer_id = c.id::text
+        or b.customer_uuid = c.id
+      )
+      and (
+        b.customer_uuid is null
+        or b.customer_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      );
+  end if;
+end $$;
+
+update public.line_customer_bindings
+set bind_method = 'webhook_code'
+where bind_method is null;
+
+update public.line_customer_bindings
+set status = 'pending'
+where status is null;
+
+do $$
+begin
+  if exists (
+    select 1
+    from public.line_customer_bindings
+    where customer_id is null or btrim(customer_id) = ''
+  ) then
+    raise exception 'line_customer_bindings.customer_id could not be backfilled from customer_app_id';
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'line_customer_bindings'
+      and column_name = 'customer_app_id'
+      and is_nullable = 'NO'
+  ) then
+    alter table public.line_customer_bindings
+      alter column customer_app_id drop not null;
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'line_customer_bindings'
+      and column_name = 'line_user_id_cipher'
+      and is_nullable = 'NO'
+  ) then
+    alter table public.line_customer_bindings
+      alter column line_user_id_cipher drop not null;
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
     select 1
     from pg_constraint
     where conname = 'line_customer_bindings_org_customer_key'
@@ -82,6 +270,136 @@ alter table public.line_customer_bindings
 
 alter table public.line_customer_bindings
   drop constraint if exists line_customer_bindings_verified_active;
+
+create table if not exists public.line_customer_binding_secrets (
+  binding_id text primary key
+    references public.line_customer_bindings (id) on delete cascade,
+  organization_id text not null,
+  line_user_id_cipher text not null,
+  key_id text not null,
+  updated_at timestamptz not null default now(),
+  constraint line_customer_binding_secrets_org_prefix
+    check (organization_id like 'org-%'),
+  constraint line_customer_binding_secrets_cipher_prefix
+    check (line_user_id_cipher like 'v1.%')
+);
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'line_customer_bindings'
+      and column_name = 'line_user_id_cipher'
+  ) then
+    execute $sql$
+      insert into public.line_customer_binding_secrets (
+        binding_id, organization_id, line_user_id_cipher, key_id, updated_at
+      )
+      select
+        b.id,
+        b.organization_id,
+        b.line_user_id_cipher,
+        coalesce(b.key_id, 'line-cred-v1'),
+        now()
+      from public.line_customer_bindings b
+      where b.line_user_id_cipher is not null
+        and b.line_user_id_cipher like 'v1.%'
+        and not exists (
+          select 1
+          from public.line_customer_binding_secrets s
+          where s.binding_id = b.id
+        )
+    $sql$;
+  end if;
+end $$;
+
+-- Legacy verified=true is not a new-schema trusted recipient. Demote until
+-- a fresh webhook capture sets captured_at and the owner confirms again.
+update public.line_customer_bindings
+set
+  verified = false,
+  status = 'pending',
+  bound_at = null,
+  confirmed_at = null,
+  confirmed_by = null,
+  captured_at = null,
+  pending_expires_at = null,
+  updated_at = now()
+where verified is true
+  and confirmed_at is null;
+
+do $$
+declare
+  v_allows_pending boolean := false;
+  v_job_customer text := 'j.customer_app_id';
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'line_automation_jobs'
+      and column_name = 'recipient_ready'
+  ) then
+    return;
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'line_automation_jobs'
+      and column_name = 'customer_id'
+  ) and exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'line_automation_jobs'
+      and column_name = 'customer_app_id'
+  ) then
+    v_job_customer := 'coalesce(j.customer_id, j.customer_app_id)';
+  elsif exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'line_automation_jobs'
+      and column_name = 'customer_id'
+  ) then
+    v_job_customer := 'j.customer_id';
+  end if;
+  select coalesce(pg_get_constraintdef(c.oid) like '%pending_recipient%', false)
+  into v_allows_pending
+  from pg_constraint c
+  where c.conrelid = 'public.line_automation_jobs'::regclass
+    and c.conname = 'line_automation_jobs_status_check';
+  execute format($sql$
+    update public.line_automation_jobs j
+    set
+      recipient_ready = false,
+      status = case
+        when %s and j.status = 'scheduled' then 'pending_recipient'
+        else j.status
+      end,
+      updated_at = now()
+    where j.recipient_ready is true
+      and not exists (
+        select 1
+        from public.line_customer_bindings b
+        join public.line_customer_binding_secrets s
+          on s.binding_id = b.id
+         and s.organization_id = b.organization_id
+        where b.organization_id = j.organization_id
+          and (
+            b.customer_id = %s
+            or b.customer_uuid::text = %s
+          )
+          and b.verified is true
+          and b.status = 'active'
+          and b.confirmed_at is not null
+          and b.captured_at is not null
+          and b.bind_method = 'webhook_code'
+      )
+  $sql$,
+    case when v_allows_pending then 'true' else 'false' end,
+    v_job_customer,
+    v_job_customer
+  );
+end $$;
 
 alter table public.line_customer_bindings
   add constraint line_customer_bindings_verified_active
@@ -187,6 +505,103 @@ create table if not exists public.line_customer_bind_challenges (
 
 comment on table public.line_customer_bind_challenges is
   'One-time customer bind codes after owner in-person identity confirmation. Plaintext code is returned once.';
+
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bind_challenges' and column_name = 'customer_id'
+  ) then
+    alter table public.line_customer_bind_challenges add column customer_id text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bind_challenges' and column_name = 'customer_app_id'
+  ) then
+    alter table public.line_customer_bind_challenges add column customer_app_id text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bind_challenges' and column_name = 'customer_uuid'
+  ) then
+    alter table public.line_customer_bind_challenges add column customer_uuid uuid;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bind_challenges' and column_name = 'identity_confirmed_at'
+  ) then
+    alter table public.line_customer_bind_challenges add column identity_confirmed_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bind_challenges' and column_name = 'consumed_event_id'
+  ) then
+    alter table public.line_customer_bind_challenges add column consumed_event_id text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bind_challenges' and column_name = 'consumed_proof_hash'
+  ) then
+    alter table public.line_customer_bind_challenges add column consumed_proof_hash text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bind_challenges' and column_name = 'failed_attempts'
+  ) then
+    alter table public.line_customer_bind_challenges add column failed_attempts integer not null default 0;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bind_challenges' and column_name = 'last_attempt_at'
+  ) then
+    alter table public.line_customer_bind_challenges add column last_attempt_at timestamptz;
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'line_customer_bind_challenges'
+      and column_name = 'customer_app_id'
+  ) then
+    execute $sql$
+      update public.line_customer_bind_challenges
+      set customer_id = customer_app_id
+      where customer_id is null
+        and customer_app_id is not null
+        and btrim(customer_app_id) <> ''
+    $sql$;
+    execute $sql$
+      update public.line_customer_bind_challenges
+      set customer_app_id = customer_id
+      where customer_app_id is null
+        and customer_id is not null
+    $sql$;
+  end if;
+end $$;
+
+-- Leftover open challenges never had in-person confirmation. Close them
+-- so they cannot be consumed as a trusted bind source.
+update public.line_customer_bind_challenges
+set consumed_at = coalesce(consumed_at, now())
+where identity_confirmed_at is null
+  and consumed_at is null;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'line_customer_bind_challenges'
+      and column_name = 'customer_app_id'
+      and is_nullable = 'NO'
+  ) then
+    alter table public.line_customer_bind_challenges
+      alter column customer_app_id drop not null;
+  end if;
+end $$;
 
 create unique index if not exists line_customer_bind_challenges_one_open
   on public.line_customer_bind_challenges (organization_id, customer_id)
@@ -415,11 +830,11 @@ begin
   v_hash := encode(sha256(convert_to(p_organization_id || ':' || v_code, 'utf8')), 'hex');
 
   insert into public.line_customer_bind_challenges (
-    id, organization_id, customer_id, customer_uuid, staff_user_id,
+    id, organization_id, customer_id, customer_app_id, customer_uuid, staff_user_id,
     code_hash, identity_confirmed_at, expires_at
   ) values (
-    v_id, p_organization_id, v_customer.customer_id, v_customer.customer_uuid,
-    v_actor.user_id, v_hash, now(), v_expires
+    v_id, p_organization_id, v_customer.customer_id, v_customer.customer_id,
+    v_customer.customer_uuid, v_actor.user_id, v_hash, now(), v_expires
   );
 
   insert into public.line_customer_bind_challenge_secrets (
@@ -543,6 +958,13 @@ begin
         last_attempt_at = now()
     where id = v_row.id;
     return jsonb_build_object('captured', false, 'bound', false, 'reason', 'expired');
+  end if;
+  if v_row.identity_confirmed_at is null then
+    update public.line_customer_bind_challenges
+    set consumed_at = now(),
+        last_attempt_at = now()
+    where id = v_row.id;
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'unauthorized');
   end if;
 
   select hmac_key
@@ -678,18 +1100,23 @@ begin
 
   begin
     insert into public.line_customer_bindings (
-      id, organization_id, customer_id, customer_uuid,
-      line_user_id_hint, line_user_id_hash, bind_method,
-      verified, status, captured_at, bound_at, confirmed_at, confirmed_by,
-      unbound_at, pending_expires_at, updated_at
+      id, organization_id, customer_id, customer_app_id, customer_uuid,
+      line_user_id_hint, line_user_id_hash, line_user_id_cipher, key_id,
+      bind_method, verified, status, captured_at, bound_at, confirmed_at,
+      confirmed_by, unbound_at, pending_expires_at, updated_at
     ) values (
-      v_binding_id, p_organization_id, v_row.customer_id, v_row.customer_uuid,
-      p_line_user_id_hint, p_line_user_id_hash, 'webhook_code',
-      false, 'pending', now(), null, null, null, null, v_pending_expires, now()
+      v_binding_id, p_organization_id, v_row.customer_id, v_row.customer_id,
+      v_row.customer_uuid,
+      p_line_user_id_hint, p_line_user_id_hash, p_line_user_id_cipher, p_key_id,
+      'webhook_code', false, 'pending', now(), null, null, null, null,
+      v_pending_expires, now()
     )
     on conflict on constraint line_customer_bindings_org_customer_key do update
-      set line_user_id_hint = excluded.line_user_id_hint,
+      set customer_app_id = excluded.customer_app_id,
+          line_user_id_hint = excluded.line_user_id_hint,
           line_user_id_hash = excluded.line_user_id_hash,
+          line_user_id_cipher = excluded.line_user_id_cipher,
+          key_id = excluded.key_id,
           bind_method = 'webhook_code',
           verified = false,
           status = 'pending',
@@ -840,6 +1267,8 @@ begin
       set
         line_user_id_hint = v_rebind.line_user_id_hint,
         line_user_id_hash = v_rebind.line_user_id_hash,
+        line_user_id_cipher = v_rebind.line_user_id_cipher,
+        key_id = v_rebind.key_id,
         verified = true,
         status = 'active',
         captured_at = v_rebind.captured_at,
@@ -904,6 +1333,9 @@ begin
   if v_binding.status is distinct from 'pending' or v_binding.verified is true then
     raise exception 'binding not capturable' using errcode = '22023';
   end if;
+  if v_binding.captured_at is null then
+    raise exception 'binding not capturable' using errcode = '22023';
+  end if;
   if v_binding.pending_expires_at is not null and v_binding.pending_expires_at <= now() then
     raise exception 'binding expired' using errcode = '22023';
   end if;
@@ -927,6 +1359,7 @@ begin
   where id = v_binding.id
     and status = 'pending'
     and verified is not true
+    and captured_at is not null
     and line_user_id_hash ~ '^[0-9a-f]{64}$'
   returning id into v_id;
 
@@ -1207,6 +1640,7 @@ begin
       and b.verified is true
       and b.status = 'active'
       and b.confirmed_at is not null
+      and b.captured_at is not null
       and b.bind_method = 'webhook_code'
       and exists (
         select 1

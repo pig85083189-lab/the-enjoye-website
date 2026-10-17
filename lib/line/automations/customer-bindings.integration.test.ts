@@ -39,6 +39,7 @@ describe("Phase 2B LINE customer bindings", () => {
     expect(runner).toMatch(/beauty_os_line_customer_bindings_local/);
     expect(runner).toMatch(/REFUSE/);
     expect(runner).toMatch(/concurrent webhook consume created/);
+    expect(runner).toMatch(/20261017161000_line_customer_bindings_preview_upgrade\.sql/);
     expect(runner).not.toMatch(/bfzquejrtgqzzarhkiya|knccefcxncglgpmvgqlp|api\.line\.me/);
     expect(stub).toMatch(/is_operational_staff_id/);
     expect(stub).not.toMatch(/api\.line\.me|channel_secret|SUPABASE_SERVICE_ROLE_KEY/);

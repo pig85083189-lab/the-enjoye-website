@@ -12,6 +12,7 @@ import {
   LINE_AUTOMATION_RULES_MIGRATION_FILE,
   LINE_AUTOMATION_SCHEDULE_MIGRATION_FILE,
   LINE_CUSTOMER_BINDINGS_MIGRATION_FILE,
+  LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE,
   OPERATIONAL_MIGRATION_FILE,
   STRATEGY_B_RLS_MIGRATION_FILE,
 } from "./schema-contract";
@@ -55,6 +56,7 @@ const EXPECTED_CHAIN = [
   "20261017120000_line_automation_rules.sql",
   "20261017140000_line_automation_schedule_engine.sql",
   "20261017160000_line_customer_bindings.sql",
+  "20261017161000_line_customer_bindings_preview_upgrade.sql",
 ] as const;
 
 function read(rel: string): string {
@@ -196,5 +198,31 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
     expect(executable).not.toMatch(/alter table public\.line_broadcasts/i);
     expect(executable).not.toMatch(/api\.line\.me|cron|pg_cron/i);
     expect(executable).not.toMatch(/customers\.line_user_id/);
+  });
+
+  it("upgrades leftover Preview bind tables without dropping rows or trusting old verified", () => {
+    const sql = read(LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE);
+    const executable = sql
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    expect(LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE).toContain("20261017161000");
+    expect(sql).toMatch(/add column customer_id text/);
+    expect(sql).toMatch(/set customer_id = customer_app_id/);
+    expect(sql).toMatch(/line_customer_binding_secrets/);
+    expect(sql).toMatch(/where verified is true\s+and confirmed_at is null/);
+    expect(sql).toMatch(/captured_at is not null/);
+    expect(sql).toMatch(/identity_confirmed_at/);
+    expect(sql).toMatch(/Do not apply on Production until Owner confirms/);
+    expect(executable).not.toMatch(/drop table public\.line_customer_bindings/i);
+    expect(executable).not.toMatch(/drop table public\.line_customer_bind_challenges/i);
+    expect(executable).not.toMatch(/drop table public\.line_automation_jobs/i);
+    expect(executable).not.toMatch(/\bdrop column\b/i);
+    expect(executable).not.toMatch(/\btruncate\s+table\b/i);
+    expect(executable).not.toMatch(/delete from public\.line_customer_bindings/i);
+    expect(executable).not.toMatch(/delete from public\.line_automation_jobs/i);
+    expect(executable).not.toMatch(/create or replace function public\.upsert_line_appointment_reminder_rule/i);
+    expect(executable).not.toMatch(/create or replace function public\.apply_line_automation_schedule/i);
+    expect(executable).not.toMatch(/api\.line\.me|cron|pg_cron/i);
   });
 });

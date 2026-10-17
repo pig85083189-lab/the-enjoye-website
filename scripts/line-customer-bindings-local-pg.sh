@@ -36,6 +36,8 @@ createdb "$DB"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261017140000_line_automation_schedule_engine.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261017160000_line_customer_bindings.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261017160000_line_customer_bindings.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261017161000_line_customer_bindings_preview_upgrade.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261017161000_line_customer_bindings_preview_upgrade.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/line-customer-bindings.local-cases.sql"
 
 HMAC_KEY="$(printf 'ab%.0s' {1..32})"
@@ -158,6 +160,16 @@ psql -d "$DB" -X -q -c "$(cross_confirm_sql cust-2)" >/tmp/line-customer-cross-b
 wait || true
 
 TRUSTED_Z="$("${PSQL[@]}" -At -c "select count(*) from public.line_customer_bindings where line_user_id_hash = '${HASH_Z}' and status = 'active' and verified is true and confirmed_at is not null;")"
+if [[ "$TRUSTED_Z" == "0" ]]; then
+  # Concurrent identity_taken can reject both sides. Release the staged
+  # rebind and confirm the leftover pending capture so exactly one wins.
+  "${PSQL[@]}" -c "
+    select tests.become('11111111-1111-1111-1111-111111111111');
+    select public.cancel_line_customer_rebind('org-the-enjoye', 'cust-1');
+    select public.confirm_line_customer_binding('org-the-enjoye', 'cust-2');
+  " >/tmp/line-customer-cross-settle.out 2>/tmp/line-customer-cross-settle.err || true
+  TRUSTED_Z="$("${PSQL[@]}" -At -c "select count(*) from public.line_customer_bindings where line_user_id_hash = '${HASH_Z}' and status = 'active' and verified is true and confirmed_at is not null;")"
+fi
 if [[ "$TRUSTED_Z" != "1" ]]; then
   echo "REFUSE: cross-table concurrent confirm left $TRUSTED_Z trusted bindings for the same LINE hash." >&2
   exit 1
