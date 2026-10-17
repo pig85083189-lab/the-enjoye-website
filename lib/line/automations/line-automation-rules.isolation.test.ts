@@ -452,7 +452,15 @@ describe("LINE automation rule persistence", () => {
     expect(sql).toMatch(/or automation_id = p_automation_type/);
     expect(sql).toMatch(/and automation_id = v_row\.automation_id/);
     expect(sql).toMatch(/to_regclass\('public\.line_automation_jobs'\)/);
+    expect(sql).toMatch(/Fail the migration immediately if either unique cannot be created/);
+    expect(sql).toMatch(/Preview signature is user_operational_staff_id\(uuid\)/);
+    expect(sql).toMatch(/Keep customTimings and custom selections/);
+    expect(sql).toMatch(/timing_id in \('day_before_morning', 'hours_before_3'\)/);
+    expect(source("scripts/line-automation-rules-phase2b-upgrade-local-pg.sh")).toMatch(
+      /beauty_os_line_rules_upgrade_local/,
+    );
     const executable = executableSql(LINE_AUTOMATION_RULES_MIGRATION_FILE);
+    expect(executable).not.toMatch(/exception when others then null/i);
     expect(executable).not.toMatch(/drop table public\.line_automation_rules/i);
     expect(executable).not.toMatch(/\bdrop column\b/i);
     expect(executable).not.toMatch(/\btruncate\s+table\b/i);

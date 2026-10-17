@@ -155,26 +155,14 @@ begin
     select 1 from public.line_automation_rules
     where automation_type is null or id is null or timing_config is null or message_template is null
   ) then
-    begin
-      alter table public.line_automation_rules
-        alter column automation_type set not null;
-    exception when others then null;
-    end;
-    begin
-      alter table public.line_automation_rules
-        alter column id set not null;
-    exception when others then null;
-    end;
-    begin
-      alter table public.line_automation_rules
-        alter column timing_config set not null;
-    exception when others then null;
-    end;
-    begin
-      alter table public.line_automation_rules
-        alter column message_template set not null;
-    exception when others then null;
-    end;
+    alter table public.line_automation_rules
+      alter column automation_type set not null;
+    alter table public.line_automation_rules
+      alter column id set not null;
+    alter table public.line_automation_rules
+      alter column timing_config set not null;
+    alter table public.line_automation_rules
+      alter column message_template set not null;
   end if;
 end $$;
 
@@ -255,29 +243,25 @@ alter table public.line_automation_rules
       )
     );
 
+-- Required for Phase 1 ON CONFLICT (organization_id, automation_type).
+-- Fail the migration immediately if either unique cannot be created.
 do $$
 begin
   if not exists (
     select 1 from pg_constraint
     where conname = 'line_automation_rules_org_type_unique'
   ) then
-    begin
-      alter table public.line_automation_rules
-        add constraint line_automation_rules_org_type_unique
-        unique (organization_id, automation_type);
-    exception when others then null;
-    end;
+    alter table public.line_automation_rules
+      add constraint line_automation_rules_org_type_unique
+      unique (organization_id, automation_type);
   end if;
   if not exists (
     select 1 from pg_constraint
     where conname = 'line_automation_rules_id_unique'
   ) then
-    begin
-      alter table public.line_automation_rules
-        add constraint line_automation_rules_id_unique
-        unique (id);
-    exception when others then null;
-    end;
+    alter table public.line_automation_rules
+      add constraint line_automation_rules_id_unique
+      unique (id);
   end if;
 end $$;
 
@@ -302,6 +286,10 @@ returns trigger
 language plpgsql
 set search_path = public
 as $$
+declare
+  v_custom jsonb := '[]'::jsonb;
+  v_custom_ids text[] := '{}';
+  v_kept_custom text[] := '{}';
 begin
   if new.automation_type is null or btrim(new.automation_type) = '' then
     new.automation_type := new.automation_id;
@@ -324,6 +312,7 @@ begin
       new.message_template := coalesce(new.template, '');
     end if;
     if new.timing_config is distinct from old.timing_config then
+      -- Phase 1 owns timing_config, including customTimings.
       new.timing_ids := coalesce(
         array(
           select jsonb_array_elements_text(coalesce(new.timing_config->'selectedTimingIds', '[]'::jsonb))
@@ -331,9 +320,24 @@ begin
         '{}'::text[]
       );
     elsif new.timing_ids is distinct from old.timing_ids then
+      -- Phase 2B owns catalog timing_ids. Keep customTimings and custom selections.
+      if jsonb_typeof(new.timing_config->'customTimings') = 'array' then
+        v_custom := new.timing_config->'customTimings';
+      end if;
+      select coalesce(array_agg(btrim(c->>'id')), '{}'::text[])
+        into v_custom_ids
+      from jsonb_array_elements(v_custom) as c
+      where jsonb_typeof(c->'id') = 'string'
+        and btrim(c->>'id') <> '';
+      select coalesce(array_agg(s), '{}'::text[])
+        into v_kept_custom
+      from jsonb_array_elements_text(
+        coalesce(new.timing_config->'selectedTimingIds', '[]'::jsonb)
+      ) as s
+      where s = any (v_custom_ids);
       new.timing_config := jsonb_build_object(
-        'selectedTimingIds', to_jsonb(coalesce(new.timing_ids, '{}'::text[])),
-        'customTimings', coalesce(new.timing_config->'customTimings', '[]'::jsonb)
+        'selectedTimingIds', to_jsonb(coalesce(new.timing_ids, '{}'::text[]) || v_kept_custom),
+        'customTimings', v_custom
       );
     end if;
     if new.updated_by is distinct from old.updated_by then
@@ -547,6 +551,7 @@ begin
     raise exception 'invalid timing' using errcode = '22023';
   end if;
 
+  -- Preview signature is user_operational_staff_id(uuid). Pass organizations.id.
   v_staff_id := public.user_operational_staff_id(
     (select o.id from public.organizations o where o.app_id = p_organization_id)
   );
@@ -606,9 +611,18 @@ begin
       updated_at = now()
     where organization_id = p_organization_id
       and status = 'scheduled'
+      and timing_id in ('day_before_morning', 'hours_before_3')
       and (
         v_enabled is not true
-        or not (timing_id = any (coalesce(v_timing_ids, '{}'::text[])))
+        or not (
+          timing_id = any (
+            coalesce((
+              select array_agg(t)
+              from unnest(coalesce(v_timing_ids, '{}'::text[])) as t
+              where t in ('day_before_morning', 'hours_before_3')
+            ), '{}'::text[])
+          )
+        )
       );
   end if;
 
@@ -657,6 +671,7 @@ begin
     raise exception 'invalid automation' using errcode = '22023';
   end if;
 
+  -- Preview signature is user_operational_staff_id(uuid). Pass organizations.id.
   v_staff_id := public.user_operational_staff_id(
     (select o.id from public.organizations o where o.app_id = p_organization_id)
   );

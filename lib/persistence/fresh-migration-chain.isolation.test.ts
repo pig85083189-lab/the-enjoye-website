@@ -132,6 +132,8 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
     expect(rules).toMatch(/add column timing_config jsonb/);
     expect(rules).toMatch(/where automation_type is null/);
     expect(rules).toMatch(/unique \(organization_id, automation_type\)/);
+    expect(rules).toMatch(/Fail the migration immediately if either unique cannot be created/);
+    expect(executable).not.toMatch(/exception when others then null/i);
     expect(executable).not.toMatch(/drop table public\.line_automation_rules/i);
     expect(executable).not.toMatch(/\bdrop column\b/i);
     expect(executable).not.toMatch(/\btruncate\s+table\b/i);
