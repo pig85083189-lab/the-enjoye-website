@@ -48,6 +48,10 @@ describe("Phase 3C-1 TEST LINE one-shot push prep", () => {
       status: "unknown",
       hint: "••••",
       bindMethod: null,
+      valid: null,
+      ownerIdentityConfirmed: null,
+      blocked: "unknown",
+      revoked: "unknown",
     });
     expect(maskTestPushChannelId()).toBe("••••9238");
     expect(maskTestPushRecipient({ readable: true, rawUserId: "U0000000000000000000000000000abcd" })).toBe(

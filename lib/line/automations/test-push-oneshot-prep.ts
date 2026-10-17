@@ -61,31 +61,62 @@ export type TestPushRecipientSnapshot = {
   hint?: string | null;
   bindMethod?: string | null;
   approved?: boolean;
-  blocked?: boolean;
-  revoked?: boolean;
+  blocked?: boolean | null;
+  revoked?: boolean | null;
+  ownerIdentityConfirmed?: boolean | null;
   rawUserId?: string | null;
 };
 
 export type TestPushGrant = {
   id: string;
   organizationId: string;
+  channelId: string;
+  recipientHint: string;
   expiresAtMs: number;
   consumed: boolean;
   revoked: boolean;
 };
 
+export type TestPushClaimRow = {
+  claimKey: string;
+  grantId: string;
+  requestId: string;
+  organizationId: string;
+  channelId: string;
+  recipientHint: string;
+  status: TestPushAttemptStatus;
+};
+
 export type TestPushStore = {
   grants: TestPushGrant[];
-  claimedRequestIds: Set<string>;
-  inflightRequestIds: Set<string>;
+  claims: TestPushClaimRow[];
   events: Array<{
     requestId: string;
     grantId: string;
+    claimKey: string;
     status: TestPushAttemptStatus;
     reason: string;
     sentLine: false;
   }>;
 };
+
+export const REMOTE_ATOMIC_CLAIM_REQUIRED = true;
+
+export function serializeTestPushClaimKey(input: {
+  organizationId: string;
+  channelId: string;
+  grantId: string;
+  requestId: string;
+  recipientHint: string;
+}): string {
+  return [
+    input.organizationId.trim(),
+    input.channelId.trim(),
+    input.grantId.trim(),
+    input.requestId.trim(),
+    input.recipientHint.trim(),
+  ].join("|");
+}
 
 export function testPushPrepFlagsClosed(): boolean {
   return (
@@ -118,11 +149,19 @@ export function currentTestPushRecipientStatus(): {
   status: "unknown";
   hint: string;
   bindMethod: null;
+  valid: null;
+  ownerIdentityConfirmed: null;
+  blocked: "unknown";
+  revoked: "unknown";
 } {
   return {
     status: "unknown",
     hint: TEST_PUSH_RECIPIENT_UNKNOWN_HINT,
     bindMethod: null,
+    valid: null,
+    ownerIdentityConfirmed: null,
+    blocked: "unknown",
+    revoked: "unknown",
   };
 }
 
@@ -178,8 +217,11 @@ export function evaluateTestPushGates(input: {
     },
     {
       id: "explicit_test_recipient",
-      ok: recipient.readable === true && recipient.approved === true,
-      message: "必須是明確同意的測試接收者",
+      ok:
+        recipient.readable === true &&
+        recipient.approved === true &&
+        recipient.ownerIdentityConfirmed === true,
+      message: "必須是明確同意的測試接收者，且能確認是店長本人",
     },
     {
       id: "webhook_code_bind",
@@ -188,8 +230,8 @@ export function evaluateTestPushGates(input: {
     },
     {
       id: "not_blocked_or_revoked",
-      ok: recipient.readable === true && recipient.blocked !== true && recipient.revoked !== true,
-      message: "接收者不得封鎖或撤銷測試授權",
+      ok: recipient.readable === true && recipient.blocked === false && recipient.revoked === false,
+      message: "接收者封鎖與撤銷狀態必須明確為否；未知不得通過",
     },
     {
       id: "message_previewable",
@@ -224,22 +266,87 @@ export function evaluateTestPushGates(input: {
 export function createTestPushStore(): TestPushStore {
   return {
     grants: [],
-    claimedRequestIds: new Set(),
-    inflightRequestIds: new Set(),
+    claims: [],
     events: [],
   };
 }
 
-export function issueLocalTestPushGrant(store: TestPushStore, nowMs = Date.now()): TestPushGrant {
+export function issueLocalTestPushGrant(
+  store: TestPushStore,
+  nowMs = Date.now(),
+  over: Partial<TestPushGrant> = {},
+): TestPushGrant {
   const grant: TestPushGrant = {
-    id: `lpg-3c1-${store.grants.length + 1}`,
-    organizationId: TEST_PUSH_PREP_ORG_ID,
-    expiresAtMs: nowMs + 10 * 60 * 1000,
-    consumed: false,
-    revoked: false,
+    id: over.id ?? `lpg-3c2-${store.grants.length + 1}`,
+    organizationId: over.organizationId ?? TEST_PUSH_PREP_ORG_ID,
+    channelId: over.channelId ?? TEST_PUSH_PREP_CHANNEL_ID,
+    recipientHint: over.recipientHint ?? "••••ab12",
+    expiresAtMs: over.expiresAtMs ?? nowMs + 10 * 60 * 1000,
+    consumed: over.consumed ?? false,
+    revoked: over.revoked ?? false,
   };
   store.grants.push(grant);
   return grant;
+}
+
+export function claimPersistentTestPushGrant(
+  store: TestPushStore,
+  input: {
+    grantId: string;
+    requestId: string;
+    organizationId: string;
+    channelId: string;
+    recipientHint: string;
+    nowMs: number;
+  },
+):
+  | { ok: true; broadcastId: string; requestId: string; claimKey: string }
+  | { ok: false; reason: "duplicate" | "send_closed"; message: string } {
+  const organizationId = input.organizationId.trim();
+  const channelId = input.channelId.trim();
+  const recipientHint = input.recipientHint.trim();
+  const requestId = input.requestId.trim();
+  const grant = store.grants.find((row) => row.id === input.grantId);
+  if (!grant || grant.revoked) {
+    return { ok: false, reason: "send_closed", message: "測試授權已撤銷" };
+  }
+  if (grant.expiresAtMs <= input.nowMs) {
+    return { ok: false, reason: "send_closed", message: "測試授權已過期" };
+  }
+  if (grant.organizationId !== organizationId || organizationId !== TEST_PUSH_PREP_ORG_ID) {
+    return { ok: false, reason: "send_closed", message: "跨店授權不可使用" };
+  }
+  if (grant.channelId !== channelId || channelId !== TEST_PUSH_PREP_CHANNEL_ID) {
+    return { ok: false, reason: "send_closed", message: "Channel 與單次授權不一致" };
+  }
+  if (grant.recipientHint !== recipientHint || !recipientHint.startsWith("••••")) {
+    return { ok: false, reason: "send_closed", message: "接收者與單次授權不一致" };
+  }
+  const claimKey = serializeTestPushClaimKey({
+    organizationId,
+    channelId,
+    grantId: grant.id,
+    requestId,
+    recipientHint,
+  });
+  const replay =
+    store.claims.some((row) => row.requestId === requestId) ||
+    store.claims.some((row) => row.grantId === grant.id) ||
+    store.events.some((row) => row.requestId === requestId);
+  if (replay || grant.consumed) {
+    return { ok: false, reason: "duplicate", message: "同一請求不可重複送出" };
+  }
+  grant.consumed = true;
+  store.claims.push({
+    claimKey,
+    grantId: grant.id,
+    requestId,
+    organizationId,
+    channelId,
+    recipientHint,
+    status: "claimed",
+  });
+  return { ok: true, broadcastId: `lts-${grant.id}`, requestId, claimKey };
 }
 
 export function passingTestPushSnapshot(nowMs = Date.now()): Parameters<typeof evaluateTestPushGates>[0] {
@@ -256,11 +363,14 @@ export function passingTestPushSnapshot(nowMs = Date.now()): Parameters<typeof e
       approved: true,
       blocked: false,
       revoked: false,
+      ownerIdentityConfirmed: true,
     },
     textBody: TEST_PUSH_PREVIEW_TEXT,
     grant: {
-      id: "lpg-3c1-fixture",
+      id: "lpg-3c2-fixture",
       organizationId: TEST_PUSH_PREP_ORG_ID,
+      channelId: TEST_PUSH_PREP_CHANNEL_ID,
+      recipientHint: "••••ab12",
       expiresAtMs: nowMs + 60_000,
       consumed: false,
       revoked: false,

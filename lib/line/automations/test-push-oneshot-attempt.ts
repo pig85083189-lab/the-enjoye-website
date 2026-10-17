@@ -1,55 +1,49 @@
 /**
  * Isolated one-shot TEST push attempt. Server/tests only.
- * Reuses claim pipeline + push adapter. Never opens SEND.
+ * Persistent claim binds grant + requestId + recipient + Channel.
+ * Never opens SEND. Local store is not a remote guarantee.
  */
-import { interpretLineBroadcastApiOutcome } from "@/lib/line/line-command";
+import { interpretLineTestPushApiOutcome } from "@/lib/line/line-http-error";
 import { executeLineTestPushHttp } from "@/lib/line/line-push-adapter";
 import { runClaimedLineBroadcastSend } from "@/lib/line/line-send-pipeline";
 import {
+  TEST_PUSH_PREP_CHANNEL_ID,
+  TEST_PUSH_PREP_ORG_ID,
   TEST_PUSH_PREVIEW_TEXT,
+  claimPersistentTestPushGrant,
   type TestPushAttemptStatus,
   type TestPushStore,
 } from "@/lib/line/automations/test-push-oneshot-prep";
 
-export function shouldRetryTestPush(status: TestPushAttemptStatus): boolean {
-  return status !== "accepted" && status !== "pending_confirmation";
-}
-
-function claimLocalGrant(
-  store: TestPushStore,
-  grantId: string,
-  requestId: string,
-  nowMs: number,
-): { ok: true; broadcastId: string; requestId: string } | { ok: false; reason: "duplicate" | "send_closed"; message: string } {
-  if (store.claimedRequestIds.has(requestId) || store.inflightRequestIds.has(requestId)) {
-    return { ok: false, reason: "duplicate", message: "同一請求不可重複送出" };
-  }
-  const grant = store.grants.find((row) => row.id === grantId);
-  if (!grant || grant.revoked) {
-    return { ok: false, reason: "send_closed", message: "測試授權已撤銷" };
-  }
-  if (grant.expiresAtMs <= nowMs) {
-    return { ok: false, reason: "send_closed", message: "測試授權已過期" };
-  }
-  if (grant.consumed) {
-    return { ok: false, reason: "duplicate", message: "單次授權已經使用" };
-  }
-  store.inflightRequestIds.add(requestId);
-  grant.consumed = true;
-  store.claimedRequestIds.add(requestId);
-  return { ok: true, broadcastId: `lts-${grantId}`, requestId };
+export function shouldRetryTestPush(_status: TestPushAttemptStatus): false {
+  return false;
 }
 
 export async function runIsolatedTestPushAttempt(input: {
   store: TestPushStore;
   grantId: string;
   requestId: string;
+  organizationId?: string;
+  channelId?: string;
+  recipientHint?: string;
   nowMs?: number;
   http?: { timedOut?: boolean; httpOk?: boolean; httpStatus?: number | null };
 }): Promise<{ status: TestPushAttemptStatus; reason: string; sentLine: false; retried: false }> {
   const nowMs = input.nowMs ?? Date.now();
+  const organizationId = (input.organizationId ?? TEST_PUSH_PREP_ORG_ID).trim();
+  const channelId = (input.channelId ?? TEST_PUSH_PREP_CHANNEL_ID).trim();
+  const grant = input.store.grants.find((row) => row.id === input.grantId);
+  const recipientHint = (input.recipientHint ?? grant?.recipientHint ?? "").trim();
   const pipeline = await runClaimedLineBroadcastSend({
-    claim: async () => claimLocalGrant(input.store, input.grantId, input.requestId, nowMs),
+    claim: async () =>
+      claimPersistentTestPushGrant(input.store, {
+        grantId: input.grantId,
+        requestId: input.requestId,
+        organizationId,
+        channelId,
+        recipientHint,
+        nowMs,
+      }),
     send: async () => {
       if (input.http) {
         return {
@@ -68,24 +62,25 @@ export async function runIsolatedTestPushAttempt(input: {
       });
     },
     complete: async (outcome) => {
-      input.store.inflightRequestIds.delete(input.requestId);
+      const claim = input.store.claims.find((row) => row.requestId === input.requestId);
       const status: TestPushAttemptStatus =
         outcome.apiResult === "accepted"
           ? "accepted"
           : outcome.apiResult === "pending_confirmation"
             ? "pending_confirmation"
             : "failed";
+      if (claim) claim.status = status;
       input.store.events.push({
         requestId: input.requestId,
         grantId: input.grantId,
+        claimKey: claim?.claimKey ?? "",
         status,
         reason: outcome.message,
         sentLine: false,
       });
     },
-    interpret: interpretLineBroadcastApiOutcome,
+    interpret: interpretLineTestPushApiOutcome,
   });
-  input.store.inflightRequestIds.delete(input.requestId);
   const status: TestPushAttemptStatus = pipeline.ok
     ? "accepted"
     : pipeline.reason === "pending_confirmation"
@@ -97,6 +92,7 @@ export async function runIsolatedTestPushAttempt(input: {
     input.store.events.push({
       requestId: input.requestId,
       grantId: input.grantId,
+      claimKey: input.store.claims.find((row) => row.requestId === input.requestId)?.claimKey ?? "",
       status,
       reason: pipeline.message,
       sentLine: false,

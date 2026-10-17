@@ -8,6 +8,7 @@ import { LineAutomationCard } from "@/features/line/automations/LineAutomationCa
 import { LineAutomationPhonePreview } from "@/features/line/automations/LineAutomationPhonePreview";
 import { LineAutomationRuleEditor } from "@/features/line/automations/LineAutomationRuleEditor";
 import { LineAppointmentReminderDryRunCard } from "@/features/line/automations/LineAppointmentReminderDryRunCard";
+import { LineTestPushAcceptanceCard } from "@/features/line/automations/LineTestPushAcceptanceCard";
 import { LineTestPushPrepCard } from "@/features/line/automations/LineTestPushPrepCard";
 import { LineAppointmentReminderPlanCard } from "@/features/line/automations/LineAppointmentReminderPlanCard";
 import { LineAutomationMonthlyStats } from "@/features/line/automations/LineAutomationStats";
@@ -266,6 +267,7 @@ export function LineAutomationsWorkspace() {
           <LineAppointmentReminderPlanCard enabled={drafts.appointment_reminder.enabled} />
           <LineAppointmentReminderDryRunCard />
           <LineTestPushPrepCard />
+          <LineTestPushAcceptanceCard />
           <LineOwnerSelfReminderCard />
         </>
       ) : null}
