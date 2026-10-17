@@ -8,6 +8,7 @@ Do not apply them to Preview or Production until Owner explicitly approves that 
 | `20261016120000_line_owner_self_reminder_grant_production.sql` | Production THE ENJOYE Owner-self grant / oneshot / quota. Phase 2F-1 draft only. | No |
 | `PHASE_2F2_READONLY_FINDINGS.md` | Phase 2F-2 read-only webhook / bind / SQL verification. | N/A |
 | `PHASE_2F3_WEBHOOK_CUTOVER_PLAN.md` | Phase 2F-3 cutover / rollback plan. Webhook URL not changed. | N/A |
+| Phase 2F-4 | Enjoye Owner bind-start UI prep. Issue/bind stay closed. | N/A |
 
 Phase 2F-1 does not arm Production, does not insert grant/oneshot rows on Preview or Production, and does not call LINE.
 
