@@ -7,8 +7,10 @@ import {
   mergeStoredAutomationRules,
   parseLineAutomationTimingConfig,
   SET_LINE_AUTOMATION_ENABLED_RPC,
+  shouldCreateDefaultRuleOnEnableError,
   UPSERT_LINE_AUTOMATION_RULE_RPC,
   validateLineAutomationRuleInput,
+  verifiedDraftFromStoredRule,
   type LineAutomationRulePublic,
 } from "@/lib/line/automations/rules";
 import { createDefaultLineAutomationDraft } from "@/lib/line/automations/draft";
@@ -75,6 +77,16 @@ function asPublicRule(
     timingConfig,
     template,
   };
+}
+
+function draftFromRpcPayload(
+  payload: unknown,
+  organizationId: string,
+): LineAutomationDraft | null {
+  if (!payload || typeof payload !== "object") return null;
+  const rule = asPublicRule(payload as Record<string, unknown>, organizationId);
+  if (!rule) return null;
+  return verifiedDraftFromStoredRule(rule);
 }
 
 function sendClosedGuard(): LineAutomationActionResult<never> | null {
@@ -154,10 +166,14 @@ export async function saveLineAutomationRule(input: {
     if (saved.error) {
       return { ok: false, reason: "error", message: "自動通知設定儲存失敗" };
     }
+    const stored = draftFromRpcPayload(saved.data, verified.organizationId);
+    if (!stored) {
+      return { ok: false, reason: "error", message: "自動通知設定儲存失敗" };
+    }
     return {
       ok: true,
       message: "設定已儲存。尚未發送 LINE。",
-      data: validated.draft,
+      data: stored,
     };
   } catch {
     return { ok: false, reason: "error", message: "自動通知設定儲存失敗" };
@@ -184,8 +200,11 @@ export async function setLineAutomationEnabled(input: {
       p_enabled: input.enabled === true,
     });
     if (updated.error) {
+      if (!shouldCreateDefaultRuleOnEnableError(updated.error)) {
+        return { ok: false, reason: "error", message: "無法更新啟用狀態" };
+      }
       const fallback = createDefaultLineAutomationDraft(input.automationType);
-      const created = await saveLineAutomationRule({
+      return saveLineAutomationRule({
         organizationId: verified.organizationId,
         automationType: input.automationType,
         enabled: input.enabled === true,
@@ -193,20 +212,15 @@ export async function setLineAutomationEnabled(input: {
         selectedTimingIds: fallback.selectedTimingIds,
         customTimings: fallback.customTimings,
       });
-      return created;
     }
-    const payload = updated.data && typeof updated.data === "object" ? updated.data : {};
-    const row = payload as { enabled?: unknown; automation_type?: unknown };
+    const stored = draftFromRpcPayload(updated.data, verified.organizationId);
+    if (!stored) {
+      return { ok: false, reason: "error", message: "無法更新啟用狀態" };
+    }
     return {
       ok: true,
       message: input.enabled ? "已標記為啟用。尚未發送 LINE。" : "已停用此通知。",
-      data: {
-        ...createDefaultLineAutomationDraft(input.automationType),
-        enabled: row.enabled === true,
-        id: isLineAutomationId(String(row.automation_type))
-          ? (row.automation_type as LineAutomationId)
-          : input.automationType,
-      },
+      data: stored,
     };
   } catch {
     return { ok: false, reason: "error", message: "無法更新啟用狀態" };

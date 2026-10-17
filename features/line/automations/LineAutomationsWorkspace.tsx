@@ -28,8 +28,11 @@ import {
   formatLineAutomationStat,
   resetLineAutomationDraftsOnOrganizationChange,
 } from "@/lib/line/automations/draft";
-import { countEnabledAutomationRules } from "@/lib/line/automations/rules";
-import type { LineAutomationId } from "@/lib/line/automations/types";
+import {
+  countEnabledAutomationRules,
+  shouldApplyLineAutomationClientResult,
+} from "@/lib/line/automations/rules";
+import type { LineAutomationDraft, LineAutomationId } from "@/lib/line/automations/types";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 export function LineAutomationsWorkspace() {
@@ -38,8 +41,30 @@ export function LineAutomationsWorkspace() {
   const [drafts, setDrafts] = useState(createDefaultLineAutomationDrafts);
   const [editingId, setEditingId] = useState<LineAutomationId | null>(null);
   const previousOrganizationId = useRef<string | null>(null);
+  const activeOrganizationId = useRef(organization.id);
   const pendingToggle = useRef<LineAutomationId | null>(null);
   const stats = createEmptyLineAutomationStats();
+  activeOrganizationId.current = organization.id;
+
+  function applyIfCurrentOrganization(
+    requestOrganizationId: string | null | undefined,
+    next: LineAutomationDraft | Record<LineAutomationId, LineAutomationDraft>,
+    mode: "draft" | "drafts",
+  ) {
+    if (
+      !shouldApplyLineAutomationClientResult({
+        requestOrganizationId,
+        activeOrganizationId: activeOrganizationId.current,
+      })
+    ) {
+      return;
+    }
+    if (mode === "drafts") {
+      setDrafts(next as Record<LineAutomationId, LineAutomationDraft>);
+      return;
+    }
+    setDrafts((current) => applyLineAutomationEditor(current, next as LineAutomationDraft));
+  }
 
   useEffect(() => {
     const reset = resetLineAutomationDraftsOnOrganizationChange({
@@ -48,16 +73,19 @@ export function LineAutomationsWorkspace() {
       drafts,
     });
     previousOrganizationId.current = organization.id;
+    activeOrganizationId.current = organization.id;
     if (reset.reset) {
       setDrafts(reset.drafts);
       setEditingId(null);
+      pendingToggle.current = null;
     }
     if (!allowed) return;
+    const requestOrganizationId = organization.id;
     let cancelled = false;
-    void loadLineAutomationRules(organization.id).then((result) => {
+    void loadLineAutomationRules(requestOrganizationId).then((result) => {
       if (cancelled) return;
       if (!result.ok || !result.data) return;
-      setDrafts(result.data.drafts);
+      applyIfCurrentOrganization(requestOrganizationId, result.data.drafts, "drafts");
     });
     return () => {
       cancelled = true;
@@ -77,21 +105,16 @@ export function LineAutomationsWorkspace() {
 
   async function handleToggle(id: LineAutomationId, enabled: boolean) {
     if (pendingToggle.current) return;
+    const requestOrganizationId = organization.id;
     pendingToggle.current = id;
     const result = await setLineAutomationEnabled({
-      organizationId: organization.id,
+      organizationId: requestOrganizationId,
       automationType: id,
       enabled,
     });
-    pendingToggle.current = null;
-    if (!result.ok) return;
-    setDrafts((current) => ({
-      ...current,
-      [id]: {
-        ...current[id],
-        enabled: result.data?.enabled === true,
-      },
-    }));
+    if (pendingToggle.current === id) pendingToggle.current = null;
+    if (!result.ok || !result.data) return;
+    applyIfCurrentOrganization(requestOrganizationId, result.data, "draft");
   }
 
   return (
@@ -161,7 +184,9 @@ export function LineAutomationsWorkspace() {
           officialName={officialName}
           organizationId={organization.id}
           onClose={() => setEditingId(null)}
-          onApply={(next) => setDrafts((current) => applyLineAutomationEditor(current, next))}
+          onApply={(next, requestOrganizationId) =>
+            applyIfCurrentOrganization(requestOrganizationId, next, "draft")
+          }
         />
       ) : null}
     </div>

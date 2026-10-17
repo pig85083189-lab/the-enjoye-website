@@ -61,6 +61,112 @@ for select
 to authenticated
 using (public.user_is_org_owner(organization_id));
 
+create or replace function public.line_automation_timing_config_valid(
+  p_automation_type text,
+  p_timing_config jsonb
+)
+returns boolean
+language plpgsql
+immutable
+set search_path = public
+as $$
+declare
+  v_selected jsonb;
+  v_custom jsonb;
+  v_allowed text[];
+  v_selected_ids text[] := '{}';
+  v_custom_ids text[] := '{}';
+  v_custom_labels text[] := '{}';
+  v_item jsonb;
+  v_id text;
+  v_label text;
+  i int;
+begin
+  if p_timing_config is null or jsonb_typeof(p_timing_config) <> 'object' then
+    return false;
+  end if;
+
+  v_selected := p_timing_config->'selectedTimingIds';
+  v_custom := p_timing_config->'customTimings';
+  if jsonb_typeof(v_selected) is distinct from 'array' then
+    return false;
+  end if;
+  if v_custom is null then
+    v_custom := '[]'::jsonb;
+  elsif jsonb_typeof(v_custom) is distinct from 'array' then
+    return false;
+  end if;
+  if jsonb_array_length(v_selected) < 1 then
+    return false;
+  end if;
+  if jsonb_array_length(v_custom) > 3 then
+    return false;
+  end if;
+
+  v_allowed := case p_automation_type
+    when 'appointment_reminder' then array['day_before_morning', 'hours_before_3']
+    when 'birthday_greeting' then array['birthday_morning', 'days_before_3']
+    when 'holiday_greeting' then array['cny', 'mid_autumn', 'christmas']
+    when 'satisfaction_survey' then array['hours_after_2', 'days_after_1']
+    when 'coupon_expiry' then array['days_before_7', 'days_before_3', 'days_before_1']
+    else null
+  end;
+  if v_allowed is null then
+    return false;
+  end if;
+
+  if jsonb_array_length(v_custom) > 0 then
+    for i in 0 .. jsonb_array_length(v_custom) - 1 loop
+      v_item := v_custom->i;
+      if jsonb_typeof(v_item) <> 'object' then
+        return false;
+      end if;
+      if jsonb_typeof(v_item->'id') is distinct from 'string'
+        or jsonb_typeof(v_item->'label') is distinct from 'string' then
+        return false;
+      end if;
+      if coalesce(v_item->>'builtin', 'false') not in ('false', '0') then
+        return false;
+      end if;
+      v_id := btrim(v_item->>'id');
+      v_label := btrim(v_item->>'label');
+      if v_id = '' or v_label = '' then
+        return false;
+      end if;
+      if v_id = any(v_allowed) or v_id = any(v_custom_ids) or v_label = any(v_custom_labels) then
+        return false;
+      end if;
+      v_custom_ids := array_append(v_custom_ids, v_id);
+      v_custom_labels := array_append(v_custom_labels, v_label);
+    end loop;
+  end if;
+
+  for i in 0 .. jsonb_array_length(v_selected) - 1 loop
+    if jsonb_typeof(v_selected->i) is distinct from 'string' then
+      return false;
+    end if;
+    v_id := btrim(v_selected->>i);
+    if v_id = '' or v_id = any(v_selected_ids) then
+      return false;
+    end if;
+    if not (v_id = any(v_allowed) or v_id = any(v_custom_ids)) then
+      return false;
+    end if;
+    v_selected_ids := array_append(v_selected_ids, v_id);
+  end loop;
+
+  return true;
+end;
+$$;
+
+comment on function public.line_automation_timing_config_valid(text, jsonb) is
+  'Validates automation timing_config against the catalog and custom-timing limits. Does not send LINE.';
+
+revoke all on function public.line_automation_timing_config_valid(text, jsonb)
+  from public, anon;
+grant execute on function public.line_automation_timing_config_valid(text, jsonb)
+  to authenticated;
+
 create or replace function public.upsert_line_automation_rule(
   p_organization_id text,
   p_automation_type text,
@@ -76,7 +182,7 @@ as $$
 declare
   v_uid uuid := auth.uid();
   v_staff_id text;
-  v_id text;
+  v_row public.line_automation_rules%rowtype;
   v_enabled boolean := coalesce(p_enabled, false);
 begin
   if v_uid is null then
@@ -99,10 +205,7 @@ begin
     or length(p_message_template) > 5000 then
     raise exception 'invalid template' using errcode = '22023';
   end if;
-  if p_timing_config is null
-    or jsonb_typeof(p_timing_config) <> 'object'
-    or jsonb_typeof(p_timing_config->'selectedTimingIds') is distinct from 'array'
-    or jsonb_array_length(p_timing_config->'selectedTimingIds') < 1 then
+  if not public.line_automation_timing_config_valid(p_automation_type, p_timing_config) then
     raise exception 'invalid timing' using errcode = '22023';
   end if;
 
@@ -134,13 +237,15 @@ begin
     message_template = excluded.message_template,
     updated_at = now(),
     updated_by = excluded.updated_by
-  returning id into v_id;
+  returning * into v_row;
 
   return jsonb_build_object(
-    'id', v_id,
-    'organization_id', p_organization_id,
-    'automation_type', p_automation_type,
-    'enabled', v_enabled
+    'id', v_row.id,
+    'organization_id', v_row.organization_id,
+    'automation_type', v_row.automation_type,
+    'enabled', v_row.enabled,
+    'timing_config', v_row.timing_config,
+    'message_template', v_row.message_template
   );
 end;
 $$;
@@ -205,7 +310,9 @@ begin
     'id', v_row.id,
     'organization_id', v_row.organization_id,
     'automation_type', v_row.automation_type,
-    'enabled', v_row.enabled
+    'enabled', v_row.enabled,
+    'timing_config', v_row.timing_config,
+    'message_template', v_row.message_template
   );
 end;
 $$;

@@ -14,7 +14,10 @@ import {
   LINE_AUTOMATION_TIMING_LABEL,
 } from "@/lib/line/automations/copy";
 import { lineAutomationTimingsForDraft, toggleLineAutomationTiming } from "@/lib/line/automations/draft";
-import { LINE_AUTOMATION_TEMPLATE_MAX } from "@/lib/line/automations/rules";
+import {
+  LINE_AUTOMATION_TEMPLATE_MAX,
+  shouldApplyLineAutomationClientResult,
+} from "@/lib/line/automations/rules";
 import type { LineAutomationDefinition, LineAutomationDraft } from "@/lib/line/automations/types";
 
 const FOCUSABLE =
@@ -33,9 +36,10 @@ export function LineAutomationRuleEditor({
   officialName?: string;
   organizationId?: string;
   onClose: () => void;
-  onApply?: (next: LineAutomationDraft) => void;
+  onApply?: (next: LineAutomationDraft, requestOrganizationId: string) => void;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const aliveRef = useRef(true);
   const [localDraft, setLocalDraft] = useState(draft);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -50,6 +54,13 @@ export function LineAutomationRuleEditor({
   useEffect(() => {
     setLocalDraft(draft);
   }, [draft]);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, [organizationId]);
 
   useEffect(() => {
     const node = dialogRef.current;
@@ -90,23 +101,33 @@ export function LineAutomationRuleEditor({
 
   async function handleSave() {
     if (!organizationId || saving) return;
+    const requestOrganizationId = organizationId;
     setSaving(true);
     const result = await saveLineAutomationRule({
-      organizationId,
+      organizationId: requestOrganizationId,
       automationType: localDraft.id,
       enabled: localDraft.enabled,
       template: localDraft.template,
       selectedTimingIds: localDraft.selectedTimingIds,
       customTimings: localDraft.customTimings,
     });
+    if (!aliveRef.current) return;
     setSaving(false);
+    if (
+      !shouldApplyLineAutomationClientResult({
+        requestOrganizationId,
+        activeOrganizationId: organizationId,
+      })
+    ) {
+      return;
+    }
     if (!result.ok) {
       setStatusMessage(result.message);
       return;
     }
     if (result.data) {
       setLocalDraft(result.data);
-      onApply?.(result.data);
+      onApply?.(result.data, requestOrganizationId);
     }
     setStatusMessage(result.message);
   }

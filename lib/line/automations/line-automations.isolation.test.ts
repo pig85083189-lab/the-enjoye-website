@@ -275,7 +275,7 @@ describe("LINE automation safety", () => {
     expect(joined).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
     expect(joined).not.toMatch(/localStorage|indexedDB/);
     expect(source("features/line/automations/LineAutomationsWorkspace.tsx")).toMatch(
-      /loadLineAutomationRules|saveLineAutomationRule|setLineAutomationEnabled/,
+      /loadLineAutomationRules|saveLineAutomationRule|setLineAutomationEnabled|shouldApplyLineAutomationClientResult/,
     );
     expect(source("features/line/automations/LineAutomationsWorkspace.tsx")).not.toMatch(
       /loadLineOfficialAccountAction|loadLineBroadcastPrepareAction|LineTestPush|DryRun|OwnerSelf|PlanCard/,

@@ -11,14 +11,21 @@ import { LINE_AUTOMATION_SAVE_LABEL } from "@/lib/line/automations/copy";
 import { createDefaultLineAutomationDraft, createDefaultLineAutomationDrafts } from "@/lib/line/automations/draft";
 import { LINE_AUTOMATION_SEND_OPEN } from "@/lib/line/automations/production-safe-flags";
 import {
+  LINE_AUTOMATION_MISSING_RULE_CODE,
+  LINE_AUTOMATION_MISSING_RULE_MESSAGE,
   LINE_AUTOMATION_TEMPLATE_MAX,
   SET_LINE_AUTOMATION_ENABLED_RPC,
   UPSERT_LINE_AUTOMATION_RULE_RPC,
   countEnabledAutomationRules,
   draftFromStoredRule,
   evaluateLineAutomationOwnerAccess,
+  isMissingLineAutomationRuleError,
   mergeStoredAutomationRules,
+  shouldApplyLineAutomationClientResult,
+  shouldCreateDefaultRuleOnEnableError,
   validateLineAutomationRuleInput,
+  validateLineAutomationTimingConfig,
+  verifiedDraftFromStoredRule,
 } from "@/lib/line/automations/rules";
 import { LINE_AUTOMATION_RULES_MIGRATION_FILE } from "@/lib/persistence/schema-contract";
 import { ORG_ENJOYE_ID, ORG_LUMIERE_ID } from "@/lib/tenant/constants";
@@ -95,8 +102,179 @@ describe("LINE automation rule persistence", () => {
         selectedTimingIds: ["not_a_catalog_timing"],
       }).ok,
     ).toBe(false);
+    expect(
+      validateLineAutomationRuleInput({
+        ...base,
+        selectedTimingIds: ["day_before_morning", "birthday_morning"],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateLineAutomationRuleInput({
+        ...base,
+        selectedTimingIds: ["day_before_morning", "day_before_morning"],
+      }).ok,
+    ).toBe(false);
     const enabled = validateLineAutomationRuleInput({ ...base, enabled: true });
     expect(enabled.ok && enabled.draft.enabled).toBe(true);
+  });
+
+  it("rejects invalid, duplicate, or foreign timing settings", () => {
+    const validCustom = { id: "custom_1_night", label: "前一晚", builtin: false as const };
+    expect(
+      validateLineAutomationTimingConfig({
+        automationType: "appointment_reminder",
+        selectedTimingIds: ["day_before_morning"],
+        customTimings: [],
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateLineAutomationTimingConfig({
+        automationType: "appointment_reminder",
+        selectedTimingIds: ["day_before_morning", validCustom.id],
+        customTimings: [validCustom],
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateLineAutomationTimingConfig({
+        automationType: "appointment_reminder",
+        selectedTimingIds: "day_before_morning",
+        customTimings: [],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateLineAutomationTimingConfig({
+        automationType: "appointment_reminder",
+        selectedTimingIds: ["day_before_morning"],
+        customTimings: { id: "custom_1_night" },
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateLineAutomationTimingConfig({
+        automationType: "appointment_reminder",
+        selectedTimingIds: ["birthday_morning"],
+        customTimings: [],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateLineAutomationTimingConfig({
+        automationType: "appointment_reminder",
+        selectedTimingIds: ["hours_before_3", "hours_before_3"],
+        customTimings: [],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateLineAutomationTimingConfig({
+        automationType: "appointment_reminder",
+        selectedTimingIds: ["day_before_morning"],
+        customTimings: [{ id: "custom_1_night", label: "前一晚", builtin: true }],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateLineAutomationTimingConfig({
+        automationType: "appointment_reminder",
+        selectedTimingIds: ["day_before_morning"],
+        customTimings: [{ id: "hours_before_3", label: "覆寫內建", builtin: false }],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateLineAutomationTimingConfig({
+        automationType: "appointment_reminder",
+        selectedTimingIds: ["custom_1_night"],
+        customTimings: [
+          validCustom,
+          { id: "custom_1_night", label: "重複", builtin: false },
+        ],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateLineAutomationTimingConfig({
+        automationType: "appointment_reminder",
+        selectedTimingIds: ["day_before_morning"],
+        customTimings: [
+          { id: "custom_1", label: "一", builtin: false },
+          { id: "custom_2", label: "二", builtin: false },
+          { id: "custom_3", label: "三", builtin: false },
+          { id: "custom_4", label: "四", builtin: false },
+        ],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("only treats a confirmed missing rule as create-default, and keeps stored drafts intact", () => {
+    expect(
+      isMissingLineAutomationRuleError({
+        code: LINE_AUTOMATION_MISSING_RULE_CODE,
+        message: LINE_AUTOMATION_MISSING_RULE_MESSAGE,
+      }),
+    ).toBe(true);
+    expect(shouldCreateDefaultRuleOnEnableError({ code: "P0002", message: "missing rule" })).toBe(
+      true,
+    );
+    expect(shouldCreateDefaultRuleOnEnableError({ code: "42501", message: "unauthorized" })).toBe(
+      false,
+    );
+    expect(shouldCreateDefaultRuleOnEnableError({ code: "22023", message: "invalid timing" })).toBe(
+      false,
+    );
+    expect(shouldCreateDefaultRuleOnEnableError({ message: "Failed to fetch" })).toBe(false);
+    expect(shouldCreateDefaultRuleOnEnableError({ code: "42P01", message: "missing rule" })).toBe(
+      false,
+    );
+    expect(shouldCreateDefaultRuleOnEnableError(null)).toBe(false);
+
+    const stored = verifiedDraftFromStoredRule({
+      organizationId: ORG_ENJOYE_ID,
+      automationType: "appointment_reminder",
+      enabled: true,
+      timingConfig: {
+        selectedTimingIds: ["hours_before_3"],
+        customTimings: [],
+      },
+      template: "已儲存的預約提醒",
+    });
+    expect(stored).toEqual({
+      id: "appointment_reminder",
+      enabled: true,
+      selectedTimingIds: ["hours_before_3"],
+      customTimings: [],
+      template: "已儲存的預約提醒",
+    });
+    expect(
+      verifiedDraftFromStoredRule({
+        organizationId: ORG_ENJOYE_ID,
+        automationType: "appointment_reminder",
+        enabled: true,
+        timingConfig: { selectedTimingIds: ["birthday_morning"], customTimings: [] },
+        template: "錯誤時間",
+      }),
+    ).toBeNull();
+  });
+
+  it("ignores stale client results after the organization changes", () => {
+    expect(
+      shouldApplyLineAutomationClientResult({
+        requestOrganizationId: ORG_ENJOYE_ID,
+        activeOrganizationId: ORG_ENJOYE_ID,
+      }),
+    ).toBe(true);
+    expect(
+      shouldApplyLineAutomationClientResult({
+        requestOrganizationId: ORG_ENJOYE_ID,
+        activeOrganizationId: ORG_LUMIERE_ID,
+      }),
+    ).toBe(false);
+    expect(
+      shouldApplyLineAutomationClientResult({
+        requestOrganizationId: ORG_LUMIERE_ID,
+        activeOrganizationId: ORG_ENJOYE_ID,
+      }),
+    ).toBe(false);
+    expect(
+      shouldApplyLineAutomationClientResult({
+        requestOrganizationId: "",
+        activeOrganizationId: ORG_ENJOYE_ID,
+      }),
+    ).toBe(false);
   });
 
   it("keeps organizations isolated and defaults invalid stored rows off", () => {
@@ -189,7 +367,20 @@ describe("LINE automation rule persistence", () => {
     expect(sql).toMatch(/revoke all on public\.line_automation_rules/);
     expect(sql).toMatch(/upsert_line_automation_rule/);
     expect(sql).toMatch(/set_line_automation_enabled/);
+    expect(sql).toMatch(/line_automation_timing_config_valid/);
+    expect(sql).toMatch(/day_before_morning/);
+    expect(sql).toMatch(/birthday_morning/);
+    expect(sql).toMatch(/jsonb_array_length\(v_custom\) > 3/);
+    expect(sql).toMatch(/message_template/);
     expect(sql).toMatch(/Do not apply on Production until Owner confirms/);
+    expect(actions).toMatch(/shouldCreateDefaultRuleOnEnableError/);
+    expect(actions).toMatch(/draftFromRpcPayload|verifiedDraftFromStoredRule/);
+    expect(source("features/line/automations/LineAutomationsWorkspace.tsx")).toMatch(
+      /shouldApplyLineAutomationClientResult/,
+    );
+    expect(source("features/line/automations/LineAutomationRuleEditor.tsx")).toMatch(
+      /shouldApplyLineAutomationClientResult/,
+    );
     expect(sql).not.toMatch(/line_broadcasts|line_official_account_secrets|api\.line\.me/);
     expect(sql).not.toMatch(/alter table public\.line_broadcasts|create table public\.line_broadcasts/);
     expect(actions).toMatch(/loadLineAutomationRules/);
