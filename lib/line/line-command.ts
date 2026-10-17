@@ -58,6 +58,7 @@ export const CONSUME_LINE_CUSTOMER_BIND_PUBLIC_RPC =
   "consume_line_customer_bind_challenge_public";
 export const UNBIND_LINE_CUSTOMER_BINDING_RPC = "unbind_line_customer_binding";
 export const CONFIRM_LINE_CUSTOMER_BINDING_RPC = "confirm_line_customer_binding";
+export const CANCEL_LINE_CUSTOMER_REBIND_RPC = "cancel_line_customer_rebind";
 export const READ_LINE_CUSTOMER_BINDINGS_RPC = "read_line_customer_bindings";
 export const UNBIND_LINE_OWNER_RECIPIENT_RPC = "unbind_line_owner_recipient";
 export const OWNER_READ_LINE_RECIPIENT_CIPHER_RPC = "owner_read_line_recipient_user_id_cipher";

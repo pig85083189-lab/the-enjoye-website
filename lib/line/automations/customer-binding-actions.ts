@@ -3,6 +3,7 @@
 import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import { evaluateLineAutomationOwnerAccess } from "@/lib/line/automations/rules";
 import {
+  CANCEL_LINE_CUSTOMER_REBIND_RPC,
   CONFIRM_LINE_CUSTOMER_BINDING_RPC,
   evaluateLineCustomerBindStart,
   mapLineCustomerBindingRows,
@@ -178,6 +179,32 @@ export async function confirmLineCustomerBindingAction(input: {
     return { ok: false, reason: "error", message: "無法確認顧客 LINE 綁定", sentLine: false };
   }
   return { ok: true, message: "已現場確認並啟用顧客 LINE 綁定", sentLine: false };
+}
+
+export async function cancelLineCustomerRebindAction(input: {
+  organizationId: string;
+  customerId: string;
+}): Promise<LineCustomerBindingActionResult> {
+  const verified = await loadVerifiedOwner(input.organizationId);
+  if (!verified.ok) return verified;
+  const decision = evaluateLineCustomerBindStart({
+    connectionPilotEnabled: isLineConnectionPilotEnabled(),
+    organizationId: verified.organizationId,
+    actor: verified.actor,
+    secretConfigured: true,
+    customerId: input.customerId,
+    identityConfirmed: true,
+  });
+  if (!decision.ok) return { ...decision, sentLine: false };
+  const supabase = await createClient();
+  const canceled = await supabase.rpc(CANCEL_LINE_CUSTOMER_REBIND_RPC, {
+    p_organization_id: verified.organizationId,
+    p_customer_id: input.customerId.trim(),
+  });
+  if (canceled.error) {
+    return { ok: false, reason: "error", message: "無法取消重新綁定", sentLine: false };
+  }
+  return { ok: true, message: "已取消重新綁定。原有現場確認綁定維持有效。", sentLine: false };
 }
 
 export async function unbindLineCustomerBindingAction(input: {

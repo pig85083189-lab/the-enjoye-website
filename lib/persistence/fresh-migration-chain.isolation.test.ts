@@ -181,6 +181,8 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
     expect(sql).toMatch(/create table if not exists public\.line_customer_binding_secrets/);
     expect(sql).toMatch(/create table if not exists public\.line_customer_bind_challenges/);
     expect(sql).toMatch(/create table if not exists public\.line_customer_bind_challenge_secrets/);
+    expect(sql).toMatch(/create table if not exists public\.line_customer_binding_rebinds/);
+    expect(sql).toMatch(/cancel_line_customer_rebind/);
     expect(sql).toMatch(/start_line_customer_bind_challenge/);
     expect(sql).toMatch(/consume_line_customer_bind_challenge_public/);
     expect(sql).toMatch(/confirm_line_customer_binding/);

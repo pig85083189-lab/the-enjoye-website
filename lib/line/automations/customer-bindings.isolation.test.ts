@@ -181,6 +181,9 @@ describe("LINE customer bindings", () => {
     expect(source("features/line/automations/LineCustomerBindingsCard.tsx")).toContain(
       "LINE_CUSTOMER_BIND_IDENTITY",
     );
+    expect(source("features/line/automations/LineCustomerBindingsCard.tsx")).toContain(
+      "LINE_CUSTOMER_BIND_CANCEL_REBIND",
+    );
     expect(markup).not.toMatch(/<input[^>]*type="text"/i);
     expect(source("features/line/automations/LineAutomationsWorkspace.tsx")).toMatch(
       /LineCustomerBindingsCard/,
@@ -191,18 +194,26 @@ describe("LINE customer bindings", () => {
     const sql = executableSql(LINE_CUSTOMER_BINDINGS_MIGRATION_FILE);
     expect(LINE_AUTOMATION_SEND_OPEN).toBe(false);
     expect(sql).toMatch(/line_customer_bind_challenge_secrets/);
+    expect(sql).toMatch(/line_customer_binding_rebinds/);
+    expect(sql).toMatch(/pending_expires_at/);
+    expect(sql).toMatch(/cancel_line_customer_rebind/);
     expect(sql).toMatch(/p_identity_confirmed/);
     expect(sql).toMatch(/p_proof/);
     expect(sql).toMatch(/confirm_line_customer_binding/);
     expect(sql).toMatch(/line_automation_send_recipient_allowed/);
+    expect(sql).toMatch(/where line_customer_bindings\.status is distinct from 'active'/);
     expect(sql).toMatch(/failed_attempts/);
     expect(sql).toMatch(/interval '2 seconds'/);
     expect(sql).toMatch(/p_line_user_id_cipher \|\| chr\(10\)/);
     expect(sql).toMatch(/revoke all on public\.line_customer_bind_challenge_secrets/);
     expect(sql).not.toMatch(/grant select on public\.line_customer_binding_secrets/);
     expect(sql).not.toMatch(/grant select on public\.line_customer_bind_challenge_secrets/);
+    expect(sql).not.toMatch(/grant select on public\.line_customer_binding_rebinds/);
+    expect(sql).toMatch(/revoke all on public\.line_customer_binding_rebinds/);
     expect(sql).toMatch(/grant execute on function public\.consume_line_customer_bind_challenge_public/);
     expect(sql).toMatch(/revoke all on function public\.consume_line_customer_bind_challenge_public[\s\S]*from public, authenticated/);
+    expect(sql).toMatch(/revoke all on function public\.cancel_line_customer_rebind\(text, text\) from public, anon/);
+    expect(sql).toMatch(/line-customer-bind-v1' \|\| chr\(10\)/);
     expect(sql).not.toMatch(/grant select on public\.line_customer_bindings/);
     expect(sql).not.toMatch(/api\.line\.me|pg_cron|cron\.schedule/);
     expect(sql).not.toMatch(/alter table public\.line_broadcasts/);

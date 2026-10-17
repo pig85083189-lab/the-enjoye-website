@@ -139,6 +139,7 @@ export const LINE_TABLES = [
   "line_automation_jobs",
   "line_customer_bindings",
   "line_customer_binding_secrets",
+  "line_customer_binding_rebinds",
   "line_customer_bind_challenges",
   "line_customer_bind_challenge_secrets",
 ] as const;

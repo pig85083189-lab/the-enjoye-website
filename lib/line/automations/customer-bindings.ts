@@ -7,7 +7,14 @@ export const CONSUME_LINE_CUSTOMER_BIND_PUBLIC_RPC =
   "consume_line_customer_bind_challenge_public";
 export const CONFIRM_LINE_CUSTOMER_BINDING_RPC = "confirm_line_customer_binding";
 export const UNBIND_LINE_CUSTOMER_BINDING_RPC = "unbind_line_customer_binding";
+export const CANCEL_LINE_CUSTOMER_REBIND_RPC = "cancel_line_customer_rebind";
 export const READ_LINE_CUSTOMER_BINDINGS_RPC = "read_line_customer_bindings";
+
+export type LineCustomerRebindPublic = {
+  hint: string;
+  capturedAt: string | null;
+  expiresAt: string | null;
+};
 
 export type LineCustomerBindingPublic = {
   hint: string;
@@ -16,6 +23,7 @@ export type LineCustomerBindingPublic = {
   boundAt: string | null;
   confirmedAt: string | null;
   bindMethod: "webhook_code";
+  rebind: LineCustomerRebindPublic | null;
 };
 
 export type LineCustomerBindingRow = {
@@ -117,6 +125,7 @@ export function mapLineCustomerBindingRows(
                 ? (bindingRaw as { confirmed_at: string }).confirmed_at
                 : null,
             bindMethod: "webhook_code" as const,
+            rebind: mapLineCustomerRebind((bindingRaw as { rebind?: unknown }).rebind),
           }
         : null;
     return [
@@ -137,4 +146,30 @@ export function verifiedBindingCustomerIds(rows: readonly LineCustomerBindingRow
   return new Set(
     rows.filter((row) => isTrustedCustomerBinding(row.binding)).map((row) => row.customerId),
   );
+}
+
+export function hasPendingCustomerRebind(
+  binding: LineCustomerBindingPublic | null | undefined,
+): boolean {
+  return Boolean(binding?.rebind?.hint);
+}
+
+function mapLineCustomerRebind(value: unknown): LineCustomerRebindPublic | null {
+  if (!value || typeof value !== "object") return null;
+  const hint =
+    typeof (value as { hint?: unknown }).hint === "string"
+      ? (value as { hint: string }).hint
+      : "";
+  if (!hint.startsWith("••••")) return null;
+  return {
+    hint,
+    capturedAt:
+      typeof (value as { captured_at?: unknown }).captured_at === "string"
+        ? (value as { captured_at: string }).captured_at
+        : null,
+    expiresAt:
+      typeof (value as { expires_at?: unknown }).expires_at === "string"
+        ? (value as { expires_at: string }).expires_at
+        : null,
+  };
 }

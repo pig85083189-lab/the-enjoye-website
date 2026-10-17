@@ -94,4 +94,27 @@ if [[ "$CAPTURED" != "1" ]]; then
   exit 1
 fi
 
+confirm_sql() {
+  cat <<EOF
+select tests.become('11111111-1111-1111-1111-111111111111');
+select public.confirm_line_customer_binding('org-the-enjoye', 'cust-2');
+EOF
+}
+
+psql -d "$DB" -X -q -c "$(confirm_sql)" >/tmp/line-customer-confirm-a.out 2>/tmp/line-customer-confirm-a.err &
+psql -d "$DB" -X -q -c "$(confirm_sql)" >/tmp/line-customer-confirm-b.out 2>/tmp/line-customer-confirm-b.err &
+wait || true
+
+ACTIVE="$("${PSQL[@]}" -At -c "select count(*) from public.line_customer_bindings where organization_id = 'org-the-enjoye' and customer_id = 'cust-2' and status = 'active' and verified is true and confirmed_at is not null;")"
+SECRET="$("${PSQL[@]}" -At -c "select count(*) from public.line_customer_binding_secrets s join public.line_customer_bindings b on b.id = s.binding_id where b.organization_id = 'org-the-enjoye' and b.customer_id = 'cust-2';")"
+if [[ "$ACTIVE" != "1" || "$SECRET" != "1" ]]; then
+  echo "REFUSE: concurrent confirm left active=$ACTIVE secret=$SECRET." >&2
+  exit 1
+fi
+
+if "${PSQL[@]}" -c "select tests.become('11111111-1111-1111-1111-111111111111'); select public.confirm_line_customer_binding('org-the-enjoye', 'cust-2');" >/tmp/line-customer-confirm-dup.out 2>/tmp/line-customer-confirm-dup.err; then
+  echo "REFUSE: duplicate confirm was accepted." >&2
+  exit 1
+fi
+
 echo "PASS: local LINE customer bindings verified without dropping Phase 2B jobs or sending LINE."

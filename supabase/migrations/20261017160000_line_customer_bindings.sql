@@ -36,6 +36,7 @@ create table if not exists public.line_customer_bindings (
     check (status in ('pending', 'active', 'unbound')),
   constraint line_customer_bindings_confirmed_by_operational
     check (confirmed_by is null or public.is_operational_staff_id(confirmed_by)),
+  pending_expires_at timestamptz,
   constraint line_customer_bindings_verified_active
     check (
       (
@@ -44,8 +45,17 @@ create table if not exists public.line_customer_bindings (
         and bound_at is not null
         and confirmed_at is not null
         and confirmed_by is not null
+        and pending_expires_at is null
       )
-      or (verified is not true)
+      or (
+        verified is not true
+        and confirmed_at is null
+        and confirmed_by is null
+        and (
+          (status = 'pending' and bound_at is null)
+          or status = 'unbound'
+        )
+      )
     )
 );
 
@@ -67,9 +77,41 @@ begin
 end;
 $$;
 
+alter table public.line_customer_bindings
+  add column if not exists pending_expires_at timestamptz;
+
+alter table public.line_customer_bindings
+  drop constraint if exists line_customer_bindings_verified_active;
+
+alter table public.line_customer_bindings
+  add constraint line_customer_bindings_verified_active
+  check (
+    (
+      verified is true
+      and status = 'active'
+      and bound_at is not null
+      and confirmed_at is not null
+      and confirmed_by is not null
+      and pending_expires_at is null
+    )
+    or (
+      verified is not true
+      and confirmed_at is null
+      and confirmed_by is null
+      and (
+        (status = 'pending' and bound_at is null)
+        or status = 'unbound'
+      )
+    )
+  );
+
 create unique index if not exists line_customer_bindings_active_hash_key
   on public.line_customer_bindings (line_user_id_hash)
   where status = 'active' and verified is true;
+
+create unique index if not exists line_customer_bindings_open_hash_key
+  on public.line_customer_bindings (line_user_id_hash)
+  where status in ('active', 'pending');
 
 create index if not exists line_customer_bindings_org_status_idx
   on public.line_customer_bindings (organization_id, status, customer_id);
@@ -89,6 +131,34 @@ create table if not exists public.line_customer_binding_secrets (
 
 comment on table public.line_customer_binding_secrets is
   'Encrypted LINE user id for a captured or verified customer binding. No authenticated or anon grants.';
+
+create table if not exists public.line_customer_binding_rebinds (
+  binding_id text primary key
+    references public.line_customer_bindings (id) on delete cascade,
+  organization_id text not null,
+  customer_id text not null,
+  line_user_id_hint text not null,
+  line_user_id_hash text not null,
+  line_user_id_cipher text not null,
+  key_id text not null,
+  captured_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  constraint line_customer_binding_rebinds_org_prefix
+    check (organization_id like 'org-%'),
+  constraint line_customer_binding_rebinds_hint_mask
+    check (line_user_id_hint like '••••%'),
+  constraint line_customer_binding_rebinds_hash_sha256
+    check (line_user_id_hash ~ '^[0-9a-f]{64}$'),
+  constraint line_customer_binding_rebinds_cipher_prefix
+    check (line_user_id_cipher like 'v1.%')
+);
+
+comment on table public.line_customer_binding_rebinds is
+  'Pending replacement LINE identity. Does not overwrite an active binding or its secret until owner confirm.';
+
+create unique index if not exists line_customer_binding_rebinds_hash_key
+  on public.line_customer_binding_rebinds (line_user_id_hash);
 
 create table if not exists public.line_customer_bind_challenges (
   id text primary key,
@@ -139,11 +209,13 @@ comment on table public.line_customer_bind_challenge_secrets is
 
 alter table public.line_customer_bindings enable row level security;
 alter table public.line_customer_binding_secrets enable row level security;
+alter table public.line_customer_binding_rebinds enable row level security;
 alter table public.line_customer_bind_challenges enable row level security;
 alter table public.line_customer_bind_challenge_secrets enable row level security;
 
 revoke all on public.line_customer_bindings from anon, authenticated, public;
 revoke all on public.line_customer_binding_secrets from anon, authenticated, public;
+revoke all on public.line_customer_binding_rebinds from anon, authenticated, public;
 revoke all on public.line_customer_bind_challenges from anon, authenticated, public;
 revoke all on public.line_customer_bind_challenge_secrets from anon, authenticated, public;
 
@@ -182,6 +254,42 @@ begin
     limit 1;
 end;
 $$;
+
+create or replace function public.line_customer_binding_identity_taken(
+  p_organization_id text,
+  p_customer_id text,
+  p_line_user_id_hash text
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.line_customer_bindings b
+    where b.line_user_id_hash = p_line_user_id_hash
+      and b.status in ('active', 'pending')
+      and (
+        b.organization_id is distinct from p_organization_id
+        or b.customer_id is distinct from p_customer_id
+      )
+  )
+  or exists (
+    select 1
+    from public.line_customer_binding_rebinds r
+    where r.line_user_id_hash = p_line_user_id_hash
+      and r.expires_at > now()
+      and (
+        r.organization_id is distinct from p_organization_id
+        or r.customer_id is distinct from p_customer_id
+      )
+  );
+$$;
+
+comment on function public.line_customer_binding_identity_taken(text, text, text) is
+  'True when another customer or organization already holds this LINE hash as pending, active, or staged rebind.';
 
 drop function if exists public.start_line_customer_bind_challenge(text, text);
 
@@ -299,7 +407,8 @@ declare
   v_canonical text;
   v_issued_unix bigint;
   v_binding_id text;
-  v_conflict_id text;
+  v_existing public.line_customer_bindings%rowtype;
+  v_pending_expires timestamptz := now() + interval '10 minutes';
   v_event_id text;
 begin
   if to_regclass('public.line_webhook_public_tokens') is not null then
@@ -440,17 +549,9 @@ begin
     return jsonb_build_object('captured', false, 'bound', false, 'reason', 'duplicate');
   end if;
 
-  select b.id
-  into v_conflict_id
-  from public.line_customer_bindings b
-  where b.line_user_id_hash = p_line_user_id_hash
-    and b.status in ('active', 'pending')
-    and (
-      b.organization_id is distinct from p_organization_id
-      or b.customer_id is distinct from v_row.customer_id
-    )
-  limit 1;
-  if v_conflict_id is not null then
+  if public.line_customer_binding_identity_taken(
+    p_organization_id, v_row.customer_id, p_line_user_id_hash
+  ) then
     update public.line_customer_bind_challenges
     set consumed_at = now(),
         last_attempt_at = now()
@@ -465,39 +566,83 @@ begin
       consumed_proof_hash = p_proof
   where id = v_row.id;
 
+  select *
+  into v_existing
+  from public.line_customer_bindings
+  where organization_id = p_organization_id
+    and customer_id = v_row.customer_id
+  for update;
+
+  if v_existing.id is not null
+     and v_existing.status = 'active'
+     and v_existing.verified is true then
+    if v_existing.line_user_id_hash = p_line_user_id_hash then
+      return jsonb_build_object('captured', false, 'bound', false, 'reason', 'duplicate');
+    end if;
+    begin
+      insert into public.line_customer_binding_rebinds (
+        binding_id, organization_id, customer_id,
+        line_user_id_hint, line_user_id_hash, line_user_id_cipher, key_id,
+        captured_at, expires_at
+      ) values (
+        v_existing.id, p_organization_id, v_row.customer_id,
+        p_line_user_id_hint, p_line_user_id_hash, p_line_user_id_cipher, p_key_id,
+        now(), v_pending_expires
+      )
+      on conflict (binding_id) do update
+        set line_user_id_hint = excluded.line_user_id_hint,
+            line_user_id_hash = excluded.line_user_id_hash,
+            line_user_id_cipher = excluded.line_user_id_cipher,
+            key_id = excluded.key_id,
+            captured_at = now(),
+            expires_at = excluded.expires_at;
+    exception
+      when unique_violation then
+        return jsonb_build_object('captured', false, 'bound', false, 'reason', 'duplicate');
+    end;
+    return jsonb_build_object(
+      'captured', true,
+      'bound', false,
+      'status', 'pending',
+      'rebind', true
+    );
+  end if;
+
   v_binding_id := coalesce(
-    (
-      select id
-      from public.line_customer_bindings
-      where organization_id = p_organization_id
-        and customer_id = v_row.customer_id
-      limit 1
-    ),
+    v_existing.id,
     'lcb-' || substr(md5(p_organization_id || ':' || v_row.customer_id), 1, 20)
   );
 
-  insert into public.line_customer_bindings (
-    id, organization_id, customer_id, customer_uuid,
-    line_user_id_hint, line_user_id_hash, bind_method,
-    verified, status, captured_at, bound_at, confirmed_at, confirmed_by,
-    unbound_at, updated_at
-  ) values (
-    v_binding_id, p_organization_id, v_row.customer_id, v_row.customer_uuid,
-    p_line_user_id_hint, p_line_user_id_hash, 'webhook_code',
-    false, 'pending', now(), null, null, null, null, now()
-  )
-  on conflict on constraint line_customer_bindings_org_customer_key do update
-    set line_user_id_hint = excluded.line_user_id_hint,
-        line_user_id_hash = excluded.line_user_id_hash,
-        bind_method = 'webhook_code',
-        verified = false,
-        status = 'pending',
-        captured_at = now(),
-        bound_at = null,
-        confirmed_at = null,
-        confirmed_by = null,
-        unbound_at = null,
-        updated_at = now();
+  begin
+    insert into public.line_customer_bindings (
+      id, organization_id, customer_id, customer_uuid,
+      line_user_id_hint, line_user_id_hash, bind_method,
+      verified, status, captured_at, bound_at, confirmed_at, confirmed_by,
+      unbound_at, pending_expires_at, updated_at
+    ) values (
+      v_binding_id, p_organization_id, v_row.customer_id, v_row.customer_uuid,
+      p_line_user_id_hint, p_line_user_id_hash, 'webhook_code',
+      false, 'pending', now(), null, null, null, null, v_pending_expires, now()
+    )
+    on conflict on constraint line_customer_bindings_org_customer_key do update
+      set line_user_id_hint = excluded.line_user_id_hint,
+          line_user_id_hash = excluded.line_user_id_hash,
+          bind_method = 'webhook_code',
+          verified = false,
+          status = 'pending',
+          captured_at = now(),
+          bound_at = null,
+          confirmed_at = null,
+          confirmed_by = null,
+          unbound_at = null,
+          pending_expires_at = excluded.pending_expires_at,
+          updated_at = now()
+      where line_customer_bindings.status is distinct from 'active'
+         or line_customer_bindings.verified is not true;
+  exception
+    when unique_violation then
+      return jsonb_build_object('captured', false, 'bound', false, 'reason', 'duplicate');
+  end;
 
   insert into public.line_customer_binding_secrets (
     binding_id, organization_id, line_user_id_cipher, key_id, updated_at
@@ -534,6 +679,8 @@ declare
   v_uid uuid := auth.uid();
   v_actor public.staff_auth_memberships%rowtype;
   v_customer record;
+  v_binding public.line_customer_bindings%rowtype;
+  v_rebind public.line_customer_binding_rebinds%rowtype;
   v_id text;
 begin
   if v_uid is null then
@@ -560,6 +707,113 @@ begin
     raise exception 'invalid customer' using errcode = '22023';
   end if;
 
+  select *
+  into v_binding
+  from public.line_customer_bindings
+  where organization_id = p_organization_id
+    and customer_id = v_customer.customer_id
+  for update;
+  if not found then
+    raise exception 'binding not capturable' using errcode = '22023';
+  end if;
+
+  select *
+  into v_rebind
+  from public.line_customer_binding_rebinds
+  where binding_id = v_binding.id
+  for update;
+
+  if v_rebind.binding_id is not null then
+    if v_rebind.expires_at <= now() then
+      delete from public.line_customer_binding_rebinds where binding_id = v_binding.id;
+      raise exception 'rebind expired' using errcode = '22023';
+    end if;
+    if v_binding.status is distinct from 'active' or v_binding.verified is not true then
+      raise exception 'binding not capturable' using errcode = '22023';
+    end if;
+    if v_rebind.line_user_id_hash = v_binding.line_user_id_hash
+       or public.line_customer_binding_identity_taken(
+         p_organization_id, v_customer.customer_id, v_rebind.line_user_id_hash
+       ) then
+      delete from public.line_customer_binding_rebinds where binding_id = v_binding.id;
+      raise exception 'duplicate LINE identity' using errcode = '23505';
+    end if;
+    if not exists (
+      select 1 from public.line_customer_binding_secrets where binding_id = v_binding.id
+    ) then
+      raise exception 'binding secret missing' using errcode = '22023';
+    end if;
+
+    begin
+      update public.line_customer_bindings
+      set
+        line_user_id_hint = v_rebind.line_user_id_hint,
+        line_user_id_hash = v_rebind.line_user_id_hash,
+        verified = true,
+        status = 'active',
+        captured_at = v_rebind.captured_at,
+        bound_at = now(),
+        confirmed_at = now(),
+        confirmed_by = v_actor.user_id,
+        unbound_at = null,
+        pending_expires_at = null,
+        updated_at = now()
+      where id = v_binding.id
+        and status = 'active'
+        and verified is true;
+
+      update public.line_customer_binding_secrets
+      set
+        line_user_id_cipher = v_rebind.line_user_id_cipher,
+        key_id = v_rebind.key_id,
+        organization_id = p_organization_id,
+        updated_at = now()
+      where binding_id = v_binding.id;
+
+      delete from public.line_customer_binding_rebinds where binding_id = v_binding.id;
+    exception
+      when unique_violation then
+        raise exception 'duplicate LINE identity' using errcode = '23505';
+    end;
+
+    if not exists (
+      select 1
+      from public.line_customer_bindings b
+      join public.line_customer_binding_secrets s on s.binding_id = b.id
+      where b.id = v_binding.id
+        and b.verified is true
+        and b.status = 'active'
+        and b.confirmed_at is not null
+        and b.line_user_id_hash = v_rebind.line_user_id_hash
+        and s.line_user_id_cipher = v_rebind.line_user_id_cipher
+    ) then
+      raise exception 'binding secret missing' using errcode = '22023';
+    end if;
+
+    return jsonb_build_object(
+      'organization_id', p_organization_id,
+      'customer_id', v_customer.customer_id,
+      'verified', true,
+      'status', 'active',
+      'rebind', true
+    );
+  end if;
+
+  if v_binding.status = 'active' and v_binding.verified is true then
+    raise exception 'binding already confirmed' using errcode = '22023';
+  end if;
+  if v_binding.status is distinct from 'pending' or v_binding.verified is true then
+    raise exception 'binding not capturable' using errcode = '22023';
+  end if;
+  if v_binding.pending_expires_at is not null and v_binding.pending_expires_at <= now() then
+    raise exception 'binding expired' using errcode = '22023';
+  end if;
+  if public.line_customer_binding_identity_taken(
+    p_organization_id, v_customer.customer_id, v_binding.line_user_id_hash
+  ) then
+    raise exception 'duplicate LINE identity' using errcode = '23505';
+  end if;
+
   update public.line_customer_bindings
   set
     verified = true,
@@ -568,9 +822,9 @@ begin
     confirmed_at = now(),
     confirmed_by = v_actor.user_id,
     unbound_at = null,
+    pending_expires_at = null,
     updated_at = now()
-  where organization_id = p_organization_id
-    and customer_id = v_customer.customer_id
+  where id = v_binding.id
     and status = 'pending'
     and verified is not true
     and line_user_id_hash ~ '^[0-9a-f]{64}$'
@@ -583,7 +837,13 @@ begin
     select 1 from public.line_customer_binding_secrets where binding_id = v_id
   ) then
     update public.line_customer_bindings
-    set verified = false, status = 'pending', bound_at = null, confirmed_at = null, confirmed_by = null
+    set
+      verified = false,
+      status = 'pending',
+      bound_at = null,
+      confirmed_at = null,
+      confirmed_by = null,
+      pending_expires_at = v_binding.pending_expires_at
     where id = v_id;
     raise exception 'binding secret missing' using errcode = '22023';
   end if;
@@ -598,7 +858,7 @@ end;
 $$;
 
 comment on function public.confirm_line_customer_binding(text, text) is
-  'Owner-only in-person confirmation. Promotes a captured LINE identity to a trusted recipient. Does not accept a LINE user id.';
+  'Owner-only in-person confirmation. Promotes a first pending capture or atomically switches a staged rebind. Does not accept a LINE user id.';
 
 create or replace function public.unbind_line_customer_binding(
   p_organization_id text,
@@ -640,6 +900,10 @@ begin
     and customer_id = v_customer.customer_id
     and consumed_at is null;
 
+  delete from public.line_customer_binding_rebinds
+  where organization_id = p_organization_id
+    and customer_id = v_customer.customer_id;
+
   update public.line_customer_bindings
   set
     verified = false,
@@ -648,6 +912,7 @@ begin
     confirmed_at = null,
     confirmed_by = null,
     bound_at = null,
+    pending_expires_at = null,
     updated_at = now()
   where organization_id = p_organization_id
     and customer_id = v_customer.customer_id
@@ -685,7 +950,57 @@ end;
 $$;
 
 comment on function public.unbind_line_customer_binding(text, text) is
-  'Owner-only unbind. Clears trusted recipient state and job recipient_ready. Does not accept or rewrite a LINE user id.';
+  'Owner-only unbind. Clears trusted recipient state, staged rebind, and job recipient_ready. Does not accept or rewrite a LINE user id.';
+
+create or replace function public.cancel_line_customer_rebind(
+  p_organization_id text,
+  p_customer_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_customer record;
+  v_deleted int := 0;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated' using errcode = '42501';
+  end if;
+  if not public.user_is_org_owner(p_organization_id) then
+    raise exception 'unauthorized' using errcode = '42501';
+  end if;
+
+  select r.customer_id, r.customer_uuid
+  into v_customer
+  from public.line_customer_binding_resolve(p_organization_id, p_customer_id) r;
+  if v_customer.customer_id is null then
+    raise exception 'invalid customer' using errcode = '22023';
+  end if;
+
+  update public.line_customer_bind_challenges
+  set consumed_at = now()
+  where organization_id = p_organization_id
+    and customer_id = v_customer.customer_id
+    and consumed_at is null;
+
+  delete from public.line_customer_binding_rebinds
+  where organization_id = p_organization_id
+    and customer_id = v_customer.customer_id;
+  get diagnostics v_deleted = row_count;
+
+  return jsonb_build_object(
+    'organization_id', p_organization_id,
+    'customer_id', v_customer.customer_id,
+    'canceled', v_deleted > 0,
+    'verified', public.line_automation_schedule_recipient_ready(p_organization_id, v_customer.customer_id)
+  );
+end;
+$$;
+
+comment on function public.cancel_line_customer_rebind(text, text) is
+  'Owner-only cancel of a staged rebind. Leaves the active trusted binding and secret unchanged.';
 
 create or replace function public.read_line_customer_bindings(
   p_organization_id text
@@ -725,7 +1040,15 @@ begin
                 'captured_at', b.captured_at,
                 'bound_at', b.bound_at,
                 'confirmed_at', b.confirmed_at,
-                'bind_method', b.bind_method
+                'bind_method', b.bind_method,
+                'rebind', case
+                  when rb.binding_id is null or rb.expires_at <= now() then null
+                  else jsonb_build_object(
+                    'hint', rb.line_user_id_hint,
+                    'captured_at', rb.captured_at,
+                    'expires_at', rb.expires_at
+                  )
+                end
               )
             end
           )
@@ -740,6 +1063,9 @@ begin
            or b.customer_id = c.id::text
            or b.customer_uuid = c.id
          )
+        left join public.line_customer_binding_rebinds rb
+          on rb.binding_id = b.id
+         and rb.organization_id = p_organization_id
         where o.app_id = p_organization_id
           and coalesce(c.status::text, 'ACTIVE') = 'ACTIVE'
       ),
@@ -781,6 +1107,12 @@ begin
       and b.status = 'active'
       and b.confirmed_at is not null
       and b.bind_method = 'webhook_code'
+      and exists (
+        select 1
+        from public.line_customer_binding_secrets s
+        where s.binding_id = b.id
+          and s.organization_id = b.organization_id
+      )
   );
 end;
 $$;
@@ -805,6 +1137,8 @@ comment on function public.line_automation_send_recipient_allowed(text, text) is
   'Send-time recipient check. Re-reads the trusted binding. Must not rely on job scheduled status.';
 
 revoke all on function public.line_customer_binding_resolve(text, text) from public, anon, authenticated;
+revoke all on function public.line_customer_binding_identity_taken(text, text, text)
+  from public, anon, authenticated;
 revoke all on function public.start_line_customer_bind_challenge(text, text, boolean, text) from public, anon;
 grant execute on function public.start_line_customer_bind_challenge(text, text, boolean, text) to authenticated;
 revoke all on function public.consume_line_customer_bind_challenge_public(text, text, text, text, text, timestamptz, text, text, text, text)
@@ -815,6 +1149,8 @@ revoke all on function public.confirm_line_customer_binding(text, text) from pub
 grant execute on function public.confirm_line_customer_binding(text, text) to authenticated;
 revoke all on function public.unbind_line_customer_binding(text, text) from public, anon;
 grant execute on function public.unbind_line_customer_binding(text, text) to authenticated;
+revoke all on function public.cancel_line_customer_rebind(text, text) from public, anon;
+grant execute on function public.cancel_line_customer_rebind(text, text) to authenticated;
 revoke all on function public.read_line_customer_bindings(text) from public, anon;
 grant execute on function public.read_line_customer_bindings(text) to authenticated;
 revoke all on function public.line_automation_schedule_recipient_ready(text, text)

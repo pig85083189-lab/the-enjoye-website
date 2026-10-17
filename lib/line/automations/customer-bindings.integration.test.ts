@@ -53,6 +53,12 @@ describe("Phase 2B LINE customer bindings", () => {
     expect(cases).toMatch(/duplicate LINE identity was accepted/);
     expect(cases).toMatch(/cross-org duplicate LINE identity was accepted/);
     expect(cases).toMatch(/same-customer rebind failed/);
+    expect(cases).toMatch(/pending rebind overwrote the active binding/);
+    expect(cases).toMatch(/rebind cancel left a staged identity/);
+    expect(cases).toMatch(/expired pending confirm was accepted/);
+    expect(cases).toMatch(/duplicate confirm was accepted/);
+    expect(cases).toMatch(/confirmed rebind did not switch identity atomically/);
+    expect(runner).toMatch(/concurrent confirm left active/);
     expect(cases).toMatch(/unbind left a verified secret/);
     expect(cases).toMatch(/unbind still allowed send/);
     expect(cases).toMatch(/public consume leaked customer identity/);

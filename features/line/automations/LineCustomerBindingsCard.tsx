@@ -4,23 +4,27 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import {
+  cancelLineCustomerRebindAction,
   confirmLineCustomerBindingAction,
   loadLineCustomerBindings,
   startLineCustomerBindAction,
   unbindLineCustomerBindingAction,
 } from "@/lib/line/automations/customer-binding-actions";
 import {
+  hasPendingCustomerRebind,
   isTrustedCustomerBinding,
   type LineCustomerBindingRow,
 } from "@/lib/line/automations/customer-bindings";
 import {
   LINE_CUSTOMER_BIND_ACTIVE,
+  LINE_CUSTOMER_BIND_CANCEL_REBIND,
   LINE_CUSTOMER_BIND_CONFIRM,
   LINE_CUSTOMER_BIND_EMPTY,
   LINE_CUSTOMER_BIND_HINT,
   LINE_CUSTOMER_BIND_IDENTITY,
   LINE_CUSTOMER_BIND_NO_EDIT,
   LINE_CUSTOMER_BIND_PENDING,
+  LINE_CUSTOMER_BIND_REBIND,
   LINE_CUSTOMER_BIND_RELEASED,
   LINE_CUSTOMER_BIND_START,
   LINE_CUSTOMER_BIND_TITLE,
@@ -30,6 +34,7 @@ import {
 import { shouldApplyLineAutomationClientResult } from "@/lib/line/automations/rules";
 
 function bindingStatusLabel(row: LineCustomerBindingRow): string {
+  if (hasPendingCustomerRebind(row.binding)) return LINE_CUSTOMER_BIND_REBIND;
   if (isTrustedCustomerBinding(row.binding)) return LINE_CUSTOMER_BIND_ACTIVE;
   if (row.binding?.status === "unbound") return LINE_CUSTOMER_BIND_RELEASED;
   if (row.binding?.status === "pending") return LINE_CUSTOMER_BIND_PENDING;
@@ -149,6 +154,33 @@ export function LineCustomerBindingsCard({
     }
   }
 
+  async function handleCancelRebind(customerId: string) {
+    if (busyId) return;
+    const requestOrganizationId = organizationId;
+    setBusyId(customerId);
+    setMessage("");
+    try {
+      const result = await cancelLineCustomerRebindAction({
+        organizationId: requestOrganizationId,
+        customerId,
+      });
+      if (
+        !shouldApplyLineAutomationClientResult({
+          requestOrganizationId,
+          activeOrganizationId: activeOrganizationId.current,
+        })
+      ) {
+        return;
+      }
+      setMessage(result.message);
+      if (result.ok) {
+        await refresh(requestOrganizationId);
+      }
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleUnbind(customerId: string) {
     if (busyId) return;
     const requestOrganizationId = organizationId;
@@ -196,7 +228,8 @@ export function LineCustomerBindingsCard({
         <ul className="space-y-2">
           {customers.map((row) => {
             const trusted = isTrustedCustomerBinding(row.binding);
-            const pending = row.binding?.status === "pending";
+            const rebind = hasPendingCustomerRebind(row.binding);
+            const pending = row.binding?.status === "pending" || rebind;
             return (
               <li
                 key={row.customerId}
@@ -210,6 +243,7 @@ export function LineCustomerBindingsCard({
                     <p className="mt-1 text-[13px] text-secondary-text">
                       {bindingStatusLabel(row)}
                       {row.binding?.hint ? ` · ${row.binding.hint}` : ""}
+                      {row.binding?.rebind?.hint ? ` → ${row.binding.rebind.hint}` : ""}
                     </p>
                     <label className="mt-2 flex items-start gap-2 text-[12px] text-secondary-text">
                       <input
@@ -257,6 +291,17 @@ export function LineCustomerBindingsCard({
                       }}
                     >
                       {LINE_CUSTOMER_BIND_CONFIRM}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={busyId !== null || !rebind}
+                      data-line-customer-bind-cancel-rebind={row.customerId}
+                      onClick={() => {
+                        void handleCancelRebind(row.customerId);
+                      }}
+                    >
+                      {LINE_CUSTOMER_BIND_CANCEL_REBIND}
                     </Button>
                     <Button
                       type="button"

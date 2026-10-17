@@ -44,6 +44,7 @@ begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
     if has_table_privilege('anon', 'public.line_customer_bindings', 'select')
        or has_table_privilege('anon', 'public.line_customer_binding_secrets', 'select')
+       or has_table_privilege('anon', 'public.line_customer_binding_rebinds', 'select')
        or has_table_privilege('anon', 'public.line_customer_bind_challenges', 'select')
        or has_table_privilege('anon', 'public.line_customer_bind_challenge_secrets', 'select') then
       raise exception 'anon can read customer binding tables';
@@ -341,10 +342,58 @@ begin
     raise exception 'replayed webhook event was accepted';
   end if;
 
+  update public.line_customer_bindings
+  set pending_expires_at = now() - interval '1 second'
+  where organization_id = 'org-the-enjoye' and customer_id = 'cust-1';
+  begin
+    perform public.confirm_line_customer_binding('org-the-enjoye', 'cust-1');
+    raise exception 'expired pending confirm was accepted';
+  exception
+    when invalid_parameter_value then
+      null;
+  end;
+  if public.line_automation_schedule_recipient_ready('org-the-enjoye', 'cust-1') then
+    raise exception 'expired pending capture was treated as trusted';
+  end if;
+  if exists (
+    select 1
+    from public.line_customer_bindings
+    where organization_id = 'org-the-enjoye'
+      and customer_id = 'cust-1'
+      and (verified is true or status is distinct from 'pending' or confirmed_at is not null)
+  ) then
+    raise exception 'expired pending confirm mutated trusted fields';
+  end if;
+  update public.line_customer_bindings
+  set pending_expires_at = now() + interval '10 minutes'
+  where organization_id = 'org-the-enjoye' and customer_id = 'cust-1';
+
   perform public.confirm_line_customer_binding('org-the-enjoye', 'cust-1');
   if public.line_automation_schedule_recipient_ready('org-the-enjoye', 'cust-1') is not true then
     raise exception 'confirmed binding did not confirm recipient_ready';
   end if;
+  if exists (
+    select 1
+    from public.line_customer_bindings b
+    left join public.line_customer_binding_secrets s on s.binding_id = b.id
+    where b.organization_id = 'org-the-enjoye'
+      and b.customer_id = 'cust-1'
+      and (
+        b.verified is not true
+        or b.status is distinct from 'active'
+        or b.confirmed_at is null
+        or s.binding_id is null
+      )
+  ) then
+    raise exception 'confirmed binding fields were inconsistent';
+  end if;
+  begin
+    perform public.confirm_line_customer_binding('org-the-enjoye', 'cust-1');
+    raise exception 'duplicate confirm was accepted';
+  exception
+    when invalid_parameter_value then
+      null;
+  end;
 
   select id into v_job_id
   from public.line_automation_jobs
@@ -462,6 +511,145 @@ begin
   end;
 
   perform tests.become('11111111-1111-1111-1111-111111111111');
+
+  v_other_hash := encode(sha256(convert_to('Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'utf8')), 'hex');
+  v_started := public.start_line_customer_bind_challenge(
+    'org-the-enjoye', 'cust-1', true, v_hmac_key
+  );
+  v_code := v_started->>'code';
+  insert into public.line_webhook_events (organization_id, event_id, bound)
+  values ('org-the-enjoye', 'evt-rebind', false);
+  v_issued := now();
+  v_proof := tests.line_customer_bind_proof(
+    'org-the-enjoye', 'token-local', 'evt-rebind', v_code,
+    v_other_hash, 'v1.cipher-cust-1-rebind', '••••bbbb', 'line-cred-v1',
+    v_hmac_key, v_issued
+  );
+  v_consumed := public.consume_line_customer_bind_challenge_public(
+    'org-the-enjoye',
+    'token-local',
+    v_code,
+    'evt-rebind',
+    v_proof,
+    v_issued,
+    'v1.cipher-cust-1-rebind',
+    '••••bbbb',
+    v_other_hash,
+    'line-cred-v1'
+  );
+  if (v_consumed->>'captured')::boolean is not true then
+    raise exception 'same-customer rebind failed: %', v_consumed;
+  end if;
+  if exists (
+    select 1
+    from public.line_customer_bindings
+    where organization_id = 'org-the-enjoye'
+      and customer_id = 'cust-1'
+      and (
+        line_user_id_hash is distinct from v_hash
+        or verified is not true
+        or status is distinct from 'active'
+        or confirmed_at is null
+      )
+  ) then
+    raise exception 'pending rebind overwrote the active binding';
+  end if;
+  if not exists (
+    select 1
+    from public.line_customer_binding_secrets
+    where organization_id = 'org-the-enjoye'
+      and line_user_id_cipher = 'v1.cipher-cust-1'
+  ) then
+    raise exception 'pending rebind overwrote the active secret';
+  end if;
+  if not exists (
+    select 1
+    from public.line_customer_binding_rebinds
+    where organization_id = 'org-the-enjoye'
+      and customer_id = 'cust-1'
+      and line_user_id_hash = v_other_hash
+      and line_user_id_cipher = 'v1.cipher-cust-1-rebind'
+  ) then
+    raise exception 'pending rebind was not staged';
+  end if;
+  if public.line_automation_send_recipient_allowed('org-the-enjoye', 'cust-1') is not true then
+    raise exception 'pending rebind dropped the trusted recipient';
+  end if;
+
+  perform public.cancel_line_customer_rebind('org-the-enjoye', 'cust-1');
+  if exists (
+    select 1 from public.line_customer_binding_rebinds
+    where organization_id = 'org-the-enjoye' and customer_id = 'cust-1'
+  ) then
+    raise exception 'rebind cancel left a staged identity';
+  end if;
+  if not exists (
+    select 1
+    from public.line_customer_bindings b
+    join public.line_customer_binding_secrets s on s.binding_id = b.id
+    where b.organization_id = 'org-the-enjoye'
+      and b.customer_id = 'cust-1'
+      and b.line_user_id_hash = v_hash
+      and b.status = 'active'
+      and b.verified is true
+      and b.confirmed_at is not null
+      and s.line_user_id_cipher = 'v1.cipher-cust-1'
+  ) then
+    raise exception 'rebind cancel mutated the active binding';
+  end if;
+
+  v_started := public.start_line_customer_bind_challenge(
+    'org-the-enjoye', 'cust-1', true, v_hmac_key
+  );
+  v_code := v_started->>'code';
+  insert into public.line_webhook_events (organization_id, event_id, bound)
+  values ('org-the-enjoye', 'evt-rebind-confirm', false);
+  v_issued := now();
+  v_proof := tests.line_customer_bind_proof(
+    'org-the-enjoye', 'token-local', 'evt-rebind-confirm', v_code,
+    v_other_hash, 'v1.cipher-cust-1-rebind', '••••bbbb', 'line-cred-v1',
+    v_hmac_key, v_issued
+  );
+  v_consumed := public.consume_line_customer_bind_challenge_public(
+    'org-the-enjoye',
+    'token-local',
+    v_code,
+    'evt-rebind-confirm',
+    v_proof,
+    v_issued,
+    'v1.cipher-cust-1-rebind',
+    '••••bbbb',
+    v_other_hash,
+    'line-cred-v1'
+  );
+  if (v_consumed->>'captured')::boolean is not true then
+    raise exception 'same-customer rebind failed: %', v_consumed;
+  end if;
+  perform public.confirm_line_customer_binding('org-the-enjoye', 'cust-1');
+  select count(*) into v_count
+  from public.line_customer_bindings
+  where organization_id = 'org-the-enjoye' and customer_id = 'cust-1';
+  if v_count <> 1 then
+    raise exception 'rebind created a second binding row: %', v_count;
+  end if;
+  if exists (select 1 from public.line_customer_binding_rebinds) then
+    raise exception 'confirmed rebind left a staged identity';
+  end if;
+  if not exists (
+    select 1
+    from public.line_customer_bindings b
+    join public.line_customer_binding_secrets s on s.binding_id = b.id
+    where b.organization_id = 'org-the-enjoye'
+      and b.customer_id = 'cust-1'
+      and b.line_user_id_hash = v_other_hash
+      and b.status = 'active'
+      and b.verified is true
+      and b.confirmed_at is not null
+      and s.line_user_id_cipher = 'v1.cipher-cust-1-rebind'
+  ) then
+    raise exception 'confirmed rebind did not switch identity atomically';
+  end if;
+
   perform public.unbind_line_customer_binding('org-the-enjoye', 'cust-1');
   select count(*) into v_secret from public.line_customer_binding_secrets;
   if v_secret <> 0 then
@@ -494,36 +682,46 @@ begin
     raise exception 'unbind still allowed send';
   end if;
 
-  v_other_hash := encode(sha256(convert_to('Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'utf8')), 'hex');
   v_started := public.start_line_customer_bind_challenge(
     'org-the-enjoye', 'cust-1', true, v_hmac_key
   );
   v_code := v_started->>'code';
   insert into public.line_webhook_events (organization_id, event_id, bound)
-  values ('org-the-enjoye', 'evt-rebind', false);
+  values ('org-the-enjoye', 'evt-after-unbind', false);
   v_issued := now();
   v_proof := tests.line_customer_bind_proof(
-    'org-the-enjoye', 'token-local', 'evt-rebind', v_code,
-    v_other_hash, 'v1.cipher-cust-1-rebind', '••••bbbb', 'line-cred-v1',
+    'org-the-enjoye', 'token-local', 'evt-after-unbind', v_code,
+    v_hash, 'v1.cipher-cust-1-again', '••••aaaa', 'line-cred-v1',
     v_hmac_key, v_issued
   );
   v_consumed := public.consume_line_customer_bind_challenge_public(
     'org-the-enjoye',
     'token-local',
     v_code,
-    'evt-rebind',
+    'evt-after-unbind',
     v_proof,
     v_issued,
-    'v1.cipher-cust-1-rebind',
-    '••••bbbb',
-    v_other_hash,
+    'v1.cipher-cust-1-again',
+    '••••aaaa',
+    v_hash,
     'line-cred-v1'
   );
   if (v_consumed->>'captured')::boolean is not true then
-    raise exception 'same-customer rebind failed: %', v_consumed;
+    raise exception 'bind after unbind failed: %', v_consumed;
+  end if;
+  if exists (
+    select 1
+    from public.line_customer_bindings
+    where organization_id = 'org-the-enjoye'
+      and customer_id = 'cust-1'
+      and (verified is true or status is distinct from 'pending' or confirmed_at is not null)
+  ) then
+    raise exception 'bind after unbind skipped pending confirmation';
+  end if;
+  if exists (select 1 from public.line_customer_binding_rebinds) then
+    raise exception 'bind after unbind created a staged rebind';
   end if;
   perform public.confirm_line_customer_binding('org-the-enjoye', 'cust-1');
-
   select count(*) into v_count
   from public.line_customer_bindings
   where organization_id = 'org-the-enjoye' and customer_id = 'cust-1';
