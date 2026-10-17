@@ -207,13 +207,17 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
       .filter((line) => !line.trim().startsWith("--"))
       .join("\n");
     expect(LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE).toContain("20261017161000");
+    expect(sql).toMatch(/add column id text/);
     expect(sql).toMatch(/add column customer_id text/);
     expect(sql).toMatch(/set customer_id = customer_app_id/);
+    expect(sql).toMatch(/id like 'lcbc-%' or id like 'lcc-%'/);
     expect(sql).toMatch(/line_customer_binding_secrets/);
     expect(sql).toMatch(/where verified is true\s+and confirmed_at is null/);
     expect(sql).toMatch(/captured_at is not null/);
     expect(sql).toMatch(/identity_confirmed_at/);
     expect(sql).toMatch(/Do not apply on Production until Owner confirms/);
+    expect(sql).toMatch(/line_customer_bindings_id_key unique \(id\)/);
+    expect(executable).not.toMatch(/drop constraint(?: if exists)? line_customer_bindings_pkey/i);
     expect(executable).not.toMatch(/drop table public\.line_customer_bindings/i);
     expect(executable).not.toMatch(/drop table public\.line_customer_bind_challenges/i);
     expect(executable).not.toMatch(/drop table public\.line_automation_jobs/i);

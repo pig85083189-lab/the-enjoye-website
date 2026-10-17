@@ -27,8 +27,12 @@ describe("Preview leftover LINE customer binding upgrade", () => {
 
     expect(LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE).toContain("20261017161000");
     expect(sql).toMatch(/Does not DROP TABLE, DROP COLUMN, TRUNCATE/);
+    expect(sql).toMatch(/add column id text/);
     expect(sql).toMatch(/add column customer_id text/);
     expect(sql).toMatch(/set customer_id = customer_app_id/);
+    expect(sql).toMatch(/lcb-' \|\| substr\(md5\(organization_id \|\| ':' \|\| customer_id\)/);
+    expect(sql).toMatch(/id like 'lcbc-%' or id like 'lcc-%'/);
+    expect(sql).toMatch(/Does not drop the leftover/);
     expect(sql).toMatch(/line_customer_binding_secrets/);
     expect(sql).toMatch(/line_customer_binding_rebinds/);
     expect(sql).toMatch(/identity_confirmed_at/);
@@ -62,9 +66,12 @@ describe("Preview leftover LINE customer binding upgrade", () => {
     expect(runner).not.toMatch(/20261017160000_line_customer_bindings\.sql/);
     expect(runner).not.toMatch(/bfzquejrtgqzzarhkiya|knccefcxncglgpmvgqlp|api\.line\.me/);
 
+    expect(stub).toMatch(/primary key \(organization_id, customer_app_id\)/);
     expect(stub).toMatch(/customer_app_id text not null/);
     expect(stub).toMatch(/line_user_id_cipher text not null/);
-    expect(stub).toMatch(/lcb-preview-legacy-1/);
+    expect(stub).toMatch(/id like 'lcc-%'/);
+    expect(stub).toMatch(/org-beauty-os-test/);
+    expect(stub).toMatch(/cust-2d2-fake-bound/);
     expect(stub).toMatch(/v1\.cipher-preview-legacy/);
     expect(stub).toMatch(/start_line_customer_bind_challenge\(/);
     expect(stub).toMatch(/consume_line_customer_bind_challenge_public\(/);
@@ -80,6 +87,10 @@ describe("Preview leftover LINE customer binding upgrade", () => {
     expect(cases).toMatch(/legacy verified row was treated as a new trusted recipient/);
     expect(cases).toMatch(/legacy verified row became recipient_ready without new verification/);
     expect(cases).toMatch(/legacy pending row was confirmed without a new capture/);
+    expect(cases).toMatch(/first bind start after upgrade failed/);
+    expect(cases).toMatch(/rebind consume did not stage a replacement/);
+    expect(cases).toMatch(/rebind cancel left a staged identity/);
+    expect(cases).toMatch(/cross-org customer bind was accepted/);
     expect(cases).toMatch(/Phase 2B reminder read lost the leftover rule/);
     expect(cases).toMatch(/Phase 2A apply_line_automation_schedule is missing after bind upgrade/);
   });

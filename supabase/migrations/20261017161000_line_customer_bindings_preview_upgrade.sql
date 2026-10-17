@@ -1,11 +1,12 @@
 -- Preview leftover LINE customer-binding upgrade.
 -- 20261017160000 was already recorded on Preview (bfzquejrtgqzzarhkiya)
--- against an older table shape: customer_app_id + on-table cipher, no
--- secrets / rebinds, and challenges without identity_confirmed_at.
+-- against an older table shape: no id, PK (organization_id, customer_app_id),
+-- on-table cipher, and challenges id like lcc-%.
 -- Supabase will not re-apply that filename, so this file re-runs the
 -- compatible 160000 body. Additive. Idempotent.
 -- Does not DROP TABLE, DROP COLUMN, TRUNCATE, or DELETE existing
--- binding, challenge, job, or rule rows.
+-- binding, challenge, job, or rule rows. Does not drop the leftover
+-- bindings primary key.
 -- Legacy verified=true is demoted until a new webhook capture sets
 -- captured_at and the owner confirms again. No leftover row may become
 -- recipient_ready=true without that new verification.
@@ -72,6 +73,12 @@ comment on table public.line_customer_bindings is
 
 do $$
 begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'id'
+  ) then
+    alter table public.line_customer_bindings add column id text;
+  end if;
   if not exists (
     select 1 from information_schema.columns
     where table_schema = 'public' and table_name = 'line_customer_bindings' and column_name = 'customer_id'
@@ -230,6 +237,78 @@ begin
   end if;
 end $$;
 
+-- Leftover Preview has no id and PK (organization_id, customer_app_id).
+-- Generate the same stable id consume uses so secrets/rebinds can FK to it.
+-- Do not drop the leftover primary key.
+update public.line_customer_bindings
+set id = 'lcb-' || substr(md5(organization_id || ':' || customer_id), 1, 20)
+where id is null
+  and organization_id is not null
+  and customer_id is not null;
+
+do $$
+begin
+  if exists (
+    select 1
+    from public.line_customer_bindings
+    where id is null or btrim(id) = '' or id not like 'lcb-%'
+  ) then
+    raise exception 'line_customer_bindings.id could not be backfilled for leftover rows';
+  end if;
+  if exists (
+    select id
+    from public.line_customer_bindings
+    group by id
+    having count(*) > 1
+  ) then
+    raise exception 'line_customer_bindings.id backfill produced duplicates';
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'line_customer_bindings'
+      and column_name = 'id'
+      and is_nullable = 'YES'
+  ) then
+    alter table public.line_customer_bindings
+      alter column id set not null;
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint c
+    where c.conrelid = 'public.line_customer_bindings'::regclass
+      and c.contype in ('p', 'u')
+      and (
+        select array_agg(a.attname order by k.ord)
+        from unnest(c.conkey) with ordinality as k(attnum, ord)
+        join pg_attribute a
+          on a.attrelid = c.conrelid
+         and a.attnum = k.attnum
+      ) = array['id']::name[]
+  ) then
+    alter table public.line_customer_bindings
+      add constraint line_customer_bindings_id_key unique (id);
+  end if;
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'line_customer_bindings_id_prefix'
+      and conrelid = 'public.line_customer_bindings'::regclass
+  ) then
+    alter table public.line_customer_bindings
+      add constraint line_customer_bindings_id_prefix
+      check (id like 'lcb-%');
+  end if;
+end $$;
+
 do $$
 begin
   if exists (
@@ -238,6 +317,16 @@ begin
       and table_name = 'line_customer_bindings'
       and column_name = 'customer_app_id'
       and is_nullable = 'NO'
+  ) and not exists (
+    select 1
+    from pg_constraint c
+    join unnest(c.conkey) as k(attnum) on true
+    join pg_attribute a
+      on a.attrelid = c.conrelid
+     and a.attnum = k.attnum
+    where c.conrelid = 'public.line_customer_bindings'::regclass
+      and c.contype in ('p', 'u')
+      and a.attname = 'customer_app_id'
   ) then
     alter table public.line_customer_bindings
       alter column customer_app_id drop not null;
@@ -248,6 +337,16 @@ begin
       and table_name = 'line_customer_bindings'
       and column_name = 'line_user_id_cipher'
       and is_nullable = 'NO'
+  ) and not exists (
+    select 1
+    from pg_constraint c
+    join unnest(c.conkey) as k(attnum) on true
+    join pg_attribute a
+      on a.attrelid = c.conrelid
+     and a.attnum = k.attnum
+    where c.conrelid = 'public.line_customer_bindings'::regclass
+      and c.contype in ('p', 'u')
+      and a.attname = 'line_user_id_cipher'
   ) then
     alter table public.line_customer_bindings
       alter column line_user_id_cipher drop not null;
@@ -594,6 +693,37 @@ where identity_confirmed_at is null
   and consumed_at is null;
 
 do $$
+declare
+  r record;
+begin
+  for r in
+    select c.conname
+    from pg_constraint c
+    where c.conrelid = 'public.line_customer_bind_challenges'::regclass
+      and c.contype = 'c'
+      and (
+        c.conname = 'line_customer_bind_challenges_id_prefix'
+        or (
+          pg_get_constraintdef(c.oid) ~* $re$id like 'lcc-%'$re$
+          and pg_get_constraintdef(c.oid) !~* 'lcbc-%'
+        )
+      )
+  loop
+    execute format(
+      'alter table public.line_customer_bind_challenges drop constraint if exists %I',
+      r.conname
+    );
+  end loop;
+end $$;
+
+alter table public.line_customer_bind_challenges
+  drop constraint if exists line_customer_bind_challenges_id_prefix;
+
+alter table public.line_customer_bind_challenges
+  add constraint line_customer_bind_challenges_id_prefix
+    check (id like 'lcbc-%' or id like 'lcc-%');
+
+do $$
 begin
   if exists (
     select 1 from information_schema.columns
@@ -601,6 +731,16 @@ begin
       and table_name = 'line_customer_bind_challenges'
       and column_name = 'customer_app_id'
       and is_nullable = 'NO'
+  ) and not exists (
+    select 1
+    from pg_constraint c
+    join unnest(c.conkey) as k(attnum) on true
+    join pg_attribute a
+      on a.attrelid = c.conrelid
+     and a.attnum = k.attnum
+    where c.conrelid = 'public.line_customer_bind_challenges'::regclass
+      and c.contype in ('p', 'u')
+      and a.attname = 'customer_app_id'
   ) then
     alter table public.line_customer_bind_challenges
       alter column customer_app_id drop not null;
@@ -1271,6 +1411,8 @@ begin
       set
         line_user_id_hint = v_rebind.line_user_id_hint,
         line_user_id_hash = v_rebind.line_user_id_hash,
+        line_user_id_cipher = v_rebind.line_user_id_cipher,
+        key_id = v_rebind.key_id,
         verified = true,
         status = 'active',
         captured_at = v_rebind.captured_at,

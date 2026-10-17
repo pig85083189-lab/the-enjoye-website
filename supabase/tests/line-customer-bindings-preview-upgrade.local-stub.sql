@@ -1,7 +1,9 @@
 -- Local-only Preview leftover LINE bind schema for the 161000 upgrade.
--- Matches the observed Preview shape and counts:
---   line_customer_bindings: 1 row, verified=true, customer_app_id, on-table cipher
---   line_customer_bind_challenges: 0 rows, customer_app_id, missing later confirm columns
+-- Matches the observed Preview leftover shape and counts:
+--   line_customer_bindings: no id, PK (organization_id, customer_app_id),
+--     1 row verified=true for org-beauty-os-test / cust-2d2-fake-bound,
+--     ciphertext in line_user_id_cipher
+--   line_customer_bind_challenges: 0 rows, id like lcc-%, customer_app_id
 --   line_automation_jobs: 11 rows
 --   line_automation_rules: 1 row
 -- Never connect to Preview or Production. Never call LINE.
@@ -144,9 +146,8 @@ create table if not exists public.line_automation_jobs (
   constraint line_automation_jobs_id_org_key unique (id, organization_id)
 );
 
--- Old Preview bind shape: customer_app_id, ciphertext on the row.
+-- Actual Preview bind shape: no id, leftover PK, ciphertext on the row.
 create table if not exists public.line_customer_bindings (
-  id text primary key,
   organization_id text not null,
   customer_app_id text not null,
   line_user_id_hint text not null,
@@ -159,12 +160,11 @@ create table if not exists public.line_customer_bindings (
   unbound_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint line_customer_bindings_id_prefix check (id like 'lcb-%'),
-  constraint line_customer_bindings_org_prefix check (organization_id like 'org-%'),
-  unique (organization_id, customer_app_id)
+  primary key (organization_id, customer_app_id),
+  constraint line_customer_bindings_org_prefix check (organization_id like 'org-%')
 );
 
--- Old Preview challenge shape: customer_app_id, no identity/proof columns.
+-- Actual Preview challenge shape: lcc-% ids, customer_app_id, no confirm columns.
 create table if not exists public.line_customer_bind_challenges (
   id text primary key,
   organization_id text not null,
@@ -176,7 +176,7 @@ create table if not exists public.line_customer_bind_challenges (
   failed_attempts integer not null default 0,
   last_attempt_at timestamptz,
   created_at timestamptz not null default now(),
-  constraint line_customer_bind_challenges_id_prefix check (id like 'lcbc-%'),
+  constraint line_customer_bind_challenges_id_prefix check (id like 'lcc-%'),
   constraint line_customer_bind_challenges_org_prefix check (organization_id like 'org-%')
 );
 
@@ -308,56 +308,62 @@ end;
 $$;
 
 insert into public.organizations (id, name, app_id) values
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'THE ENJOYE', 'org-the-enjoye'),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'LUMIERE', 'org-lumiere');
+  ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'Beauty OS Test', 'org-beauty-os-test'),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'THE ENJOYE', 'org-the-enjoye');
 
 insert into public.staff_auth_memberships (
   id, user_id, auth_user_id, organization_id, role, display_name, is_active
 ) values
   (
-    'mem-enjoye-owner', 'staff-enjoye-owner',
+    'mem-test-owner', 'staff-test-owner',
     '11111111-1111-1111-1111-111111111111',
-    'org-the-enjoye', 'OWNER', '享悅店長', true
+    'org-beauty-os-test', 'OWNER', 'TEST 店長', true
   ),
   (
-    'mem-lumiere-owner', 'staff-lumiere-owner',
-    '22222222-2222-2222-2222-222222222222',
-    'org-lumiere', 'OWNER', 'LUMIERE 店長', true
+    'mem-enjoye-owner', 'staff-enjoye-owner',
+    '33333333-3333-3333-3333-333333333333',
+    'org-the-enjoye', 'OWNER', '享悅店長', true
   );
 
 insert into public.customers (
   id, organization_id, app_id, status, birthday, full_name, preferred_name, line_user_id
 ) values
   (
-    'cccccccc-cccc-cccc-cccc-cccccccccccc',
-    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    'cust-1', 'ACTIVE', '1990-10-20', '小美', '小美',
+    'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+    'dddddddd-dddd-dddd-dddd-dddddddddddd',
+    'cust-2d2-fake-bound', 'ACTIVE', '1990-10-20', '測試綁定', '測試綁定',
     'Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
   ),
   (
-    'ffffffff-ffff-ffff-ffff-ffffffffffff',
+    '22222222-2222-2222-2222-222222222222',
+    'dddddddd-dddd-dddd-dddd-dddddddddddd',
+    'cust-unbound', 'ACTIVE', '1990-11-01', '尚未綁定', '尚未綁定',
+    null
+  ),
+  (
+    'cccccccc-cccc-cccc-cccc-cccccccccccc',
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    'cust-2', 'ACTIVE', '1990-11-01', '小華', '小華',
+    'cust-enjoye', 'ACTIVE', '1990-12-01', '享悅顧客', '享悅顧客',
     null
   );
 
 insert into public.appointments (id, organization_id, customer_id, app_id, status, starts_at) values
   (
+    '99999999-9999-9999-9999-999999999999',
+    'dddddddd-dddd-dddd-dddd-dddddddddddd',
     'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
-    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    'cccccccc-cccc-cccc-cccc-cccccccccccc',
     'appt-keep', 'BOOKED', timestamptz '2026-10-20 08:00:00+00'
   );
 
 insert into public.line_automation_rules (
   organization_id, automation_id, enabled, timing_ids, template, updated_by_staff_id
 ) values (
-  'org-the-enjoye',
+  'org-beauty-os-test',
   'appointment_reminder',
   true,
   array['day_before_morning', 'hours_before_3']::text[],
   '舊預約提醒範本，請勿覆蓋',
-  'staff-enjoye-owner'
+  'staff-test-owner'
 );
 
 insert into public.line_automation_jobs (
@@ -365,69 +371,68 @@ insert into public.line_automation_jobs (
   timing_id, fingerprint, scheduled_for, status, request_id, recipient_ready
 ) values
   (
-    'laj-ready-day', 'org-the-enjoye', 'appt-keep', 'cust-1', 'svc-1',
+    'laj-ready-day', 'org-beauty-os-test', 'appt-keep', 'cust-2d2-fake-bound', 'svc-1',
     'day_before_morning', 'fp-ready-day', now() + interval '1 day',
     'scheduled', 'larq-ready-day', true
   ),
   (
-    'laj-ready-hours', 'org-the-enjoye', 'appt-keep', 'cust-1', 'svc-1',
+    'laj-ready-hours', 'org-beauty-os-test', 'appt-keep', 'cust-2d2-fake-bound', 'svc-1',
     'hours_before_3', 'fp-ready-hours', now() + interval '3 hours',
     'scheduled', 'larq-ready-hours', true
   ),
   (
-    'laj-sched-false', 'org-the-enjoye', 'appt-keep', 'cust-1', 'svc-1',
+    'laj-sched-false', 'org-beauty-os-test', 'appt-keep', 'cust-2d2-fake-bound', 'svc-1',
     'day_before_morning', 'fp-sched-false', now() + interval '2 day',
     'scheduled', 'larq-sched-false', false
   ),
   (
-    'laj-claimed', 'org-the-enjoye', 'appt-keep', 'cust-1', 'svc-1',
+    'laj-claimed', 'org-beauty-os-test', 'appt-keep', 'cust-2d2-fake-bound', 'svc-1',
     'hours_before_3', 'fp-claimed', now() + interval '4 hours',
     'claimed', 'larq-claimed', true
   ),
   (
-    'laj-accepted', 'org-the-enjoye', 'appt-keep', 'cust-1', 'svc-1',
+    'laj-accepted', 'org-beauty-os-test', 'appt-keep', 'cust-2d2-fake-bound', 'svc-1',
     'day_before_morning', 'fp-accepted', now() + interval '5 hours',
     'accepted', 'larq-accepted', false
   ),
   (
-    'laj-canceled', 'org-the-enjoye', 'appt-other', 'cust-1', 'svc-1',
+    'laj-canceled', 'org-beauty-os-test', 'appt-other', 'cust-2d2-fake-bound', 'svc-1',
     'day_before_morning', 'fp-canceled', now() + interval '6 hours',
     'canceled', 'larq-canceled', false
   ),
   (
-    'laj-skipped', 'org-the-enjoye', 'appt-other', 'cust-1', 'svc-1',
+    'laj-skipped', 'org-beauty-os-test', 'appt-other', 'cust-2d2-fake-bound', 'svc-1',
     'hours_before_3', 'fp-skipped', now() + interval '7 hours',
     'skipped', 'larq-skipped', false
   ),
   (
-    'laj-failed', 'org-the-enjoye', 'appt-other', 'cust-1', 'svc-1',
+    'laj-failed', 'org-beauty-os-test', 'appt-other', 'cust-2d2-fake-bound', 'svc-1',
     'day_before_morning', 'fp-failed', now() + interval '8 hours',
     'failed', 'larq-failed', false
   ),
   (
-    'laj-pending-conf', 'org-the-enjoye', 'appt-other', 'cust-1', 'svc-1',
+    'laj-pending-conf', 'org-beauty-os-test', 'appt-other', 'cust-2d2-fake-bound', 'svc-1',
     'hours_before_3', 'fp-pending-conf', now() + interval '9 hours',
     'pending_confirmation', 'larq-pending-conf', false
   ),
   (
-    'laj-reconciled', 'org-the-enjoye', 'appt-other', 'cust-1', 'svc-1',
+    'laj-reconciled', 'org-beauty-os-test', 'appt-other', 'cust-2d2-fake-bound', 'svc-1',
     'day_before_morning', 'fp-reconciled', now() + interval '10 hours',
     'reconciled', 'larq-reconciled', false
   ),
   (
-    'laj-expired', 'org-the-enjoye', 'appt-other', 'cust-1', 'svc-1',
+    'laj-expired', 'org-beauty-os-test', 'appt-other', 'cust-2d2-fake-bound', 'svc-1',
     'hours_before_3', 'fp-expired', now() + interval '11 hours',
     'expired', 'larq-expired', false
   );
 
 insert into public.line_customer_bindings (
-  id, organization_id, customer_app_id,
+  organization_id, customer_app_id,
   line_user_id_hint, line_user_id_hash, line_user_id_cipher, key_id,
   verified, status, bound_at
 ) values (
-  'lcb-preview-legacy-1',
-  'org-the-enjoye',
-  'cust-1',
+  'org-beauty-os-test',
+  'cust-2d2-fake-bound',
   '••••aaaa',
   encode(sha256(convert_to('Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'utf8')), 'hex'),
   'v1.cipher-preview-legacy',
