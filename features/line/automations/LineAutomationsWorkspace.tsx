@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { LineAutomationCard } from "@/features/line/automations/LineAutomationCard";
 import { LineAutomationPhonePreview } from "@/features/line/automations/LineAutomationPhonePreview";
 import { LineAutomationRuleEditor } from "@/features/line/automations/LineAutomationRuleEditor";
+import { LineAppointmentReminderDryRunCard } from "@/features/line/automations/LineAppointmentReminderDryRunCard";
 import { LineAppointmentReminderPlanCard } from "@/features/line/automations/LineAppointmentReminderPlanCard";
 import { LineAutomationMonthlyStats } from "@/features/line/automations/LineAutomationStats";
 import { LineOwnerSelfReminderCard } from "@/features/line/automations/LineOwnerSelfReminderCard";
@@ -188,6 +189,7 @@ export function LineAutomationsWorkspace() {
             {LINE_AUTOMATION_HISTORY_EMPTY}
           </p>
           <p className="mt-2 text-[13px] text-secondary-text">{LINE_AUTOMATION_HISTORY_LOCAL_HINT}</p>
+          <LineAppointmentReminderDryRunCard />
           <LineAppointmentReminderPlanCard enabled={drafts.appointment_reminder.enabled} />
         </Card>
       ) : (
@@ -261,6 +263,7 @@ export function LineAutomationsWorkspace() {
             </dl>
           </Card>
           <LineAppointmentReminderPlanCard enabled={drafts.appointment_reminder.enabled} />
+          <LineAppointmentReminderDryRunCard />
           <LineOwnerSelfReminderCard />
         </>
       ) : null}
