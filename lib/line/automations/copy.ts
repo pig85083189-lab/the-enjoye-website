@@ -107,3 +107,14 @@ export const LINE_OWNER_SELF_UNAVAILABLE = "正式環境未載入";
 export const LINE_OWNER_SELF_PHRASE_LABEL = "二次確認文句";
 export const LINE_OWNER_SELF_ONESHOT_LABEL = "單次授權";
 export const LINE_OWNER_SELF_REMAINING_LABEL = "今日剩餘測試額度";
+export const LINE_CUSTOMER_BIND_TITLE = "顧客 LINE 綁定";
+export const LINE_CUSTOMER_BIND_HINT =
+  "請顧客用自己的 LINE 把驗證碼傳給本官方帳號。系統用 Webhook 簽章確認身分，不能手填 User ID，也不能修改已驗證的識別。";
+export const LINE_CUSTOMER_BIND_EMPTY = "目前沒有可綁定的顧客。";
+export const LINE_CUSTOMER_BIND_UNBOUND = "尚未綁定";
+export const LINE_CUSTOMER_BIND_ACTIVE = "已驗證";
+export const LINE_CUSTOMER_BIND_PENDING = "待驗證";
+export const LINE_CUSTOMER_BIND_RELEASED = "已解除";
+export const LINE_CUSTOMER_BIND_START = "產生驗證碼";
+export const LINE_CUSTOMER_BIND_UNBIND = "解除綁定";
+export const LINE_CUSTOMER_BIND_NO_EDIT = "已驗證的 LINE 識別不可手動修改";

@@ -80,17 +80,22 @@ export function mapAutomationRules(
 export function mapScheduleCustomers(
   rows: readonly Record<string, unknown>[],
   organizationId: string,
+  verifiedCustomerIds?: ReadonlySet<string>,
 ): LineAutomationScheduleCustomer[] {
   return rows.flatMap((row) => {
     const id = publicScheduleId(row);
     if (!id) return [];
+    const uuid = typeof row.id === "string" ? row.id.trim() : "";
+    const trusted =
+      verifiedCustomerIds?.has(id) === true ||
+      (uuid !== "" && verifiedCustomerIds?.has(uuid) === true);
     return [
       {
         id,
         organizationId,
         birthdayYmd: asYmd(row.birthday),
         status: typeof row.status === "string" ? row.status : null,
-        verifiedLineBinding: false,
+        verifiedLineBinding: trusted,
       } satisfies LineAutomationScheduleCustomer,
     ];
   });
@@ -225,12 +230,17 @@ export function buildScheduleSnapshot(input: {
   treatments?: readonly Record<string, unknown>[];
   packages?: readonly Record<string, unknown>[];
   jobs?: readonly Record<string, unknown>[];
+  verifiedCustomerIds?: ReadonlySet<string>;
   nowMs?: number;
 }): LineAutomationScheduleSnapshot {
   const customers =
     input.customers === undefined
       ? undefined
-      : mapScheduleCustomers(input.customers, input.organizationId);
+      : mapScheduleCustomers(
+          input.customers,
+          input.organizationId,
+          input.verifiedCustomerIds,
+        );
   return {
     organizationId: input.organizationId,
     rules: mapAutomationRules(input.rules, input.organizationId),

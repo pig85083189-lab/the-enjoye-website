@@ -119,6 +119,10 @@ export const LINE_AUTOMATION_RULES_MIGRATION_FILE =
 export const LINE_AUTOMATION_SCHEDULE_MIGRATION_FILE =
   "supabase/migrations/20261017140000_line_automation_schedule_engine.sql";
 
+/** LINE customer bindings for trusted recipient verification. Additive. Default closed. Do not apply on Production until Owner confirms. */
+export const LINE_CUSTOMER_BINDINGS_MIGRATION_FILE =
+  "supabase/migrations/20261017160000_line_customer_bindings.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",
@@ -133,6 +137,9 @@ export const LINE_TABLES = [
   "line_broadcast_oneshot_permits",
   "line_automation_rules",
   "line_automation_jobs",
+  "line_customer_bindings",
+  "line_customer_binding_secrets",
+  "line_customer_bind_challenges",
 ] as const;
 
 /** Must never appear as stored columns (second books). */

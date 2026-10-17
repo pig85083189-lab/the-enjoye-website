@@ -11,6 +11,7 @@ import {
   IDENTITY_MIGRATION_FILE,
   LINE_AUTOMATION_RULES_MIGRATION_FILE,
   LINE_AUTOMATION_SCHEDULE_MIGRATION_FILE,
+  LINE_CUSTOMER_BINDINGS_MIGRATION_FILE,
   OPERATIONAL_MIGRATION_FILE,
   STRATEGY_B_RLS_MIGRATION_FILE,
 } from "./schema-contract";
@@ -53,6 +54,7 @@ const EXPECTED_CHAIN = [
   "20261012120000_line_broadcast_channel_lock.sql",
   "20261017120000_line_automation_rules.sql",
   "20261017140000_line_automation_schedule_engine.sql",
+  "20261017160000_line_customer_bindings.sql",
 ] as const;
 
 function read(rel: string): string {
@@ -166,5 +168,28 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
     expect(executable).not.toMatch(/delete from public\.line_automation_jobs/i);
     expect(executable).not.toMatch(/api\.line\.me|cron|pg_cron/i);
     expect(executable).not.toMatch(/create or replace function public\.sync_line_appointment_reminder_jobs/i);
+  });
+
+  it("adds trusted LINE customer bindings without rewriting jobs or Broadcast", () => {
+    const sql = read(LINE_CUSTOMER_BINDINGS_MIGRATION_FILE);
+    const executable = sql
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    expect(LINE_CUSTOMER_BINDINGS_MIGRATION_FILE).toContain("20261017160000");
+    expect(sql).toMatch(/create table if not exists public\.line_customer_bindings/);
+    expect(sql).toMatch(/create table if not exists public\.line_customer_binding_secrets/);
+    expect(sql).toMatch(/create table if not exists public\.line_customer_bind_challenges/);
+    expect(sql).toMatch(/start_line_customer_bind_challenge/);
+    expect(sql).toMatch(/consume_line_customer_bind_challenge_public/);
+    expect(sql).toMatch(/unbind_line_customer_binding/);
+    expect(sql).toMatch(/read_line_customer_bindings/);
+    expect(sql).toMatch(/line_automation_schedule_recipient_ready/);
+    expect(sql).toMatch(/Do not apply on Production until Owner confirms/);
+    expect(executable).not.toMatch(/drop table public\.line_automation_jobs/i);
+    expect(executable).not.toMatch(/delete from public\.line_automation_jobs/i);
+    expect(executable).not.toMatch(/alter table public\.line_broadcasts/i);
+    expect(executable).not.toMatch(/api\.line\.me|cron|pg_cron/i);
+    expect(executable).not.toMatch(/customers\.line_user_id/);
   });
 });

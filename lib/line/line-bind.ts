@@ -17,6 +17,10 @@ export function hashLineBindCode(organizationId: string, code: string): string {
     .digest("hex");
 }
 
+export function hashLineUserId(userId: string): string {
+  return createHash("sha256").update(userId.trim(), "utf8").digest("hex");
+}
+
 export function hashLineWebhookPublicToken(organizationId: string, token: string): string {
   return createHash("sha256")
     .update(`${organizationId}:${token.trim()}`, "utf8")
