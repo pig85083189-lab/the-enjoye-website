@@ -82,7 +82,7 @@ export function LineAutomationRuleEditor({
         role="dialog"
         aria-modal="true"
         aria-labelledby="line-automation-editor-title"
-        className="flex max-h-[min(92vh,100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-t-[24px] border border-border bg-[#FFFCFB] shadow-[0_16px_40px_rgba(48,43,43,0.12)] sm:rounded-[20px]"
+        className="flex h-[min(92vh,calc(100dvh-1.5rem))] min-h-0 w-full max-w-lg flex-col overflow-hidden rounded-t-[24px] border border-border bg-[#FFFCFB] shadow-[0_16px_40px_rgba(48,43,43,0.12)] sm:h-[min(80vh,42rem)] sm:rounded-[20px]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/70 px-4 py-4 sm:px-5">
