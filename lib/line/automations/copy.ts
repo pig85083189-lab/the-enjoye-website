@@ -11,7 +11,7 @@ export const LINE_AUTOMATION_HISTORY_EMPTY =
   "尚無發送紀錄。自動通知尚未接上正式發送。";
 export const LINE_AUTOMATION_HISTORY_SUBTITLE = "查看自動通知發送紀錄";
 export const LINE_AUTOMATION_BACK_TO_MANAGE = "返回通知管理";
-export const LINE_AUTOMATION_PREVIEW_MODE_LABEL = "預覽模式，尚未開放儲存";
+export const LINE_AUTOMATION_PREVIEW_MODE_LABEL = "預覽模式，尚未發送";
 export const LINE_AUTOMATION_LOCAL_ONLY_BADGE = "尚未啟用";
 export const LINE_AUTOMATION_LOCAL_PREVIEW_BADGE = "本機預覽中";
 export const LINE_AUTOMATION_EMPTY_STAT = "—";
@@ -32,7 +32,7 @@ export const LINE_AUTOMATION_TIMING_LABEL = "發送時間";
 export const LINE_AUTOMATION_TEMPLATE_LABEL = "訊息範本";
 export const LINE_AUTOMATION_OWNER_ONLY = "只有店長可以使用 LINE 自動通知";
 export const LINE_AUTOMATION_EDITOR_WARNING =
-  "此設定僅存在於此瀏覽器工作階段，不會寫入資料庫，也不會呼叫 LINE API。";
+  "設定會儲存到此店家，但不會發送 LINE 訊息。";
 export const LINE_AUTOMATION_REMINDER_DEV_TITLE = "預約提醒開發狀態";
 export const LINE_AUTOMATION_REMINDER_DEV_HINT =
   "Phase 3A：先完成測試 LINE。本機可預覽排程，不會寫入正式資料庫，也不會發送 LINE。";

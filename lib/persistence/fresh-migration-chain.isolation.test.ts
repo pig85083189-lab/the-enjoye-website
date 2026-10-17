@@ -9,6 +9,7 @@ import {
   ENUM_ADAPT_MIGRATION_FILE,
   FOUNDATION_MIGRATION_FILE,
   IDENTITY_MIGRATION_FILE,
+  LINE_AUTOMATION_RULES_MIGRATION_FILE,
   OPERATIONAL_MIGRATION_FILE,
   STRATEGY_B_RLS_MIGRATION_FILE,
 } from "./schema-contract";
@@ -49,6 +50,7 @@ const EXPECTED_CHAIN = [
   "20261011020000_line_broadcast_claim_safety.sql",
   "20261011140000_line_broadcast_oneshot_permit.sql",
   "20261012120000_line_broadcast_channel_lock.sql",
+  "20261017120000_line_automation_rules.sql",
 ] as const;
 
 function read(rel: string): string {
@@ -116,5 +118,26 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
     const strategyB = read(STRATEGY_B_RLS_MIGRATION_FILE);
     expect(strategyB).toMatch(/m\.user_id = audit_logs\.actor_id/);
     expect(strategyB).not.toMatch(/actor_id = auth\.uid\(\)/);
+  });
+
+  it("upgrades Preview line_automation_rules instead of replacing the Phase 2B table", () => {
+    const rules = read(LINE_AUTOMATION_RULES_MIGRATION_FILE);
+    const executable = rules
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    expect(LINE_AUTOMATION_RULES_MIGRATION_FILE).toContain("20261017120000");
+    expect(rules).toMatch(/create table if not exists public\.line_automation_rules/);
+    expect(rules).toMatch(/add column automation_type text/);
+    expect(rules).toMatch(/add column timing_config jsonb/);
+    expect(rules).toMatch(/where automation_type is null/);
+    expect(rules).toMatch(/unique \(organization_id, automation_type\)/);
+    expect(rules).toMatch(/Fail the migration immediately if either unique cannot be created/);
+    expect(executable).not.toMatch(/exception when others then null/i);
+    expect(executable).not.toMatch(/drop table public\.line_automation_rules/i);
+    expect(executable).not.toMatch(/\bdrop column\b/i);
+    expect(executable).not.toMatch(/\btruncate\s+table\b/i);
+    expect(executable).not.toMatch(/delete from public\.line_automation_rules/i);
+    expect(executable).not.toMatch(/create or replace function public\.upsert_line_appointment_reminder_rule/i);
   });
 });

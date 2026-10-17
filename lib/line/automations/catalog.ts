@@ -188,3 +188,10 @@ export function lineAutomationById(
 export function isLineAutomationId(value: string): value is LineAutomationId {
   return LINE_AUTOMATION_CATALOG.some((item) => item.id === value);
 }
+
+export function lineAutomationBuiltinTimingIds(
+  automationType: string,
+): readonly string[] | null {
+  if (!isLineAutomationId(automationType)) return null;
+  return lineAutomationById(automationType).timings.map((item) => item.id);
+}
