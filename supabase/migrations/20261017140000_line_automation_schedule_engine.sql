@@ -234,6 +234,302 @@ for select
 to authenticated
 using (public.user_is_org_owner(organization_id));
 
+create or replace function public.line_automation_schedule_lock_org(
+  p_organization_id text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- Transaction lock for one organization, including first-insert races.
+  perform pg_advisory_xact_lock(87140000, hashtext(p_organization_id));
+  perform 1
+  from public.line_automation_jobs
+  where organization_id = p_organization_id
+  order by id
+  for update;
+end;
+$$;
+
+comment on function public.line_automation_schedule_lock_org(text) is
+  'Serializes one organization LINE automation schedule apply. Does not send LINE.';
+
+create or replace function public.line_automation_schedule_event_kind(
+  p_automation_type text
+)
+returns text
+language sql
+immutable
+as $$
+  select case p_automation_type
+    when 'appointment_reminder' then 'appointment'
+    when 'birthday_greeting' then 'customer_birthday'
+    when 'holiday_greeting' then 'holiday_occurrence'
+    when 'satisfaction_survey' then 'treatment'
+    when 'coupon_expiry' then 'customer_package'
+    else null
+  end;
+$$;
+
+create or replace function public.line_automation_schedule_timing_allowed(
+  p_automation_type text,
+  p_timing_id text
+)
+returns boolean
+language sql
+immutable
+as $$
+  select p_timing_id = any(
+    case p_automation_type
+      when 'appointment_reminder' then array['day_before_morning', 'hours_before_3']
+      when 'birthday_greeting' then array['birthday_morning', 'days_before_3']
+      when 'holiday_greeting' then array['cny', 'mid_autumn', 'christmas']
+      when 'satisfaction_survey' then array['hours_after_2', 'days_after_1']
+      when 'coupon_expiry' then array['days_before_7', 'days_before_3', 'days_before_1']
+      else '{}'::text[]
+    end
+  );
+$$;
+
+create or replace function public.line_automation_schedule_rule_allows(
+  p_organization_id text,
+  p_automation_type text,
+  p_timing_id text,
+  p_message_snapshot text
+)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_enabled boolean;
+  v_template text;
+  v_timing_ids text[];
+  v_selected jsonb;
+begin
+  if to_regclass('public.line_automation_rules') is null then
+    raise exception 'missing rule' using errcode = 'P0002';
+  end if;
+
+  select
+    r.enabled,
+    coalesce(r.message_template, ''),
+    coalesce(r.timing_ids, '{}'::text[]),
+    r.timing_config->'selectedTimingIds'
+  into v_enabled, v_template, v_timing_ids, v_selected
+  from public.line_automation_rules r
+  where r.organization_id = p_organization_id
+    and r.automation_type = p_automation_type
+  limit 1;
+
+  if not found then
+    raise exception 'missing rule' using errcode = 'P0002';
+  end if;
+  if v_enabled is not true then
+    raise exception 'rule disabled' using errcode = '22023';
+  end if;
+  if jsonb_typeof(v_selected) = 'array' then
+    if not exists (
+      select 1
+      from jsonb_array_elements_text(v_selected) t
+      where t = p_timing_id
+    ) then
+      raise exception 'invalid timing' using errcode = '22023';
+    end if;
+  elsif not (p_timing_id = any (v_timing_ids)) then
+    raise exception 'invalid timing' using errcode = '22023';
+  end if;
+  if p_message_snapshot is distinct from v_template then
+    raise exception 'rule mismatch' using errcode = '22023';
+  end if;
+end;
+$$;
+
+create or replace function public.line_automation_schedule_customer_belongs(
+  p_organization_id text,
+  p_customer_id text
+)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if p_customer_id is null or btrim(p_customer_id) = '' then
+    return false;
+  end if;
+  if to_regclass('public.customers') is null or to_regclass('public.organizations') is null then
+    return true;
+  end if;
+  return exists (
+    select 1
+    from public.customers c
+    join public.organizations o on o.id = c.organization_id
+    where o.app_id = p_organization_id
+      and (
+        c.app_id = p_customer_id
+        or c.id::text = p_customer_id
+      )
+      and coalesce(c.status::text, 'ACTIVE') = 'ACTIVE'
+  );
+end;
+$$;
+
+create or replace function public.line_automation_schedule_event_belongs(
+  p_organization_id text,
+  p_automation_type text,
+  p_event_kind text,
+  p_event_id text,
+  p_customer_id text
+)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if p_event_id is null or btrim(p_event_id) = '' then
+    return false;
+  end if;
+  if p_automation_type = 'holiday_greeting' or p_event_kind = 'holiday_occurrence' then
+    return false;
+  end if;
+  if p_automation_type = 'birthday_greeting' then
+    return p_event_id = p_customer_id
+      and public.line_automation_schedule_customer_belongs(p_organization_id, p_customer_id);
+  end if;
+  if p_automation_type = 'appointment_reminder' then
+    if to_regclass('public.appointments') is null then
+      return public.line_automation_schedule_customer_belongs(p_organization_id, p_customer_id);
+    end if;
+    return exists (
+      select 1
+      from public.appointments a
+      join public.organizations o on o.id = a.organization_id
+      where o.app_id = p_organization_id
+        and (a.app_id = p_event_id or a.id::text = p_event_id)
+        and (
+          a.customer_id::text = p_customer_id
+          or exists (
+            select 1
+            from public.customers c
+            where c.id = a.customer_id
+              and (c.app_id = p_customer_id or c.id::text = p_customer_id)
+          )
+        )
+    );
+  end if;
+  if p_automation_type = 'satisfaction_survey' then
+    if to_regclass('public.treatments') is null then
+      return false;
+    end if;
+    return exists (
+      select 1
+      from public.treatments t
+      join public.organizations o on o.id = t.organization_id
+      where o.app_id = p_organization_id
+        and (t.app_id = p_event_id or t.id::text = p_event_id)
+    );
+  end if;
+  if p_automation_type = 'coupon_expiry' then
+    if to_regclass('public.customer_packages') is null then
+      return false;
+    end if;
+    return exists (
+      select 1
+      from public.customer_packages p
+      join public.organizations o on o.id = p.organization_id
+      where o.app_id = p_organization_id
+        and (p.app_id = p_event_id or p.id::text = p_event_id)
+        and p.status::text = 'ACTIVE'
+        and p.expires_at is not null
+    );
+  end if;
+  return false;
+end;
+$$;
+
+create or replace function public.line_automation_schedule_validate_item(
+  p_organization_id text,
+  p_item jsonb
+)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_type text;
+  v_kind text;
+  v_event_id text;
+  v_customer_id text;
+  v_timing text;
+  v_fp text;
+begin
+  if p_item is null or jsonb_typeof(p_item) <> 'object' then
+    raise exception 'invalid schedule item' using errcode = '22023';
+  end if;
+  if p_item->>'organization_id' is distinct from p_organization_id then
+    raise exception 'organization mismatch' using errcode = '42501';
+  end if;
+  v_type := p_item->>'automation_type';
+  v_kind := p_item->>'event_kind';
+  v_event_id := nullif(btrim(coalesce(p_item->>'event_id', '')), '');
+  v_customer_id := nullif(btrim(coalesce(p_item->>'customer_id', '')), '');
+  v_timing := p_item->>'timing_id';
+  v_fp := p_item->>'fingerprint';
+  if public.line_automation_schedule_event_kind(v_type) is null then
+    raise exception 'invalid automation' using errcode = '22023';
+  end if;
+  if v_kind is distinct from public.line_automation_schedule_event_kind(v_type) then
+    raise exception 'invalid event' using errcode = '22023';
+  end if;
+  if not public.line_automation_schedule_timing_allowed(v_type, v_timing) then
+    raise exception 'invalid timing' using errcode = '22023';
+  end if;
+  if v_event_id is null then
+    raise exception 'invalid event' using errcode = '22023';
+  end if;
+  if v_customer_id is null then
+    raise exception 'invalid customer' using errcode = '22023';
+  end if;
+  if v_fp is distinct from (p_organization_id || '|' || v_type || '|' || v_event_id || '|' || v_timing) then
+    raise exception 'invalid fingerprint' using errcode = '22023';
+  end if;
+  if v_type = 'holiday_greeting' then
+    raise exception 'holiday source missing' using errcode = '22023';
+  end if;
+  if v_type = 'coupon_expiry' and to_regclass('public.customer_packages') is null then
+    raise exception 'coupon source missing' using errcode = '22023';
+  end if;
+  if not public.line_automation_schedule_customer_belongs(p_organization_id, v_customer_id) then
+    raise exception 'invalid customer' using errcode = '22023';
+  end if;
+  if not public.line_automation_schedule_event_belongs(
+    p_organization_id, v_type, v_kind, v_event_id, v_customer_id
+  ) then
+    raise exception 'invalid event' using errcode = '22023';
+  end if;
+  perform public.line_automation_schedule_rule_allows(
+    p_organization_id,
+    v_type,
+    v_timing,
+    coalesce(p_item->>'message_snapshot', '')
+  );
+  if p_item ? 'status'
+    and p_item->>'status' not in ('scheduled', 'pending_recipient') then
+    raise exception 'invalid status' using errcode = '22023';
+  end if;
+end;
+$$;
+
 create or replace function public.read_line_automation_schedule(
   p_organization_id text
 )
@@ -309,10 +605,7 @@ begin
     raise exception 'organization mismatch' using errcode = '42501';
   end if;
 
-  perform 1
-  from public.line_automation_jobs
-  where organization_id = p_organization_id
-  for update;
+  perform public.line_automation_schedule_lock_org(p_organization_id);
 
   for v_item in
     select value from jsonb_array_elements(coalesce(p_mutations->'cancel', '[]'::jsonb))
@@ -336,9 +629,7 @@ begin
   for v_item in
     select value from jsonb_array_elements(coalesce(p_mutations->'update', '[]'::jsonb))
   loop
-    if v_item->>'organization_id' is distinct from p_organization_id then
-      raise exception 'organization mismatch' using errcode = '42501';
-    end if;
+    perform public.line_automation_schedule_validate_item(p_organization_id, v_item);
     v_status := case
       when coalesce((v_item->>'recipient_ready')::boolean, false) then 'scheduled'
       else 'pending_recipient'
@@ -373,21 +664,19 @@ begin
   for v_item in
     select value from jsonb_array_elements(coalesce(p_mutations->'insert', '[]'::jsonb))
   loop
-    if v_item->>'organization_id' is distinct from p_organization_id then
-      raise exception 'organization mismatch' using errcode = '42501';
-    end if;
+    perform public.line_automation_schedule_validate_item(p_organization_id, v_item);
     v_fp := v_item->>'fingerprint';
     v_event_id := v_item->>'event_id';
     v_customer_id := v_item->>'customer_id';
-    if v_fp is null or v_event_id is null or v_customer_id is null then
-      continue;
-    end if;
     if exists (
       select 1
       from public.line_automation_jobs
       where organization_id = p_organization_id
         and fingerprint = v_fp
-        and status in ('accepted', 'pending_confirmation', 'reconciled', 'claimed')
+        and status in (
+          'accepted', 'pending_confirmation', 'reconciled', 'claimed',
+          'scheduled', 'pending_recipient'
+        )
     ) then
       continue;
     end if;
@@ -469,3 +758,11 @@ grant execute on function public.read_line_automation_schedule(text) to authenti
 
 revoke all on function public.apply_line_automation_schedule(text, jsonb) from public, anon;
 grant execute on function public.apply_line_automation_schedule(text, jsonb) to authenticated;
+
+revoke all on function public.line_automation_schedule_lock_org(text) from public, anon, authenticated;
+revoke all on function public.line_automation_schedule_event_kind(text) from public, anon, authenticated;
+revoke all on function public.line_automation_schedule_timing_allowed(text, text) from public, anon, authenticated;
+revoke all on function public.line_automation_schedule_rule_allows(text, text, text, text) from public, anon, authenticated;
+revoke all on function public.line_automation_schedule_customer_belongs(text, text) from public, anon, authenticated;
+revoke all on function public.line_automation_schedule_event_belongs(text, text, text, text, text) from public, anon, authenticated;
+revoke all on function public.line_automation_schedule_validate_item(text, jsonb) from public, anon, authenticated;

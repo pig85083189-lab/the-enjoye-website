@@ -156,6 +156,8 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
     expect(sql).toMatch(/add column message_snapshot text/);
     expect(sql).toMatch(/line_automation_jobs_active_fingerprint_key/);
     expect(sql).toMatch(/apply_line_automation_schedule/);
+    expect(sql).toMatch(/line_automation_schedule_validate_item/);
+    expect(sql).toMatch(/pg_advisory_xact_lock/);
     expect(sql).toMatch(/pending_recipient/);
     expect(sql).toMatch(/Do not apply on Production until Owner confirms/);
     expect(executable).not.toMatch(/drop table public\.line_automation_jobs/i);

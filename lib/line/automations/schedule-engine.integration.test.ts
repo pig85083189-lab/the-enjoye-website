@@ -44,7 +44,13 @@ describe("Phase 2A line_automation_jobs upgrade", () => {
     expect(stub).not.toMatch(/api\.line\.me|channel_secret|SUPABASE_SERVICE_ROLE_KEY/);
     expect(cases).toMatch(/duplicate birthday job created/);
     expect(cases).toMatch(/accepted job was mutated|accepted job was resent/);
+    expect(cases).toMatch(/forged fingerprint was accepted/);
+    expect(cases).toMatch(/cross-org customer was accepted/);
+    expect(cases).toMatch(/claimed job was mutated/);
+    expect(runner).toMatch(/concurrent apply created/);
     expect(migration).toMatch(/line_automation_jobs_active_fingerprint_key/);
+    expect(migration).toMatch(/pg_advisory_xact_lock/);
+    expect(migration).toMatch(/line_automation_schedule_validate_item/);
     expect(migration).toMatch(/Do not apply on Production until Owner confirms/);
   });
 

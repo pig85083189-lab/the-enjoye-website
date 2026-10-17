@@ -35,4 +35,39 @@ createdb "$DB"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261017140000_line_automation_schedule_engine.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/line-automation-schedule-engine.local-cases.sql"
 
+CONCURRENT_SQL="
+select tests.become('11111111-1111-1111-1111-111111111111');
+select public.apply_line_automation_schedule(
+  'org-the-enjoye',
+  jsonb_build_object(
+    'organization_id', 'org-the-enjoye',
+    'insert', jsonb_build_array(
+      jsonb_build_object(
+        'organization_id', 'org-the-enjoye',
+        'automation_type', 'birthday_greeting',
+        'event_kind', 'customer_birthday',
+        'event_id', 'cust-2',
+        'customer_id', 'cust-2',
+        'timing_id', 'birthday_morning',
+        'fingerprint', 'org-the-enjoye|birthday_greeting|cust-2|birthday_morning',
+        'scheduled_for', (now() + interval '4 day')::text,
+        'message_snapshot', '生日快樂',
+        'recipient_ready', true
+      )
+    ),
+    'update', '[]'::jsonb,
+    'cancel', '[]'::jsonb
+  )
+);
+"
+psql -d "$DB" -v ON_ERROR_STOP=1 -X -q -c "$CONCURRENT_SQL" &
+psql -d "$DB" -v ON_ERROR_STOP=1 -X -q -c "$CONCURRENT_SQL" &
+wait
+
+COUNT="$("${PSQL[@]}" -At -c "select count(*) from public.line_automation_jobs where fingerprint = 'org-the-enjoye|birthday_greeting|cust-2|birthday_morning' and status in ('scheduled', 'pending_recipient');")"
+if [[ "$COUNT" != "1" ]]; then
+  echo "REFUSE: concurrent apply created $COUNT jobs for the same fingerprint." >&2
+  exit 1
+fi
+
 echo "PASS: local Phase 2B jobs upgraded to Phase 2A without dropping legacy rows or sending LINE."

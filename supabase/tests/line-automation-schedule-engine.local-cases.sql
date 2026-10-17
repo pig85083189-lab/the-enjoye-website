@@ -98,7 +98,7 @@ begin
         'timing_id', 'hours_before_3',
         'fingerprint', 'org-the-enjoye|appointment_reminder|appt-keep|hours_before_3',
         'scheduled_for', (now() + interval '5 hour')::text,
-        'message_snapshot', 'should not resend',
+        'message_snapshot', '預約提醒',
         'recipient_ready', true
       )
     ),
@@ -178,5 +178,222 @@ begin
     where j->>'organization_id' is distinct from 'org-the-enjoye'
   ) then
     raise exception 'read leaked another organization';
+  end if;
+
+  begin
+    perform public.apply_line_automation_schedule(
+      'org-the-enjoye',
+      jsonb_build_object(
+        'organization_id', 'org-the-enjoye',
+        'insert', jsonb_build_array(
+          jsonb_build_object(
+            'organization_id', 'org-the-enjoye',
+            'automation_type', 'birthday_greeting',
+            'event_kind', 'customer_birthday',
+            'event_id', 'cust-1',
+            'customer_id', 'cust-1',
+            'timing_id', 'birthday_morning',
+            'fingerprint', 'forged-fingerprint',
+            'scheduled_for', (now() + interval '3 day')::text,
+            'message_snapshot', '生日快樂',
+            'recipient_ready', true
+          )
+        ),
+        'update', '[]'::jsonb,
+        'cancel', '[]'::jsonb
+      )
+    );
+    raise exception 'forged fingerprint was accepted';
+  exception
+    when others then
+      if sqlerrm not ilike '%invalid fingerprint%' then
+        raise;
+      end if;
+  end;
+
+  begin
+    perform public.apply_line_automation_schedule(
+      'org-the-enjoye',
+      jsonb_build_object(
+        'organization_id', 'org-the-enjoye',
+        'insert', jsonb_build_array(
+          jsonb_build_object(
+            'organization_id', 'org-the-enjoye',
+            'automation_type', 'birthday_greeting',
+            'event_kind', 'customer_birthday',
+            'event_id', 'cust-l',
+            'customer_id', 'cust-l',
+            'timing_id', 'birthday_morning',
+            'fingerprint', 'org-the-enjoye|birthday_greeting|cust-l|birthday_morning',
+            'scheduled_for', (now() + interval '3 day')::text,
+            'message_snapshot', '生日快樂',
+            'recipient_ready', true
+          )
+        ),
+        'update', '[]'::jsonb,
+        'cancel', '[]'::jsonb
+      )
+    );
+    raise exception 'cross-org customer was accepted';
+  exception
+    when others then
+      if sqlerrm not ilike '%invalid customer%' then
+        raise;
+      end if;
+  end;
+
+  begin
+    perform public.apply_line_automation_schedule(
+      'org-the-enjoye',
+      jsonb_build_object(
+        'organization_id', 'org-the-enjoye',
+        'insert', jsonb_build_array(
+          jsonb_build_object(
+            'organization_id', 'org-the-enjoye',
+            'automation_type', 'holiday_greeting',
+            'event_kind', 'holiday_occurrence',
+            'event_id', 'xmas:cust-1',
+            'customer_id', 'cust-1',
+            'timing_id', 'christmas',
+            'fingerprint', 'org-the-enjoye|holiday_greeting|xmas:cust-1|christmas',
+            'scheduled_for', (now() + interval '30 day')::text,
+            'message_snapshot', '節日',
+            'recipient_ready', true
+          )
+        ),
+        'update', '[]'::jsonb,
+        'cancel', '[]'::jsonb
+      )
+    );
+    raise exception 'holiday job without official source was accepted';
+  exception
+    when others then
+      if sqlerrm not ilike '%holiday source missing%' then
+        raise;
+      end if;
+  end;
+
+  begin
+    perform public.apply_line_automation_schedule(
+      'org-the-enjoye',
+      jsonb_build_object(
+        'organization_id', 'org-the-enjoye',
+        'insert', jsonb_build_array(
+          jsonb_build_object(
+            'organization_id', 'org-the-enjoye',
+            'automation_type', 'satisfaction_survey',
+            'event_kind', 'treatment',
+            'event_id', 'trt-1',
+            'customer_id', 'cust-1',
+            'timing_id', 'hours_after_2',
+            'fingerprint', 'org-the-enjoye|satisfaction_survey|trt-1|hours_after_2',
+            'scheduled_for', (now() + interval '2 hour')::text,
+            'message_snapshot', '問卷',
+            'recipient_ready', true
+          )
+        ),
+        'update', '[]'::jsonb,
+        'cancel', '[]'::jsonb
+      )
+    );
+    raise exception 'missing survey rule was accepted';
+  exception
+    when others then
+      if sqlerrm not ilike '%missing rule%' and sqlerrm not ilike '%invalid event%' then
+        raise;
+      end if;
+  end;
+
+  begin
+    perform public.apply_line_automation_schedule(
+      'org-the-enjoye',
+      jsonb_build_object(
+        'organization_id', 'org-the-enjoye',
+        'insert', jsonb_build_array(
+          jsonb_build_object(
+            'organization_id', 'org-the-enjoye',
+            'automation_type', 'appointment_reminder',
+            'event_kind', 'appointment',
+            'event_id', 'appt-keep',
+            'customer_id', 'cust-1',
+            'timing_id', 'day_before_morning',
+            'fingerprint', 'org-the-enjoye|appointment_reminder|appt-keep|day_before_morning',
+            'scheduled_for', (now() + interval '1 day')::text,
+            'message_snapshot', '預約提醒',
+            'recipient_ready', true,
+            'status', 'accepted'
+          )
+        ),
+        'update', '[]'::jsonb,
+        'cancel', '[]'::jsonb
+      )
+    );
+    raise exception 'accepted status insert was accepted';
+  exception
+    when others then
+      if sqlerrm not ilike '%invalid status%' then
+        raise;
+      end if;
+  end;
+
+  perform public.apply_line_automation_schedule(
+    'org-the-enjoye',
+    jsonb_build_object(
+      'organization_id', 'org-the-enjoye',
+      'insert', '[]'::jsonb,
+      'update', jsonb_build_array(
+        jsonb_build_object(
+          'id', 'laj-claimed',
+          'organization_id', 'org-the-enjoye',
+          'automation_type', 'appointment_reminder',
+          'event_kind', 'appointment',
+          'event_id', 'appt-keep',
+          'customer_id', 'cust-1',
+          'timing_id', 'day_before_morning',
+          'fingerprint', 'org-the-enjoye|appointment_reminder|appt-keep|day_before_morning',
+          'scheduled_for', (now() + interval '8 hour')::text,
+          'message_snapshot', '預約提醒',
+          'recipient_ready', true
+        )
+      ),
+      'cancel', jsonb_build_array(
+        jsonb_build_object(
+          'id', 'laj-claimed',
+          'organization_id', 'org-the-enjoye',
+          'fingerprint', 'org-the-enjoye|appointment_reminder|appt-claimed|day_before_morning'
+        ),
+        jsonb_build_object(
+          'id', 'laj-pending-confirm',
+          'organization_id', 'org-the-enjoye',
+          'fingerprint', 'org-the-enjoye|appointment_reminder|appt-confirm|hours_before_3'
+        ),
+        jsonb_build_object(
+          'id', 'laj-reconciled',
+          'organization_id', 'org-the-enjoye',
+          'fingerprint', 'org-the-enjoye|appointment_reminder|appt-reconciled|day_before_morning'
+        )
+      )
+    )
+  );
+
+  select status into v_status from public.line_automation_jobs where id = 'laj-claimed';
+  if v_status is distinct from 'claimed' then
+    raise exception 'claimed job was mutated: %', v_status;
+  end if;
+  select status into v_status from public.line_automation_jobs where id = 'laj-pending-confirm';
+  if v_status is distinct from 'pending_confirmation' then
+    raise exception 'pending_confirmation job was mutated: %', v_status;
+  end if;
+  select status into v_status from public.line_automation_jobs where id = 'laj-reconciled';
+  if v_status is distinct from 'reconciled' then
+    raise exception 'reconciled job was mutated: %', v_status;
+  end if;
+
+  select count(*) into v_count
+  from public.line_automation_jobs
+  where organization_id = 'org-the-enjoye'
+    and fingerprint = 'org-the-enjoye|birthday_greeting|cust-1|birthday_morning';
+  if v_count <> 1 then
+    raise exception 'partial apply lost birthday job: %', v_count;
   end if;
 end $$;

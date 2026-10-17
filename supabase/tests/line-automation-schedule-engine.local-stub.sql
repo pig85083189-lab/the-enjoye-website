@@ -98,6 +98,67 @@ insert into public.staff_auth_memberships (
     'org-lumiere', 'OWNER', 'LUMIERE 店長', true
   );
 
+create table if not exists public.customers (
+  id uuid primary key,
+  organization_id uuid not null references public.organizations (id),
+  app_id text,
+  status text not null default 'ACTIVE'
+);
+
+create table if not exists public.appointments (
+  id uuid primary key,
+  organization_id uuid not null references public.organizations (id),
+  customer_id uuid not null references public.customers (id),
+  app_id text,
+  status text not null default 'BOOKED'
+);
+
+create table if not exists public.line_automation_rules (
+  organization_id text not null,
+  automation_type text not null,
+  enabled boolean not null default false,
+  timing_ids text[] not null default '{}',
+  timing_config jsonb,
+  message_template text not null default '',
+  primary key (organization_id, automation_type)
+);
+
+insert into public.customers (id, organization_id, app_id, status) values
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cust-1', 'ACTIVE'),
+  ('ffffffff-ffff-ffff-ffff-ffffffffffff', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cust-2', 'ACTIVE'),
+  ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'cust-l', 'ACTIVE');
+
+insert into public.appointments (id, organization_id, customer_id, app_id, status) values
+  (
+    'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    'appt-keep',
+    'BOOKED'
+  );
+
+insert into public.line_automation_rules (
+  organization_id, automation_type, enabled, timing_ids, timing_config, message_template
+) values
+  (
+    'org-the-enjoye', 'appointment_reminder', true,
+    array['day_before_morning', 'hours_before_3']::text[],
+    '{"selectedTimingIds":["day_before_morning","hours_before_3"],"customTimings":[]}'::jsonb,
+    '預約提醒'
+  ),
+  (
+    'org-the-enjoye', 'birthday_greeting', true,
+    array['birthday_morning']::text[],
+    '{"selectedTimingIds":["birthday_morning"],"customTimings":[]}'::jsonb,
+    '生日快樂'
+  ),
+  (
+    'org-lumiere', 'birthday_greeting', true,
+    array['birthday_morning']::text[],
+    '{"selectedTimingIds":["birthday_morning"],"customTimings":[]}'::jsonb,
+    'other org'
+  );
+
 insert into public.line_automation_jobs (
   id, organization_id, appointment_app_id, customer_app_id, service_app_id,
   timing_id, fingerprint, scheduled_for, status, request_id
@@ -111,4 +172,19 @@ insert into public.line_automation_jobs (
     'laj-accepted', 'org-the-enjoye', 'appt-keep', 'cust-1', 'svc-1',
     'hours_before_3', 'org-the-enjoye|appointment_reminder|appt-keep|hours_before_3',
     now() + interval '3 hours', 'accepted', 'larq-accepted'
+  ),
+  (
+    'laj-claimed', 'org-the-enjoye', 'appt-keep', 'cust-1', 'svc-1',
+    'day_before_morning', 'org-the-enjoye|appointment_reminder|appt-claimed|day_before_morning',
+    now() + interval '2 day', 'claimed', 'larq-claimed'
+  ),
+  (
+    'laj-pending-confirm', 'org-the-enjoye', 'appt-keep', 'cust-1', 'svc-1',
+    'hours_before_3', 'org-the-enjoye|appointment_reminder|appt-confirm|hours_before_3',
+    now() + interval '4 hours', 'pending_confirmation', 'larq-pending-confirm'
+  ),
+  (
+    'laj-reconciled', 'org-the-enjoye', 'appt-keep', 'cust-1', 'svc-1',
+    'day_before_morning', 'org-the-enjoye|appointment_reminder|appt-reconciled|day_before_morning',
+    now() + interval '5 hours', 'reconciled', 'larq-reconciled'
   );

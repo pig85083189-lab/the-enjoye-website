@@ -163,11 +163,21 @@ export type LineAutomationScheduleSnapshot = {
   nowMs?: number;
 };
 
+export type LineAutomationCancelPolicy = {
+  allowCancel: boolean;
+  disabledTypes: LineAutomationId[];
+  scannedEvents: Array<{
+    automationType: LineAutomationId;
+    eventId: string;
+  }>;
+};
+
 export type LineAutomationSchedulePlan = {
   organizationId: string;
   proposed: LineAutomationProposedJob[];
   skipped: LineAutomationSkippedCandidate[];
   missingDependencies: LineAutomationDependencyId[];
+  cancelPolicy: LineAutomationCancelPolicy;
   sendOpen: false;
 };
 

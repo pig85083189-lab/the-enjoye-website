@@ -227,15 +227,27 @@ export function buildScheduleSnapshot(input: {
   jobs?: readonly Record<string, unknown>[];
   nowMs?: number;
 }): LineAutomationScheduleSnapshot {
-  const customers = mapScheduleCustomers(input.customers ?? [], input.organizationId);
+  const customers =
+    input.customers === undefined
+      ? undefined
+      : mapScheduleCustomers(input.customers, input.organizationId);
   return {
     organizationId: input.organizationId,
     rules: mapAutomationRules(input.rules, input.organizationId),
     customers,
-    appointments: mapScheduleAppointments(input.appointments ?? [], input.organizationId, customers),
-    treatments: mapScheduleTreatments(input.treatments ?? [], input.organizationId),
-    packages: mapSchedulePackages(input.packages ?? [], input.organizationId),
-    holidayOccurrences: [],
+    appointments:
+      input.appointments === undefined
+        ? undefined
+        : mapScheduleAppointments(input.appointments, input.organizationId, customers ?? []),
+    treatments:
+      input.treatments === undefined
+        ? undefined
+        : mapScheduleTreatments(input.treatments, input.organizationId),
+    packages:
+      input.packages === undefined
+        ? undefined
+        : mapSchedulePackages(input.packages, input.organizationId),
+    holidayOccurrences: undefined,
     existingJobs: mapExistingAutomationJobs(input.jobs ?? [], input.organizationId),
     nowMs: input.nowMs,
   };

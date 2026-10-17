@@ -5,6 +5,7 @@ import {
   LINE_COUPON_CATALOG_READY,
   LINE_HOLIDAY_CALENDAR_READY,
   LINE_AUTOMATION_SCHEDULE_TIMEZONE,
+  type LineAutomationCancelPolicy,
   type LineAutomationDependencyId,
   type LineAutomationProposedJob,
   type LineAutomationScheduleAppointment,
@@ -112,6 +113,39 @@ function isEligibleCustomer(customer: LineAutomationScheduleCustomer | null): bo
   return true;
 }
 
+type CancelCollector = {
+  allowCancel: boolean;
+  disabledTypes: Set<LineAutomationId>;
+  scannedEvents: Set<string>;
+};
+
+function scanKey(automationType: LineAutomationId, eventId: string): string {
+  return `${automationType}|${eventId}`;
+}
+
+function markScanned(
+  collector: CancelCollector,
+  automationType: LineAutomationId,
+  eventId?: string | null,
+): void {
+  if (!eventId) return;
+  collector.scannedEvents.add(scanKey(automationType, eventId));
+}
+
+function finishCancelPolicy(collector: CancelCollector): LineAutomationCancelPolicy {
+  return {
+    allowCancel: collector.allowCancel,
+    disabledTypes: [...collector.disabledTypes],
+    scannedEvents: [...collector.scannedEvents].map((key) => {
+      const separator = key.indexOf("|");
+      return {
+        automationType: key.slice(0, separator) as LineAutomationId,
+        eventId: key.slice(separator + 1),
+      };
+    }),
+  };
+}
+
 export function planLineAutomationSchedule(
   snapshot: LineAutomationScheduleSnapshot,
 ): LineAutomationSchedulePlan {
@@ -122,6 +156,11 @@ export function planLineAutomationSchedule(
   const nowMs = snapshot.nowMs ?? Date.now();
   const nowTaipeiYmd = utcIsoToTaipeiLocal(new Date(nowMs).toISOString()).dateYmd;
   const rules = snapshot.rules.filter((rule) => sameOrg(organizationId, rule.organizationId));
+  const customersProvided = snapshot.customers !== undefined;
+  const appointmentsProvided = snapshot.appointments !== undefined;
+  const treatmentsProvided = snapshot.treatments !== undefined;
+  const packagesProvided = snapshot.packages !== undefined;
+  const holidaysProvided = snapshot.holidayOccurrences !== undefined;
   const customers = (snapshot.customers ?? []).filter((row) => sameOrg(organizationId, row.organizationId));
   const appointments = (snapshot.appointments ?? []).filter((row) =>
     sameOrg(organizationId, row.organizationId),
@@ -130,6 +169,11 @@ export function planLineAutomationSchedule(
     sameOrg(organizationId, row.organizationId),
   );
   const packages = (snapshot.packages ?? []).filter((row) => sameOrg(organizationId, row.organizationId));
+  const cancel: CancelCollector = {
+    allowCancel: LINE_AUTOMATION_SEND_OPEN === false,
+    disabledTypes: new Set(),
+    scannedEvents: new Set(),
+  };
 
   if (LINE_AUTOMATION_SEND_OPEN !== false) {
     return {
@@ -139,34 +183,71 @@ export function planLineAutomationSchedule(
         skip(organizationId, "appointment_reminder", "blocked_send_closed", "自動發送開關異常，已停止排程"),
       ],
       missingDependencies,
+      cancelPolicy: { allowCancel: false, disabledTypes: [], scannedEvents: [] },
       sendOpen: false,
     };
   }
 
-  planAppointments({ organizationId, rules, appointments, customers, nowMs, nowTaipeiYmd, proposed, skipped });
-  planBirthdays({ organizationId, rules, customers, nowMs, nowTaipeiYmd, proposed, skipped });
+  planAppointments({
+    organizationId,
+    rules,
+    appointments,
+    appointmentsProvided,
+    customers,
+    nowMs,
+    nowTaipeiYmd,
+    proposed,
+    skipped,
+    cancel,
+  });
+  planBirthdays({
+    organizationId,
+    rules,
+    customers,
+    customersProvided,
+    nowMs,
+    nowTaipeiYmd,
+    proposed,
+    skipped,
+    cancel,
+  });
   planHolidays({
     organizationId,
     rules,
     customers,
     holidayOccurrences: snapshot.holidayOccurrences ?? [],
+    holidaysProvided,
     nowMs,
     nowTaipeiYmd,
     proposed,
     skipped,
     missingDependencies,
+    cancel,
   });
-  planSurveys({ organizationId, rules, treatments, customers, nowMs, nowTaipeiYmd, proposed, skipped });
+  planSurveys({
+    organizationId,
+    rules,
+    treatments,
+    treatmentsProvided,
+    customers,
+    nowMs,
+    nowTaipeiYmd,
+    proposed,
+    skipped,
+    cancel,
+  });
   planPackages({
     organizationId,
     rules,
     packages,
+    packagesProvided,
     customers,
     nowMs,
     nowTaipeiYmd,
     proposed,
     skipped,
     missingDependencies,
+    cancel,
   });
 
   return {
@@ -174,6 +255,7 @@ export function planLineAutomationSchedule(
     proposed,
     skipped,
     missingDependencies,
+    cancelPolicy: finishCancelPolicy(cancel),
     sendOpen: false,
   };
 }
@@ -182,15 +264,18 @@ function planAppointments(input: {
   organizationId: string;
   rules: LineAutomationScheduleRule[];
   appointments: LineAutomationScheduleAppointment[];
+  appointmentsProvided: boolean;
   customers: LineAutomationScheduleCustomer[];
   nowMs: number;
   nowTaipeiYmd: string;
   proposed: LineAutomationProposedJob[];
   skipped: LineAutomationSkippedCandidate[];
+  cancel: CancelCollector;
 }): void {
   const type = "appointment_reminder";
   const rule = ruleFor(input.rules, input.organizationId, type);
   if (!rule?.enabled) {
+    input.cancel.disabledTypes.add(type);
     input.skipped.push(skip(input.organizationId, type, "skipped_disabled", "店長尚未啟用預約提醒"));
     return;
   }
@@ -202,7 +287,9 @@ function planAppointments(input: {
       }),
     );
   }
+  if (!input.appointmentsProvided) return;
   for (const appointment of input.appointments) {
+    markScanned(input.cancel, type, appointment.id);
     if (!appointment.id || !appointment.customerId || !appointment.startAt) {
       input.skipped.push(
         skip(input.organizationId, type, "skipped_missing_data", "預約資料不足，略過排程", {
@@ -259,19 +346,24 @@ function planBirthdays(input: {
   organizationId: string;
   rules: LineAutomationScheduleRule[];
   customers: LineAutomationScheduleCustomer[];
+  customersProvided: boolean;
   nowMs: number;
   nowTaipeiYmd: string;
   proposed: LineAutomationProposedJob[];
   skipped: LineAutomationSkippedCandidate[];
+  cancel: CancelCollector;
 }): void {
   const type = "birthday_greeting";
   const rule = ruleFor(input.rules, input.organizationId, type);
   if (!rule?.enabled) {
+    input.cancel.disabledTypes.add(type);
     input.skipped.push(skip(input.organizationId, type, "skipped_disabled", "店長尚未啟用生日祝福"));
     return;
   }
   const timings = selectedBuiltinTimings(type, rule.selectedTimingIds);
+  if (!input.customersProvided) return;
   for (const customer of input.customers) {
+    markScanned(input.cancel, type, customer.id);
     if (!isEligibleCustomer(customer)) {
       input.skipped.push(
         skip(input.organizationId, type, "skipped_ineligible", "顧客狀態不可發送生日祝福", {
@@ -319,19 +411,22 @@ function planHolidays(input: {
   rules: LineAutomationScheduleRule[];
   customers: LineAutomationScheduleCustomer[];
   holidayOccurrences: LineAutomationScheduleSnapshot["holidayOccurrences"];
+  holidaysProvided: boolean;
   nowMs: number;
   nowTaipeiYmd: string;
   proposed: LineAutomationProposedJob[];
   skipped: LineAutomationSkippedCandidate[];
   missingDependencies: LineAutomationDependencyId[];
+  cancel: CancelCollector;
 }): void {
   const type = "holiday_greeting";
   const rule = ruleFor(input.rules, input.organizationId, type);
   if (!rule?.enabled) {
+    input.cancel.disabledTypes.add(type);
     input.skipped.push(skip(input.organizationId, type, "skipped_disabled", "店長尚未啟用節慶祝福"));
     return;
   }
-  const occurrences = (input.holidayOccurrences ?? []).filter((row) =>
+  const occurrences = (input.holidaysProvided ? input.holidayOccurrences ?? [] : []).filter((row) =>
     rule.selectedTimingIds.includes(row.holidayId),
   );
   if (!LINE_HOLIDAY_CALENDAR_READY && occurrences.length === 0) {
@@ -343,6 +438,7 @@ function planHolidays(input: {
   }
   for (const occurrence of occurrences) {
     for (const customer of input.customers) {
+      markScanned(input.cancel, type, `${occurrence.id}:${customer.id}`);
       if (!isEligibleCustomer(customer)) {
         input.skipped.push(
           skip(input.organizationId, type, "skipped_ineligible", "顧客狀態不可發送節慶祝福", {
@@ -381,20 +477,25 @@ function planSurveys(input: {
   organizationId: string;
   rules: LineAutomationScheduleRule[];
   treatments: NonNullable<LineAutomationScheduleSnapshot["treatments"]>;
+  treatmentsProvided: boolean;
   customers: LineAutomationScheduleCustomer[];
   nowMs: number;
   nowTaipeiYmd: string;
   proposed: LineAutomationProposedJob[];
   skipped: LineAutomationSkippedCandidate[];
+  cancel: CancelCollector;
 }): void {
   const type = "satisfaction_survey";
   const rule = ruleFor(input.rules, input.organizationId, type);
   if (!rule?.enabled) {
+    input.cancel.disabledTypes.add(type);
     input.skipped.push(skip(input.organizationId, type, "skipped_disabled", "店長尚未啟用滿意度調查"));
     return;
   }
   const timings = selectedBuiltinTimings(type, rule.selectedTimingIds);
+  if (!input.treatmentsProvided) return;
   for (const treatment of input.treatments) {
+    markScanned(input.cancel, type, treatment.id);
     if (treatment.status !== "COMPLETED" || !treatment.completedAt || !treatment.customerId) {
       input.skipped.push(
         skip(input.organizationId, type, "skipped_missing_data", "服務完成資料不足，略過排程", {
@@ -442,20 +543,23 @@ function planPackages(input: {
   organizationId: string;
   rules: LineAutomationScheduleRule[];
   packages: NonNullable<LineAutomationScheduleSnapshot["packages"]>;
+  packagesProvided: boolean;
   customers: LineAutomationScheduleCustomer[];
   nowMs: number;
   nowTaipeiYmd: string;
   proposed: LineAutomationProposedJob[];
   skipped: LineAutomationSkippedCandidate[];
   missingDependencies: LineAutomationDependencyId[];
+  cancel: CancelCollector;
 }): void {
   const type = "coupon_expiry";
   const rule = ruleFor(input.rules, input.organizationId, type);
   if (!rule?.enabled) {
+    input.cancel.disabledTypes.add(type);
     input.skipped.push(skip(input.organizationId, type, "skipped_disabled", "店長尚未啟用優惠券到期提醒"));
     return;
   }
-  if (!LINE_COUPON_CATALOG_READY && input.packages.length === 0) {
+  if (!input.packagesProvided || (!LINE_COUPON_CATALOG_READY && input.packages.length === 0)) {
     input.missingDependencies.push("coupon_catalog");
     input.skipped.push(
       skip(
@@ -469,6 +573,7 @@ function planPackages(input: {
   }
   const timings = selectedBuiltinTimings(type, rule.selectedTimingIds);
   for (const pack of input.packages) {
+    markScanned(input.cancel, type, pack.id);
     if (pack.source !== "customer_package" || pack.status !== "ACTIVE" || !pack.expiresAt || !pack.customerId) {
       input.skipped.push(
         skip(input.organizationId, type, "skipped_missing_data", "套票到期資料不足，略過排程", {

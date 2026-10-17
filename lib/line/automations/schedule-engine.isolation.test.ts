@@ -13,6 +13,11 @@ import {
   simulateLineAutomationSchedule,
 } from "@/lib/line/automations/schedule-apply";
 import {
+  canInsertAutomationJob,
+  canMutateAutomationJob,
+  validateAutomationScheduleItem,
+} from "@/lib/line/automations/schedule-validate";
+import {
   addTaipeiCalendarDays,
   automationJobFingerprint,
   computeAutomationFireAt,
@@ -474,6 +479,79 @@ describe("Phase 2A LINE automation schedule engine", () => {
     expect(cancelled.mutation.insert).toEqual([]);
     expect(cancelled.mutation.unchanged.some((job) => job.id === "laj-accepted")).toBe(true);
 
+    const unsanned = simulateLineAutomationSchedule({
+      organizationId: ORG_ENJOYE_ID,
+      nowMs: NOW_MS,
+      rules: [rule(ORG_ENJOYE_ID, "appointment_reminder", ["day_before_morning"])],
+      customers: [
+        {
+          id: "cust-1",
+          organizationId: ORG_ENJOYE_ID,
+          verifiedLineBinding: true,
+        },
+      ],
+      existingJobs: [existing[0]!, {
+        id: "laj-other-event",
+        organizationId: ORG_ENJOYE_ID,
+        automationType: "appointment_reminder",
+        eventId: "apt-not-in-scan",
+        customerId: "cust-1",
+        timingId: "day_before_morning",
+        fingerprint: automationJobFingerprint({
+          organizationId: ORG_ENJOYE_ID,
+          automationType: "appointment_reminder",
+          eventId: "apt-not-in-scan",
+          timingId: "day_before_morning",
+        }),
+        scheduledFor: taipeiLocalToUtcIso("2026-10-22", "10:00"),
+        status: "scheduled",
+        messageSnapshot: "keep",
+      }],
+    });
+    expect(unsanned.mutation.cancel).toEqual([]);
+    expect(unsanned.mutation.unchanged.map((job) => job.id).sort()).toEqual(["laj-old", "laj-other-event"]);
+
+    const holidayKept = simulateLineAutomationSchedule({
+      organizationId: ORG_ENJOYE_ID,
+      nowMs: NOW_MS,
+      rules: [rule(ORG_ENJOYE_ID, "holiday_greeting", ["christmas"])],
+      customers: [
+        {
+          id: "cust-1",
+          organizationId: ORG_ENJOYE_ID,
+          verifiedLineBinding: true,
+        },
+      ],
+      existingJobs: [{
+        id: "laj-holiday",
+        organizationId: ORG_ENJOYE_ID,
+        automationType: "holiday_greeting",
+        eventId: "christmas:cust-1",
+        customerId: "cust-1",
+        timingId: "christmas",
+        fingerprint: automationJobFingerprint({
+          organizationId: ORG_ENJOYE_ID,
+          automationType: "holiday_greeting",
+          eventId: "christmas:cust-1",
+          timingId: "christmas",
+        }),
+        scheduledFor: taipeiLocalToUtcIso("2026-12-25", "10:00"),
+        status: "scheduled",
+        messageSnapshot: "holiday",
+      }],
+    });
+    expect(holidayKept.plan.missingDependencies).toEqual(["holiday_calendar"]);
+    expect(holidayKept.mutation.cancel).toEqual([]);
+    expect(holidayKept.mutation.unchanged.map((job) => job.id)).toEqual(["laj-holiday"]);
+
+    const disabledCancel = simulateLineAutomationSchedule({
+      organizationId: ORG_ENJOYE_ID,
+      nowMs: NOW_MS,
+      rules: [rule(ORG_ENJOYE_ID, "appointment_reminder", ["day_before_morning"], false)],
+      existingJobs: [existing[0]!],
+    });
+    expect(disabledCancel.mutation.cancel.map((job) => job.id)).toEqual(["laj-old"]);
+
     const rescheduled = simulateLineAutomationSchedule({
       organizationId: ORG_ENJOYE_ID,
       nowMs: NOW_MS,
@@ -499,6 +577,22 @@ describe("Phase 2A LINE automation schedule engine", () => {
     expect(rescheduled.plan.proposed[0]?.decision).toBe("pending_recipient");
     expect(rescheduled.mutation.update[0]?.id).toBe("laj-old");
     expect(rescheduled.mutation.update[0]?.fireAt).toBe(taipeiLocalToUtcIso("2026-10-20", "10:00"));
+
+    expect(canMutateAutomationJob("claimed")).toBe(false);
+    expect(canMutateAutomationJob("accepted")).toBe(false);
+    expect(canMutateAutomationJob("pending_confirmation")).toBe(false);
+    expect(canMutateAutomationJob("reconciled")).toBe(false);
+    expect(canInsertAutomationJob("claimed")).toBe(false);
+    expect(canInsertAutomationJob("accepted")).toBe(false);
+    expect(validateAutomationScheduleItem({
+      organizationId: ORG_ENJOYE_ID,
+      automationType: "holiday_greeting",
+      eventKind: "holiday_occurrence",
+      eventId: "christmas:cust-1",
+      customerId: "cust-1",
+      timingId: "christmas",
+      fingerprint: `${ORG_ENJOYE_ID}|holiday_greeting|christmas:cust-1|christmas`,
+    }).ok).toBe(false);
   });
 
   it("dedupes concurrent plans and never calls LINE", () => {
@@ -560,7 +654,7 @@ describe("Phase 2A LINE automation schedule engine", () => {
       ],
     });
     expect(mapped.customers?.[0]?.verifiedLineBinding).toBe(false);
-    expect(mapped.holidayOccurrences).toEqual([]);
+    expect(mapped.holidayOccurrences).toBeUndefined();
 
     const files = [
       "lib/line/automations/schedule-engine.ts",
@@ -568,6 +662,7 @@ describe("Phase 2A LINE automation schedule engine", () => {
       "lib/line/automations/schedule-actions.ts",
       "lib/line/automations/schedule-load.ts",
       "lib/line/automations/schedule-fire-at.ts",
+      "lib/line/automations/schedule-validate.ts",
     ];
     const joined = files.map((file) => source(file)).join("\n");
     expect(joined).not.toMatch(/api\.line\.me|multicast|push\/message|pg_cron/i);

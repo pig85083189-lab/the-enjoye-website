@@ -124,10 +124,10 @@ async function loadScheduleSnapshot(organizationId: string, nowMs?: number) {
   return buildScheduleSnapshot({
     organizationId,
     rules: asRows(rules.data),
-    customers: asRows(customers.data),
-    appointments: asRows(appointments.data),
-    treatments: asRows(treatments.data),
-    packages: asRows(packages.data),
+    customers: orgUuid ? asRows(customers.data) : undefined,
+    appointments: orgUuid ? asRows(appointments.data) : undefined,
+    treatments: orgUuid ? asRows(treatments.data) : undefined,
+    packages: orgUuid ? asRows(packages.data) : undefined,
     jobs: asRows((jobs.data as { jobs?: unknown } | null)?.jobs ?? jobs.data),
     nowMs,
   });

@@ -1,20 +1,37 @@
 import { LINE_AUTOMATION_SEND_OPEN } from "@/lib/line/automations/production-safe-flags";
 import { planLineAutomationSchedule } from "@/lib/line/automations/schedule-engine";
 import {
-  LINE_AUTOMATION_JOB_MUTABLE_STATUSES,
-  LINE_AUTOMATION_JOB_NEVER_RESEND_STATUSES,
-  type LineAutomationExistingJob,
-  type LineAutomationProposedJob,
-  type LineAutomationScheduleMutation,
-  type LineAutomationSchedulePlan,
-  type LineAutomationScheduleSnapshot,
+  applyStatusForRecipient,
+  canInsertAutomationJob,
+  canMutateAutomationJob,
+  isInFlightAutomationJobStatus,
+  isNeverResendAutomationJobStatus,
+} from "@/lib/line/automations/schedule-validate";
+import type {
+  LineAutomationExistingJob,
+  LineAutomationProposedJob,
+  LineAutomationScheduleMutation,
+  LineAutomationSchedulePlan,
+  LineAutomationScheduleSnapshot,
 } from "@/lib/line/automations/schedule-types";
 
-const MUTABLE = new Set<string>(LINE_AUTOMATION_JOB_MUTABLE_STATUSES);
-const NEVER_RESEND = new Set<string>(LINE_AUTOMATION_JOB_NEVER_RESEND_STATUSES);
-
 export function proposedJobStatus(job: Pick<LineAutomationProposedJob, "recipientReady">) {
-  return job.recipientReady ? "scheduled" : "pending_recipient";
+  return applyStatusForRecipient(job.recipientReady);
+}
+
+function shouldCancelExistingJob(input: {
+  job: LineAutomationExistingJob;
+  desired: Map<string, LineAutomationProposedJob>;
+  plan: LineAutomationSchedulePlan;
+}): boolean {
+  if (!input.plan.cancelPolicy.allowCancel) return false;
+  if (!canMutateAutomationJob(input.job.status)) return false;
+  if (input.desired.has(input.job.fingerprint)) return false;
+  if (input.plan.cancelPolicy.disabledTypes.includes(input.job.automationType)) return true;
+  return input.plan.cancelPolicy.scannedEvents.some(
+    (event) =>
+      event.automationType === input.job.automationType && event.eventId === input.job.eventId,
+  );
 }
 
 export function diffLineAutomationSchedule(input: {
@@ -34,7 +51,12 @@ export function diffLineAutomationSchedule(input: {
       .map((job) => [job.fingerprint, job]),
   );
   const blocked = new Set(
-    existing.filter((job) => NEVER_RESEND.has(job.status)).map((job) => job.fingerprint),
+    existing
+      .filter(
+        (job) =>
+          isNeverResendAutomationJobStatus(job.status) || isInFlightAutomationJobStatus(job.status),
+      )
+      .map((job) => job.fingerprint),
   );
   const insert: LineAutomationProposedJob[] = [];
   const update: Array<LineAutomationProposedJob & { id: string }> = [];
@@ -42,14 +64,18 @@ export function diffLineAutomationSchedule(input: {
   const unchanged: LineAutomationExistingJob[] = [];
 
   for (const job of existing) {
-    if (!MUTABLE.has(job.status)) {
+    if (!canMutateAutomationJob(job.status)) {
       unchanged.push(job);
       desired.delete(job.fingerprint);
       continue;
     }
     const next = desired.get(job.fingerprint);
     if (!next) {
-      cancel.push(job);
+      if (shouldCancelExistingJob({ job, desired, plan: input.plan })) {
+        cancel.push(job);
+      } else {
+        unchanged.push(job);
+      }
       continue;
     }
     desired.delete(job.fingerprint);
@@ -65,7 +91,8 @@ export function diffLineAutomationSchedule(input: {
   }
 
   for (const job of desired.values()) {
-    if (blocked.has(job.fingerprint)) continue;
+    const existingStatus = existing.find((row) => row.fingerprint === job.fingerprint)?.status;
+    if (blocked.has(job.fingerprint) || !canInsertAutomationJob(existingStatus)) continue;
     insert.push(job);
   }
 
