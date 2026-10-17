@@ -158,6 +158,7 @@ export function LineAutomationRuleEditor({
               compact
             />
           </div>
+          </div>
         </div>
 
         <div className="flex shrink-0 flex-col gap-2 border-t border-border/70 bg-[#FFFCFB] px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row-reverse sm:px-5">
