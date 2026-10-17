@@ -1,8 +1,9 @@
 -- Formal LINE customer bindings for Phase 2B recipient verification.
--- Reuses webhook_code + Channel Secret signature. Does not accept a
--- client-supplied LINE user id. Does not send LINE, open Cron, or
--- rewrite Broadcast / Phase 2B reminder RPCs / existing jobs.
--- Do not apply on Production until Owner confirms.
+-- 8-digit codes only prove the LINE account holder obtained the code.
+-- Trusted recipient requires owner in-person identity confirmation.
+-- Consume requires a Channel-Secret-derived server proof, not only the
+-- public webhook URL token. Does not send LINE, open Cron, or rewrite
+-- Broadcast. Do not apply on Production until Owner confirms.
 
 create table if not exists public.line_customer_bindings (
   id text primary key,
@@ -14,7 +15,10 @@ create table if not exists public.line_customer_bindings (
   bind_method text not null default 'webhook_code',
   verified boolean not null default false,
   status text not null default 'pending',
+  captured_at timestamptz,
   bound_at timestamptz,
+  confirmed_at timestamptz,
+  confirmed_by text,
   unbound_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -30,15 +34,23 @@ create table if not exists public.line_customer_bindings (
     check (line_user_id_hash ~ '^[0-9a-f]{64}$'),
   constraint line_customer_bindings_status_check
     check (status in ('pending', 'active', 'unbound')),
+  constraint line_customer_bindings_confirmed_by_operational
+    check (confirmed_by is null or public.is_operational_staff_id(confirmed_by)),
   constraint line_customer_bindings_verified_active
     check (
-      (verified is true and status = 'active' and bound_at is not null)
+      (
+        verified is true
+        and status = 'active'
+        and bound_at is not null
+        and confirmed_at is not null
+        and confirmed_by is not null
+      )
       or (verified is not true)
     )
 );
 
 comment on table public.line_customer_bindings is
-  'Verified customer LINE binding metadata. Ciphertext lives in line_customer_binding_secrets. Never stores plaintext LINE user id.';
+  'Customer LINE binding metadata. Ciphertext lives in secrets. Pending capture is not a trusted SPA identity. Never stores plaintext LINE user id.';
 
 do $$
 begin
@@ -76,7 +88,7 @@ create table if not exists public.line_customer_binding_secrets (
 );
 
 comment on table public.line_customer_binding_secrets is
-  'Encrypted LINE user id for a verified customer binding. No authenticated grants.';
+  'Encrypted LINE user id for a captured or verified customer binding. No authenticated or anon grants.';
 
 create table if not exists public.line_customer_bind_challenges (
   id text primary key,
@@ -85,8 +97,11 @@ create table if not exists public.line_customer_bind_challenges (
   customer_uuid uuid,
   staff_user_id text not null,
   code_hash text not null,
+  identity_confirmed_at timestamptz not null,
   expires_at timestamptz not null,
   consumed_at timestamptz,
+  consumed_event_id text,
+  consumed_proof_hash text,
   failed_attempts integer not null default 0,
   last_attempt_at timestamptz,
   created_at timestamptz not null default now(),
@@ -101,29 +116,39 @@ create table if not exists public.line_customer_bind_challenges (
 );
 
 comment on table public.line_customer_bind_challenges is
-  'One-time customer bind codes. Plaintext code is returned once and never stored.';
+  'One-time customer bind codes after owner in-person identity confirmation. Plaintext code is returned once.';
 
 create unique index if not exists line_customer_bind_challenges_one_open
   on public.line_customer_bind_challenges (organization_id, customer_id)
   where consumed_at is null;
 
+create table if not exists public.line_customer_bind_challenge_secrets (
+  challenge_id text primary key
+    references public.line_customer_bind_challenges (id) on delete cascade,
+  organization_id text not null,
+  hmac_key text not null,
+  created_at timestamptz not null default now(),
+  constraint line_customer_bind_challenge_secrets_org_prefix
+    check (organization_id like 'org-%'),
+  constraint line_customer_bind_challenge_secrets_hmac_sha256
+    check (hmac_key ~ '^[0-9a-f]{64}$')
+);
+
+comment on table public.line_customer_bind_challenge_secrets is
+  'Server-only HMAC key derived from Channel Secret. No authenticated or anon grants.';
+
 alter table public.line_customer_bindings enable row level security;
 alter table public.line_customer_binding_secrets enable row level security;
 alter table public.line_customer_bind_challenges enable row level security;
+alter table public.line_customer_bind_challenge_secrets enable row level security;
 
 revoke all on public.line_customer_bindings from anon, authenticated, public;
 revoke all on public.line_customer_binding_secrets from anon, authenticated, public;
 revoke all on public.line_customer_bind_challenges from anon, authenticated, public;
-
-grant select on public.line_customer_bindings to authenticated;
+revoke all on public.line_customer_bind_challenge_secrets from anon, authenticated, public;
 
 drop policy if exists line_customer_bindings_select_owner
   on public.line_customer_bindings;
-create policy line_customer_bindings_select_owner
-on public.line_customer_bindings
-for select
-to authenticated
-using (public.user_is_org_owner(organization_id));
 
 create or replace function public.line_customer_binding_resolve(
   p_organization_id text,
@@ -158,9 +183,13 @@ begin
 end;
 $$;
 
+drop function if exists public.start_line_customer_bind_challenge(text, text);
+
 create or replace function public.start_line_customer_bind_challenge(
   p_organization_id text,
-  p_customer_id text
+  p_customer_id text,
+  p_identity_confirmed boolean,
+  p_bind_hmac_key text
 )
 returns jsonb
 language plpgsql
@@ -181,6 +210,12 @@ begin
   end if;
   if not public.user_is_org_owner(p_organization_id) then
     raise exception 'unauthorized' using errcode = '42501';
+  end if;
+  if p_identity_confirmed is not true then
+    raise exception 'identity not confirmed' using errcode = '22023';
+  end if;
+  if p_bind_hmac_key is null or p_bind_hmac_key !~ '^[0-9a-f]{64}$' then
+    raise exception 'invalid server key' using errcode = '22023';
   end if;
   select * into v_actor
   from public.staff_auth_memberships
@@ -211,10 +246,17 @@ begin
   v_hash := encode(sha256(convert_to(p_organization_id || ':' || v_code, 'utf8')), 'hex');
 
   insert into public.line_customer_bind_challenges (
-    id, organization_id, customer_id, customer_uuid, staff_user_id, code_hash, expires_at
+    id, organization_id, customer_id, customer_uuid, staff_user_id,
+    code_hash, identity_confirmed_at, expires_at
   ) values (
     v_id, p_organization_id, v_customer.customer_id, v_customer.customer_uuid,
-    v_actor.user_id, v_hash, v_expires
+    v_actor.user_id, v_hash, now(), v_expires
+  );
+
+  insert into public.line_customer_bind_challenge_secrets (
+    challenge_id, organization_id, hmac_key
+  ) values (
+    v_id, p_organization_id, p_bind_hmac_key
   );
 
   return jsonb_build_object(
@@ -227,13 +269,18 @@ begin
 end;
 $$;
 
-comment on function public.start_line_customer_bind_challenge(text, text) is
-  'Owner-only one-time customer bind code. Does not accept a LINE user id.';
+comment on function public.start_line_customer_bind_challenge(text, text, boolean, text) is
+  'Owner-only one-time customer bind code after in-person identity confirmation. Does not accept a LINE user id. HMAC key is never returned.';
+
+drop function if exists public.consume_line_customer_bind_challenge_public(text, text, text, text, text, text, text);
 
 create or replace function public.consume_line_customer_bind_challenge_public(
   p_organization_id text,
   p_public_token text,
   p_code text,
+  p_event_id text,
+  p_proof text,
+  p_proof_issued_at timestamptz,
   p_line_user_id_cipher text,
   p_line_user_id_hint text,
   p_line_user_id_hash text,
@@ -246,31 +293,47 @@ set search_path = public
 as $$
 declare
   v_row public.line_customer_bind_challenges%rowtype;
+  v_hmac_key text;
   v_code_hash text;
+  v_expected_proof text;
+  v_canonical text;
+  v_issued_unix bigint;
   v_binding_id text;
   v_conflict_id text;
+  v_event_id text;
 begin
   if to_regclass('public.line_webhook_public_tokens') is not null then
     if not public.line_webhook_public_token_matches(p_organization_id, p_public_token) then
-      return jsonb_build_object('bound', false, 'reason', 'unauthorized');
+      return jsonb_build_object('captured', false, 'bound', false, 'reason', 'unauthorized');
     end if;
   elsif p_public_token is null or btrim(p_public_token) = '' then
-    return jsonb_build_object('bound', false, 'reason', 'unauthorized');
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'unauthorized');
   end if;
   if p_organization_id is null or p_organization_id not like 'org-%' then
-    return jsonb_build_object('bound', false, 'reason', 'unauthorized');
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'unauthorized');
   end if;
   if p_code is null or length(btrim(p_code)) < 6 then
-    return jsonb_build_object('bound', false, 'reason', 'invalid_input');
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'invalid_input');
+  end if;
+  if p_event_id is null or btrim(p_event_id) = '' then
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'invalid_input');
+  end if;
+  if p_proof is null or p_proof !~ '^[0-9a-f]{64}$' then
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'unauthorized');
+  end if;
+  if p_proof_issued_at is null
+     or p_proof_issued_at < now() - interval '2 minutes'
+     or p_proof_issued_at > now() + interval '30 seconds' then
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'expired');
   end if;
   if p_line_user_id_cipher is null or p_line_user_id_cipher not like 'v1.%' then
-    return jsonb_build_object('bound', false, 'reason', 'invalid_input');
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'invalid_input');
   end if;
   if p_line_user_id_hint is null or p_line_user_id_hint not like '••••%' then
-    return jsonb_build_object('bound', false, 'reason', 'invalid_input');
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'invalid_input');
   end if;
   if p_line_user_id_hash is null or p_line_user_id_hash !~ '^[0-9a-f]{64}$' then
-    return jsonb_build_object('bound', false, 'reason', 'invalid_input');
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'invalid_input');
   end if;
 
   v_code_hash := encode(
@@ -286,7 +349,20 @@ begin
     and code_hash = v_code_hash
   for update;
   if not found then
-    return jsonb_build_object('bound', false, 'reason', 'invalid_input');
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'invalid_input');
+  end if;
+
+  if v_row.last_attempt_at is not null
+     and v_row.last_attempt_at > now() - interval '2 seconds' then
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'throttled');
+  end if;
+
+  if coalesce(v_row.failed_attempts, 0) >= 5 then
+    update public.line_customer_bind_challenges
+    set consumed_at = now(),
+        last_attempt_at = now()
+    where id = v_row.id;
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'attempt_limited');
   end if;
 
   if v_row.expires_at <= now() then
@@ -294,15 +370,81 @@ begin
     set consumed_at = now(),
         last_attempt_at = now()
     where id = v_row.id;
-    return jsonb_build_object('bound', false, 'reason', 'expired');
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'expired');
+  end if;
+
+  select hmac_key
+  into v_hmac_key
+  from public.line_customer_bind_challenge_secrets
+  where challenge_id = v_row.id
+    and organization_id = p_organization_id;
+  if v_hmac_key is null then
+    update public.line_customer_bind_challenges
+    set consumed_at = now(),
+        last_attempt_at = now()
+    where id = v_row.id;
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'unauthorized');
+  end if;
+
+  v_issued_unix := floor(extract(epoch from p_proof_issued_at));
+  v_canonical :=
+    'line-customer-bind-v1' || chr(10)
+    || p_organization_id || chr(10)
+    || p_public_token || chr(10)
+    || btrim(p_event_id) || chr(10)
+    || upper(btrim(p_code)) || chr(10)
+    || p_line_user_id_hash || chr(10)
+    || p_line_user_id_cipher || chr(10)
+    || p_line_user_id_hint || chr(10)
+    || coalesce(p_key_id, '') || chr(10)
+    || v_issued_unix::text;
+  v_expected_proof := encode(
+    hmac(convert_to(v_canonical, 'utf8'), decode(v_hmac_key, 'hex'), 'sha256'),
+    'hex'
+  );
+  if v_expected_proof is distinct from p_proof then
+    update public.line_customer_bind_challenges
+    set failed_attempts = coalesce(failed_attempts, 0) + 1,
+        last_attempt_at = now(),
+        consumed_at = case
+          when coalesce(failed_attempts, 0) + 1 >= 5 then now()
+          else consumed_at
+        end
+    where id = v_row.id;
+    if coalesce(v_row.failed_attempts, 0) + 1 >= 5 then
+      return jsonb_build_object('captured', false, 'bound', false, 'reason', 'attempt_limited');
+    end if;
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'unauthorized');
+  end if;
+
+  if to_regclass('public.line_webhook_events') is not null then
+    update public.line_webhook_events
+    set bound = true
+    where organization_id = p_organization_id
+      and event_id = btrim(p_event_id)
+      and bound is false
+    returning event_id into v_event_id;
+    if v_event_id is null then
+      update public.line_customer_bind_challenges
+      set failed_attempts = coalesce(failed_attempts, 0) + 1,
+          last_attempt_at = now()
+      where id = v_row.id;
+      return jsonb_build_object('captured', false, 'bound', false, 'reason', 'duplicate');
+    end if;
+  elsif exists (
+    select 1
+    from public.line_customer_bind_challenges
+    where organization_id = p_organization_id
+      and consumed_event_id = btrim(p_event_id)
+  ) then
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'duplicate');
   end if;
 
   select b.id
   into v_conflict_id
   from public.line_customer_bindings b
   where b.line_user_id_hash = p_line_user_id_hash
-    and b.status = 'active'
-    and b.verified is true
+    and b.status in ('active', 'pending')
     and (
       b.organization_id is distinct from p_organization_id
       or b.customer_id is distinct from v_row.customer_id
@@ -313,12 +455,14 @@ begin
     set consumed_at = now(),
         last_attempt_at = now()
     where id = v_row.id;
-    return jsonb_build_object('bound', false, 'reason', 'duplicate');
+    return jsonb_build_object('captured', false, 'bound', false, 'reason', 'duplicate');
   end if;
 
   update public.line_customer_bind_challenges
   set consumed_at = now(),
-      last_attempt_at = now()
+      last_attempt_at = now(),
+      consumed_event_id = btrim(p_event_id),
+      consumed_proof_hash = p_proof
   where id = v_row.id;
 
   v_binding_id := coalesce(
@@ -335,19 +479,23 @@ begin
   insert into public.line_customer_bindings (
     id, organization_id, customer_id, customer_uuid,
     line_user_id_hint, line_user_id_hash, bind_method,
-    verified, status, bound_at, unbound_at, updated_at
+    verified, status, captured_at, bound_at, confirmed_at, confirmed_by,
+    unbound_at, updated_at
   ) values (
     v_binding_id, p_organization_id, v_row.customer_id, v_row.customer_uuid,
     p_line_user_id_hint, p_line_user_id_hash, 'webhook_code',
-    true, 'active', now(), null, now()
+    false, 'pending', now(), null, null, null, null, now()
   )
   on conflict on constraint line_customer_bindings_org_customer_key do update
     set line_user_id_hint = excluded.line_user_id_hint,
         line_user_id_hash = excluded.line_user_id_hash,
         bind_method = 'webhook_code',
-        verified = true,
-        status = 'active',
-        bound_at = now(),
+        verified = false,
+        status = 'pending',
+        captured_at = now(),
+        bound_at = null,
+        confirmed_at = null,
+        confirmed_by = null,
         unbound_at = null,
         updated_at = now();
 
@@ -363,16 +511,94 @@ begin
         updated_at = now();
 
   return jsonb_build_object(
-    'bound', true,
-    'organization_id', p_organization_id,
-    'customer_id', v_row.customer_id,
-    'hint', p_line_user_id_hint
+    'captured', true,
+    'bound', false,
+    'status', 'pending'
   );
 end;
 $$;
 
-comment on function public.consume_line_customer_bind_challenge_public(text, text, text, text, text, text, text) is
-  'Token-gated customer bind after webhook signature verification. Never stores plaintext user id.';
+comment on function public.consume_line_customer_bind_challenge_public(text, text, text, text, text, timestamptz, text, text, text, text) is
+  'Captures LINE identity after webhook HMAC and Channel-Secret server proof. Never marks the customer as a trusted recipient.';
+
+create or replace function public.confirm_line_customer_binding(
+  p_organization_id text,
+  p_customer_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_actor public.staff_auth_memberships%rowtype;
+  v_customer record;
+  v_id text;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated' using errcode = '42501';
+  end if;
+  if not public.user_is_org_owner(p_organization_id) then
+    raise exception 'unauthorized' using errcode = '42501';
+  end if;
+  select * into v_actor
+  from public.staff_auth_memberships
+  where auth_user_id = v_uid
+    and organization_id = p_organization_id
+    and is_active = true
+    and role = 'OWNER'
+  limit 1;
+  if not found or not public.is_operational_staff_id(v_actor.user_id) then
+    raise exception 'unauthorized' using errcode = '42501';
+  end if;
+
+  select r.customer_id, r.customer_uuid
+  into v_customer
+  from public.line_customer_binding_resolve(p_organization_id, p_customer_id) r;
+  if v_customer.customer_id is null then
+    raise exception 'invalid customer' using errcode = '22023';
+  end if;
+
+  update public.line_customer_bindings
+  set
+    verified = true,
+    status = 'active',
+    bound_at = now(),
+    confirmed_at = now(),
+    confirmed_by = v_actor.user_id,
+    unbound_at = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and customer_id = v_customer.customer_id
+    and status = 'pending'
+    and verified is not true
+    and line_user_id_hash ~ '^[0-9a-f]{64}$'
+  returning id into v_id;
+
+  if v_id is null then
+    raise exception 'binding not capturable' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.line_customer_binding_secrets where binding_id = v_id
+  ) then
+    update public.line_customer_bindings
+    set verified = false, status = 'pending', bound_at = null, confirmed_at = null, confirmed_by = null
+    where id = v_id;
+    raise exception 'binding secret missing' using errcode = '22023';
+  end if;
+
+  return jsonb_build_object(
+    'organization_id', p_organization_id,
+    'customer_id', v_customer.customer_id,
+    'verified', true,
+    'status', 'active'
+  );
+end;
+$$;
+
+comment on function public.confirm_line_customer_binding(text, text) is
+  'Owner-only in-person confirmation. Promotes a captured LINE identity to a trusted recipient. Does not accept a LINE user id.';
 
 create or replace function public.unbind_line_customer_binding(
   p_organization_id text,
@@ -419,26 +645,47 @@ begin
     verified = false,
     status = 'unbound',
     unbound_at = now(),
+    confirmed_at = null,
+    confirmed_by = null,
+    bound_at = null,
     updated_at = now()
   where organization_id = p_organization_id
     and customer_id = v_customer.customer_id
-    and status = 'active'
+    and status in ('active', 'pending')
   returning id into v_id;
 
   if v_id is not null then
     delete from public.line_customer_binding_secrets where binding_id = v_id;
   end if;
 
+  if to_regclass('public.line_automation_jobs') is not null then
+    update public.line_automation_jobs
+    set
+      status = case
+        when status = 'scheduled' and recipient_ready is true then 'pending_recipient'
+        else status
+      end,
+      recipient_ready = false,
+      updated_at = now()
+    where organization_id = p_organization_id
+      and (
+        customer_id = v_customer.customer_id
+        or customer_app_id = v_customer.customer_id
+      )
+      and status in ('scheduled', 'pending_recipient');
+  end if;
+
   return jsonb_build_object(
     'organization_id', p_organization_id,
     'customer_id', v_customer.customer_id,
-    'bound', false
+    'bound', false,
+    'verified', false
   );
 end;
 $$;
 
 comment on function public.unbind_line_customer_binding(text, text) is
-  'Owner-only unbind. Does not accept or rewrite a LINE user id.';
+  'Owner-only unbind. Clears trusted recipient state and job recipient_ready. Does not accept or rewrite a LINE user id.';
 
 create or replace function public.read_line_customer_bindings(
   p_organization_id text
@@ -475,7 +722,9 @@ begin
                 'hint', b.line_user_id_hint,
                 'verified', b.verified,
                 'status', b.status,
+                'captured_at', b.captured_at,
                 'bound_at', b.bound_at,
+                'confirmed_at', b.confirmed_at,
                 'bind_method', b.bind_method
               )
             end
@@ -514,7 +763,6 @@ security definer
 set search_path = public
 as $$
 begin
-  -- Trusted customer LINE bindings only. Never RPC payload or customers.line_user_id.
   if not public.line_automation_schedule_customer_belongs(p_organization_id, p_customer_id) then
     return false;
   end if;
@@ -531,21 +779,45 @@ begin
       )
       and b.verified is true
       and b.status = 'active'
+      and b.confirmed_at is not null
       and b.bind_method = 'webhook_code'
   );
 end;
 $$;
 
+create or replace function public.line_automation_send_recipient_allowed(
+  p_organization_id text,
+  p_customer_id text
+)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  -- Future send path must call this. Job status scheduled is never sufficient.
+  return public.line_automation_schedule_recipient_ready(p_organization_id, p_customer_id);
+end;
+$$;
+
+comment on function public.line_automation_send_recipient_allowed(text, text) is
+  'Send-time recipient check. Re-reads the trusted binding. Must not rely on job scheduled status.';
+
 revoke all on function public.line_customer_binding_resolve(text, text) from public, anon, authenticated;
-revoke all on function public.start_line_customer_bind_challenge(text, text) from public, anon;
-grant execute on function public.start_line_customer_bind_challenge(text, text) to authenticated;
-revoke all on function public.consume_line_customer_bind_challenge_public(text, text, text, text, text, text, text)
+revoke all on function public.start_line_customer_bind_challenge(text, text, boolean, text) from public, anon;
+grant execute on function public.start_line_customer_bind_challenge(text, text, boolean, text) to authenticated;
+revoke all on function public.consume_line_customer_bind_challenge_public(text, text, text, text, text, timestamptz, text, text, text, text)
   from public, authenticated;
-grant execute on function public.consume_line_customer_bind_challenge_public(text, text, text, text, text, text, text)
+grant execute on function public.consume_line_customer_bind_challenge_public(text, text, text, text, text, timestamptz, text, text, text, text)
   to anon;
+revoke all on function public.confirm_line_customer_binding(text, text) from public, anon;
+grant execute on function public.confirm_line_customer_binding(text, text) to authenticated;
 revoke all on function public.unbind_line_customer_binding(text, text) from public, anon;
 grant execute on function public.unbind_line_customer_binding(text, text) to authenticated;
 revoke all on function public.read_line_customer_bindings(text) from public, anon;
 grant execute on function public.read_line_customer_bindings(text) to authenticated;
 revoke all on function public.line_automation_schedule_recipient_ready(text, text)
+  from public, anon, authenticated;
+revoke all on function public.line_automation_send_recipient_allowed(text, text)
   from public, anon, authenticated;

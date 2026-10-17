@@ -46,3 +46,49 @@ on conflict (id) do nothing;
 update public.customers
 set line_user_id = 'Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 where app_id = 'cust-1';
+
+create table if not exists public.line_webhook_events (
+  organization_id text not null,
+  event_id text not null,
+  processed_at timestamptz not null default now(),
+  bound boolean not null default false,
+  primary key (organization_id, event_id)
+);
+
+create or replace function tests.line_customer_bind_proof(
+  p_organization_id text,
+  p_public_token text,
+  p_event_id text,
+  p_code text,
+  p_user_id_hash text,
+  p_cipher text,
+  p_hint text,
+  p_key_id text,
+  p_hmac_key text,
+  p_issued_at timestamptz
+)
+returns text
+language sql
+stable
+as $$
+  select encode(
+    hmac(
+      convert_to(
+        'line-customer-bind-v1' || chr(10)
+        || p_organization_id || chr(10)
+        || p_public_token || chr(10)
+        || p_event_id || chr(10)
+        || p_code || chr(10)
+        || p_user_id_hash || chr(10)
+        || p_cipher || chr(10)
+        || p_hint || chr(10)
+        || p_key_id || chr(10)
+        || floor(extract(epoch from p_issued_at))::text,
+        'utf8'
+      ),
+      decode(p_hmac_key, 'hex'),
+      'sha256'
+    ),
+    'hex'
+  );
+$$;

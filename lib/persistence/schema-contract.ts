@@ -140,6 +140,7 @@ export const LINE_TABLES = [
   "line_customer_bindings",
   "line_customer_binding_secrets",
   "line_customer_bind_challenges",
+  "line_customer_bind_challenge_secrets",
 ] as const;
 
 /** Must never appear as stored columns (second books). */

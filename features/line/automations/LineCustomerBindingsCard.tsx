@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import {
+  confirmLineCustomerBindingAction,
   loadLineCustomerBindings,
   startLineCustomerBindAction,
   unbindLineCustomerBindingAction,
@@ -14,8 +15,10 @@ import {
 } from "@/lib/line/automations/customer-bindings";
 import {
   LINE_CUSTOMER_BIND_ACTIVE,
+  LINE_CUSTOMER_BIND_CONFIRM,
   LINE_CUSTOMER_BIND_EMPTY,
   LINE_CUSTOMER_BIND_HINT,
+  LINE_CUSTOMER_BIND_IDENTITY,
   LINE_CUSTOMER_BIND_NO_EDIT,
   LINE_CUSTOMER_BIND_PENDING,
   LINE_CUSTOMER_BIND_RELEASED,
@@ -40,6 +43,7 @@ export function LineCustomerBindingsCard({
 }) {
   const [customers, setCustomers] = useState<LineCustomerBindingRow[]>([]);
   const [codes, setCodes] = useState<Record<string, string>>({});
+  const [identityConfirmed, setIdentityConfirmed] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const activeOrganizationId = useRef(organizationId);
@@ -49,6 +53,7 @@ export function LineCustomerBindingsCard({
     const requestOrganizationId = organizationId;
     let cancelled = false;
     setCodes({});
+    setIdentityConfirmed({});
     setMessage("");
     void loadLineCustomerBindings(requestOrganizationId).then((result) => {
       if (cancelled) return;
@@ -98,6 +103,7 @@ export function LineCustomerBindingsCard({
       const result = await startLineCustomerBindAction({
         organizationId: requestOrganizationId,
         customerId,
+        identityConfirmed: identityConfirmed[customerId] === true,
       });
       if (
         !shouldApplyLineAutomationClientResult({
@@ -112,9 +118,34 @@ export function LineCustomerBindingsCard({
         setCodes((current) => ({ ...current, [result.data!.customerId]: result.data!.code }));
       }
     } finally {
-      if (busyId === customerId || activeOrganizationId.current === requestOrganizationId) {
-        setBusyId(null);
+      setBusyId(null);
+    }
+  }
+
+  async function handleConfirm(customerId: string) {
+    if (busyId) return;
+    const requestOrganizationId = organizationId;
+    setBusyId(customerId);
+    setMessage("");
+    try {
+      const result = await confirmLineCustomerBindingAction({
+        organizationId: requestOrganizationId,
+        customerId,
+      });
+      if (
+        !shouldApplyLineAutomationClientResult({
+          requestOrganizationId,
+          activeOrganizationId: activeOrganizationId.current,
+        })
+      ) {
+        return;
       }
+      setMessage(result.message);
+      if (result.ok) {
+        await refresh(requestOrganizationId);
+      }
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -165,6 +196,7 @@ export function LineCustomerBindingsCard({
         <ul className="space-y-2">
           {customers.map((row) => {
             const trusted = isTrustedCustomerBinding(row.binding);
+            const pending = row.binding?.status === "pending";
             return (
               <li
                 key={row.customerId}
@@ -179,6 +211,21 @@ export function LineCustomerBindingsCard({
                       {bindingStatusLabel(row)}
                       {row.binding?.hint ? ` · ${row.binding.hint}` : ""}
                     </p>
+                    <label className="mt-2 flex items-start gap-2 text-[12px] text-secondary-text">
+                      <input
+                        type="checkbox"
+                        data-line-customer-bind-identity={row.customerId}
+                        checked={identityConfirmed[row.customerId] === true}
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+                          setIdentityConfirmed((current) => ({
+                            ...current,
+                            [row.customerId]: checked,
+                          }));
+                        }}
+                      />
+                      <span>{LINE_CUSTOMER_BIND_IDENTITY}</span>
+                    </label>
                     {codes[row.customerId] ? (
                       <p
                         className="mt-2 rounded-2xl bg-primary-light/50 px-3 py-2 font-mono text-[16px] tracking-[0.2em]"
@@ -199,6 +246,17 @@ export function LineCustomerBindingsCard({
                       }}
                     >
                       {LINE_CUSTOMER_BIND_START}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={busyId !== null || !pending}
+                      data-line-customer-bind-confirm={row.customerId}
+                      onClick={() => {
+                        void handleConfirm(row.customerId);
+                      }}
+                    >
+                      {LINE_CUSTOMER_BIND_CONFIRM}
                     </Button>
                     <Button
                       type="button"

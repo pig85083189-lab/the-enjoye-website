@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { LineCustomerBindingsCard } from "@/features/line/automations/LineCustomerBindingsCard";
 import {
+  evaluateLineAutomationSendRecipient,
   evaluateLineCustomerBindStart,
   isTrustedCustomerBinding,
   mapLineCustomerBindingRows,
@@ -14,7 +15,11 @@ import {
 import { LINE_AUTOMATION_SEND_OPEN } from "@/lib/line/automations/production-safe-flags";
 import { LINE_CUSTOMER_BINDINGS_MIGRATION_FILE } from "@/lib/persistence/schema-contract";
 import type { LineActor } from "@/lib/line/line-command";
-import { hashLineUserId } from "@/lib/line/line-bind";
+import {
+  createLineCustomerBindServerProof,
+  deriveLineCustomerBindHmacKey,
+  hashLineUserId,
+} from "@/lib/line/line-bind";
 import { ORG_ENJOYE_ID, ORG_LUMIERE_ID } from "@/lib/tenant/constants";
 
 const ROOT = process.cwd();
@@ -41,7 +46,7 @@ function owner(organizationId: string): LineActor {
 }
 
 describe("LINE customer bindings", () => {
-  it("starts a bind only for the same-store owner and a customer id", () => {
+  it("starts a bind only after owner in-person identity confirmation", () => {
     expect(
       evaluateLineCustomerBindStart({
         connectionPilotEnabled: true,
@@ -49,6 +54,16 @@ describe("LINE customer bindings", () => {
         actor: owner(ORG_ENJOYE_ID),
         secretConfigured: true,
         customerId: "cust-1",
+      }).ok,
+    ).toBe(false);
+    expect(
+      evaluateLineCustomerBindStart({
+        connectionPilotEnabled: true,
+        organizationId: ORG_ENJOYE_ID,
+        actor: owner(ORG_ENJOYE_ID),
+        secretConfigured: true,
+        customerId: "cust-1",
+        identityConfirmed: true,
       }).ok,
     ).toBe(true);
     expect(
@@ -58,6 +73,7 @@ describe("LINE customer bindings", () => {
         actor: owner(ORG_LUMIERE_ID),
         secretConfigured: true,
         customerId: "cust-1",
+        identityConfirmed: true,
       }).ok,
     ).toBe(false);
     expect(
@@ -67,35 +83,33 @@ describe("LINE customer bindings", () => {
         actor: { ...owner(ORG_ENJOYE_ID), role: "STAFF" },
         secretConfigured: true,
         customerId: "cust-1",
-      }).ok,
-    ).toBe(false);
-    expect(
-      evaluateLineCustomerBindStart({
-        connectionPilotEnabled: true,
-        organizationId: ORG_ENJOYE_ID,
-        actor: owner(ORG_ENJOYE_ID),
-        secretConfigured: true,
-        customerId: "  ",
+        identityConfirmed: true,
       }).ok,
     ).toBe(false);
   });
 
-  it("treats only active verified webhook bindings as trusted recipients", () => {
-    expect(isTrustedCustomerBinding({ verified: true, status: "active" })).toBe(true);
-    expect(isTrustedCustomerBinding({ verified: true, status: "unbound" })).toBe(false);
-    expect(isTrustedCustomerBinding({ verified: false, status: "active" })).toBe(false);
-    expect(isTrustedCustomerBinding(null)).toBe(false);
-
-    const rows = mapLineCustomerBindingRows(ORG_ENJOYE_ID, {
-      organization_id: ORG_LUMIERE_ID,
-      customers: [
-        {
-          customer_id: "cust-x",
-          binding: { verified: true, status: "active", hint: "••••abcd" },
-        },
-      ],
-    });
-    expect(rows).toEqual([]);
+  it("treats only owner-confirmed active bindings as trusted recipients", () => {
+    expect(isTrustedCustomerBinding({ verified: true, status: "active" })).toBe(false);
+    expect(
+      isTrustedCustomerBinding({
+        verified: true,
+        status: "active",
+        confirmedAt: "2026-10-17T00:00:00.000Z",
+      }),
+    ).toBe(true);
+    expect(isTrustedCustomerBinding({ verified: false, status: "pending" })).toBe(false);
+    expect(
+      evaluateLineAutomationSendRecipient({
+        jobStatus: "scheduled",
+        binding: { verified: false, status: "pending" },
+      }).ok,
+    ).toBe(false);
+    expect(
+      evaluateLineAutomationSendRecipient({
+        jobStatus: "scheduled",
+        binding: null,
+      }).ok,
+    ).toBe(false);
 
     const mapped = mapLineCustomerBindingRows(ORG_ENJOYE_ID, {
       organization_id: ORG_ENJOYE_ID,
@@ -108,15 +122,15 @@ describe("LINE customer bindings", () => {
             verified: true,
             status: "active",
             bound_at: "2026-10-17T00:00:00.000Z",
+            confirmed_at: "2026-10-17T00:00:00.000Z",
           },
         },
         {
           customer_id: "cust-2",
-          binding: { hint: "••••zzzz", verified: false, status: "unbound" },
+          binding: { hint: "••••zzzz", verified: false, status: "pending" },
         },
       ],
     });
-    expect(mapped[0]?.binding?.hint).toBe("••••abcd");
     expect(verifiedBindingCustomerIds(mapped)).toEqual(new Set(["cust-1"]));
   });
 
@@ -128,53 +142,74 @@ describe("LINE customer bindings", () => {
     const ui = source("features/line/automations/LineCustomerBindingsCard.tsx");
     expect(actions).not.toMatch(/lineUserId|p_line_user_id[^_]/);
     expect(actions).toMatch(/不要輸入 User ID/);
-    expect(actions).toMatch(/LINE_AUTOMATION_SEND_OPEN !== false/);
+    expect(actions).toMatch(/identityConfirmed/);
+    expect(actions).toMatch(/createLineCustomerBindServerProof|deriveLineCustomerBindHmacKey/);
     expect(helpers).not.toMatch(/customers\.line_user_id/);
     expect(webhook).toMatch(/hashLineUserId\(candidate\.userId\)/);
-    expect(webhook).not.toMatch(/body\.userId|input\.lineUserId/);
-    expect(route).toMatch(/CONSUME_LINE_OWNER_BIND_PUBLIC_RPC/);
-    expect(route).toMatch(/CONSUME_LINE_CUSTOMER_BIND_PUBLIC_RPC/);
-    expect(route).toMatch(/bind\.userIdHash/);
-    expect(ui).not.toMatch(/<input[^>]*user id|lineUserId|LINE user id/i);
-    expect(ui).not.toMatch(/type="text"[^>]*U[0-9a-f]/i);
-    expect(hashLineUserId("U" + "a".repeat(32))).toMatch(/^[0-9a-f]{64}$/);
+    expect(route).toMatch(/createLineCustomerBindServerProof/);
+    expect(route).toMatch(/p_proof/);
+    expect(route).toMatch(/p_event_id/);
+    expect(ui).not.toMatch(/type="text"/i);
+    expect(ui).toMatch(/type="checkbox"/);
+    const userId = "U" + "a".repeat(32);
+    expect(hashLineUserId(userId)).toMatch(/^[0-9a-f]{64}$/);
+    const proof = createLineCustomerBindServerProof({
+      channelSecret: "channel-secret",
+      organizationId: ORG_ENJOYE_ID,
+      publicToken: "token-local-token-local-token-local",
+      eventId: "evt-1",
+      code: "ABCDEF12",
+      userIdHash: hashLineUserId(userId),
+      cipher: "v1.cipher",
+      hint: "••••aaaa",
+      keyId: "line-cred-v1",
+      issuedAt: new Date("2026-10-17T00:00:00.000Z"),
+    });
+    expect(proof.proofHex).toMatch(/^[0-9a-f]{64}$/);
+    expect(deriveLineCustomerBindHmacKey("channel-secret", ORG_ENJOYE_ID)).not.toBe(
+      deriveLineCustomerBindHmacKey("channel-secret", ORG_LUMIERE_ID),
+    );
   });
 
-  it("keeps the owner bindings card view-only for verified identity", () => {
+  it("keeps the owner bindings card from editing verified LINE identity", () => {
     const markup = renderToStaticMarkup(
       createElement(LineCustomerBindingsCard, { organizationId: ORG_ENJOYE_ID }),
     );
     expect(markup).toContain("顧客 LINE 綁定");
     expect(markup).toContain("不能手填 User ID");
     expect(markup).toContain("已驗證的 LINE 識別不可手動修改");
-    expect(markup).not.toMatch(/<input/i);
+    expect(source("features/line/automations/LineCustomerBindingsCard.tsx")).toContain(
+      "LINE_CUSTOMER_BIND_IDENTITY",
+    );
+    expect(markup).not.toMatch(/<input[^>]*type="text"/i);
     expect(source("features/line/automations/LineAutomationsWorkspace.tsx")).toMatch(
       /LineCustomerBindingsCard/,
     );
   });
 
-  it("locks send, cron, Broadcast, and Production SQL in the binding migration", () => {
+  it("locks send, cron, Broadcast, and anonymous trusted bind in the binding migration", () => {
     const sql = executableSql(LINE_CUSTOMER_BINDINGS_MIGRATION_FILE);
     expect(LINE_AUTOMATION_SEND_OPEN).toBe(false);
-    expect(source("lib/line/automations/production-safe-flags.ts")).toMatch(
-      /LINE_AUTOMATION_SEND_OPEN = false/,
-    );
-    expect(sql).toMatch(/line_customer_bindings_active_hash_key/);
-    expect(sql).toMatch(/line_user_id_cipher like 'v1\.%'/);
-    expect(sql).toMatch(/Does not accept a LINE user id/);
-    expect(sql).toMatch(/Never stores plaintext LINE user id/);
+    expect(sql).toMatch(/line_customer_bind_challenge_secrets/);
+    expect(sql).toMatch(/p_identity_confirmed/);
+    expect(sql).toMatch(/p_proof/);
+    expect(sql).toMatch(/confirm_line_customer_binding/);
+    expect(sql).toMatch(/line_automation_send_recipient_allowed/);
+    expect(sql).toMatch(/failed_attempts/);
+    expect(sql).toMatch(/interval '2 seconds'/);
+    expect(sql).toMatch(/p_line_user_id_cipher \|\| chr\(10\)/);
+    expect(sql).toMatch(/revoke all on public\.line_customer_bind_challenge_secrets/);
+    expect(sql).not.toMatch(/grant select on public\.line_customer_binding_secrets/);
+    expect(sql).not.toMatch(/grant select on public\.line_customer_bind_challenge_secrets/);
+    expect(sql).toMatch(/grant execute on function public\.consume_line_customer_bind_challenge_public/);
+    expect(sql).toMatch(/revoke all on function public\.consume_line_customer_bind_challenge_public[\s\S]*from public, authenticated/);
+    expect(sql).not.toMatch(/grant select on public\.line_customer_bindings/);
     expect(sql).not.toMatch(/api\.line\.me|pg_cron|cron\.schedule/);
     expect(sql).not.toMatch(/alter table public\.line_broadcasts/);
     expect(sql).not.toMatch(/drop table public\.line_automation_jobs/i);
     expect(sql).not.toMatch(/customers\.line_user_id/);
     expect(source(LINE_CUSTOMER_BINDINGS_MIGRATION_FILE)).toMatch(
       /Do not apply on Production until Owner confirms/,
-    );
-    expect(source("lib/line/automations/schedule-actions.ts")).toMatch(
-      /READ_LINE_CUSTOMER_BINDINGS_RPC/,
-    );
-    expect(source("lib/line/automations/schedule-actions.ts")).toMatch(
-      /verifiedBindingCustomerIds/,
     );
     expect(source("lib/line/automations/schedule-actions.ts")).not.toMatch(/line_user_id/);
   });

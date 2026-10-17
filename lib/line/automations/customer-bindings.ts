@@ -5,6 +5,7 @@ import type { LineDecision } from "@/lib/line/line-command";
 export const START_LINE_CUSTOMER_BIND_RPC = "start_line_customer_bind_challenge";
 export const CONSUME_LINE_CUSTOMER_BIND_PUBLIC_RPC =
   "consume_line_customer_bind_challenge_public";
+export const CONFIRM_LINE_CUSTOMER_BINDING_RPC = "confirm_line_customer_binding";
 export const UNBIND_LINE_CUSTOMER_BINDING_RPC = "unbind_line_customer_binding";
 export const READ_LINE_CUSTOMER_BINDINGS_RPC = "read_line_customer_bindings";
 
@@ -13,6 +14,7 @@ export type LineCustomerBindingPublic = {
   verified: boolean;
   status: "pending" | "active" | "unbound";
   boundAt: string | null;
+  confirmedAt: string | null;
   bindMethod: "webhook_code";
 };
 
@@ -28,6 +30,7 @@ export function evaluateLineCustomerBindStart(input: {
   actor: LineActor;
   secretConfigured: boolean;
   customerId?: string | null;
+  identityConfirmed?: boolean | null;
 }): LineDecision {
   const started = evaluateLineOwnerBindStart({
     connectionPilotEnabled: input.connectionPilotEnabled,
@@ -40,13 +43,38 @@ export function evaluateLineCustomerBindStart(input: {
   if (!customerId) {
     return { ok: false, reason: "invalid_input", message: "缺少顧客識別" };
   }
+  if (input.identityConfirmed !== true) {
+    return { ok: false, reason: "invalid_input", message: "請先現場確認顧客身分" };
+  }
   return { ok: true };
 }
 
 export function isTrustedCustomerBinding(
-  binding: { verified?: boolean | null; status?: string | null } | null | undefined,
+  binding: {
+    verified?: boolean | null;
+    status?: string | null;
+    confirmedAt?: string | null;
+  } | null | undefined,
 ): boolean {
-  return binding?.verified === true && binding.status === "active";
+  return (
+    binding?.verified === true &&
+    binding.status === "active" &&
+    Boolean(binding.confirmedAt)
+  );
+}
+
+export function evaluateLineAutomationSendRecipient(input: {
+  binding?: {
+    verified?: boolean | null;
+    status?: string | null;
+    confirmedAt?: string | null;
+  } | null;
+  jobStatus?: string | null;
+}): { ok: true } | { ok: false; reason: "recipient_not_ready" } {
+  if (isTrustedCustomerBinding(input.binding)) {
+    return { ok: true };
+  }
+  return { ok: false, reason: "recipient_not_ready" };
 }
 
 export function mapLineCustomerBindingRows(
@@ -83,6 +111,10 @@ export function mapLineCustomerBindingRows(
             boundAt:
               typeof (bindingRaw as { bound_at?: unknown }).bound_at === "string"
                 ? (bindingRaw as { bound_at: string }).bound_at
+                : null,
+            confirmedAt:
+              typeof (bindingRaw as { confirmed_at?: unknown }).confirmed_at === "string"
+                ? (bindingRaw as { confirmed_at: string }).confirmed_at
                 : null,
             bindMethod: "webhook_code" as const,
           }

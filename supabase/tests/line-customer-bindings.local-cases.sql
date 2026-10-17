@@ -4,6 +4,10 @@ do $$
 declare
   v_code text;
   v_hash text;
+  v_other_hash text;
+  v_hmac_key text := repeat('ab', 32);
+  v_proof text;
+  v_issued timestamptz;
   v_ready boolean;
   v_status text;
   v_count int;
@@ -14,6 +18,7 @@ declare
   v_other jsonb;
   v_started jsonb;
   v_consumed jsonb;
+  v_event text;
 begin
   perform tests.become('11111111-1111-1111-1111-111111111111');
 
@@ -34,6 +39,22 @@ begin
 
   if public.line_automation_schedule_recipient_ready('org-the-enjoye', 'cust-1') then
     raise exception 'CRM line_user_id forged recipient_ready';
+  end if;
+
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    if has_table_privilege('anon', 'public.line_customer_bindings', 'select')
+       or has_table_privilege('anon', 'public.line_customer_binding_secrets', 'select')
+       or has_table_privilege('anon', 'public.line_customer_bind_challenges', 'select')
+       or has_table_privilege('anon', 'public.line_customer_bind_challenge_secrets', 'select') then
+      raise exception 'anon can read customer binding tables';
+    end if;
+    if has_function_privilege(
+      'authenticated',
+      'public.consume_line_customer_bind_challenge_public(text,text,text,text,text,timestamptz,text,text,text,text)',
+      'execute'
+    ) then
+      raise exception 'authenticated can execute public consume';
+    end if;
   end if;
 
   v_payload := jsonb_build_object(
@@ -67,7 +88,9 @@ begin
 
   begin
     perform tests.become('33333333-3333-3333-3333-333333333333');
-    perform public.start_line_customer_bind_challenge('org-the-enjoye', 'cust-1');
+    perform public.start_line_customer_bind_challenge(
+      'org-the-enjoye', 'cust-1', true, v_hmac_key
+    );
     raise exception 'staff bind start was accepted';
   exception
     when insufficient_privilege then
@@ -76,7 +99,9 @@ begin
 
   begin
     perform tests.become('22222222-2222-2222-2222-222222222222');
-    perform public.start_line_customer_bind_challenge('org-the-enjoye', 'cust-1');
+    perform public.start_line_customer_bind_challenge(
+      'org-the-enjoye', 'cust-1', true, v_hmac_key
+    );
     raise exception 'cross-org customer bind was accepted';
   exception
     when insufficient_privilege then
@@ -84,13 +109,25 @@ begin
   end;
 
   perform tests.become('11111111-1111-1111-1111-111111111111');
-  v_started := public.start_line_customer_bind_challenge('org-the-enjoye', 'cust-1');
+  begin
+    perform public.start_line_customer_bind_challenge(
+      'org-the-enjoye', 'cust-1', false, v_hmac_key
+    );
+    raise exception 'bind start without in-person confirmation was accepted';
+  exception
+    when invalid_parameter_value then
+      null;
+  end;
+
+  v_started := public.start_line_customer_bind_challenge(
+    'org-the-enjoye', 'cust-1', true, v_hmac_key
+  );
   v_code := v_started->>'code';
   if v_code is null or v_code !~ '^[0-9A-F]{8}$' then
     raise exception 'owner bind start did not return a one-time code';
   end if;
-  if v_started ? 'line_user_id' then
-    raise exception 'bind start accepted a LINE user id';
+  if v_started ? 'line_user_id' or v_started ? 'hmac_key' then
+    raise exception 'bind start leaked a LINE user id or server key';
   end if;
 
   v_hash := encode(sha256(convert_to('Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'utf8')), 'hex');
@@ -98,31 +135,215 @@ begin
     'org-the-enjoye',
     'token-local',
     v_code,
+    'evt-forged',
+    'not-a-sha256-hash',
+    now(),
     'v1.forged-not-from-webhook',
     '••••aaaa',
-    'not-a-sha256-hash',
+    v_hash,
     'line-cred-v1'
   );
-  if coalesce((v_consumed->>'bound')::boolean, true) then
-    raise exception 'forged LINE identity was accepted';
+  if coalesce((v_consumed->>'captured')::boolean, true)
+     or coalesce((v_consumed->>'bound')::boolean, true) then
+    raise exception 'anonymous consume without server proof was accepted';
   end if;
 
-  v_started := public.start_line_customer_bind_challenge('org-the-enjoye', 'cust-1');
-  v_code := v_started->>'code';
+  v_issued := now();
+  v_proof := tests.line_customer_bind_proof(
+    'org-the-enjoye', 'token-local', 'evt-forged-hash', v_code,
+    repeat('00', 32), 'v1.forged-not-from-webhook', '••••aaaa', 'line-cred-v1',
+    v_hmac_key, v_issued
+  );
+  insert into public.line_webhook_events (organization_id, event_id, bound)
+  values ('org-the-enjoye', 'evt-forged-hash', false);
   v_consumed := public.consume_line_customer_bind_challenge_public(
     'org-the-enjoye',
     'token-local',
     v_code,
+    'evt-forged-hash',
+    v_proof,
+    v_issued,
+    'v1.forged-not-from-webhook',
+    '••••aaaa',
+    v_hash,
+    'line-cred-v1'
+  );
+  if coalesce((v_consumed->>'captured')::boolean, true) then
+    raise exception 'forged LINE identity was accepted';
+  end if;
+
+  v_started := public.start_line_customer_bind_challenge(
+    'org-the-enjoye', 'cust-1', true, v_hmac_key
+  );
+  v_code := v_started->>'code';
+  v_issued := now() - interval '3 minutes';
+  v_proof := tests.line_customer_bind_proof(
+    'org-the-enjoye', 'token-local', 'evt-expired-proof', v_code,
+    v_hash, 'v1.cipher-expired', '••••aaaa', 'line-cred-v1', v_hmac_key, v_issued
+  );
+  v_consumed := public.consume_line_customer_bind_challenge_public(
+    'org-the-enjoye', 'token-local', v_code, 'evt-expired-proof', v_proof, v_issued,
+    'v1.cipher-expired', '••••aaaa', v_hash, 'line-cred-v1'
+  );
+  if v_consumed->>'reason' is distinct from 'expired' then
+    raise exception 'stale server proof was accepted: %', v_consumed;
+  end if;
+
+  update public.line_customer_bind_challenges
+  set expires_at = now() - interval '1 second'
+  where organization_id = 'org-the-enjoye'
+    and customer_id = 'cust-1'
+    and consumed_at is null;
+  v_issued := now();
+  v_proof := tests.line_customer_bind_proof(
+    'org-the-enjoye', 'token-local', 'evt-expired-code', v_code,
+    v_hash, 'v1.cipher-expired', '••••aaaa', 'line-cred-v1', v_hmac_key, v_issued
+  );
+  insert into public.line_webhook_events (organization_id, event_id, bound)
+  values ('org-the-enjoye', 'evt-expired-code', false);
+  v_consumed := public.consume_line_customer_bind_challenge_public(
+    'org-the-enjoye', 'token-local', v_code, 'evt-expired-code', v_proof, v_issued,
+    'v1.cipher-expired', '••••aaaa', v_hash, 'line-cred-v1'
+  );
+  if v_consumed->>'reason' is distinct from 'expired' then
+    raise exception 'expired bind code was accepted: %', v_consumed;
+  end if;
+
+  v_started := public.start_line_customer_bind_challenge(
+    'org-the-enjoye', 'cust-1', true, v_hmac_key
+  );
+  v_code := v_started->>'code';
+  v_issued := now();
+  for v_count in 1..5 loop
+    update public.line_customer_bind_challenges
+    set last_attempt_at = now() - interval '3 seconds'
+    where organization_id = 'org-the-enjoye'
+      and customer_id = 'cust-1'
+      and consumed_at is null;
+    v_consumed := public.consume_line_customer_bind_challenge_public(
+      'org-the-enjoye',
+      'token-local',
+      v_code,
+      'evt-attempts',
+      repeat('ab', 32),
+      v_issued,
+      'v1.cipher-attempts',
+      '••••aaaa',
+      v_hash,
+      'line-cred-v1'
+    );
+  end loop;
+  if v_consumed->>'reason' is distinct from 'attempt_limited' then
+    raise exception 'attempt limit was not enforced: %', v_consumed;
+  end if;
+
+  v_started := public.start_line_customer_bind_challenge(
+    'org-the-enjoye', 'cust-1', true, v_hmac_key
+  );
+  v_code := v_started->>'code';
+  v_issued := now();
+  v_consumed := public.consume_line_customer_bind_challenge_public(
+    'org-the-enjoye',
+    'token-local',
+    v_code,
+    'evt-throttle',
+    repeat('cd', 32),
+    v_issued,
+    'v1.cipher-throttle',
+    '••••aaaa',
+    v_hash,
+    'line-cred-v1'
+  );
+  v_consumed := public.consume_line_customer_bind_challenge_public(
+    'org-the-enjoye',
+    'token-local',
+    v_code,
+    'evt-throttle',
+    repeat('cd', 32),
+    v_issued,
+    'v1.cipher-throttle',
+    '••••aaaa',
+    v_hash,
+    'line-cred-v1'
+  );
+  if v_consumed->>'reason' is distinct from 'throttled' then
+    raise exception 'short throttle was not enforced: %', v_consumed;
+  end if;
+
+  v_started := public.start_line_customer_bind_challenge(
+    'org-the-enjoye', 'cust-1', true, v_hmac_key
+  );
+  v_code := v_started->>'code';
+  v_event := 'evt-cust-1';
+  insert into public.line_webhook_events (organization_id, event_id, bound)
+  values ('org-the-enjoye', v_event, false);
+  v_issued := now();
+  v_proof := tests.line_customer_bind_proof(
+    'org-the-enjoye', 'token-local', v_event, v_code,
+    v_hash, 'v1.cipher-cust-1', '••••aaaa', 'line-cred-v1', v_hmac_key, v_issued
+  );
+  v_consumed := public.consume_line_customer_bind_challenge_public(
+    'org-the-enjoye',
+    'token-local',
+    v_code,
+    v_event,
+    v_proof,
+    v_issued,
+    'v1.swapped-cipher',
+    '••••aaaa',
+    v_hash,
+    'line-cred-v1'
+  );
+  if coalesce((v_consumed->>'captured')::boolean, true) then
+    raise exception 'cipher substitution was accepted: %', v_consumed;
+  end if;
+  update public.line_customer_bind_challenges
+  set last_attempt_at = now() - interval '3 seconds'
+  where organization_id = 'org-the-enjoye'
+    and customer_id = 'cust-1'
+    and consumed_at is null;
+  v_consumed := public.consume_line_customer_bind_challenge_public(
+    'org-the-enjoye',
+    'token-local',
+    v_code,
+    v_event,
+    v_proof,
+    v_issued,
     'v1.cipher-cust-1',
     '••••aaaa',
     v_hash,
     'line-cred-v1'
   );
-  if (v_consumed->>'bound')::boolean is not true then
-    raise exception 'trusted webhook consume failed: %', v_consumed;
+  if (v_consumed->>'captured')::boolean is not true or (v_consumed->>'bound')::boolean is not false then
+    raise exception 'webhook capture failed: %', v_consumed;
   end if;
+  if v_consumed ? 'customer_id' or v_consumed ? 'hint' or v_consumed ? 'line_user_id' then
+    raise exception 'public consume leaked customer identity: %', v_consumed;
+  end if;
+  if public.line_automation_schedule_recipient_ready('org-the-enjoye', 'cust-1')
+     or public.line_automation_send_recipient_allowed('org-the-enjoye', 'cust-1') then
+    raise exception 'pending capture was treated as trusted';
+  end if;
+
+  v_consumed := public.consume_line_customer_bind_challenge_public(
+    'org-the-enjoye',
+    'token-local',
+    v_code,
+    v_event,
+    v_proof,
+    v_issued,
+    'v1.cipher-cust-1',
+    '••••aaaa',
+    v_hash,
+    'line-cred-v1'
+  );
+  if coalesce((v_consumed->>'captured')::boolean, true) then
+    raise exception 'replayed webhook event was accepted';
+  end if;
+
+  perform public.confirm_line_customer_binding('org-the-enjoye', 'cust-1');
   if public.line_automation_schedule_recipient_ready('org-the-enjoye', 'cust-1') is not true then
-    raise exception 'trusted binding did not confirm recipient_ready';
+    raise exception 'confirmed binding did not confirm recipient_ready';
   end if;
 
   select id into v_job_id
@@ -169,40 +390,72 @@ begin
     raise exception 'Phase 2B appointment job lost original identity after trusted bind';
   end if;
 
-  v_started := public.start_line_customer_bind_challenge('org-the-enjoye', 'cust-2');
+  v_started := public.start_line_customer_bind_challenge(
+    'org-the-enjoye', 'cust-2', true, v_hmac_key
+  );
   v_code := v_started->>'code';
+  insert into public.line_webhook_events (organization_id, event_id, bound)
+  values ('org-the-enjoye', 'evt-cust-2', false);
+  v_issued := now();
+  v_proof := tests.line_customer_bind_proof(
+    'org-the-enjoye', 'token-local', 'evt-cust-2', v_code,
+    v_hash, 'v1.cipher-cust-2', '••••aaaa', 'line-cred-v1', v_hmac_key, v_issued
+  );
   v_consumed := public.consume_line_customer_bind_challenge_public(
     'org-the-enjoye',
     'token-local',
     v_code,
+    'evt-cust-2',
+    v_proof,
+    v_issued,
     'v1.cipher-cust-2',
     '••••aaaa',
     v_hash,
     'line-cred-v1'
   );
-  if coalesce((v_consumed->>'bound')::boolean, true) or v_consumed->>'reason' is distinct from 'duplicate' then
+  if coalesce((v_consumed->>'captured')::boolean, true) or v_consumed->>'reason' is distinct from 'duplicate' then
     raise exception 'duplicate LINE identity was accepted: %', v_consumed;
   end if;
 
   perform tests.become('22222222-2222-2222-2222-222222222222');
-  v_started := public.start_line_customer_bind_challenge('org-lumiere', 'cust-l');
+  v_started := public.start_line_customer_bind_challenge(
+    'org-lumiere', 'cust-l', true, v_hmac_key
+  );
   v_code := v_started->>'code';
+  insert into public.line_webhook_events (organization_id, event_id, bound)
+  values ('org-lumiere', 'evt-lumiere', false);
+  v_issued := now();
+  v_proof := tests.line_customer_bind_proof(
+    'org-lumiere', 'token-local', 'evt-lumiere', v_code,
+    v_hash, 'v1.cipher-lumiere', '••••aaaa', 'line-cred-v1', v_hmac_key, v_issued
+  );
   v_consumed := public.consume_line_customer_bind_challenge_public(
     'org-lumiere',
     'token-local',
     v_code,
+    'evt-lumiere',
+    v_proof,
+    v_issued,
     'v1.cipher-lumiere',
     '••••aaaa',
     v_hash,
     'line-cred-v1'
   );
-  if coalesce((v_consumed->>'bound')::boolean, true) or v_consumed->>'reason' is distinct from 'duplicate' then
+  if coalesce((v_consumed->>'captured')::boolean, true) or v_consumed->>'reason' is distinct from 'duplicate' then
     raise exception 'cross-org duplicate LINE identity was accepted: %', v_consumed;
   end if;
 
   begin
     perform public.unbind_line_customer_binding('org-the-enjoye', 'cust-1');
     raise exception 'cross-org unbind was accepted';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+
+  begin
+    perform public.confirm_line_customer_binding('org-the-enjoye', 'cust-1');
+    raise exception 'cross-org confirm was accepted';
   exception
     when insufficient_privilege then
       null;
@@ -224,24 +477,52 @@ begin
   ) then
     raise exception 'unbind left an active verified binding';
   end if;
-  if public.line_automation_schedule_recipient_ready('org-the-enjoye', 'cust-1') then
-    raise exception 'unbind still reported recipient_ready';
+  if public.line_automation_schedule_recipient_ready('org-the-enjoye', 'cust-1')
+     or public.line_automation_send_recipient_allowed('org-the-enjoye', 'cust-1') then
+    raise exception 'unbind still allowed send';
+  end if;
+  select status, recipient_ready into v_status, v_ready
+  from public.line_automation_jobs
+  where fingerprint = 'org-the-enjoye|birthday_greeting|cust-1|birthday_morning';
+  if v_ready is not false or v_status is distinct from 'pending_recipient' then
+    raise exception 'unbind left a scheduled trusted job: % %', v_status, v_ready;
+  end if;
+  update public.line_automation_jobs
+  set status = 'scheduled'
+  where fingerprint = 'org-the-enjoye|birthday_greeting|cust-1|birthday_morning';
+  if public.line_automation_send_recipient_allowed('org-the-enjoye', 'cust-1') then
+    raise exception 'unbind still allowed send';
   end if;
 
-  v_started := public.start_line_customer_bind_challenge('org-the-enjoye', 'cust-1');
+  v_other_hash := encode(sha256(convert_to('Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'utf8')), 'hex');
+  v_started := public.start_line_customer_bind_challenge(
+    'org-the-enjoye', 'cust-1', true, v_hmac_key
+  );
   v_code := v_started->>'code';
+  insert into public.line_webhook_events (organization_id, event_id, bound)
+  values ('org-the-enjoye', 'evt-rebind', false);
+  v_issued := now();
+  v_proof := tests.line_customer_bind_proof(
+    'org-the-enjoye', 'token-local', 'evt-rebind', v_code,
+    v_other_hash, 'v1.cipher-cust-1-rebind', '••••bbbb', 'line-cred-v1',
+    v_hmac_key, v_issued
+  );
   v_consumed := public.consume_line_customer_bind_challenge_public(
     'org-the-enjoye',
     'token-local',
     v_code,
+    'evt-rebind',
+    v_proof,
+    v_issued,
     'v1.cipher-cust-1-rebind',
     '••••bbbb',
-    encode(sha256(convert_to('Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'utf8')), 'hex'),
+    v_other_hash,
     'line-cred-v1'
   );
-  if (v_consumed->>'bound')::boolean is not true then
+  if (v_consumed->>'captured')::boolean is not true then
     raise exception 'same-customer rebind failed: %', v_consumed;
   end if;
+  perform public.confirm_line_customer_binding('org-the-enjoye', 'cust-1');
 
   select count(*) into v_count
   from public.line_customer_bindings
@@ -254,8 +535,8 @@ begin
   if v_other->>'organization_id' is distinct from 'org-the-enjoye' then
     raise exception 'read bindings leaked another organization';
   end if;
-  if v_other::text like '%v1.cipher%' or v_other::text like '%Ubbbbbbbb%' then
-    raise exception 'read bindings exposed ciphertext or plaintext user id';
+  if v_other::text like '%v1.cipher%' or v_other::text like '%Ubbbbbbbb%' or v_other::text like '%' || v_hmac_key || '%' then
+    raise exception 'read bindings exposed ciphertext, plaintext user id, or server key';
   end if;
 end;
 $$;

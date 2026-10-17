@@ -3,6 +3,7 @@
 import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import { evaluateLineAutomationOwnerAccess } from "@/lib/line/automations/rules";
 import {
+  CONFIRM_LINE_CUSTOMER_BINDING_RPC,
   evaluateLineCustomerBindStart,
   mapLineCustomerBindingRows,
   READ_LINE_CUSTOMER_BINDINGS_RPC,
@@ -10,10 +11,14 @@ import {
   UNBIND_LINE_CUSTOMER_BINDING_RPC,
   type LineCustomerBindingRow,
 } from "@/lib/line/automations/customer-bindings";
+import { deriveLineCustomerBindHmacKey } from "@/lib/line/line-bind";
 import {
+  OWNER_READ_LINE_WEBHOOK_TOKEN_CIPHER_RPC,
+  READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC,
   resolveVerifiedLineOrganizationId,
   type LineActor,
 } from "@/lib/line/line-command";
+import { decryptLineCredential } from "@/lib/line/line-crypto";
 import { isLineConnectionPilotEnabled } from "@/lib/line/line-flag";
 import { loadLineOfficialAccount } from "@/lib/line/line-load";
 import type { LineDecisionReason } from "@/lib/line/line-types";
@@ -64,6 +69,26 @@ async function loadVerifiedOwner(requestedOrganizationId?: string | null) {
   return { ok: true as const, actor, organizationId: verified.organizationId };
 }
 
+async function deriveOwnerBindHmacKey(organizationId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const tokenRead = await supabase.rpc(OWNER_READ_LINE_WEBHOOK_TOKEN_CIPHER_RPC, {
+    p_organization_id: organizationId,
+  });
+  const tokenRow = tokenRead.data && typeof tokenRead.data === "object" ? tokenRead.data : {};
+  const tokenCipher = String((tokenRow as { token_cipher?: unknown }).token_cipher ?? "");
+  const token = tokenCipher.startsWith("v1.") ? decryptLineCredential(tokenCipher) : null;
+  if (!token || !token.ok) return null;
+  const secretRead = await supabase.rpc(READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC, {
+    p_organization_id: organizationId,
+    p_public_token: token.plaintext,
+  });
+  const secretRow = secretRead.data && typeof secretRead.data === "object" ? secretRead.data : {};
+  const secretCipher = String((secretRow as { channel_secret_cipher?: unknown }).channel_secret_cipher ?? "");
+  const secret = secretCipher.startsWith("v1.") ? decryptLineCredential(secretCipher) : null;
+  if (!secret || !secret.ok) return null;
+  return deriveLineCustomerBindHmacKey(secret.plaintext, organizationId);
+}
+
 export async function loadLineCustomerBindings(
   organizationId: string,
 ): Promise<LineCustomerBindingActionResult<{ customers: LineCustomerBindingRow[] }>> {
@@ -89,6 +114,7 @@ export async function loadLineCustomerBindings(
 export async function startLineCustomerBindAction(input: {
   organizationId: string;
   customerId: string;
+  identityConfirmed: boolean;
 }): Promise<LineCustomerBindingActionResult<{ code: string; expiresAt: string; customerId: string }>> {
   const verified = await loadVerifiedOwner(input.organizationId);
   if (!verified.ok) return verified;
@@ -99,12 +125,19 @@ export async function startLineCustomerBindAction(input: {
     actor: verified.actor,
     secretConfigured: Boolean(account?.secretConfigured),
     customerId: input.customerId,
+    identityConfirmed: input.identityConfirmed,
   });
   if (!decision.ok) return { ...decision, sentLine: false };
+  const hmacKey = await deriveOwnerBindHmacKey(verified.organizationId);
+  if (!hmacKey) {
+    return { ok: false, reason: "not_configured", message: "請先保存 LINE 官方帳號憑證與 Webhook", sentLine: false };
+  }
   const supabase = await createClient();
   const started = await supabase.rpc(START_LINE_CUSTOMER_BIND_RPC, {
     p_organization_id: verified.organizationId,
     p_customer_id: input.customerId.trim(),
+    p_identity_confirmed: true,
+    p_bind_hmac_key: hmacKey,
   });
   const payload = started.data && typeof started.data === "object" ? started.data : {};
   const code = String((payload as { code?: unknown }).code ?? "");
@@ -115,10 +148,36 @@ export async function startLineCustomerBindAction(input: {
   }
   return {
     ok: true,
-    message: "請顧客用自己的 LINE 把驗證碼傳給本官方帳號。不要輸入 User ID。",
+    message: "已現場確認顧客身分。請顧客用自己的 LINE 把驗證碼傳給本官方帳號。不要輸入 User ID。驗證碼只證明 LINE 持有人拿到密碼，還要再按確認綁定。",
     sentLine: false,
     data: { code, expiresAt, customerId },
   };
+}
+
+export async function confirmLineCustomerBindingAction(input: {
+  organizationId: string;
+  customerId: string;
+}): Promise<LineCustomerBindingActionResult> {
+  const verified = await loadVerifiedOwner(input.organizationId);
+  if (!verified.ok) return verified;
+  const decision = evaluateLineCustomerBindStart({
+    connectionPilotEnabled: isLineConnectionPilotEnabled(),
+    organizationId: verified.organizationId,
+    actor: verified.actor,
+    secretConfigured: true,
+    customerId: input.customerId,
+    identityConfirmed: true,
+  });
+  if (!decision.ok) return { ...decision, sentLine: false };
+  const supabase = await createClient();
+  const confirmed = await supabase.rpc(CONFIRM_LINE_CUSTOMER_BINDING_RPC, {
+    p_organization_id: verified.organizationId,
+    p_customer_id: input.customerId.trim(),
+  });
+  if (confirmed.error) {
+    return { ok: false, reason: "error", message: "無法確認顧客 LINE 綁定", sentLine: false };
+  }
+  return { ok: true, message: "已現場確認並啟用顧客 LINE 綁定", sentLine: false };
 }
 
 export async function unbindLineCustomerBindingAction(input: {
@@ -133,6 +192,7 @@ export async function unbindLineCustomerBindingAction(input: {
     actor: verified.actor,
     secretConfigured: true,
     customerId: input.customerId,
+    identityConfirmed: true,
   });
   if (!decision.ok) return { ...decision, sentLine: false };
   const supabase = await createClient();
@@ -143,5 +203,5 @@ export async function unbindLineCustomerBindingAction(input: {
   if (unbound.error) {
     return { ok: false, reason: "error", message: "無法解除顧客 LINE 綁定", sentLine: false };
   }
-  return { ok: true, message: "已解除顧客 LINE 綁定", sentLine: false };
+  return { ok: true, message: "已解除顧客 LINE 綁定。發送前會再查驗有效綁定。", sentLine: false };
 }

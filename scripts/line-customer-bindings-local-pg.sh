@@ -38,4 +38,60 @@ createdb "$DB"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261017160000_line_customer_bindings.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/line-customer-bindings.local-cases.sql"
 
+HMAC_KEY="$(printf 'ab%.0s' {1..32})"
+CODE="$("${PSQL[@]}" -At -c "select tests.become('11111111-1111-1111-1111-111111111111'); select public.start_line_customer_bind_challenge('org-the-enjoye', 'cust-2', true, '${HMAC_KEY}')->>'code';" | tail -n1)"
+ISSUED="$("${PSQL[@]}" -At -c "select now();")"
+HASH_C="$("${PSQL[@]}" -At -c "select encode(sha256(convert_to('Ucccccccccccccccccccccccccccccccc', 'utf8')), 'hex');")"
+"${PSQL[@]}" -c "insert into public.line_webhook_events (organization_id, event_id, bound) values ('org-the-enjoye', 'evt-conc-a', false), ('org-the-enjoye', 'evt-conc-b', false);"
+
+proof_sql() {
+  local event_id="$1"
+  cat <<EOF
+select tests.line_customer_bind_proof(
+  'org-the-enjoye',
+  'token-local',
+  '${event_id}',
+  '${CODE}',
+  '${HASH_C}',
+  'v1.cipher-conc',
+  '••••cccc',
+  'line-cred-v1',
+  '${HMAC_KEY}',
+  timestamptz '${ISSUED}'
+);
+EOF
+}
+
+PROOF_A="$("${PSQL[@]}" -At -c "$(proof_sql evt-conc-a)")"
+PROOF_B="$("${PSQL[@]}" -At -c "$(proof_sql evt-conc-b)")"
+
+consume_sql() {
+  local event_id="$1"
+  local proof="$2"
+  cat <<EOF
+select public.consume_line_customer_bind_challenge_public(
+  'org-the-enjoye',
+  'token-local',
+  '${CODE}',
+  '${event_id}',
+  '${proof}',
+  timestamptz '${ISSUED}',
+  'v1.cipher-conc',
+  '••••cccc',
+  '${HASH_C}',
+  'line-cred-v1'
+);
+EOF
+}
+
+psql -d "$DB" -v ON_ERROR_STOP=1 -X -q -c "$(consume_sql evt-conc-a "$PROOF_A")" &
+psql -d "$DB" -v ON_ERROR_STOP=1 -X -q -c "$(consume_sql evt-conc-b "$PROOF_B")" &
+wait
+
+CAPTURED="$("${PSQL[@]}" -At -c "select count(*) from public.line_customer_bindings where organization_id = 'org-the-enjoye' and customer_id = 'cust-2' and status = 'pending';")"
+if [[ "$CAPTURED" != "1" ]]; then
+  echo "REFUSE: concurrent webhook consume created $CAPTURED pending bindings." >&2
+  exit 1
+fi
+
 echo "PASS: local LINE customer bindings verified without dropping Phase 2B jobs or sending LINE."
