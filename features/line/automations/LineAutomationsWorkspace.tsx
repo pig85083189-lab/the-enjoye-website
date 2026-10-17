@@ -6,9 +6,12 @@ import { Card } from "@/components/ui/Card";
 import { LineAutomationCard } from "@/features/line/automations/LineAutomationCard";
 import { LineAutomationRuleEditor } from "@/features/line/automations/LineAutomationRuleEditor";
 import { canShowLineAutomations } from "@/lib/line/automations/access";
+import {
+  loadLineAutomationRules,
+  setLineAutomationEnabled,
+} from "@/lib/line/automations/actions";
 import { LINE_AUTOMATION_CATALOG, lineAutomationById } from "@/lib/line/automations/catalog";
 import {
-  LINE_AUTOMATION_EMPTY_STAT,
   LINE_AUTOMATION_ENABLED_COUNT,
   LINE_AUTOMATION_HISTORY_ENTRY,
   LINE_AUTOMATION_LAB_ENTRY,
@@ -19,11 +22,13 @@ import {
   LINE_AUTOMATION_SENT_THIS_MONTH,
 } from "@/lib/line/automations/copy";
 import {
+  applyLineAutomationEditor,
   createDefaultLineAutomationDrafts,
   createEmptyLineAutomationStats,
   formatLineAutomationStat,
   resetLineAutomationDraftsOnOrganizationChange,
 } from "@/lib/line/automations/draft";
+import { countEnabledAutomationRules } from "@/lib/line/automations/rules";
 import type { LineAutomationId } from "@/lib/line/automations/types";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
@@ -33,6 +38,7 @@ export function LineAutomationsWorkspace() {
   const [drafts, setDrafts] = useState(createDefaultLineAutomationDrafts);
   const [editingId, setEditingId] = useState<LineAutomationId | null>(null);
   const previousOrganizationId = useRef<string | null>(null);
+  const pendingToggle = useRef<LineAutomationId | null>(null);
   const stats = createEmptyLineAutomationStats();
 
   useEffect(() => {
@@ -46,8 +52,18 @@ export function LineAutomationsWorkspace() {
       setDrafts(reset.drafts);
       setEditingId(null);
     }
+    if (!allowed) return;
+    let cancelled = false;
+    void loadLineAutomationRules(organization.id).then((result) => {
+      if (cancelled) return;
+      if (!result.ok || !result.data) return;
+      setDrafts(result.data.drafts);
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organization.id]);
+  }, [organization.id, allowed]);
 
   if (!allowed) {
     return (
@@ -58,6 +74,25 @@ export function LineAutomationsWorkspace() {
   }
 
   const officialName = organization.name.trim() || "THE ENJOYE";
+
+  async function handleToggle(id: LineAutomationId, enabled: boolean) {
+    if (pendingToggle.current) return;
+    pendingToggle.current = id;
+    const result = await setLineAutomationEnabled({
+      organizationId: organization.id,
+      automationType: id,
+      enabled,
+    });
+    pendingToggle.current = null;
+    if (!result.ok) return;
+    setDrafts((current) => ({
+      ...current,
+      [id]: {
+        ...current[id],
+        enabled: result.data?.enabled === true,
+      },
+    }));
+  }
 
   return (
     <div data-line-automations-page className="space-y-5 overflow-x-hidden">
@@ -91,7 +126,7 @@ export function LineAutomationsWorkspace() {
         <Card padding="md">
           <p className="text-[12px] text-secondary-text">{LINE_AUTOMATION_ENABLED_COUNT}</p>
           <p className="mt-2 text-[28px] font-semibold leading-none text-text">
-            {LINE_AUTOMATION_EMPTY_STAT}
+            {formatLineAutomationStat(countEnabledAutomationRules(drafts))}
           </p>
         </Card>
       </section>
@@ -103,6 +138,9 @@ export function LineAutomationsWorkspace() {
             definition={definition}
             draft={drafts[definition.id]}
             onOpenSettings={() => setEditingId(definition.id)}
+            onToggle={(enabled) => {
+              void handleToggle(definition.id, enabled);
+            }}
           />
         ))}
       </div>
@@ -121,7 +159,9 @@ export function LineAutomationsWorkspace() {
           definition={lineAutomationById(editingId)}
           draft={drafts[editingId]}
           officialName={officialName}
+          organizationId={organization.id}
           onClose={() => setEditingId(null)}
+          onApply={(next) => setDrafts((current) => applyLineAutomationEditor(current, next))}
         />
       ) : null}
     </div>

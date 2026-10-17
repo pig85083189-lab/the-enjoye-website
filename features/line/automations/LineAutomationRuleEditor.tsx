@@ -1,18 +1,20 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LineAutomationPhonePreview } from "@/features/line/automations/LineAutomationPhonePreview";
 import { LineAutomationSwitch } from "@/features/line/automations/LineAutomationSwitch";
+import { saveLineAutomationRule } from "@/lib/line/automations/actions";
 import {
   LINE_AUTOMATION_EDITOR_WARNING,
   LINE_AUTOMATION_PREVIEW_MODE_LABEL,
-  LINE_AUTOMATION_SAVE_CLOSED_LABEL,
+  LINE_AUTOMATION_SAVE_LABEL,
   LINE_AUTOMATION_TEMPLATE_LABEL,
   LINE_AUTOMATION_TIMING_LABEL,
 } from "@/lib/line/automations/copy";
-import { lineAutomationTimingsForDraft } from "@/lib/line/automations/draft";
+import { lineAutomationTimingsForDraft, toggleLineAutomationTiming } from "@/lib/line/automations/draft";
+import { LINE_AUTOMATION_TEMPLATE_MAX } from "@/lib/line/automations/rules";
 import type { LineAutomationDefinition, LineAutomationDraft } from "@/lib/line/automations/types";
 
 const FOCUSABLE =
@@ -22,16 +24,32 @@ export function LineAutomationRuleEditor({
   definition,
   draft,
   officialName = "THE ENJOYE",
+  organizationId,
   onClose,
+  onApply,
 }: {
   definition: LineAutomationDefinition;
   draft: LineAutomationDraft;
   officialName?: string;
+  organizationId?: string;
   onClose: () => void;
   onApply?: (next: LineAutomationDraft) => void;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  const timings = lineAutomationTimingsForDraft(definition.timings, draft);
+  const [localDraft, setLocalDraft] = useState(draft);
+  const [saving, setSaving] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const timings = lineAutomationTimingsForDraft(definition.timings, localDraft);
+  const canSave =
+    Boolean(organizationId) &&
+    localDraft.template.trim().length > 0 &&
+    localDraft.template.length <= LINE_AUTOMATION_TEMPLATE_MAX &&
+    localDraft.selectedTimingIds.length > 0 &&
+    !saving;
+
+  useEffect(() => {
+    setLocalDraft(draft);
+  }, [draft]);
 
   useEffect(() => {
     const node = dialogRef.current;
@@ -70,6 +88,29 @@ export function LineAutomationRuleEditor({
     };
   }, [onClose]);
 
+  async function handleSave() {
+    if (!organizationId || saving) return;
+    setSaving(true);
+    const result = await saveLineAutomationRule({
+      organizationId,
+      automationType: localDraft.id,
+      enabled: localDraft.enabled,
+      template: localDraft.template,
+      selectedTimingIds: localDraft.selectedTimingIds,
+      customTimings: localDraft.customTimings,
+    });
+    setSaving(false);
+    if (!result.ok) {
+      setStatusMessage(result.message);
+      return;
+    }
+    if (result.data) {
+      setLocalDraft(result.data);
+      onApply?.(result.data);
+    }
+    setStatusMessage(result.message);
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(48,43,43,0.35)] px-3 py-3 sm:items-center"
@@ -97,7 +138,7 @@ export function LineAutomationRuleEditor({
               {LINE_AUTOMATION_PREVIEW_MODE_LABEL}
             </p>
             <p className="mt-2 text-[13px] leading-relaxed text-secondary-text">
-              {LINE_AUTOMATION_EDITOR_WARNING}
+              {statusMessage ?? LINE_AUTOMATION_EDITOR_WARNING}
             </p>
           </div>
           <button
@@ -117,24 +158,40 @@ export function LineAutomationRuleEditor({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[13px] text-secondary-text">自動發送</p>
             <LineAutomationSwitch
-              checked={false}
-              disabled
+              checked={localDraft.enabled}
               label={`${definition.title}自動發送`}
-              onChange={() => undefined}
+              onChange={(enabled) => setLocalDraft((current) => ({ ...current, enabled }))}
             />
           </div>
 
           <div className="mt-5 space-y-2">
             <p className="text-[13px] font-medium text-text">{LINE_AUTOMATION_TIMING_LABEL}</p>
             <div className="flex flex-wrap gap-2">
-              {timings.map((timing) => (
-                <span
-                  key={timing.id}
-                  className="rounded-full border border-[#E8D0CE] bg-white px-3 py-1.5 text-[13px] text-secondary-text"
-                >
-                  {timing.label}
-                </span>
-              ))}
+              {timings.map((timing) => {
+                const selected = localDraft.selectedTimingIds.includes(timing.id);
+                return (
+                  <button
+                    key={timing.id}
+                    type="button"
+                    data-line-automation-timing={timing.id}
+                    data-selected={selected ? "true" : "false"}
+                    aria-pressed={selected}
+                    onClick={() =>
+                      setLocalDraft((current) => {
+                        const next = toggleLineAutomationTiming(current, timing.id);
+                        return next.selectedTimingIds.length === 0 ? current : next;
+                      })
+                    }
+                    className={
+                      selected
+                        ? "rounded-full border border-primary/35 bg-primary-light/70 px-3 py-1.5 text-[13px] font-medium text-primary"
+                        : "rounded-full border border-[#E8D0CE] bg-white px-3 py-1.5 text-[13px] text-secondary-text"
+                    }
+                  >
+                    {timing.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -142,8 +199,11 @@ export function LineAutomationRuleEditor({
             <span className="text-[13px] font-medium text-text">{LINE_AUTOMATION_TEMPLATE_LABEL}</span>
             <textarea
               data-line-automation-editor-template
-              value={draft.template}
-              readOnly
+              value={localDraft.template}
+              maxLength={LINE_AUTOMATION_TEMPLATE_MAX}
+              onChange={(event) =>
+                setLocalDraft((current) => ({ ...current, template: event.target.value }))
+              }
               className="min-h-32 w-full rounded-2xl border border-border bg-white px-4 py-3 text-[14px] leading-relaxed text-text outline-none"
             />
           </label>
@@ -154,7 +214,7 @@ export function LineAutomationRuleEditor({
               <LineAutomationPhonePreview
                 officialName={officialName}
                 templateTitle={definition.previewTitle}
-                textBody={draft.template}
+                textBody={localDraft.template}
                 quickReplies={definition.quickReplies}
                 selectedId={definition.id}
                 compact
@@ -164,8 +224,8 @@ export function LineAutomationRuleEditor({
         </div>
 
         <div className="flex shrink-0 flex-col gap-2 border-t border-border/70 bg-[#FFFCFB] px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row-reverse sm:px-5">
-          <Button fullWidth disabled data-line-automation-save>
-            {LINE_AUTOMATION_SAVE_CLOSED_LABEL}
+          <Button fullWidth disabled={!canSave} data-line-automation-save onClick={handleSave}>
+            {LINE_AUTOMATION_SAVE_LABEL}
           </Button>
           <Button variant="outline" fullWidth onClick={onClose}>
             關閉

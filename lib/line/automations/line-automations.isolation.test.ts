@@ -22,7 +22,7 @@ import {
   LINE_AUTOMATION_NOT_LIVE_HINT,
   LINE_AUTOMATION_PREVIEW_MODE_LABEL,
   LINE_AUTOMATION_REMINDER_DEV_HINT,
-  LINE_AUTOMATION_SAVE_CLOSED_LABEL,
+  LINE_AUTOMATION_SAVE_LABEL,
   LINE_AUTOMATION_STATS_EMPTY_HINT,
   LINE_OWNER_SELF_DISABLED_HINT,
   LINE_OWNER_SELF_GRANT_LABEL,
@@ -72,10 +72,12 @@ const AUTOMATION_FILES = [
   "features/line/automations/LineTestPushPrepCard.tsx",
   "features/line/automations/LineTestPushAcceptanceCard.tsx",
   "lib/line/automations/access.ts",
+  "lib/line/automations/actions.ts",
   "lib/line/automations/catalog.ts",
   "lib/line/automations/copy.ts",
   "lib/line/automations/draft.ts",
   "lib/line/automations/production-safe-flags.ts",
+  "lib/line/automations/rules.ts",
   "lib/line/automations/types.ts",
 ] as const;
 
@@ -179,7 +181,9 @@ describe("LINE automation access and page wiring", () => {
     expect(card).toContain(definition.description);
     expect(card).toContain(LINE_AUTOMATION_LOCAL_ONLY_BADGE);
     expect(card).toContain('data-checked="false"');
-    expect(card).toMatch(/disabled[^>]*data-line-automation-switch|data-line-automation-switch[^>]*disabled/);
+    expect(card).not.toMatch(
+      /<button[^>]*data-line-automation-switch="true"[^>]*\sdisabled[\s>]|<button[^>]*\sdisabled[\s>][^>]*data-line-automation-switch/,
+    );
     expect(card).not.toMatch(/預約前1天|建置啟用中|本月已發送/);
     expect(card).not.toMatch(/>28<|>12<|>51</);
 
@@ -209,6 +213,7 @@ describe("LINE automation access and page wiring", () => {
       createElement(LineAutomationRuleEditor, {
         definition,
         draft,
+        organizationId: ORG_ENJOYE_ID,
         onClose: () => undefined,
       }),
     );
@@ -216,9 +221,14 @@ describe("LINE automation access and page wiring", () => {
     expect(editor).toContain("訊息範本");
     expect(editor).toContain("訊息範本預覽");
     expect(editor).toContain(LINE_AUTOMATION_PREVIEW_MODE_LABEL);
-    expect(editor).toContain(LINE_AUTOMATION_SAVE_CLOSED_LABEL);
-    expect(editor).toMatch(/disabled[^>]*data-line-automation-save|data-line-automation-save[^>]*disabled/);
-    expect(editor).toMatch(/disabled[^>]*data-line-automation-switch|data-line-automation-switch[^>]*disabled/);
+    expect(editor).toContain(LINE_AUTOMATION_SAVE_LABEL);
+    expect(editor).toContain('data-line-automation-save="true"');
+    expect(editor).not.toMatch(
+      /<button[^>]*data-line-automation-save="true"[^>]*\sdisabled[\s>]|<button[^>]*\sdisabled[\s>][^>]*data-line-automation-save/,
+    );
+    expect(editor).not.toMatch(
+      /<button[^>]*data-line-automation-switch="true"[^>]*\sdisabled[\s>]|<button[^>]*\sdisabled[\s>][^>]*data-line-automation-switch/,
+    );
     expect(source("features/line/automations/LineAutomationRuleEditor.tsx")).toMatch(
       /Escape|FOCUSABLE/,
     );
@@ -255,7 +265,7 @@ describe("LINE automation access and page wiring", () => {
 });
 
 describe("LINE automation safety", () => {
-  it("does not call LINE send APIs, persist drafts, or add migrations", () => {
+  it("does not call LINE send APIs or open the send flag", () => {
     const joined = AUTOMATION_FILES.map((file) => source(file)).join("\n");
     expect(joined).toMatch(/尚未正式啟用|不會發送 LINE 訊息/);
     expect(joined).toContain(LINE_AUTOMATION_NOT_LIVE_HINT);
@@ -264,6 +274,9 @@ describe("LINE automation safety", () => {
     expect(joined).not.toMatch(/multicast|LINE_BROADCAST_SEND_OPEN|LINE_TEST_PUSH_OPEN/);
     expect(joined).not.toMatch(/createServiceRoleClient|SUPABASE_SERVICE_ROLE_KEY/);
     expect(joined).not.toMatch(/localStorage|indexedDB/);
+    expect(source("features/line/automations/LineAutomationsWorkspace.tsx")).toMatch(
+      /loadLineAutomationRules|saveLineAutomationRule|setLineAutomationEnabled/,
+    );
     expect(source("features/line/automations/LineAutomationsWorkspace.tsx")).not.toMatch(
       /loadLineOfficialAccountAction|loadLineBroadcastPrepareAction|LineTestPush|DryRun|OwnerSelf|PlanCard/,
     );
@@ -271,7 +284,7 @@ describe("LINE automation safety", () => {
       /LineTestPushPrepCard|LineAppointmentReminderDryRunCard|LineOwnerSelfReminderCard/,
     );
     expect(source("features/line/automations/LineAutomationRuleEditor.tsx")).toMatch(
-      /LINE_AUTOMATION_SAVE_CLOSED_LABEL|data-line-automation-save/,
+      /saveLineAutomationRule|data-line-automation-save/,
     );
     expect(source("app/staff/(app)/line/automations/lab/page.tsx")).toMatch(/LineAutomationLabWorkspace/);
     expect(source("app/staff/(app)/line/automations/history/page.tsx")).toMatch(

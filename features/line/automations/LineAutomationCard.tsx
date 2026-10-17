@@ -8,7 +8,9 @@ import type { LineAutomationDefinition, LineAutomationDraft } from "@/lib/line/a
 
 export function LineAutomationCard({
   definition,
+  draft,
   onOpenSettings,
+  onToggle,
 }: {
   definition: LineAutomationDefinition;
   draft: LineAutomationDraft;
@@ -38,10 +40,9 @@ export function LineAutomationCard({
           <div className="flex items-center gap-2">
             <span className="text-[12px] text-secondary-text">{LINE_AUTOMATION_LOCAL_ONLY_BADGE}</span>
             <LineAutomationSwitch
-              checked={false}
-              disabled
+              checked={draft.enabled}
               label={`${definition.title}自動發送`}
-              onChange={() => undefined}
+              onChange={(enabled) => onToggle?.(enabled)}
             />
           </div>
           <button
