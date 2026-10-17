@@ -111,7 +111,7 @@ export const LINE_BROADCAST_ONESHOT_PERMIT_MIGRATION_FILE =
 export const LINE_BROADCAST_CHANNEL_LOCK_MIGRATION_FILE =
   "supabase/migrations/20261012120000_line_broadcast_channel_lock.sql";
 
-/** LINE automation rule settings. Additive. Default closed. Do not apply on Production until Owner confirms. */
+/** LINE automation rule settings. Additive upgrade of Preview Phase 2B table. Default closed. Do not apply on Production until Owner confirms. */
 export const LINE_AUTOMATION_RULES_MIGRATION_FILE =
   "supabase/migrations/20261017120000_line_automation_rules.sql";
 
