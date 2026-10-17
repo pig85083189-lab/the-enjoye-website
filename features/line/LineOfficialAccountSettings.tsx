@@ -51,6 +51,8 @@ import type {
   LineOwnerRecipientPublic,
   LineWebhookPublicUrl,
 } from "@/lib/line/line-types";
+import { LineEnjoyeOwnerBindPrepCard } from "@/features/line/LineEnjoyeOwnerBindPrepCard";
+import { canShowEnjoyeOwnerBindPrep } from "@/lib/line/enjoye-owner-bind-prep";
 import { ORG_BEAUTY_OS_TEST_ID } from "@/lib/tenant/constants";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
@@ -507,6 +509,23 @@ export function LineOfficialAccountSettings({
               ) : null}
               <Feedback feedback={probeFeedback} testId="oneshot-probe" />
             </Card>
+          ) : null}
+
+          {canShowEnjoyeOwnerBindPrep({
+            organizationId: organization.id,
+            staffUserId: membership?.userId,
+            role: membership?.role,
+            isActive: membership?.isActive,
+          }) ? (
+            <LineEnjoyeOwnerBindPrepCard
+              actor={{
+                organizationId: organization.id,
+                staffUserId: membership?.userId,
+                role: membership?.role,
+                isActive: membership?.isActive,
+              }}
+              channelId={account?.channelId ?? null}
+            />
           ) : null}
 
           {engineer ? (
