@@ -148,16 +148,18 @@ export function LineAutomationRuleEditor({
             />
           </label>
 
-          <div className="mt-5">
-            <LineAutomationPhonePreview
-              officialName={officialName}
-              templateTitle={definition.previewTitle}
-              textBody={draft.template}
-              quickReplies={definition.quickReplies}
-              selectedId={definition.id}
-              compact
-            />
-          </div>
+            </div>
+            <div className="min-w-0 lg:sticky lg:top-0">
+              <p className="mb-3 text-[13px] font-medium text-text">LINE 訊息預覽</p>
+              <LineAutomationPhonePreview
+                officialName={officialName}
+                templateTitle={definition.previewTitle}
+                textBody={draft.template}
+                quickReplies={definition.quickReplies}
+                selectedId={definition.id}
+                compact
+              />
+            </div>
           </div>
         </div>
 
