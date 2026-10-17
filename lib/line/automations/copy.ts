@@ -28,6 +28,11 @@ export const LINE_AUTOMATION_REMINDER_PLAN_TITLE = "預約提醒本機排程";
 export const LINE_AUTOMATION_REMINDER_PLAN_HINT =
   "只使用本機測試預約。取消或改期會讓未發送提醒失效。真實發送仍關閉。";
 export const LINE_AUTOMATION_HISTORY_LOCAL_HINT = "以下是本機排程預覽，不是正式發送紀錄。";
+export const LINE_AUTOMATION_DRY_RUN_TITLE = "預約提醒模擬模式";
+export const LINE_AUTOMATION_DRY_RUN_BADGE = "模擬模式，不會發送 LINE";
+export const LINE_AUTOMATION_DRY_RUN_HINT =
+  "這是完整 Dry Run：建立模擬預約、產生兩則提醒、到期重驗、模擬發送。模擬完成不代表 LINE 已經發出。";
+export const LINE_AUTOMATION_DRY_RUN_NOT_SENT = "未發送任何真實 LINE 訊息";
 export const LINE_AUTOMATION_REMINDER_EDITOR_WARNING =
   "預約提醒仍在開發。此設定只本機預覽，不會寫入資料庫，也不會呼叫 LINE API。";
 export const LINE_AUTOMATION_FLAG_CLOSED = "關閉";

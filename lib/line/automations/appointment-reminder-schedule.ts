@@ -40,6 +40,8 @@ export type AppointmentReminderJobStatus =
   | "blocked_rate"
   | "blocked_audience"
   | "blocked_send_closed"
+  | "simulated"
+  | "unavailable"
   | "failed";
 
 export type ReminderAppointmentInput = {
@@ -57,6 +59,7 @@ export type AppointmentReminderJob = {
   organizationId: string;
   kind: AppointmentReminderKind;
   version: number;
+  appointmentStartAt: string;
   fireAt: string;
   audience: AppointmentReminderAudience;
   status: AppointmentReminderJobStatus;
@@ -151,6 +154,7 @@ function job(
     organizationId: input.appointment.organizationId,
     kind,
     version: input.appointment.version,
+    appointmentStartAt: input.appointment.startAt,
     fireAt,
     audience: input.audience,
     status,

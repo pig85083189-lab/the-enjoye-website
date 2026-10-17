@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { LineAutomationCard } from "@/features/line/automations/LineAutomationCard";
 import { LineAutomationPhonePreview } from "@/features/line/automations/LineAutomationPhonePreview";
 import { LineAutomationMonthlyStats } from "@/features/line/automations/LineAutomationStats";
+import { LineAppointmentReminderDryRunCard } from "@/features/line/automations/LineAppointmentReminderDryRunCard";
 import { LineAppointmentReminderPlanCard } from "@/features/line/automations/LineAppointmentReminderPlanCard";
 import { LineOwnerSelfReminderCard } from "@/features/line/automations/LineOwnerSelfReminderCard";
 import { canShowLineAutomations, LINE_AUTOMATION_ROLES } from "@/lib/line/automations/access";
@@ -58,6 +59,7 @@ const AUTOMATION_FILES = [
   "features/line/automations/LineAutomationSwitch.tsx",
   "features/line/automations/LineOwnerSelfReminderCard.tsx",
   "features/line/automations/LineAppointmentReminderPlanCard.tsx",
+  "features/line/automations/LineAppointmentReminderDryRunCard.tsx",
   "lib/line/automations/access.ts",
   "lib/line/automations/catalog.ts",
   "lib/line/automations/copy.ts",
@@ -185,6 +187,12 @@ describe("LINE automation access and page wiring", () => {
     expect(plan).toContain("預約提醒本機排程");
     expect(plan).toContain("data-line-reminder-status=\"planned\"");
     expect(plan).not.toMatch(/cust-|U[0-9a-f]{32}/i);
+
+    const dryRun = renderToStaticMarkup(createElement(LineAppointmentReminderDryRunCard));
+    expect(dryRun).toContain("模擬模式，不會發送 LINE");
+    expect(dryRun).toContain("未發送任何真實 LINE 訊息");
+    expect(dryRun).toContain("data-line-dry-run-sent=\"false\"");
+    expect(dryRun).toContain("模擬完成（未發送 LINE）");
   });
 });
 
