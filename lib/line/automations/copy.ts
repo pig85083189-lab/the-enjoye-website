@@ -33,6 +33,15 @@ export const LINE_AUTOMATION_DRY_RUN_BADGE = "模擬模式，不會發送 LINE";
 export const LINE_AUTOMATION_DRY_RUN_HINT =
   "這是完整 Dry Run：建立模擬預約、產生兩則提醒、到期重驗、模擬發送。模擬完成不代表 LINE 已經發出。";
 export const LINE_AUTOMATION_DRY_RUN_NOT_SENT = "未發送任何真實 LINE 訊息";
+export const LINE_TEST_PUSH_PREP_TITLE = "測試 LINE 單次發送準備";
+export const LINE_TEST_PUSH_PREP_BADGE = "發送按鈕已停用";
+export const LINE_TEST_PUSH_PREP_HINT =
+  "這是 Preview TEST 單次 Push 的安全檢查。檢查通過或本機模擬成功，都不代表 LINE 已經送達。";
+export const LINE_TEST_PUSH_PREP_SEND_LABEL = "發送一則測試 LINE（尚未開放）";
+export const LINE_TEST_PUSH_PREP_ENV_LABEL = "建議執行環境";
+export const LINE_TEST_PUSH_PREP_RECIPIENT_LABEL = "測試接收者";
+export const LINE_TEST_PUSH_PREP_CHANNEL_LABEL = "測試 Channel";
+export const LINE_TEST_PUSH_PREP_UNKNOWN_BIND = "尚未唯讀確認（只顯示遮罩）";
 export const LINE_AUTOMATION_REMINDER_EDITOR_WARNING =
   "預約提醒仍在開發。此設定只本機預覽，不會寫入資料庫，也不會呼叫 LINE API。";
 export const LINE_AUTOMATION_FLAG_CLOSED = "關閉";
