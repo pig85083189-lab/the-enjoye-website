@@ -82,7 +82,7 @@ export function LineAutomationRuleEditor({
         role="dialog"
         aria-modal="true"
         aria-labelledby="line-automation-editor-title"
-        className="flex h-[min(92vh,calc(100dvh-1.5rem))] min-h-0 w-full max-w-lg flex-col overflow-hidden rounded-t-[24px] border border-border bg-[#FFFCFB] shadow-[0_16px_40px_rgba(48,43,43,0.12)] sm:h-[min(80vh,42rem)] sm:rounded-[20px]"
+        className="flex h-[min(92vh,calc(100dvh-1.5rem))] min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-t-[24px] border border-border bg-[#FFFCFB] shadow-[0_16px_40px_rgba(48,43,43,0.12)] sm:h-[min(84vh,46rem)] sm:rounded-[20px]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/70 px-4 py-4 sm:px-5">
@@ -112,7 +112,7 @@ export function LineAutomationRuleEditor({
         </div>
 
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)] lg:items-start">\n            <div className="min-w-0">\n          <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[13px] text-secondary-text">自動發送</p>
             <LineAutomationSwitch
               checked={false}
