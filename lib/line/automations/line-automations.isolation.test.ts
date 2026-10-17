@@ -8,6 +8,7 @@ import { LineAutomationCard } from "@/features/line/automations/LineAutomationCa
 import { LineAutomationPhonePreview } from "@/features/line/automations/LineAutomationPhonePreview";
 import { LineAutomationMonthlyStats } from "@/features/line/automations/LineAutomationStats";
 import { LineAppointmentReminderDryRunCard } from "@/features/line/automations/LineAppointmentReminderDryRunCard";
+import { LineTestPushAcceptanceCard } from "@/features/line/automations/LineTestPushAcceptanceCard";
 import { LineTestPushPrepCard } from "@/features/line/automations/LineTestPushPrepCard";
 import { LineAppointmentReminderPlanCard } from "@/features/line/automations/LineAppointmentReminderPlanCard";
 import { LineOwnerSelfReminderCard } from "@/features/line/automations/LineOwnerSelfReminderCard";
@@ -62,6 +63,7 @@ const AUTOMATION_FILES = [
   "features/line/automations/LineAppointmentReminderPlanCard.tsx",
   "features/line/automations/LineAppointmentReminderDryRunCard.tsx",
   "features/line/automations/LineTestPushPrepCard.tsx",
+  "features/line/automations/LineTestPushAcceptanceCard.tsx",
   "lib/line/automations/access.ts",
   "lib/line/automations/catalog.ts",
   "lib/line/automations/copy.ts",
@@ -201,6 +203,16 @@ describe("LINE automation access and page wiring", () => {
     expect(prep).toContain("發送按鈕已停用");
     expect(prep).toContain("data-line-test-push-send-open=\"false\"");
     expect(prep).toMatch(/disabled[^>]*data-line-test-push-send|data-line-test-push-send[^>]*disabled/);
+
+    const accept = renderToStaticMarkup(createElement(LineTestPushAcceptanceCard));
+    expect(accept).toContain("Preview 綁定與單次發送安全驗收");
+    expect(accept).toContain("未知則不通過");
+    expect(accept).toContain('data-line-preview-bind="unknown"');
+    expect(accept).toContain('data-line-preview-schema="unknown"');
+    expect(accept).toContain('data-line-test-push-send-open="false"');
+    expect(accept).toMatch(
+      /disabled[^>]*data-line-test-push-accept-send|data-line-test-push-accept-send[^>]*disabled/,
+    );
   });
 });
 

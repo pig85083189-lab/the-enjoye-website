@@ -1488,12 +1488,12 @@ describe("LINE Phase 1C owner bind and test push", () => {
 
   it("classifies mock Push HTTP errors without reading LINE bodies or saying 廣播", async () => {
     const cases = [
-      { status: 400, errorClass: "invalid_request" as const },
-      { status: 401, errorClass: "unauthorized" as const },
-      { status: 403, errorClass: "forbidden" as const },
-      { status: 429, errorClass: "quota_exceeded" as const },
-      { status: 500, errorClass: "unknown" as const },
-      { status: 503, errorClass: "unknown" as const },
+      { status: 400, errorClass: "invalid_request" as const, apiResult: "failed" as const },
+      { status: 401, errorClass: "unauthorized" as const, apiResult: "failed" as const },
+      { status: 403, errorClass: "forbidden" as const, apiResult: "failed" as const },
+      { status: 429, errorClass: "quota_exceeded" as const, apiResult: "failed" as const },
+      { status: 500, errorClass: "unknown" as const, apiResult: "pending_confirmation" as const },
+      { status: 503, errorClass: "unknown" as const, apiResult: "pending_confirmation" as const },
     ];
     for (const item of cases) {
       expect(classifyLineHttpError({ httpStatus: item.status })).toBe(item.errorClass);
@@ -1518,8 +1518,8 @@ describe("LINE Phase 1C owner bind and test push", () => {
       expect(JSON.stringify(http)).not.toMatch(/SECRET_BODY|token=xxx|Usecret/);
       const outcome = interpretLineTestPushApiOutcome(http);
       expect(outcome).toMatchObject({
-        apiResult: "failed",
-        status: "failed",
+        apiResult: item.apiResult,
+        status: item.apiResult,
         errorClass: item.errorClass,
       });
       expect(outcome.message).not.toMatch(/廣播/);

@@ -42,6 +42,20 @@ export const LINE_TEST_PUSH_PREP_ENV_LABEL = "建議執行環境";
 export const LINE_TEST_PUSH_PREP_RECIPIENT_LABEL = "測試接收者";
 export const LINE_TEST_PUSH_PREP_CHANNEL_LABEL = "測試 Channel";
 export const LINE_TEST_PUSH_PREP_UNKNOWN_BIND = "尚未唯讀確認（只顯示遮罩）";
+export const LINE_TEST_PUSH_ACCEPT_TITLE = "Preview 綁定與單次發送安全驗收";
+export const LINE_TEST_PUSH_ACCEPT_BADGE = "未知則不通過";
+export const LINE_TEST_PUSH_ACCEPT_HINT =
+  "本階段只做 Preview 唯讀確認與本機安全驗收。沒有資料庫存取權限時標記未知，不會用假資料宣稱通過，也不會發送 LINE。";
+export const LINE_TEST_PUSH_ACCEPT_RECIPIENT_LABEL = "Preview 接收者";
+export const LINE_TEST_PUSH_ACCEPT_SCHEMA_LABEL = "遠端資料結構";
+export const LINE_TEST_PUSH_ACCEPT_CLAIM_LABEL = "授權與防重";
+export const LINE_TEST_PUSH_ACCEPT_RETRY_LABEL = "超時重試";
+export const LINE_TEST_PUSH_ACCEPT_BLOCK_LABEL = "封鎖與撤銷";
+export const LINE_TEST_PUSH_ACCEPT_NEXT_LABEL = "下一個需核准動作";
+export const LINE_TEST_PUSH_ACCEPT_UNKNOWN = "未知（不可宣稱通過）";
+export const LINE_TEST_PUSH_ACCEPT_CLAIM = "必須遠端原子 claim，不可用本機集合";
+export const LINE_TEST_PUSH_ACCEPT_RETRY = "超時、伺服器錯誤或結果不明都待確認，不自動重試";
+export const LINE_TEST_PUSH_ACCEPT_BLOCK = "封鎖與撤銷未知時 fail-closed";
 export const LINE_AUTOMATION_REMINDER_EDITOR_WARNING =
   "預約提醒仍在開發。此設定只本機預覽，不會寫入資料庫，也不會呼叫 LINE API。";
 export const LINE_AUTOMATION_FLAG_CLOSED = "關閉";

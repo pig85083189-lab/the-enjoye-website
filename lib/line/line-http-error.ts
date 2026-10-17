@@ -166,6 +166,14 @@ export function interpretLineTestPushApiOutcome(input: {
       errorClass: input.localErrorClass,
     };
   }
+  if (isLineUnknownHttpOutcome(input.httpStatus) || input.httpStatus == null) {
+    return {
+      apiResult: "pending_confirmation",
+      status: "pending_confirmation",
+      message: "LINE API 回傳未知結果，系統已標記待確認，不會自動重送",
+      errorClass: "unknown",
+    };
+  }
   const errorClass = classifyLineHttpError({
     timedOut: false,
     httpStatus: input.httpStatus,
