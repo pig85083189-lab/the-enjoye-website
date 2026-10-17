@@ -75,6 +75,8 @@ describe("active route resolution", () => {
 
   it("LINE automations is a distinct Owner-only route", () => {
     expect(resolveActiveNavId("/staff/line/automations")).toBe("line-automations");
+    expect(resolveActiveNavId("/staff/line/automations/history")).toBe("line-automations");
+    expect(resolveActiveNavId("/staff/line/automations/lab")).toBe("line-automations");
     expect(resolveActiveNavId("/staff/line")).toBe("line");
     expect(
       isNavItemVisibleForRole(NAVIGATION_ITEMS.find((i) => i.id === "line-automations")!, "OWNER"),

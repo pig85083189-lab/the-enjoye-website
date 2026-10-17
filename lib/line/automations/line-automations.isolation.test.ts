@@ -20,7 +20,9 @@ import {
   LINE_AUTOMATION_FLAG_CLOSED,
   LINE_AUTOMATION_LOCAL_ONLY_BADGE,
   LINE_AUTOMATION_NOT_LIVE_HINT,
+  LINE_AUTOMATION_PREVIEW_MODE_LABEL,
   LINE_AUTOMATION_REMINDER_DEV_HINT,
+  LINE_AUTOMATION_SAVE_CLOSED_LABEL,
   LINE_AUTOMATION_STATS_EMPTY_HINT,
   LINE_OWNER_SELF_DISABLED_HINT,
   LINE_OWNER_SELF_GRANT_LABEL,
@@ -53,9 +55,11 @@ function source(rel: string): string {
 
 const AUTOMATION_FILES = [
   "app/staff/(app)/line/automations/page.tsx",
+  "app/staff/(app)/line/automations/history/page.tsx",
   "app/staff/(app)/line/automations/lab/page.tsx",
   "app/staff/(app)/line/layout.tsx",
   "features/line/automations/LineAutomationsWorkspace.tsx",
+  "features/line/automations/LineAutomationHistoryWorkspace.tsx",
   "features/line/automations/LineAutomationLabWorkspace.tsx",
   "features/line/automations/LineAutomationCard.tsx",
   "features/line/automations/LineAutomationRuleEditor.tsx",
@@ -148,6 +152,16 @@ describe("LINE automation access and page wiring", () => {
     expect(source("app/staff/(app)/line/automations/page.tsx")).toMatch(
       /LineAutomationsWorkspace/,
     );
+    expect(source("app/staff/(app)/line/automations/history/page.tsx")).toMatch(
+      /LineAutomationHistoryWorkspace/,
+    );
+    expect(source("features/line/automations/LineAutomationHistoryWorkspace.tsx")).toMatch(
+      /canShowLineAutomations/,
+    );
+    expect(source("features/line/automations/LineAutomationsWorkspace.tsx")).toMatch(
+      /\/staff\/line\/automations\/history/,
+    );
+    expect(source("features/line/automations/LineAutomationsWorkspace.tsx")).not.toMatch(/setView/);
   });
 
   it("renders default-off cards, empty stats, and a phone preview", () => {
@@ -201,8 +215,13 @@ describe("LINE automation access and page wiring", () => {
     expect(editor).toContain("發送時間");
     expect(editor).toContain("訊息範本");
     expect(editor).toContain("訊息範本預覽");
-    expect(editor).toContain("儲存設定（尚未開放）");
+    expect(editor).toContain(LINE_AUTOMATION_PREVIEW_MODE_LABEL);
+    expect(editor).toContain(LINE_AUTOMATION_SAVE_CLOSED_LABEL);
     expect(editor).toMatch(/disabled[^>]*data-line-automation-save|data-line-automation-save[^>]*disabled/);
+    expect(editor).toMatch(/disabled[^>]*data-line-automation-switch|data-line-automation-switch[^>]*disabled/);
+    expect(source("features/line/automations/LineAutomationRuleEditor.tsx")).toMatch(
+      /Escape|FOCUSABLE/,
+    );
 
     const plan = renderToStaticMarkup(
       createElement(LineAppointmentReminderPlanCard, { enabled: true }),
@@ -255,6 +274,9 @@ describe("LINE automation safety", () => {
       /LINE_AUTOMATION_SAVE_CLOSED_LABEL|data-line-automation-save/,
     );
     expect(source("app/staff/(app)/line/automations/lab/page.tsx")).toMatch(/LineAutomationLabWorkspace/);
+    expect(source("app/staff/(app)/line/automations/history/page.tsx")).toMatch(
+      /LineAutomationHistoryWorkspace/,
+    );
     expect(source("app/staff/(app)/line/page.tsx")).toMatch(/LineBroadcastCenter/);
     expect(source("app/staff/(app)/line/page.tsx")).not.toMatch(/redirect/);
   });

@@ -6,9 +6,12 @@ export const LINE_AUTOMATION_NOT_LIVE_HINT =
 export const LINE_AUTOMATION_LOCAL_DRAFT_HINT =
   "開關與規則僅本機預覽，不會寫入資料庫，也不會建立排程。";
 export const LINE_AUTOMATION_STATS_EMPTY_HINT =
-  "尚無發送資料。自動推播尚未接上正式發送，此處不顯示模擬數字。";
+  "尚無發送資料。自動通知尚未接上正式發送，此處不顯示模擬數字。";
 export const LINE_AUTOMATION_HISTORY_EMPTY =
-  "尚無發送紀錄。自動推播尚未接上正式發送。";
+  "尚無發送紀錄。自動通知尚未接上正式發送。";
+export const LINE_AUTOMATION_HISTORY_SUBTITLE = "查看自動通知發送紀錄";
+export const LINE_AUTOMATION_BACK_TO_MANAGE = "返回通知管理";
+export const LINE_AUTOMATION_PREVIEW_MODE_LABEL = "預覽模式，尚未開放儲存";
 export const LINE_AUTOMATION_LOCAL_ONLY_BADGE = "尚未啟用";
 export const LINE_AUTOMATION_LOCAL_PREVIEW_BADGE = "本機預覽中";
 export const LINE_AUTOMATION_EMPTY_STAT = "—";

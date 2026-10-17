@@ -38,7 +38,7 @@ export function LineAutomationPhonePreview({
         </span>
       </div>
 
-      <div className="mx-auto w-[min(100%,280px)]">
+      <div className={cn("mx-auto", compact ? "w-[min(100%,240px)]" : "w-[min(100%,280px)]")}>
         <div className="relative overflow-hidden rounded-[2rem] border-[8px] border-[#1C1C1E] bg-[#1C1C1E] shadow-[0_16px_40px_rgba(48,43,43,0.16)]">
           <div className="overflow-hidden rounded-[1.45rem] bg-[#F2F2F7]">
             <div className="relative bg-white px-4 pb-2 pt-2">
@@ -55,7 +55,12 @@ export function LineAutomationPhonePreview({
               </div>
             </div>
 
-            <div className="min-h-[320px] space-y-2 bg-[#8E9AA4] px-3 py-3">
+            <div
+              className={cn(
+                "space-y-2 bg-[#8E9AA4] px-3 py-3",
+                compact ? "min-h-[200px]" : "min-h-[320px]",
+              )}
+            >
               <div className="max-w-[88%] rounded-2xl rounded-tl-md bg-white px-3 py-2.5 text-[13px] leading-relaxed text-text whitespace-pre-wrap shadow-sm">
                 {textBody || "尚未輸入文字"}
               </div>

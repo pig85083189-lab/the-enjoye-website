@@ -10,7 +10,6 @@ import { LINE_AUTOMATION_CATALOG, lineAutomationById } from "@/lib/line/automati
 import {
   LINE_AUTOMATION_EMPTY_STAT,
   LINE_AUTOMATION_ENABLED_COUNT,
-  LINE_AUTOMATION_HISTORY_EMPTY,
   LINE_AUTOMATION_HISTORY_ENTRY,
   LINE_AUTOMATION_LAB_ENTRY,
   LINE_AUTOMATION_NOT_LIVE_HINT,
@@ -31,7 +30,6 @@ import { useOrganization } from "@/lib/tenant/OrganizationContext";
 export function LineAutomationsWorkspace() {
   const { organization, membership } = useOrganization();
   const allowed = canShowLineAutomations(membership);
-  const [view, setView] = useState<"overview" | "history">("overview");
   const [drafts, setDrafts] = useState(createDefaultLineAutomationDrafts);
   const [editingId, setEditingId] = useState<LineAutomationId | null>(null);
   const previousOrganizationId = useRef<string | null>(null);
@@ -47,7 +45,6 @@ export function LineAutomationsWorkspace() {
     if (reset.reset) {
       setDrafts(reset.drafts);
       setEditingId(null);
-      setView("overview");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organization.id]);
@@ -73,14 +70,13 @@ export function LineAutomationsWorkspace() {
             {LINE_AUTOMATION_PAGE_SUBTITLE}
           </p>
         </div>
-        <button
-          type="button"
+        <Link
+          href="/staff/line/automations/history"
           data-line-automation-tab="history"
-          onClick={() => setView(view === "history" ? "overview" : "history")}
           className="inline-flex min-h-10 items-center self-start rounded-full border border-primary/35 px-4 text-[13px] font-medium text-primary hover:bg-primary-light/70"
         >
-          {view === "history" ? "返回通知管理" : LINE_AUTOMATION_HISTORY_ENTRY}
-        </button>
+          {LINE_AUTOMATION_HISTORY_ENTRY}
+        </Link>
       </header>
 
       <p className="text-[13px] leading-relaxed text-secondary-text">{LINE_AUTOMATION_NOT_LIVE_HINT}</p>
@@ -100,25 +96,16 @@ export function LineAutomationsWorkspace() {
         </Card>
       </section>
 
-      {view === "history" ? (
-        <Card padding="lg" data-line-automation-history>
-          <h2 className="text-[16px] font-semibold text-text">{LINE_AUTOMATION_HISTORY_ENTRY}</h2>
-          <p className="mt-2 text-[14px] leading-relaxed text-secondary-text">
-            {LINE_AUTOMATION_HISTORY_EMPTY}
-          </p>
-        </Card>
-      ) : (
-        <div className="space-y-3" data-line-automation-catalog>
-          {LINE_AUTOMATION_CATALOG.map((definition) => (
-            <LineAutomationCard
-              key={definition.id}
-              definition={definition}
-              draft={drafts[definition.id]}
-              onOpenSettings={() => setEditingId(definition.id)}
-            />
-          ))}
-        </div>
-      )}
+      <div className="space-y-3" data-line-automation-catalog>
+        {LINE_AUTOMATION_CATALOG.map((definition) => (
+          <LineAutomationCard
+            key={definition.id}
+            definition={definition}
+            draft={drafts[definition.id]}
+            onOpenSettings={() => setEditingId(definition.id)}
+          />
+        ))}
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-[12px] text-secondary-text">
         <Link href="/staff/line" className="text-primary">
