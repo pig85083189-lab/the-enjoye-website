@@ -34,7 +34,10 @@ describe("Phase 3A test-LINE-first inventory", () => {
       "optout_schedule",
     ]);
     expect(lineFeatureInventory().find((row) => row.id === "appointment_reminder")?.maturity).toBe(
-      "ui_only",
+      "partial",
+    );
+    expect(lineFeatureInventory().find((row) => row.id === "later_automations")?.maturity).toBe(
+      "partial",
     );
     expect(canAutoEnrollProductionCustomers()).toBe(false);
     expect(canCopyPreviewBindToProduction()).toBe(false);
@@ -58,6 +61,8 @@ describe("Phase 3A test-LINE-first inventory", () => {
     const src = [
       source("lib/line/automations/phase-3a-inventory.ts"),
       source("lib/line/automations/appointment-reminder-schedule.ts"),
+      source("lib/line/automations/schedule-engine.ts"),
+      source("lib/line/automations/schedule-actions.ts"),
     ].join("\n");
     expect(src).not.toMatch(/constrained-forward|shared-channel-router|api\.line\.me/);
     expect(src).not.toMatch(/SUPABASE_SERVICE_ROLE_KEY|executeLineBroadcastHttp/);
