@@ -50,7 +50,9 @@ select public.apply_line_automation_schedule(
         'customer_id', 'cust-2',
         'timing_id', 'birthday_morning',
         'fingerprint', 'org-the-enjoye|birthday_greeting|cust-2|birthday_morning',
-        'scheduled_for', (now() + interval '4 day')::text,
+        'scheduled_for', public.line_automation_schedule_expected_fire_at(
+          'org-the-enjoye', 'birthday_greeting', 'customer_birthday', 'cust-2', 'cust-2', 'birthday_morning'
+        ),
         'message_snapshot', '生日快樂',
         'recipient_ready', true
       )

@@ -677,4 +677,60 @@ describe("Phase 2A LINE automation schedule engine", () => {
     );
     expect(executableSql(LINE_AUTOMATION_SCHEDULE_MIGRATION_FILE)).not.toMatch(/api\.line\.me|pg_cron/i);
   });
+
+  it("keeps survey and package jobs tied to event, customer, and organization", () => {
+    const mismatched = simulateLineAutomationSchedule({
+      organizationId: ORG_ENJOYE_ID,
+      nowMs: NOW_MS,
+      rules: [
+        rule(ORG_ENJOYE_ID, "satisfaction_survey", ["hours_after_2"]),
+        rule(ORG_ENJOYE_ID, "coupon_expiry", ["days_before_7"]),
+      ],
+      customers: [
+        {
+          id: "cust-1",
+          organizationId: ORG_ENJOYE_ID,
+          verifiedLineBinding: true,
+        },
+        {
+          id: "cust-2",
+          organizationId: ORG_ENJOYE_ID,
+          verifiedLineBinding: true,
+        },
+      ],
+      treatments: [
+        {
+          id: "trt-1",
+          organizationId: ORG_ENJOYE_ID,
+          customerId: "cust-1",
+          completedAt: taipeiLocalToUtcIso("2026-10-17", "16:30"),
+          status: "COMPLETED",
+        },
+      ],
+      packages: [
+        {
+          id: "pkg-1",
+          organizationId: ORG_ENJOYE_ID,
+          customerId: "cust-1",
+          expiresAt: taipeiLocalToUtcIso("2026-11-01", "00:00"),
+          status: "ACTIVE",
+          source: "customer_package",
+        },
+      ],
+    });
+    expect(mismatched.plan.proposed.every((job) => job.customerId === "cust-1")).toBe(true);
+    expect(mismatched.plan.proposed.some((job) => job.customerId === "cust-2")).toBe(false);
+
+    const sql = executableSql(LINE_AUTOMATION_SCHEDULE_MIGRATION_FILE);
+    expect(sql).toMatch(/line_automation_schedule_customer_id_matches\(t\.customer_id, p_customer_id\)/);
+    expect(sql).toMatch(/line_automation_schedule_customer_id_matches\(p\.customer_id, p_customer_id\)/);
+    expect(sql).toMatch(/line_automation_schedule_expected_fire_at/);
+    expect(sql).toMatch(/line_automation_schedule_recipient_ready/);
+    expect(sql).toMatch(/line_automation_schedule_assert_cancelable/);
+    expect(sql).toMatch(/cancel not allowed/);
+    expect(sql).toMatch(/cancel source incomplete/);
+    expect(sql).toMatch(/invalid scheduled_for/);
+    expect(sql).not.toMatch(/v_item->>'recipient_ready'/);
+    expect(sql).not.toMatch(/customers\.line_user_id/);
+  });
 });

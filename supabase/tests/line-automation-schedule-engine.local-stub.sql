@@ -102,7 +102,8 @@ create table if not exists public.customers (
   id uuid primary key,
   organization_id uuid not null references public.organizations (id),
   app_id text,
-  status text not null default 'ACTIVE'
+  status text not null default 'ACTIVE',
+  birthday date
 );
 
 create table if not exists public.appointments (
@@ -110,7 +111,34 @@ create table if not exists public.appointments (
   organization_id uuid not null references public.organizations (id),
   customer_id uuid not null references public.customers (id),
   app_id text,
-  status text not null default 'BOOKED'
+  status text not null default 'BOOKED',
+  starts_at timestamptz
+);
+
+create table if not exists public.treatments (
+  id uuid primary key,
+  organization_id uuid not null references public.organizations (id),
+  customer_id uuid not null references public.customers (id),
+  app_id text,
+  status text not null default 'DRAFT',
+  completed_at timestamptz
+);
+
+create table if not exists public.customer_packages (
+  id uuid primary key,
+  organization_id uuid not null references public.organizations (id),
+  customer_id uuid not null references public.customers (id),
+  app_id text,
+  status text not null default 'ACTIVE',
+  expires_at timestamptz
+);
+
+create table if not exists public.line_customer_bindings (
+  id uuid primary key,
+  organization_id uuid not null references public.organizations (id),
+  customer_id uuid not null references public.customers (id),
+  verified boolean not null default false,
+  status text not null default 'active'
 );
 
 create table if not exists public.line_automation_rules (
@@ -123,18 +151,48 @@ create table if not exists public.line_automation_rules (
   primary key (organization_id, automation_type)
 );
 
-insert into public.customers (id, organization_id, app_id, status) values
-  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cust-1', 'ACTIVE'),
-  ('ffffffff-ffff-ffff-ffff-ffffffffffff', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cust-2', 'ACTIVE'),
-  ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'cust-l', 'ACTIVE');
+insert into public.customers (id, organization_id, app_id, status, birthday) values
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cust-1', 'ACTIVE', '1990-10-20'),
+  ('ffffffff-ffff-ffff-ffff-ffffffffffff', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cust-2', 'ACTIVE', '1990-11-01'),
+  ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'cust-l', 'ACTIVE', '1990-12-01');
 
-insert into public.appointments (id, organization_id, customer_id, app_id, status) values
+insert into public.appointments (id, organization_id, customer_id, app_id, status, starts_at) values
   (
     'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     'cccccccc-cccc-cccc-cccc-cccccccccccc',
     'appt-keep',
-    'BOOKED'
+    'BOOKED',
+    timestamptz '2026-10-20 08:00:00+00'
+  );
+
+insert into public.treatments (id, organization_id, customer_id, app_id, status, completed_at) values
+  (
+    '11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    'trt-1',
+    'COMPLETED',
+    timestamptz '2026-10-17 08:30:00+00'
+  );
+
+insert into public.customer_packages (id, organization_id, customer_id, app_id, status, expires_at) values
+  (
+    '22222222-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    'pkg-1',
+    'ACTIVE',
+    timestamptz '2026-10-31 16:00:00+00'
+  );
+
+insert into public.line_customer_bindings (id, organization_id, customer_id, verified, status) values
+  (
+    '33333333-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    true,
+    'active'
   );
 
 insert into public.line_automation_rules (

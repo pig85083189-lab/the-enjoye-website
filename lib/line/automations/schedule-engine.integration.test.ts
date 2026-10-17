@@ -47,10 +47,19 @@ describe("Phase 2A line_automation_jobs upgrade", () => {
     expect(cases).toMatch(/forged fingerprint was accepted/);
     expect(cases).toMatch(/cross-org customer was accepted/);
     expect(cases).toMatch(/claimed job was mutated/);
+    expect(cases).toMatch(/arbitrary cancel of a valid schedule was accepted/);
+    expect(cases).toMatch(/same-org customer event mismatch was accepted/);
+    expect(cases).toMatch(/forged scheduled_for was accepted/);
+    expect(cases).toMatch(/forged recipient_ready was accepted/);
+    expect(cases).toMatch(/Phase 2B appointment job/);
     expect(runner).toMatch(/concurrent apply created/);
     expect(migration).toMatch(/line_automation_jobs_active_fingerprint_key/);
     expect(migration).toMatch(/pg_advisory_xact_lock/);
     expect(migration).toMatch(/line_automation_schedule_validate_item/);
+    expect(migration).toMatch(/line_automation_schedule_expected_fire_at/);
+    expect(migration).toMatch(/line_automation_schedule_recipient_ready/);
+    expect(migration).toMatch(/line_automation_schedule_assert_cancelable/);
+    expect(migration).not.toMatch(/v_item->>'recipient_ready'/);
     expect(migration).toMatch(/Do not apply on Production until Owner confirms/);
   });
 
