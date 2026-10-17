@@ -9,12 +9,12 @@ export const LINE_AUTOMATION_TABS: ReadonlyArray<{
   id: LineAutomationTab;
   label: string;
 }> = [
-  { id: "overview", label: "自動推播設定" },
+  { id: "overview", label: "通知管理" },
   { id: "appointment_reminder", label: "預約提醒" },
   { id: "birthday_greeting", label: "生日祝福" },
-  { id: "holiday_greeting", label: "節慶祝賀" },
+  { id: "holiday_greeting", label: "節慶祝福" },
   { id: "satisfaction_survey", label: "滿意度調查" },
-  { id: "coupon_expiry", label: "商品券/優惠到期提醒" },
+  { id: "coupon_expiry", label: "優惠券到期提醒" },
   { id: "history", label: "發送紀錄" },
 ];
 
@@ -24,7 +24,7 @@ export const LINE_AUTOMATION_CATALOG: readonly LineAutomationDefinition[] = [
     title: "預約提醒",
     tabLabel: "預約提醒",
     badge: "建置啟用中",
-    description: "在預約前自動提醒客人、減少失約、提升到店率",
+    description: "預約前自動提醒客人到店",
     icon: "calendar",
     timings: [
       { id: "day_before_morning", label: "預約前1天 上午", builtin: true },
@@ -57,7 +57,7 @@ export const LINE_AUTOMATION_CATALOG: readonly LineAutomationDefinition[] = [
     title: "生日祝福",
     tabLabel: "生日祝福",
     badge: "提升回訪",
-    description: "在客人生日時送上祝福、搭配專屬優惠、增加回購機會",
+    description: "客人生日當天送上祝福",
     icon: "cake",
     timings: [
       { id: "birthday_morning", label: "生日當天早上 10:00", builtin: true },
@@ -83,10 +83,10 @@ export const LINE_AUTOMATION_CATALOG: readonly LineAutomationDefinition[] = [
   },
   {
     id: "holiday_greeting",
-    title: "節慶祝賀",
-    tabLabel: "節慶祝賀",
+    title: "節慶祝福",
+    tabLabel: "節慶祝福",
     badge: null,
-    description: "在重要節日送上祝福、維持品牌溫度、增加互動",
+    description: "重要節日維持品牌溫度",
     icon: "party",
     timings: [
       { id: "cny", label: "春節（農曆新年）", builtin: true },
@@ -95,7 +95,7 @@ export const LINE_AUTOMATION_CATALOG: readonly LineAutomationDefinition[] = [
     ],
     defaultTimingIds: ["cny", "mid_autumn", "christmas"],
     addTimingLabel: "+ 新增節日",
-    previewTitle: "節慶祝賀範本",
+    previewTitle: "節慶祝福範本",
     demoTemplate: [
       "新年快樂 🧧",
       "",
@@ -114,7 +114,7 @@ export const LINE_AUTOMATION_CATALOG: readonly LineAutomationDefinition[] = [
     title: "滿意度調查",
     tabLabel: "滿意度調查",
     badge: "提升服務品質",
-    description: "客人完成課程後，自動發送評價問卷、收集真實回饋",
+    description: "課程結束後收集客人回饋",
     icon: "message",
     timings: [
       { id: "hours_after_2", label: "完成課程後2小時", builtin: true },
@@ -139,10 +139,10 @@ export const LINE_AUTOMATION_CATALOG: readonly LineAutomationDefinition[] = [
   },
   {
     id: "coupon_expiry",
-    title: "商品券 / 優惠券到期提醒",
-    tabLabel: "商品券/優惠到期提醒",
+    title: "優惠券到期提醒",
+    tabLabel: "優惠券到期提醒",
     badge: null,
-    description: "優惠到期前提醒客人使用、提升業績轉換",
+    description: "優惠到期前提醒客人使用",
     icon: "percent",
     timings: [
       { id: "days_before_7", label: "到期前7天", builtin: true },
@@ -170,7 +170,7 @@ export const LINE_AUTOMATION_CATALOG: readonly LineAutomationDefinition[] = [
 
 export const LINE_AUTOMATION_TEMPLATE_CARDS: readonly LineAutomationTemplateCard[] = [
   { id: "birthday_greeting", title: "Happy Birthday", caption: "生日祝福", accent: "#F3C6C4" },
-  { id: "holiday_greeting", title: "新年快樂", caption: "節慶祝賀", accent: "#E8B4B0" },
+  { id: "holiday_greeting", title: "新年快樂", caption: "節慶祝福", accent: "#E8B4B0" },
   { id: "satisfaction_survey", title: "溫暖評價", caption: "滿意度調查", accent: "#F1D4C8" },
   { id: "coupon_expiry", title: "優惠提醒", caption: "優惠券到期", accent: "#E7C8B8" },
 ];
