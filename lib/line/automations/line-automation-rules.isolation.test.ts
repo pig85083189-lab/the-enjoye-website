@@ -37,6 +37,13 @@ function source(rel: string): string {
   return readFileSync(path.join(ROOT, rel), "utf8");
 }
 
+function executableSql(rel: string): string {
+  return source(rel)
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n");
+}
+
 function owner(organizationId: string): LineActor {
   return {
     authUserId: "auth-owner",
@@ -445,12 +452,15 @@ describe("LINE automation rule persistence", () => {
     expect(sql).toMatch(/or automation_id = p_automation_type/);
     expect(sql).toMatch(/and automation_id = v_row\.automation_id/);
     expect(sql).toMatch(/to_regclass\('public\.line_automation_jobs'\)/);
-    expect(sql).not.toMatch(/drop table public\.line_automation_rules/i);
-    expect(sql).not.toMatch(/drop column/i);
-    expect(sql).not.toMatch(/create or replace function public\.upsert_line_appointment_reminder_rule/i);
-    expect(sql).not.toMatch(/create or replace function public\.read_line_appointment_reminder_workspace/i);
-    expect(sql).not.toMatch(/create or replace function public\.sync_line_appointment_reminder_jobs/i);
-    expect(sql).not.toMatch(/drop function(?: if exists)? public\.upsert_line_appointment_reminder_rule/i);
-    expect(sql).not.toMatch(/drop function(?: if exists)? public\.read_line_appointment_reminder_workspace/i);
+    const executable = executableSql(LINE_AUTOMATION_RULES_MIGRATION_FILE);
+    expect(executable).not.toMatch(/drop table public\.line_automation_rules/i);
+    expect(executable).not.toMatch(/\bdrop column\b/i);
+    expect(executable).not.toMatch(/\btruncate\s+table\b/i);
+    expect(executable).not.toMatch(/delete from public\.line_automation_rules/i);
+    expect(executable).not.toMatch(/create or replace function public\.upsert_line_appointment_reminder_rule/i);
+    expect(executable).not.toMatch(/create or replace function public\.read_line_appointment_reminder_workspace/i);
+    expect(executable).not.toMatch(/create or replace function public\.sync_line_appointment_reminder_jobs/i);
+    expect(executable).not.toMatch(/drop function(?: if exists)? public\.upsert_line_appointment_reminder_rule/i);
+    expect(executable).not.toMatch(/drop function(?: if exists)? public\.read_line_appointment_reminder_workspace/i);
   });
 });

@@ -122,16 +122,20 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
 
   it("upgrades Preview line_automation_rules instead of replacing the Phase 2B table", () => {
     const rules = read(LINE_AUTOMATION_RULES_MIGRATION_FILE);
+    const executable = rules
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
     expect(LINE_AUTOMATION_RULES_MIGRATION_FILE).toContain("20261017120000");
     expect(rules).toMatch(/create table if not exists public\.line_automation_rules/);
     expect(rules).toMatch(/add column automation_type text/);
     expect(rules).toMatch(/add column timing_config jsonb/);
     expect(rules).toMatch(/where automation_type is null/);
     expect(rules).toMatch(/unique \(organization_id, automation_type\)/);
-    expect(rules).not.toMatch(/drop table public\.line_automation_rules/i);
-    expect(rules).not.toMatch(/drop column/i);
-    expect(rules).not.toMatch(/\btruncate\s+table\b/i);
-    expect(rules).not.toMatch(/delete from public\.line_automation_rules/i);
-    expect(rules).not.toMatch(/create or replace function public\.upsert_line_appointment_reminder_rule/i);
+    expect(executable).not.toMatch(/drop table public\.line_automation_rules/i);
+    expect(executable).not.toMatch(/\bdrop column\b/i);
+    expect(executable).not.toMatch(/\btruncate\s+table\b/i);
+    expect(executable).not.toMatch(/delete from public\.line_automation_rules/i);
+    expect(executable).not.toMatch(/create or replace function public\.upsert_line_appointment_reminder_rule/i);
   });
 });
