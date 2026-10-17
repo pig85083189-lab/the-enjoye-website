@@ -52,16 +52,16 @@ export function lineFeatureInventory(): LineFeatureInventoryRow[] {
     {
       id: "appointment_reminder",
       title: "預約提醒",
-      maturity: "ui_only",
-      reuse: "自動推播頁、規則編輯、本機開關、範本預覽",
-      gap: "本階段補排程模型與失效／去重；尚未接真實發送",
+      maturity: "partial",
+      reuse: "自動推播頁、規則編輯、line_automation_jobs、本機排程引擎",
+      gap: "已可建立待發送排程；尚未接真實發送與 Cron",
     },
     {
       id: "later_automations",
       title: "生日／節慶／滿意度／優惠券",
-      maturity: "ui_only",
-      reuse: "同一套目錄、開關、範本與發送紀錄頁籤",
-      gap: "尚未有排程、對象、去重與失敗處理",
+      maturity: "partial",
+      reuse: "同一套目錄、開關、範本與 line_automation_jobs",
+      gap: "節慶缺正式日曆；優惠券缺正式目錄，僅能沿用已有套票到期日；尚未發送",
     },
     {
       id: "logs_quota",

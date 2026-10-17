@@ -115,6 +115,10 @@ export const LINE_BROADCAST_CHANNEL_LOCK_MIGRATION_FILE =
 export const LINE_AUTOMATION_RULES_MIGRATION_FILE =
   "supabase/migrations/20261017120000_line_automation_rules.sql";
 
+/** LINE automation schedule engine. Additive upgrade of Phase 2B jobs. Default closed. Do not apply on Production until Owner confirms. */
+export const LINE_AUTOMATION_SCHEDULE_MIGRATION_FILE =
+  "supabase/migrations/20261017140000_line_automation_schedule_engine.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",
@@ -128,6 +132,7 @@ export const LINE_TABLES = [
   "line_webhook_events",
   "line_broadcast_oneshot_permits",
   "line_automation_rules",
+  "line_automation_jobs",
 ] as const;
 
 /** Must never appear as stored columns (second books). */
