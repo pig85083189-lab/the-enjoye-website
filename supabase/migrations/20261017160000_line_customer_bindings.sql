@@ -7,6 +7,8 @@
 -- tables; additive column / demote steps below make that leftover shape
 -- compatible. Does not DROP TABLE, DROP COLUMN, TRUNCATE, or DELETE
 -- existing binding, job, or rule rows.
+-- Leftover same-arity RPCs that still use p_customer_app_id are dropped
+-- without CASCADE, then recreated. Phase 2A / reminder RPCs are not replaced.
 -- Do not apply on Production until Owner confirms.
 
 create table if not exists public.line_customer_bindings (
@@ -775,6 +777,130 @@ revoke all on public.line_customer_bind_challenge_secrets from anon, authenticat
 
 drop policy if exists line_customer_bindings_select_owner
   on public.line_customer_bindings;
+
+-- PostgreSQL 42P13: CREATE OR REPLACE cannot rename IN parameters or
+-- change the return type of an existing identity. Preview leftover
+-- unbind_line_customer_binding(text, text) is
+-- (p_organization_id, p_customer_app_id). Drop only when names or the
+-- return type differ, and never CASCADE so Phase 2A / reminder dependents
+-- fail loudly instead of being removed.
+do $$
+declare
+  rec record;
+  v_oid oid;
+  v_names text[];
+  v_ret text;
+begin
+  for rec in
+    select *
+    from (values
+      (
+        'line_customer_binding_resolve',
+        'text, text',
+        array['p_organization_id', 'p_customer_id']::text[],
+        'TABLE(customer_id text, customer_uuid uuid)'
+      ),
+      (
+        'line_customer_binding_identity_taken',
+        'text, text, text',
+        array['p_organization_id', 'p_customer_id', 'p_line_user_id_hash']::text[],
+        'boolean'
+      ),
+      (
+        'line_customer_binding_lock_identity',
+        'text',
+        array['p_line_user_id_hash']::text[],
+        'void'
+      ),
+      (
+        'line_customer_binding_lock_identities',
+        'text[]',
+        array['p_hashes']::text[],
+        'void'
+      ),
+      (
+        'line_customer_binding_purge_expired',
+        'text',
+        array['p_organization_id']::text[],
+        'integer'
+      ),
+      (
+        'start_line_customer_bind_challenge',
+        'text, text, boolean, text',
+        array['p_organization_id', 'p_customer_id', 'p_identity_confirmed', 'p_bind_hmac_key']::text[],
+        'jsonb'
+      ),
+      (
+        'consume_line_customer_bind_challenge_public',
+        'text, text, text, text, text, timestamp with time zone, text, text, text, text',
+        array[
+          'p_organization_id', 'p_public_token', 'p_code', 'p_event_id', 'p_proof',
+          'p_proof_issued_at', 'p_line_user_id_cipher', 'p_line_user_id_hint',
+          'p_line_user_id_hash', 'p_key_id'
+        ]::text[],
+        'jsonb'
+      ),
+      (
+        'confirm_line_customer_binding',
+        'text, text',
+        array['p_organization_id', 'p_customer_id']::text[],
+        'jsonb'
+      ),
+      (
+        'unbind_line_customer_binding',
+        'text, text',
+        array['p_organization_id', 'p_customer_id']::text[],
+        'jsonb'
+      ),
+      (
+        'cancel_line_customer_rebind',
+        'text, text',
+        array['p_organization_id', 'p_customer_id']::text[],
+        'jsonb'
+      ),
+      (
+        'read_line_customer_bindings',
+        'text',
+        array['p_organization_id']::text[],
+        'jsonb'
+      ),
+      (
+        'line_automation_schedule_recipient_ready',
+        'text, text',
+        array['p_organization_id', 'p_customer_id']::text[],
+        'boolean'
+      ),
+      (
+        'line_automation_send_recipient_allowed',
+        'text, text',
+        array['p_organization_id', 'p_customer_id']::text[],
+        'boolean'
+      )
+    ) as t(fname, identity_args, argnames, ret)
+  loop
+    select p.oid, p.proargnames[1:p.pronargs], pg_get_function_result(p.oid)
+    into v_oid, v_names, v_ret
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = rec.fname
+      and oidvectortypes(p.proargtypes) = rec.identity_args;
+
+    if v_oid is null then
+      continue;
+    end if;
+    if v_names is not distinct from rec.argnames
+       and lower(replace(v_ret, ' ', '')) = lower(replace(rec.ret, ' ', '')) then
+      continue;
+    end if;
+
+    execute format(
+      'drop function if exists public.%I(%s)',
+      rec.fname,
+      rec.identity_args
+    );
+  end loop;
+end $$;
 
 create or replace function public.line_customer_binding_resolve(
   p_organization_id text,

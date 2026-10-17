@@ -217,6 +217,9 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
     expect(sql).toMatch(/identity_confirmed_at/);
     expect(sql).toMatch(/Do not apply on Production until Owner confirms/);
     expect(sql).toMatch(/line_customer_bindings_id_key unique \(id\)/);
+    expect(sql).toMatch(/drop function if exists public\.%I\(%s\)/);
+    expect(sql).toMatch(/p_customer_app_id/);
+    expect(executable).not.toMatch(/drop function[^;]*cascade/i);
     expect(executable).not.toMatch(/drop constraint(?: if exists)? line_customer_bindings_pkey/i);
     expect(executable).not.toMatch(/drop table public\.line_customer_bindings/i);
     expect(executable).not.toMatch(/drop table public\.line_customer_bind_challenges/i);

@@ -44,12 +44,15 @@ describe("Preview leftover LINE customer binding upgrade", () => {
     expect(stub).toMatch(/customer_app_id text not null/);
     expect(stub).toMatch(/line_user_id_cipher text not null/);
     expect(stub).toMatch(/cust-2d2-fake-bound/);
+    expect(stub).toMatch(/unbind_line_customer_binding\(/);
+    expect(stub).toMatch(/p_customer_app_id text/);
     expect(stub).toMatch(/laj-expired/);
     expect(stub).not.toMatch(/api\.line\.me|channel_secret|SUPABASE_SERVICE_ROLE_KEY/);
     expect(cases).toMatch(/upgrade changed binding count/);
     expect(cases).toMatch(/legacy verified row became recipient_ready without new verification/);
     expect(cases).toMatch(/legacy pending row was confirmed without a new capture/);
     expect(cases).toMatch(/first bind start after upgrade failed/);
+    expect(cases).toMatch(/upgraded function kept leftover parameter names/);
     expect(cases).toMatch(/cross-org customer bind was accepted/);
     expect(migration).toMatch(/confirm_line_customer_binding/);
     expect(migration).toMatch(/where verified is true\s+and confirmed_at is null/);

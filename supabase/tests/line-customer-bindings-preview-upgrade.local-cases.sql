@@ -1,6 +1,33 @@
 -- Local-only assertions after 161000 upgrades the actual Preview leftover schema.
 -- Never connect to Preview or Production. Never call LINE.
 
+create or replace function tests.assert_function_in_args(
+  p_name text,
+  p_identity_args text,
+  p_argnames text[]
+)
+returns void
+language plpgsql
+as $$
+declare
+  v_names text[];
+begin
+  select p.proargnames[1:p.pronargs]
+  into v_names
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.proname = p_name
+    and oidvectortypes(p.proargtypes) = p_identity_args;
+  if not found then
+    raise exception 'upgraded function missing: %(%)', p_name, p_identity_args;
+  end if;
+  if v_names is distinct from p_argnames then
+    raise exception 'upgraded function kept leftover parameter names: %(%) %', p_name, p_identity_args, v_names;
+  end if;
+end;
+$$;
+
 create or replace function tests.assert_preview_job_rule_counts()
 returns void
 language plpgsql
@@ -214,6 +241,38 @@ begin
     raise exception 'legacy 7-arg consume RPC is still present';
   end if;
 
+  perform tests.assert_function_in_args(
+    'unbind_line_customer_binding',
+    'text, text',
+    array['p_organization_id', 'p_customer_id']::text[]
+  );
+  perform tests.assert_function_in_args(
+    'confirm_line_customer_binding',
+    'text, text',
+    array['p_organization_id', 'p_customer_id']::text[]
+  );
+  perform tests.assert_function_in_args(
+    'line_customer_binding_resolve',
+    'text, text',
+    array['p_organization_id', 'p_customer_id']::text[]
+  );
+  perform tests.assert_function_in_args(
+    'line_automation_send_recipient_allowed',
+    'text, text',
+    array['p_organization_id', 'p_customer_id']::text[]
+  );
+  perform tests.assert_function_in_args(
+    'line_automation_schedule_recipient_ready',
+    'text, text',
+    array['p_organization_id', 'p_customer_id']::text[]
+  );
+  if to_regprocedure('public.upsert_line_appointment_reminder_rule(text, boolean, text[], text, text)') is null
+     or to_regprocedure('public.read_line_appointment_reminder_workspace(text)') is null
+     or to_regprocedure('public.sync_line_appointment_reminder_jobs(text, text)') is null
+     or to_regprocedure('public.apply_line_automation_schedule(text, jsonb)') is null then
+    raise exception 'upgrade dropped Phase 2A or reminder RPCs';
+  end if;
+
   perform tests.become('11111111-1111-1111-1111-111111111111');
 
   v_workspace := public.read_line_appointment_reminder_workspace('org-beauty-os-test');
@@ -279,6 +338,19 @@ begin
   if v_confirm->>'verified' is distinct from 'true'
      or public.line_automation_schedule_recipient_ready('org-beauty-os-test', 'cust-unbound') is not true then
     raise exception 'first bind confirm failed: %', v_confirm;
+  end if;
+  v_cancel := public.unbind_line_customer_binding('org-beauty-os-test', 'cust-unbound');
+  if v_cancel->>'verified' is distinct from 'false'
+     or public.line_automation_schedule_recipient_ready('org-beauty-os-test', 'cust-unbound') then
+    raise exception 'upgraded unbind failed: %', v_cancel;
+  end if;
+  if not exists (
+    select 1 from public.line_customer_bindings
+    where organization_id = 'org-beauty-os-test'
+      and customer_app_id = 'cust-2d2-fake-bound'
+      and customer_id = 'cust-2d2-fake-bound'
+  ) then
+    raise exception 'unbind of first bind removed the leftover binding';
   end if;
   perform tests.assert_preview_job_rule_counts();
 

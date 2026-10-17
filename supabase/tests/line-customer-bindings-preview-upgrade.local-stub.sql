@@ -188,7 +188,7 @@ grant select on public.line_customer_bindings to public;
 
 create or replace function public.start_line_customer_bind_challenge(
   p_organization_id text,
-  p_customer_id text
+  p_customer_app_id text
 )
 returns jsonb
 language plpgsql
@@ -196,7 +196,84 @@ security definer
 set search_path = public
 as $$
 begin
-  return jsonb_build_object('legacy', true, 'organization_id', p_organization_id, 'customer_id', p_customer_id);
+  return jsonb_build_object('legacy', true, 'organization_id', p_organization_id, 'customer_app_id', p_customer_app_id);
+end;
+$$;
+
+-- Actual Preview leftover RPCs that share new identities but still use
+-- p_customer_app_id. CREATE OR REPLACE of the new p_customer_id names
+-- fails with 42P13 unless 161000 drops them first without CASCADE.
+create or replace function public.line_customer_binding_resolve(
+  p_organization_id text,
+  p_customer_app_id text
+)
+returns table(customer_app_id text, customer_uuid uuid)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  return query
+    select c.app_id, c.id
+    from public.customers c
+    join public.organizations o on o.id = c.organization_id
+    where o.app_id = p_organization_id
+      and c.app_id = p_customer_app_id
+    limit 1;
+end;
+$$;
+
+create or replace function public.confirm_line_customer_binding(
+  p_organization_id text,
+  p_customer_app_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return jsonb_build_object(
+    'legacy', true,
+    'organization_id', p_organization_id,
+    'customer_app_id', p_customer_app_id,
+    'verified', true
+  );
+end;
+$$;
+
+create or replace function public.unbind_line_customer_binding(
+  p_organization_id text,
+  p_customer_app_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return jsonb_build_object(
+    'legacy', true,
+    'organization_id', p_organization_id,
+    'customer_app_id', p_customer_app_id,
+    'bound', false
+  );
+end;
+$$;
+
+create or replace function public.line_automation_send_recipient_allowed(
+  p_organization_id text,
+  p_customer_app_id text
+)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  return false;
 end;
 $$;
 

@@ -41,6 +41,9 @@ describe("Preview leftover LINE customer binding upgrade", () => {
     expect(sql).toMatch(/where verified is true\s+and confirmed_at is null/);
     expect(sql).toMatch(/captured_at is not null/);
     expect(sql).toMatch(/confirm_line_customer_binding/);
+    expect(sql).toMatch(/unbind_line_customer_binding/);
+    expect(sql).toMatch(/p_customer_app_id/);
+    expect(sql).toMatch(/drop function if exists public\.%I\(%s\)/);
     expect(sql).toMatch(/line_automation_schedule_recipient_ready/);
     expect(sql).toMatch(/Do not apply on Production until Owner confirms/);
     expect(executable).not.toMatch(/drop table public\.line_customer_bindings/i);
@@ -56,6 +59,7 @@ describe("Preview leftover LINE customer binding upgrade", () => {
     expect(executable).not.toMatch(/create or replace function public\.read_line_appointment_reminder_workspace/i);
     expect(executable).not.toMatch(/create or replace function public\.sync_line_appointment_reminder_jobs/i);
     expect(executable).not.toMatch(/create or replace function public\.apply_line_automation_schedule/i);
+    expect(executable).not.toMatch(/drop function[^;]*cascade/i);
     expect(executable).not.toMatch(/api\.line\.me|pg_cron|cron\.schedule/);
     expect(executable).not.toMatch(/alter table public\.line_broadcasts/);
 
@@ -74,6 +78,9 @@ describe("Preview leftover LINE customer binding upgrade", () => {
     expect(stub).toMatch(/cust-2d2-fake-bound/);
     expect(stub).toMatch(/v1\.cipher-preview-legacy/);
     expect(stub).toMatch(/start_line_customer_bind_challenge\(/);
+    expect(stub).toMatch(/p_customer_app_id text/);
+    expect(stub).toMatch(/unbind_line_customer_binding\(/);
+    expect(stub).toMatch(/confirm_line_customer_binding\(/);
     expect(stub).toMatch(/consume_line_customer_bind_challenge_public\(/);
     expect(stub).toMatch(/upsert_line_appointment_reminder_rule/);
     expect(executableSql("supabase/tests/line-customer-bindings-preview-upgrade.local-stub.sql")).not.toMatch(/identity_confirmed_at/);
@@ -88,6 +95,8 @@ describe("Preview leftover LINE customer binding upgrade", () => {
     expect(cases).toMatch(/legacy verified row became recipient_ready without new verification/);
     expect(cases).toMatch(/legacy pending row was confirmed without a new capture/);
     expect(cases).toMatch(/first bind start after upgrade failed/);
+    expect(cases).toMatch(/upgraded function kept leftover parameter names/);
+    expect(cases).toMatch(/upgraded unbind failed/);
     expect(cases).toMatch(/rebind consume did not stage a replacement/);
     expect(cases).toMatch(/rebind cancel left a staged identity/);
     expect(cases).toMatch(/cross-org customer bind was accepted/);
