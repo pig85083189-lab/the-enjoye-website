@@ -1,9 +1,8 @@
-export const LINE_AUTOMATION_PAGE_TITLE = "LINE自動推播設定";
-export const LINE_AUTOMATION_PAGE_SUBTITLE =
-  "設定自動發送規則，讓系統在適當時機主動關心您的客人，提升回訪與滿意度";
+export const LINE_AUTOMATION_PAGE_TITLE = "LINE 自動通知";
+export const LINE_AUTOMATION_PAGE_SUBTITLE = "輕鬆管理顧客通知與關懷";
 
 export const LINE_AUTOMATION_NOT_LIVE_HINT =
-  "自動推播尚未正式啟用，不會發送 LINE 訊息。";
+  "自動通知尚未正式啟用，不會發送 LINE 訊息。";
 export const LINE_AUTOMATION_LOCAL_DRAFT_HINT =
   "開關與規則僅本機預覽，不會寫入資料庫，也不會建立排程。";
 export const LINE_AUTOMATION_STATS_EMPTY_HINT =
@@ -16,6 +15,19 @@ export const LINE_AUTOMATION_EMPTY_STAT = "—";
 export const LINE_AUTOMATION_EMPTY_STAT_CAPTION = "尚無資料";
 export const LINE_AUTOMATION_SETTINGS_LABEL = "設定規則";
 export const LINE_AUTOMATION_APPLY_LOCAL_LABEL = "套用本機預覽";
+export const LINE_AUTOMATION_SAVE_LABEL = "儲存設定";
+export const LINE_AUTOMATION_SAVE_CLOSED_LABEL = "儲存設定（尚未開放）";
+export const LINE_AUTOMATION_STATUS_OFF = "未啟用";
+export const LINE_AUTOMATION_SENT_THIS_MONTH = "本月已發送";
+export const LINE_AUTOMATION_ENABLED_COUNT = "已啟用通知";
+export const LINE_AUTOMATION_HISTORY_ENTRY = "發送紀錄";
+export const LINE_AUTOMATION_LAB_ENTRY = "開發測試專區";
+export const LINE_AUTOMATION_LAB_TITLE = "LINE 自動通知開發測試專區";
+export const LINE_AUTOMATION_LAB_HINT =
+  "此區保留 Phase 3A 至 3C-2 模擬與安全檢查，不是店長日常操作畫面。不會發送真實 LINE。";
+export const LINE_AUTOMATION_TIMING_LABEL = "發送時間";
+export const LINE_AUTOMATION_TEMPLATE_LABEL = "訊息範本";
+export const LINE_AUTOMATION_OWNER_ONLY = "只有店長可以使用 LINE 自動通知";
 export const LINE_AUTOMATION_EDITOR_WARNING =
   "此設定僅存在於此瀏覽器工作階段，不會寫入資料庫，也不會呼叫 LINE API。";
 export const LINE_AUTOMATION_REMINDER_DEV_TITLE = "預約提醒開發狀態";

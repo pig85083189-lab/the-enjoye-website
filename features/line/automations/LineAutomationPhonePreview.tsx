@@ -13,6 +13,7 @@ export function LineAutomationPhonePreview({
   quickReplies,
   selectedId,
   onSelectTemplate,
+  compact = false,
 }: {
   officialName: string;
   templateTitle: string;
@@ -20,6 +21,7 @@ export function LineAutomationPhonePreview({
   quickReplies: readonly LineAutomationQuickReply[];
   selectedId: LineAutomationId;
   onSelectTemplate?: (id: LineAutomationId) => void;
+  compact?: boolean;
 }) {
   return (
     <section
@@ -75,6 +77,7 @@ export function LineAutomationPhonePreview({
         </div>
       </div>
 
+      {compact ? null : (
       <div className="mt-5">
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="text-[13px] font-medium text-text">其他範本範例</p>
@@ -105,6 +108,7 @@ export function LineAutomationPhonePreview({
           ))}
         </div>
       </div>
+      )}
     </section>
   );
 }

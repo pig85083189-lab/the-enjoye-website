@@ -1,38 +1,30 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { LineAutomationPhonePreview } from "@/features/line/automations/LineAutomationPhonePreview";
 import { LineAutomationSwitch } from "@/features/line/automations/LineAutomationSwitch";
 import {
-  LINE_AUTOMATION_APPLY_LOCAL_LABEL,
   LINE_AUTOMATION_EDITOR_WARNING,
-  LINE_AUTOMATION_LOCAL_DRAFT_HINT,
-  LINE_AUTOMATION_REMINDER_DEV_HINT,
-  LINE_AUTOMATION_REMINDER_EDITOR_WARNING,
+  LINE_AUTOMATION_SAVE_CLOSED_LABEL,
+  LINE_AUTOMATION_TEMPLATE_LABEL,
+  LINE_AUTOMATION_TIMING_LABEL,
 } from "@/lib/line/automations/copy";
-import {
-  addLineAutomationCustomTiming,
-  lineAutomationTimingsForDraft,
-  toggleLineAutomationTiming,
-} from "@/lib/line/automations/draft";
+import { lineAutomationTimingsForDraft } from "@/lib/line/automations/draft";
 import type { LineAutomationDefinition, LineAutomationDraft } from "@/lib/line/automations/types";
-import { cn } from "@/lib/utils";
 
 export function LineAutomationRuleEditor({
   definition,
   draft,
+  officialName = "THE ENJOYE",
   onClose,
-  onApply,
 }: {
   definition: LineAutomationDefinition;
   draft: LineAutomationDraft;
+  officialName?: string;
   onClose: () => void;
-  onApply: (next: LineAutomationDraft) => void;
+  onApply?: (next: LineAutomationDraft) => void;
 }) {
-  const [next, setNext] = useState(draft);
-  const [customLabel, setCustomLabel] = useState("");
-  const timings = lineAutomationTimingsForDraft(definition.timings, next);
-  const isReminder = definition.id === "appointment_reminder";
+  const timings = lineAutomationTimingsForDraft(definition.timings, draft);
 
   return (
     <div
@@ -51,88 +43,59 @@ export function LineAutomationRuleEditor({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="line-automation-editor-title" className="text-[18px] font-semibold text-text">
-              設定{definition.title}規則
+              設定{definition.title}
             </h2>
-            <p className="mt-1 text-[13px] text-secondary-text">
-              {isReminder ? LINE_AUTOMATION_REMINDER_DEV_HINT : LINE_AUTOMATION_LOCAL_DRAFT_HINT}
-            </p>
+            <p className="mt-1 text-[13px] text-secondary-text">{LINE_AUTOMATION_EDITOR_WARNING}</p>
           </div>
           <LineAutomationSwitch
-            checked={next.enabled}
+            checked={false}
+            disabled
             label={`${definition.title}自動發送`}
-            onChange={(enabled) => setNext((current) => ({ ...current, enabled }))}
+            onChange={() => undefined}
           />
         </div>
 
         <div className="mt-5 space-y-2">
-          <p className="text-[13px] font-medium text-text">發送時機</p>
+          <p className="text-[13px] font-medium text-text">{LINE_AUTOMATION_TIMING_LABEL}</p>
           <div className="flex flex-wrap gap-2">
-            {timings.map((timing) => {
-              const selected = next.selectedTimingIds.includes(timing.id);
-              return (
-                <button
-                  key={timing.id}
-                  type="button"
-                  onClick={() => setNext((current) => toggleLineAutomationTiming(current, timing.id))}
-                  className={cn(
-                    "rounded-full border px-3 py-1.5 text-[13px]",
-                    selected
-                      ? "border-primary bg-primary-light text-primary"
-                      : "border-border bg-white text-secondary-text",
-                  )}
-                >
-                  {timing.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              value={customLabel}
-              onChange={(event) => setCustomLabel(event.target.value)}
-              placeholder={definition.addTimingLabel.replace(/^\+\s*/, "")}
-              className="min-h-11 flex-1 rounded-2xl border border-border bg-white px-4 text-[14px] outline-none"
-            />
-            <Button
-              variant="outline"
-              onClick={() => {
-                setNext((current) => addLineAutomationCustomTiming(current, customLabel));
-                setCustomLabel("");
-              }}
-            >
-              新增時機
-            </Button>
+            {timings.map((timing) => (
+              <span
+                key={timing.id}
+                className="rounded-full border border-[#E8D0CE] bg-white px-3 py-1.5 text-[13px] text-secondary-text"
+              >
+                {timing.label}
+              </span>
+            ))}
           </div>
         </div>
 
         <label className="mt-5 block space-y-2">
-          <span className="text-[13px] font-medium text-text">訊息範本</span>
+          <span className="text-[13px] font-medium text-text">{LINE_AUTOMATION_TEMPLATE_LABEL}</span>
           <textarea
             data-line-automation-editor-template
-            value={next.template}
-            onChange={(event) =>
-              setNext((current) => ({ ...current, template: event.target.value }))
-            }
-            className="min-h-48 w-full rounded-2xl border border-border bg-white px-4 py-3 text-[14px] leading-relaxed outline-none"
+            value={draft.template}
+            readOnly
+            className="min-h-36 w-full rounded-2xl border border-border bg-white px-4 py-3 text-[14px] leading-relaxed text-text outline-none"
           />
         </label>
 
-        <p className="mt-3 text-[12px] leading-relaxed text-secondary-text">
-          {isReminder ? LINE_AUTOMATION_REMINDER_EDITOR_WARNING : LINE_AUTOMATION_EDITOR_WARNING}
-        </p>
+        <div className="mt-5">
+          <LineAutomationPhonePreview
+            officialName={officialName}
+            templateTitle={definition.previewTitle}
+            textBody={draft.template}
+            quickReplies={definition.quickReplies}
+            selectedId={definition.id}
+            compact
+          />
+        </div>
 
         <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
-          <Button
-            fullWidth
-            onClick={() => {
-              onApply(next);
-              onClose();
-            }}
-          >
-            {LINE_AUTOMATION_APPLY_LOCAL_LABEL}
+          <Button fullWidth disabled data-line-automation-save>
+            {LINE_AUTOMATION_SAVE_CLOSED_LABEL}
           </Button>
           <Button variant="outline" fullWidth onClick={onClose}>
-            取消
+            關閉
           </Button>
         </div>
       </div>

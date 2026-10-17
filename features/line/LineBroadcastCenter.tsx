@@ -197,7 +197,7 @@ export function LineBroadcastCenter({
             LINE 設定
           </Link>
           <Link href="/staff/line/automations" className="text-sm text-primary">
-            LINE 自動推播
+            LINE 自動通知
           </Link>
         </div>
       </header>
