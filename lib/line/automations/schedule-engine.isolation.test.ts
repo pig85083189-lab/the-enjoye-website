@@ -656,6 +656,28 @@ describe("Phase 2A LINE automation schedule engine", () => {
     expect(mapped.customers?.[0]?.verifiedLineBinding).toBe(false);
     expect(mapped.holidayOccurrences).toBeUndefined();
 
+    const trusted = buildScheduleSnapshot({
+      organizationId: ORG_ENJOYE_ID,
+      rules: mapped.rules.map((rule) => ({
+        organization_id: rule.organizationId,
+        automation_type: rule.automationType,
+        enabled: rule.enabled,
+        timing_config: { selectedTimingIds: rule.selectedTimingIds, customTimings: [] },
+        message_template: rule.template,
+      })),
+      customers: [
+        {
+          id: "cust-1",
+          app_id: "cust-1",
+          birthday: "1990-10-20",
+          status: "ACTIVE",
+          line_user_id: "U-should-be-ignored",
+        },
+      ],
+      verifiedCustomerIds: new Set(["cust-1"]),
+    });
+    expect(trusted.customers?.[0]?.verifiedLineBinding).toBe(true);
+
     const files = [
       "lib/line/automations/schedule-engine.ts",
       "lib/line/automations/schedule-apply.ts",

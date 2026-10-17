@@ -6,6 +6,7 @@
 
 import {
   extractLineWebhookTextEvents,
+  hashLineUserId,
   lineUserIdHint,
   selectLineWebhookBindCandidate,
   verifyLineWebhookSignature,
@@ -16,6 +17,7 @@ export type LineWebhookConsumeReason =
   | "invalid_input"
   | "expired"
   | "attempt_limited"
+  | "throttled"
   | "unauthorized"
   | "duplicate";
 
@@ -36,6 +38,8 @@ export async function processLineWebhookBind(input: {
     cipher: string;
     hint: string;
     keyId: string;
+    userIdHash: string;
+    eventId: string;
   }) => Promise<{ bound: boolean; reason?: LineWebhookConsumeReason }>;
 }): Promise<LineWebhookBindResult> {
   if (typeof window !== "undefined") {
@@ -96,6 +100,8 @@ export async function processLineWebhookBind(input: {
     cipher: packed.cipher,
     hint: lineUserIdHint(candidate.userId),
     keyId: packed.keyId,
+    userIdHash: hashLineUserId(candidate.userId),
+    eventId: eventId,
   });
   return { ok: true, bound: consumed.bound, hint: lineUserIdHint(candidate.userId) };
 }

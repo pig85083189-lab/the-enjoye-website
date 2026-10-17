@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import {
   CLAIM_LINE_WEBHOOK_EVENT_RPC,
+  CONSUME_LINE_CUSTOMER_BIND_PUBLIC_RPC,
   CONSUME_LINE_OWNER_BIND_PUBLIC_RPC,
   READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC,
 } from "@/lib/line/line-command";
+import { createLineCustomerBindServerProof } from "@/lib/line/line-bind";
 import { decryptLineCredential, encryptLineCredential } from "@/lib/line/line-crypto";
 import { evaluateLineWebhookAdmission } from "@/lib/line/line-webhook-host";
 import { processLineWebhookBind } from "@/lib/line/line-webhook";
@@ -84,7 +86,7 @@ export async function POST(
       return { duplicate: (row as { duplicate?: unknown }).duplicate === true };
     },
     consume: async (bind) => {
-      const consumed = await supabase.rpc(CONSUME_LINE_OWNER_BIND_PUBLIC_RPC, {
+      const owner = await supabase.rpc(CONSUME_LINE_OWNER_BIND_PUBLIC_RPC, {
         p_organization_id: bind.organizationId,
         p_public_token: token,
         p_code: bind.code,
@@ -92,11 +94,46 @@ export async function POST(
         p_line_user_id_hint: bind.hint,
         p_key_id: bind.keyId,
       });
-      const row = consumed.data && typeof consumed.data === "object" ? consumed.data : {};
+      const ownerRow = owner.data && typeof owner.data === "object" ? owner.data : {};
+      if ((ownerRow as { bound?: unknown }).bound === true) {
+        return { bound: true };
+      }
+      if (!bind.eventId || !opened || !opened.ok) {
+        return { bound: false, reason: "invalid_input" };
+      }
+      const issuedAt = new Date();
+      const proof = createLineCustomerBindServerProof({
+        channelSecret: opened.plaintext,
+        organizationId: bind.organizationId,
+        publicToken: token,
+        eventId: bind.eventId,
+        code: bind.code,
+        userIdHash: bind.userIdHash,
+        cipher: bind.cipher,
+        hint: bind.hint,
+        keyId: bind.keyId,
+        issuedAt,
+      });
+      const customer = await supabase.rpc(CONSUME_LINE_CUSTOMER_BIND_PUBLIC_RPC, {
+        p_organization_id: bind.organizationId,
+        p_public_token: token,
+        p_code: bind.code,
+        p_event_id: bind.eventId,
+        p_proof: proof.proofHex,
+        p_proof_issued_at: issuedAt.toISOString(),
+        p_line_user_id_cipher: bind.cipher,
+        p_line_user_id_hint: bind.hint,
+        p_line_user_id_hash: bind.userIdHash,
+        p_key_id: bind.keyId,
+      });
+      const row = customer.data && typeof customer.data === "object" ? customer.data : {};
       return {
-        bound: (row as { bound?: unknown }).bound === true,
-        reason: (row as { reason?: "invalid_input" | "expired" | "attempt_limited" | "unauthorized" })
-          .reason,
+        bound: (row as { captured?: unknown }).captured === true,
+        reason: (
+          row as {
+            reason?: "invalid_input" | "expired" | "attempt_limited" | "throttled" | "unauthorized" | "duplicate";
+          }
+        ).reason,
       };
     },
   });
