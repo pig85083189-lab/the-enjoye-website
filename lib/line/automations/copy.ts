@@ -20,7 +20,14 @@ export const LINE_AUTOMATION_EDITOR_WARNING =
   "此設定僅存在於此瀏覽器工作階段，不會寫入資料庫，也不會呼叫 LINE API。";
 export const LINE_AUTOMATION_REMINDER_DEV_TITLE = "預約提醒開發狀態";
 export const LINE_AUTOMATION_REMINDER_DEV_HINT =
-  "預約提醒仍在開發。正式寫入、正式發送與測試授權都關閉。";
+  "Phase 3A：先完成測試 LINE。本機可預覽排程，不會寫入正式資料庫，也不會發送 LINE。";
+export const LINE_AUTOMATION_TEST_LINE_BADGE = "測試 LINE 優先";
+export const LINE_AUTOMATION_TEST_MODE_HINT =
+  "正式網站可查看管理介面。測試發送必須隔離，不得使用正式顧客或正式營業 LINE。";
+export const LINE_AUTOMATION_REMINDER_PLAN_TITLE = "預約提醒本機排程";
+export const LINE_AUTOMATION_REMINDER_PLAN_HINT =
+  "只使用本機測試預約。取消或改期會讓未發送提醒失效。真實發送仍關閉。";
+export const LINE_AUTOMATION_HISTORY_LOCAL_HINT = "以下是本機排程預覽，不是正式發送紀錄。";
 export const LINE_AUTOMATION_REMINDER_EDITOR_WARNING =
   "預約提醒仍在開發。此設定只本機預覽，不會寫入資料庫，也不會呼叫 LINE API。";
 export const LINE_AUTOMATION_FLAG_CLOSED = "關閉";

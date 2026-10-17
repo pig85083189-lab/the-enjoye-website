@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { LineAutomationCard } from "@/features/line/automations/LineAutomationCard";
 import { LineAutomationPhonePreview } from "@/features/line/automations/LineAutomationPhonePreview";
 import { LineAutomationRuleEditor } from "@/features/line/automations/LineAutomationRuleEditor";
+import { LineAppointmentReminderPlanCard } from "@/features/line/automations/LineAppointmentReminderPlanCard";
 import { LineAutomationMonthlyStats } from "@/features/line/automations/LineAutomationStats";
 import { LineOwnerSelfReminderCard } from "@/features/line/automations/LineOwnerSelfReminderCard";
 import { canShowLineAutomations } from "@/lib/line/automations/access";
@@ -21,8 +22,11 @@ import {
   LINE_AUTOMATION_FLAG_OWNER_SELF_LABEL,
   LINE_AUTOMATION_FLAG_SEND_LABEL,
   LINE_AUTOMATION_HISTORY_EMPTY,
+  LINE_AUTOMATION_HISTORY_LOCAL_HINT,
   LINE_AUTOMATION_LOCAL_DRAFT_HINT,
   LINE_AUTOMATION_NOT_LIVE_HINT,
+  LINE_AUTOMATION_TEST_LINE_BADGE,
+  LINE_AUTOMATION_TEST_MODE_HINT,
   LINE_AUTOMATION_PAGE_SUBTITLE,
   LINE_AUTOMATION_PAGE_TITLE,
   LINE_AUTOMATION_REMINDER_DEV_HINT,
@@ -116,6 +120,7 @@ export function LineAutomationsWorkspace() {
               <p className="text-[14px] font-medium text-text" data-line-oa-name>
                 {officialName}
               </p>
+              <Badge tone="neutral">{LINE_AUTOMATION_TEST_LINE_BADGE}</Badge>
               <Badge tone="neutral">尚未連線發送</Badge>
             </div>
             <p className="mt-1 text-[12px] text-secondary-text">
@@ -136,6 +141,7 @@ export function LineAutomationsWorkspace() {
         className="rounded-2xl bg-primary-light/70 px-4 py-3 text-[13px] leading-relaxed text-text"
       >
         <p>{LINE_AUTOMATION_NOT_LIVE_HINT}</p>
+        <p className="mt-1 text-secondary-text">{LINE_AUTOMATION_TEST_MODE_HINT}</p>
         <p className="mt-1 text-secondary-text">{LINE_AUTOMATION_REMINDER_DEV_HINT}</p>
         <p className="mt-1 text-secondary-text">{LINE_AUTOMATION_LOCAL_DRAFT_HINT}</p>
       </div>
@@ -181,6 +187,8 @@ export function LineAutomationsWorkspace() {
           <p className="mt-2 text-[14px] leading-relaxed text-secondary-text">
             {LINE_AUTOMATION_HISTORY_EMPTY}
           </p>
+          <p className="mt-2 text-[13px] text-secondary-text">{LINE_AUTOMATION_HISTORY_LOCAL_HINT}</p>
+          <LineAppointmentReminderPlanCard enabled={drafts.appointment_reminder.enabled} />
         </Card>
       ) : (
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -252,6 +260,7 @@ export function LineAutomationsWorkspace() {
               </div>
             </dl>
           </Card>
+          <LineAppointmentReminderPlanCard enabled={drafts.appointment_reminder.enabled} />
           <LineOwnerSelfReminderCard />
         </>
       ) : null}
