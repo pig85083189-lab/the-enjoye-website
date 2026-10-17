@@ -112,7 +112,9 @@ export function LineAutomationRuleEditor({
         </div>
 
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-5">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)] lg:items-start">\n            <div className="min-w-0">\n          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)] lg:items-start">
+            <div className="min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[13px] text-secondary-text">自動發送</p>
             <LineAutomationSwitch
               checked={false}
