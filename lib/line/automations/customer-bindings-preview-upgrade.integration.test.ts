@@ -53,6 +53,7 @@ describe("Preview leftover LINE customer binding upgrade", () => {
     expect(cases).toMatch(/legacy pending row was confirmed without a new capture/);
     expect(cases).toMatch(/first bind start after upgrade failed/);
     expect(cases).toMatch(/upgraded function kept leftover parameter names/);
+    expect(cases).toMatch(/bind RPCs still have view or table catalog dependents/);
     expect(cases).toMatch(/cross-org customer bind was accepted/);
     expect(migration).toMatch(/confirm_line_customer_binding/);
     expect(migration).toMatch(/where verified is true\s+and confirmed_at is null/);

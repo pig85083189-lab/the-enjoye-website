@@ -1031,7 +1031,53 @@ $$;
 comment on function public.line_customer_binding_purge_expired(text) is
   'Deletes expired staged rebinds for one organization. Does not touch active bindings or secrets. Must not be paired with RAISE in the same failed transaction.';
 
-drop function if exists public.start_line_customer_bind_challenge(text, text);
+-- Leftover 2-arg start and 7-arg consume have no app, trigger, or view
+-- callers. PostgREST cannot dispatch overloads, so unused leftover
+-- arities must go. Drop without CASCADE; catalog dependents fail loudly.
+do $$
+declare
+  rec record;
+  v_oid oid;
+  v_deps integer;
+begin
+  for rec in
+    select *
+    from (values
+      ('start_line_customer_bind_challenge', 'text, text'),
+      (
+        'consume_line_customer_bind_challenge_public',
+        'text, text, text, text, text, text, text'
+      )
+    ) as t(fname, identity_args)
+  loop
+    select p.oid
+    into v_oid
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = rec.fname
+      and oidvectortypes(p.proargtypes) = rec.identity_args;
+    if v_oid is null then
+      continue;
+    end if;
+    select count(*)
+    into v_deps
+    from pg_depend d
+    where d.refobjid = v_oid
+      and d.deptype = 'n';
+    if v_deps > 0 then
+      raise exception
+        'leftover public.%(%) still has catalog dependents; refusing DROP CASCADE',
+        rec.fname,
+        rec.identity_args;
+    end if;
+    execute format(
+      'drop function if exists public.%I(%s)',
+      rec.fname,
+      rec.identity_args
+    );
+  end loop;
+end $$;
 
 create or replace function public.start_line_customer_bind_challenge(
   p_organization_id text,
@@ -1120,8 +1166,6 @@ $$;
 
 comment on function public.start_line_customer_bind_challenge(text, text, boolean, text) is
   'Owner-only one-time customer bind code after in-person identity confirmation. Does not accept a LINE user id. HMAC key is never returned.';
-
-drop function if exists public.consume_line_customer_bind_challenge_public(text, text, text, text, text, text, text);
 
 create or replace function public.consume_line_customer_bind_challenge_public(
   p_organization_id text,

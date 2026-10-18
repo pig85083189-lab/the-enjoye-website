@@ -240,7 +240,51 @@ begin
   if v_legacy_consume_args <> 0 then
     raise exception 'legacy 7-arg consume RPC is still present';
   end if;
+  if exists (
+    select 1
+    from pg_depend d
+    join pg_proc p on p.oid = d.refobjid
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in (
+        'start_line_customer_bind_challenge',
+        'consume_line_customer_bind_challenge_public',
+        'confirm_line_customer_binding',
+        'unbind_line_customer_binding'
+      )
+      and d.deptype = 'n'
+      and d.classid = 'pg_class'::regclass
+  ) then
+    raise exception 'bind RPCs still have view or table catalog dependents';
+  end if;
+  if exists (
+    select 1
+    from pg_trigger t
+    join pg_proc p on p.oid = t.tgfoid
+    where p.proname in (
+      'start_line_customer_bind_challenge',
+      'consume_line_customer_bind_challenge_public',
+      'confirm_line_customer_binding',
+      'unbind_line_customer_binding'
+    )
+  ) then
+    raise exception 'bind RPCs are still used as trigger functions';
+  end if;
 
+  perform tests.assert_function_in_args(
+    'start_line_customer_bind_challenge',
+    'text, text, boolean, text',
+    array['p_organization_id', 'p_customer_id', 'p_identity_confirmed', 'p_bind_hmac_key']::text[]
+  );
+  perform tests.assert_function_in_args(
+    'consume_line_customer_bind_challenge_public',
+    'text, text, text, text, text, timestamp with time zone, text, text, text, text',
+    array[
+      'p_organization_id', 'p_public_token', 'p_code', 'p_event_id', 'p_proof',
+      'p_proof_issued_at', 'p_line_user_id_cipher', 'p_line_user_id_hint',
+      'p_line_user_id_hash', 'p_key_id'
+    ]::text[]
+  );
   perform tests.assert_function_in_args(
     'unbind_line_customer_binding',
     'text, text',

@@ -44,6 +44,8 @@ describe("Preview leftover LINE customer binding upgrade", () => {
     expect(sql).toMatch(/unbind_line_customer_binding/);
     expect(sql).toMatch(/p_customer_app_id/);
     expect(sql).toMatch(/drop function if exists public\.%I\(%s\)/);
+    expect(sql).toMatch(/refusing DROP CASCADE/);
+    expect(sql).toMatch(/text, text, text, text, text, text, text/);
     expect(sql).toMatch(/line_automation_schedule_recipient_ready/);
     expect(sql).toMatch(/Do not apply on Production until Owner confirms/);
     expect(executable).not.toMatch(/drop table public\.line_customer_bindings/i);
@@ -96,6 +98,9 @@ describe("Preview leftover LINE customer binding upgrade", () => {
     expect(cases).toMatch(/legacy pending row was confirmed without a new capture/);
     expect(cases).toMatch(/first bind start after upgrade failed/);
     expect(cases).toMatch(/upgraded function kept leftover parameter names/);
+    expect(cases).toMatch(/legacy 2-arg start RPC is still present/);
+    expect(cases).toMatch(/legacy 7-arg consume RPC is still present/);
+    expect(cases).toMatch(/bind RPCs still have view or table catalog dependents/);
     expect(cases).toMatch(/upgraded unbind failed/);
     expect(cases).toMatch(/rebind consume did not stage a replacement/);
     expect(cases).toMatch(/rebind cancel left a staged identity/);
