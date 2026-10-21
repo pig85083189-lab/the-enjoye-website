@@ -51,8 +51,8 @@ export function planLineDelivery(
   });
   // The flags are deliberately immutable, code-level kill gates.
   if (
-    (candidate.kind === "automation" && LINE_AUTOMATION_SEND_OPEN !== true) ||
-    (candidate.kind === "broadcast" && LINE_BROADCAST_SEND_OPEN !== true)
+    (candidate.kind === "automation" && !Boolean(LINE_AUTOMATION_SEND_OPEN)) ||
+    (candidate.kind === "broadcast" && !Boolean(LINE_BROADCAST_SEND_OPEN))
   ) {
     return blocked("blocked_send_closed");
   }
