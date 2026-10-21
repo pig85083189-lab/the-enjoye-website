@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { LineAutomationCard } from "@/features/line/automations/LineAutomationCard";
 import { LineAutomationRuleEditor } from "@/features/line/automations/LineAutomationRuleEditor";
+import { LineCustomerBindingsCard } from "@/features/line/automations/LineCustomerBindingsCard";
 import { canShowLineAutomations } from "@/lib/line/automations/access";
 import {
   loadLineAutomationRules,
@@ -153,6 +154,8 @@ export function LineAutomationsWorkspace() {
           </p>
         </Card>
       </section>
+
+      <LineCustomerBindingsCard organizationId={organization.id} />
 
       <div className="space-y-3" data-line-automation-catalog>
         {LINE_AUTOMATION_CATALOG.map((definition) => (

@@ -7,6 +7,11 @@ import {
   READ_LINE_AUTOMATION_SCHEDULE_RPC,
 } from "@/lib/line/automations/schedule-types";
 import {
+  mapLineCustomerBindingRows,
+  READ_LINE_CUSTOMER_BINDINGS_RPC,
+  verifiedBindingCustomerIds,
+} from "@/lib/line/automations/customer-bindings";
+import {
   LINE_AUTOMATION_SCHEDULE_CUSTOMER_COLUMNS,
   buildScheduleSnapshot,
 } from "@/lib/line/automations/schedule-load";
@@ -83,7 +88,7 @@ async function loadScheduleSnapshot(organizationId: string, nowMs?: number) {
     .maybeSingle();
   const orgUuid = typeof org.data?.id === "string" ? org.data.id : null;
 
-  const [rules, jobs, customers, appointments, treatments, packages] = await Promise.all([
+  const [rules, jobs, customers, appointments, treatments, packages, bindings] = await Promise.all([
     supabase
       .from("line_automation_rules")
       .select("organization_id,automation_type,automation_id,enabled,timing_config,timing_ids,message_template,template")
@@ -115,11 +120,18 @@ async function loadScheduleSnapshot(organizationId: string, nowMs?: number) {
           .select("id,app_id,organization_id,customer_id,expires_at,status")
           .eq("organization_id", orgUuid)
       : Promise.resolve({ data: [], error: null }),
+    supabase.rpc(READ_LINE_CUSTOMER_BINDINGS_RPC, {
+      p_organization_id: organizationId,
+    }),
   ]);
 
   if (rules.error || jobs.error || customers.error || appointments.error || treatments.error || packages.error) {
     return null;
   }
+
+  const verifiedCustomerIds = bindings.error
+    ? new Set<string>()
+    : verifiedBindingCustomerIds(mapLineCustomerBindingRows(organizationId, bindings.data));
 
   return buildScheduleSnapshot({
     organizationId,
@@ -129,6 +141,7 @@ async function loadScheduleSnapshot(organizationId: string, nowMs?: number) {
     treatments: orgUuid ? asRows(treatments.data) : undefined,
     packages: orgUuid ? asRows(packages.data) : undefined,
     jobs: asRows((jobs.data as { jobs?: unknown } | null)?.jobs ?? jobs.data),
+    verifiedCustomerIds,
     nowMs,
   });
 }

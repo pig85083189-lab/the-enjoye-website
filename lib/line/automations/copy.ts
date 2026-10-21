@@ -107,3 +107,19 @@ export const LINE_OWNER_SELF_UNAVAILABLE = "正式環境未載入";
 export const LINE_OWNER_SELF_PHRASE_LABEL = "二次確認文句";
 export const LINE_OWNER_SELF_ONESHOT_LABEL = "單次授權";
 export const LINE_OWNER_SELF_REMAINING_LABEL = "今日剩餘測試額度";
+export const LINE_CUSTOMER_BIND_TITLE = "顧客 LINE 綁定";
+export const LINE_CUSTOMER_BIND_HINT =
+  "八碼驗證只證明 LINE 帳號持有人拿到驗證碼，不能單獨當成店內顧客身分。請先現場確認本人，再請顧客用自己的 LINE 傳驗證碼。Webhook 捕捉後還要再按確認綁定。不能手填 User ID。";
+export const LINE_CUSTOMER_BIND_EMPTY = "目前沒有可綁定的顧客。";
+export const LINE_CUSTOMER_BIND_UNBOUND = "尚未綁定";
+export const LINE_CUSTOMER_BIND_ACTIVE = "已現場確認";
+export const LINE_CUSTOMER_BIND_PENDING = "LINE 已捕捉，待現場確認";
+export const LINE_CUSTOMER_BIND_REBIND = "新 LINE 已捕捉，待確認切換";
+export const LINE_CUSTOMER_BIND_RELEASED = "已解除";
+export const LINE_CUSTOMER_BIND_START = "產生驗證碼";
+export const LINE_CUSTOMER_BIND_CONFIRM = "確認綁定";
+export const LINE_CUSTOMER_BIND_CANCEL_REBIND = "取消重新綁定";
+export const LINE_CUSTOMER_BIND_UNBIND = "解除綁定";
+export const LINE_CUSTOMER_BIND_NO_EDIT = "已驗證的 LINE 識別不可手動修改";
+export const LINE_CUSTOMER_BIND_IDENTITY =
+  "我已現場確認這位顧客的身分。八碼驗證不能代替現場確認。";

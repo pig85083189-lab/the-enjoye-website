@@ -71,6 +71,7 @@ const AUTOMATION_FILES = [
   "features/line/automations/LineAppointmentReminderDryRunCard.tsx",
   "features/line/automations/LineTestPushPrepCard.tsx",
   "features/line/automations/LineTestPushAcceptanceCard.tsx",
+  "features/line/automations/LineCustomerBindingsCard.tsx",
   "lib/line/automations/access.ts",
   "lib/line/automations/actions.ts",
   "lib/line/automations/catalog.ts",
