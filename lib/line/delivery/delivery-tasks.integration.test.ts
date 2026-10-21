@@ -35,6 +35,7 @@ describe("Phase 3B LINE delivery tasks", () => {
     const runner = source(RUNNER);
     expect(runner).toMatch(/unix socket/);
     expect(runner).toMatch(/20261021120000_line_delivery_tasks\.sql/);
+    expect(runner).toMatch(/20261021130000_line_delivery_worker\.sql/);
     expect(runner).not.toMatch(/bfzquejrtgqzzarhkiya|knccefcxncglgpmvgqlp|api\.line\.me/);
   });
 
@@ -55,5 +56,8 @@ describe("Phase 3B LINE delivery tasks", () => {
       },
     });
     expect(output).toMatch(/PASS: local LINE delivery tasks claimed without sending LINE/);
+    expect(output).toMatch(
+      /PASS: local LINE delivery mock worker stayed inside quota without sending LINE/,
+    );
   });
 });

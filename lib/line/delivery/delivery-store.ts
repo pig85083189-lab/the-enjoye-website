@@ -5,8 +5,11 @@
  */
 export const ENQUEUE_LINE_DELIVERY_TASK_RPC = "enqueue_line_delivery_task";
 export const CLAIM_LINE_DELIVERY_TASK_RPC = "claim_line_delivery_task";
+export const CLAIM_NEXT_LINE_DELIVERY_TASK_RPC = "claim_next_line_delivery_task";
 export const COMPLETE_LINE_DELIVERY_TASK_RPC = "complete_line_delivery_task";
+export const READ_LINE_DELIVERY_TASKS_RPC = "read_line_delivery_tasks";
 export const LINE_DELIVERY_BROADCAST_ELIGIBLE_RPC = "line_delivery_broadcast_eligible";
+export const LINE_DELIVERY_BROADCAST_QUOTA_USED_RPC = "line_delivery_broadcast_quota_used";
 
 export const LINE_DELIVERY_DB_STATUSES = [
   "planned",

@@ -131,6 +131,10 @@ export const LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE =
 export const LINE_DELIVERY_TASKS_MIGRATION_FILE =
   "supabase/migrations/20261021120000_line_delivery_tasks.sql";
 
+/** LINE delivery mock worker, owner-safe records, and broadcast quota lock. Additive. Does not rewrite 2120000 or Broadcast. */
+export const LINE_DELIVERY_WORKER_MIGRATION_FILE =
+  "supabase/migrations/20261021130000_line_delivery_worker.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",

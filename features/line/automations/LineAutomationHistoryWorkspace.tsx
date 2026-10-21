@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
+import { LineDeliveryRecordsCard } from "@/features/line/automations/LineDeliveryRecordsCard";
 import { canShowLineAutomations } from "@/lib/line/automations/access";
 import {
   LINE_AUTOMATION_BACK_TO_MANAGE,
-  LINE_AUTOMATION_HISTORY_EMPTY,
   LINE_AUTOMATION_HISTORY_ENTRY,
   LINE_AUTOMATION_HISTORY_SUBTITLE,
   LINE_AUTOMATION_LAB_ENTRY,
@@ -15,7 +15,7 @@ import {
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 export function LineAutomationHistoryWorkspace() {
-  const { membership } = useOrganization();
+  const { organization, membership } = useOrganization();
 
   if (!canShowLineAutomations(membership)) {
     return (
@@ -47,12 +47,7 @@ export function LineAutomationHistoryWorkspace() {
 
       <p className="text-[13px] leading-relaxed text-secondary-text">{LINE_AUTOMATION_NOT_LIVE_HINT}</p>
 
-      <Card padding="lg" data-line-automation-history>
-        <h2 className="text-[16px] font-semibold text-text">{LINE_AUTOMATION_HISTORY_ENTRY}</h2>
-        <p className="mt-2 text-[14px] leading-relaxed text-secondary-text">
-          {LINE_AUTOMATION_HISTORY_EMPTY}
-        </p>
-      </Card>
+      <LineDeliveryRecordsCard organizationId={organization.id} />
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-[12px] text-secondary-text">
         <Link href="/staff/line/automations" className="text-primary">

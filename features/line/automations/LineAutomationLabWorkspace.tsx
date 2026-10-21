@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { LineAppointmentReminderDryRunCard } from "@/features/line/automations/LineAppointmentReminderDryRunCard";
 import { LineAppointmentReminderPlanCard } from "@/features/line/automations/LineAppointmentReminderPlanCard";
+import { LineDeliveryMockWorkerCard } from "@/features/line/automations/LineDeliveryMockWorkerCard";
 import { LineOwnerSelfReminderCard } from "@/features/line/automations/LineOwnerSelfReminderCard";
 import { LineTestPushAcceptanceCard } from "@/features/line/automations/LineTestPushAcceptanceCard";
 import { LineTestPushPrepCard } from "@/features/line/automations/LineTestPushPrepCard";
@@ -30,7 +31,7 @@ import { createDefaultLineAutomationDrafts, createEmptyLineAutomationStats } fro
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 
 export function LineAutomationLabWorkspace() {
-  const { membership } = useOrganization();
+  const { organization, membership } = useOrganization();
   const drafts = createDefaultLineAutomationDrafts();
   const stats = createEmptyLineAutomationStats();
 
@@ -83,6 +84,7 @@ export function LineAutomationLabWorkspace() {
       </Card>
 
       <LineAppointmentReminderPlanCard enabled={drafts.appointment_reminder.enabled} />
+      <LineDeliveryMockWorkerCard organizationId={organization.id} />
       <LineAppointmentReminderDryRunCard />
       <LineTestPushPrepCard />
       <LineTestPushAcceptanceCard />

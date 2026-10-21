@@ -87,6 +87,7 @@ describe("Phase 3B LINE delivery task ledger", () => {
     expect(runner).toMatch(/unix socket/);
     expect(runner).toMatch(/beauty_os_line_delivery_tasks_local/);
     expect(runner).toMatch(/20261021120000_line_delivery_tasks\.sql/);
+    expect(runner).toMatch(/20261021130000_line_delivery_worker\.sql/);
     expect(runner).toMatch(/REFUSE/);
     expect(runner).toMatch(/duplicate delivery_key was accepted/);
     expect(runner).toMatch(/concurrent claim left claimed=/);

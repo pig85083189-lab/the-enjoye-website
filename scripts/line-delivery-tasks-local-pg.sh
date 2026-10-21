@@ -22,6 +22,11 @@ pg_isready -q || {
   exit 1
 }
 
+LOCK_DIR="${TMPDIR:-/tmp}"
+LOCK_FILE="$LOCK_DIR/beauty_os_line_delivery_tasks_local.lock"
+exec 9>"$LOCK_FILE"
+flock 9
+
 cleanup() {
   dropdb --if-exists "$DB" >/dev/null 2>&1 || true
 }
@@ -41,6 +46,8 @@ createdb "$DB"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261017161000_line_customer_bindings_preview_upgrade.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261021120000_line_delivery_tasks.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261021120000_line_delivery_tasks.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261021130000_line_delivery_worker.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261021130000_line_delivery_worker.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/line-delivery-tasks.local-cases.sql"
 
 KEY_A="$("${PSQL[@]}" -At -c "select '10:automation|14:org-the-enjoye|18:appt-keep:day_before|6:cust-2';")"
@@ -235,4 +242,175 @@ if [[ "$JOBS" != "5" ]]; then
   exit 1
 fi
 
+"${PSQL[@]}" -c "
+  update public.line_customer_bindings
+  set
+    verified = true,
+    status = 'active',
+    captured_at = now(),
+    bound_at = now(),
+    confirmed_at = now(),
+    confirmed_by = 'staff-enjoye-owner',
+    unbound_at = null,
+    updated_at = now()
+  where id = 'lcb-delivery-cust-2';
+  insert into public.line_customer_binding_secrets (
+    binding_id, organization_id, line_user_id_cipher, key_id
+  ) values (
+    'lcb-delivery-cust-2', 'org-the-enjoye', 'v1.cipher-delivery-cust-2', 'line-cred-v1'
+  )
+  on conflict (binding_id) do nothing;
+" >/dev/null
+
+KEY_F="$("${PSQL[@]}" -At -c "select '10:automation|14:org-the-enjoye|13:mock-accepted|6:cust-2';")"
+enqueue org-the-enjoye automation "$KEY_F" cust-2 >/dev/null
+"${PSQL[@]}" -c "
+  select tests.become('11111111-1111-1111-1111-111111111111');
+  select public.claim_line_delivery_task('org-the-enjoye', '${KEY_F}');
+" >/dev/null
+MOCK_ACCEPT="$("${PSQL[@]}" -At -c "
+  select tests.become('11111111-1111-1111-1111-111111111111');
+  select public.complete_line_delivery_task(
+    'org-the-enjoye', '${KEY_F}', 'accepted',
+    'Mock adapter 接受，仍未發送真實 LINE', 'mock_accepted', false, null
+  );
+")"
+if [[ "$MOCK_ACCEPT" != *mock_accepted* || "$MOCK_ACCEPT" == *'"sent_line": true'* || "$MOCK_ACCEPT" == *'"sent_line":true'* ]]; then
+  echo "REFUSE: mock accepted did not stay mock-only: $MOCK_ACCEPT" >&2
+  exit 1
+fi
+DUP_COMPLETE="$("${PSQL[@]}" -At -c "
+  select tests.become('11111111-1111-1111-1111-111111111111');
+  select public.complete_line_delivery_task(
+    'org-the-enjoye', '${KEY_F}', 'accepted',
+    'Mock adapter 接受，仍未發送真實 LINE', 'mock_accepted', false, null
+  );
+")"
+if [[ "$DUP_COMPLETE" != *already_complete* ]]; then
+  echo "REFUSE: duplicate complete was not already_complete: $DUP_COMPLETE" >&2
+  exit 1
+fi
+
+MISSING="$("${PSQL[@]}" -At -c "
+  select tests.become('11111111-1111-1111-1111-111111111111');
+  select public.complete_line_delivery_task('org-the-enjoye', 'missing-delivery-key', 'accepted');
+")"
+if [[ "$MISSING" != *not_found* ]]; then
+  echo "REFUSE: missing task complete was not not_found: $MISSING" >&2
+  exit 1
+fi
+
+claim_next_sql() {
+  cat <<EOF
+select tests.become('11111111-1111-1111-1111-111111111111');
+select public.claim_next_line_delivery_task('org-the-enjoye');
+EOF
+}
+
+for i in 2 3 4 5; do
+  KEY_Q="$("${PSQL[@]}" -At -c "select '9:broadcast|14:org-the-enjoye|12:broadcast-${i}|8:audience';")"
+  enqueue org-the-enjoye broadcast "$KEY_Q" audience >/dev/null
+done
+
+psql -d "$DB" -X -q -c "$(claim_next_sql)" >/tmp/line-delivery-next-a.out 2>/tmp/line-delivery-next-a.err &
+psql -d "$DB" -X -q -c "$(claim_next_sql)" >/tmp/line-delivery-next-b.out 2>/tmp/line-delivery-next-b.err &
+psql -d "$DB" -X -q -c "$(claim_next_sql)" >/tmp/line-delivery-next-c.out 2>/tmp/line-delivery-next-c.err &
+psql -d "$DB" -X -q -c "$(claim_next_sql)" >/tmp/line-delivery-next-d.out 2>/tmp/line-delivery-next-d.err &
+wait || true
+
+QUOTA_USED="$("${PSQL[@]}" -At -c "select public.line_delivery_broadcast_quota_used('org-the-enjoye');")"
+if [[ "$QUOTA_USED" != "3" ]]; then
+  echo "REFUSE: concurrent claim_next broke broadcast quota used=$QUOTA_USED." >&2
+  cat /tmp/line-delivery-next-a.out /tmp/line-delivery-next-a.err \
+    /tmp/line-delivery-next-b.out /tmp/line-delivery-next-b.err \
+    /tmp/line-delivery-next-c.out /tmp/line-delivery-next-c.err \
+    /tmp/line-delivery-next-d.out /tmp/line-delivery-next-d.err >&2 || true
+  exit 1
+fi
+CLAIMED_BC="$("${PSQL[@]}" -At -c "
+  select count(*) from public.line_delivery_tasks
+  where organization_id = 'org-the-enjoye'
+    and kind = 'broadcast'
+    and status in ('claimed', 'accepted', 'pending_confirmation');
+")"
+if [[ "$CLAIMED_BC" != "3" ]]; then
+  echo "REFUSE: concurrent workers claimed $CLAIMED_BC enjoye broadcasts." >&2
+  exit 1
+fi
+BLOCKED_BC="$("${PSQL[@]}" -At -c "
+  select count(*) from public.line_delivery_tasks
+  where organization_id = 'org-the-enjoye'
+    and kind = 'broadcast'
+    and status = 'blocked'
+    and last_error_class = 'broadcast_not_eligible';
+")"
+if [[ "$BLOCKED_BC" != "2" ]]; then
+  echo "REFUSE: quota overflow did not block remaining broadcasts blocked=$BLOCKED_BC." >&2
+  exit 1
+fi
+
+STAFF="$("${PSQL[@]}" -At -c "
+  select tests.become('33333333-3333-3333-3333-333333333333');
+  select public.claim_next_line_delivery_task('org-the-enjoye');
+" 2>/tmp/line-delivery-staff.err || true)"
+if [[ "$STAFF" == *'"ok": true'* || "$STAFF" == *'"ok":true'* ]]; then
+  echo "REFUSE: staff claim_next succeeded: $STAFF" >&2
+  exit 1
+fi
+if ! grep -q unauthorized /tmp/line-delivery-staff.err; then
+  echo "REFUSE: staff claim_next did not raise unauthorized." >&2
+  cat /tmp/line-delivery-staff.err >&2 || true
+  exit 1
+fi
+
+ANON_NEXT="$("${PSQL[@]}" -At -c "select has_function_privilege('anon', 'public.claim_next_line_delivery_task(text)', 'EXECUTE');")"
+ANON_READ="$("${PSQL[@]}" -At -c "select has_function_privilege('anon', 'public.read_line_delivery_tasks(text)', 'EXECUTE');")"
+ANON_CLAIM="$("${PSQL[@]}" -At -c "select has_function_privilege('anon', 'public.claim_line_delivery_task(text,text)', 'EXECUTE');")"
+ANON_QUOTA="$("${PSQL[@]}" -At -c "select has_function_privilege('anon', 'public.line_delivery_broadcast_quota_used(text)', 'EXECUTE');")"
+if [[ "$ANON_NEXT" != "f" || "$ANON_READ" != "f" || "$ANON_CLAIM" != "f" || "$ANON_QUOTA" != "f" ]]; then
+  echo "REFUSE: anon still has delivery worker execute privilege." >&2
+  exit 1
+fi
+
+READ="$("${PSQL[@]}" -At -c "
+  select tests.become('11111111-1111-1111-1111-111111111111');
+  select public.read_line_delivery_tasks('org-the-enjoye');
+")"
+if [[ "$READ" != *mock_accepted* || "$READ" != *needs_human_confirmation* || "$READ" != *sent_line* ]]; then
+  echo "REFUSE: owner read records missing safe fields: $READ" >&2
+  exit 1
+fi
+if [[ "$READ" == *'"sent_line": true'* || "$READ" == *'"sent_line":true'* ]]; then
+  echo "REFUSE: owner read records claimed a real LINE send: $READ" >&2
+  exit 1
+fi
+if [[ "$READ" == *recipient_id* || "$READ" == *delivery_key* || "$READ" == *line_user_id* || "$READ" == *channel_secret* || "$READ" == *cipher* ]]; then
+  echo "REFUSE: owner read records leaked identity fields: $READ" >&2
+  exit 1
+fi
+
+CROSS_READ="$("${PSQL[@]}" -At -c "
+  select tests.become('22222222-2222-2222-2222-222222222222');
+  select public.read_line_delivery_tasks('org-the-enjoye');
+" 2>/tmp/line-delivery-cross-read.err || true)"
+if [[ "$CROSS_READ" == *'"ok": true'* || "$CROSS_READ" == *'"ok":true'* ]]; then
+  echo "REFUSE: cross-org read succeeded: $CROSS_READ" >&2
+  exit 1
+fi
+if ! grep -q unauthorized /tmp/line-delivery-cross-read.err; then
+  echo "REFUSE: cross-org read did not raise unauthorized." >&2
+  cat /tmp/line-delivery-cross-read.err >&2 || true
+  exit 1
+fi
+
+RESTART_NEXT="$("${PSQL[@]}" -At -c "
+  select tests.become('11111111-1111-1111-1111-111111111111');
+  select public.claim_next_line_delivery_task('org-the-enjoye');
+")"
+if [[ "$RESTART_NEXT" == *"$KEY_B"* || "$RESTART_NEXT" == *'"ok": true'* || "$RESTART_NEXT" == *'"ok":true'* ]]; then
+  echo "REFUSE: claim_next resent a claimed or completed task after restart: $RESTART_NEXT" >&2
+  exit 1
+fi
+
 echo "PASS: local LINE delivery tasks claimed without sending LINE."
+echo "PASS: local LINE delivery mock worker stayed inside quota without sending LINE."

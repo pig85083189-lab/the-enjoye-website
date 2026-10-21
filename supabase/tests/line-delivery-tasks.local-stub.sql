@@ -32,3 +32,12 @@ values
   ('org-lumiere', '2000000002', false)
 on conflict (organization_id) do update
 set broadcast_enabled = excluded.broadcast_enabled;
+
+insert into public.staff_auth_memberships (
+  id, user_id, auth_user_id, organization_id, role, display_name, is_active
+) values (
+  'mem-enjoye-staff', 'staff-enjoye-staff',
+  '33333333-3333-3333-3333-333333333333',
+  'org-the-enjoye', 'STAFF', '享悅員工', true
+)
+on conflict (id) do nothing;
