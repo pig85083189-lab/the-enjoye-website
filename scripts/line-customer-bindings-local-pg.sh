@@ -119,6 +119,51 @@ if "${PSQL[@]}" -c "select tests.become('11111111-1111-1111-1111-111111111111');
   exit 1
 fi
 
+ORIG_HASH="$("${PSQL[@]}" -At -c "select line_user_id_hash from public.line_customer_bindings where organization_id = 'org-the-enjoye' and customer_id = 'cust-2';")"
+HASH_Y="$("${PSQL[@]}" -At -c "select encode(sha256(convert_to('Uyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy', 'utf8')), 'hex');")"
+"${PSQL[@]}" -c "
+insert into public.line_customer_binding_rebinds (
+  binding_id, organization_id, customer_id,
+  line_user_id_hint, line_user_id_hash, line_user_id_cipher, key_id,
+  captured_at, expires_at
+)
+select
+  id, organization_id, customer_id,
+  '••••yyyy', '${HASH_Y}', 'v1.cipher-conc-cancel', 'line-cred-v1',
+  now(), now() + interval '10 minutes'
+from public.line_customer_bindings
+where organization_id = 'org-the-enjoye' and customer_id = 'cust-2';
+"
+
+cancel_sql() {
+  cat <<EOF
+select tests.become('11111111-1111-1111-1111-111111111111');
+select public.cancel_line_customer_rebind('org-the-enjoye', 'cust-2');
+EOF
+}
+
+psql -d "$DB" -X -q -c "$(confirm_sql)" >/tmp/line-customer-confirm-cancel-a.out 2>/tmp/line-customer-confirm-cancel-a.err &
+psql -d "$DB" -X -q -c "$(cancel_sql)" >/tmp/line-customer-confirm-cancel-b.out 2>/tmp/line-customer-confirm-cancel-b.err &
+wait || true
+
+ACTIVE_AFTER="$("${PSQL[@]}" -At -c "select count(*) from public.line_customer_bindings where organization_id = 'org-the-enjoye' and customer_id = 'cust-2' and status = 'active' and verified is true and confirmed_at is not null;")"
+SECRET_AFTER="$("${PSQL[@]}" -At -c "select count(*) from public.line_customer_binding_secrets s join public.line_customer_bindings b on b.id = s.binding_id where b.organization_id = 'org-the-enjoye' and b.customer_id = 'cust-2';")"
+REBIND_LEFT="$("${PSQL[@]}" -At -c "select count(*) from public.line_customer_binding_rebinds where organization_id = 'org-the-enjoye' and customer_id = 'cust-2';")"
+FINAL_HASH="$("${PSQL[@]}" -At -c "select line_user_id_hash from public.line_customer_bindings where organization_id = 'org-the-enjoye' and customer_id = 'cust-2';")"
+READY_AFTER="$("${PSQL[@]}" -At -c "select public.line_automation_send_recipient_allowed('org-the-enjoye', 'cust-2');")"
+if [[ "$ACTIVE_AFTER" != "1" || "$SECRET_AFTER" != "1" || "$REBIND_LEFT" != "0" ]]; then
+  echo "REFUSE: concurrent confirm and cancel left active=$ACTIVE_AFTER secret=$SECRET_AFTER rebind=$REBIND_LEFT." >&2
+  exit 1
+fi
+if [[ "$FINAL_HASH" != "$ORIG_HASH" && "$FINAL_HASH" != "$HASH_Y" ]]; then
+  echo "REFUSE: concurrent confirm and cancel replaced the LINE hash with $FINAL_HASH." >&2
+  exit 1
+fi
+if [[ "$READY_AFTER" != "t" ]]; then
+  echo "REFUSE: concurrent confirm and cancel dropped the trusted recipient." >&2
+  exit 1
+fi
+
 HASH_Z="$("${PSQL[@]}" -At -c "select encode(sha256(convert_to('Uzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz', 'utf8')), 'hex');")"
 "${PSQL[@]}" -c "
 insert into public.line_customer_binding_rebinds (

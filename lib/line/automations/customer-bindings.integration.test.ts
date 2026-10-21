@@ -64,6 +64,8 @@ describe("Phase 2B LINE customer bindings", () => {
     expect(runner).toMatch(/cross-table concurrent confirm left/);
     expect(cases).toMatch(/confirmed rebind did not switch identity atomically/);
     expect(runner).toMatch(/concurrent confirm left active/);
+    expect(runner).toMatch(/concurrent confirm and cancel left/);
+    expect(runner).toMatch(/cancel_line_customer_rebind\('org-the-enjoye', 'cust-2'\)/);
     expect(cases).toMatch(/unbind left a verified secret/);
     expect(cases).toMatch(/unbind still allowed send/);
     expect(cases).toMatch(/public consume leaked customer identity/);
