@@ -13,6 +13,7 @@ import {
   LINE_AUTOMATION_SCHEDULE_MIGRATION_FILE,
   LINE_CUSTOMER_BINDINGS_MIGRATION_FILE,
   LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE,
+  LINE_DELIVERY_TASKS_MIGRATION_FILE,
   OPERATIONAL_MIGRATION_FILE,
   STRATEGY_B_RLS_MIGRATION_FILE,
 } from "./schema-contract";
@@ -57,6 +58,7 @@ const EXPECTED_CHAIN = [
   "20261017140000_line_automation_schedule_engine.sql",
   "20261017160000_line_customer_bindings.sql",
   "20261017161000_line_customer_bindings_preview_upgrade.sql",
+  "20261021120000_line_delivery_tasks.sql",
 ] as const;
 
 function read(rel: string): string {
@@ -232,5 +234,29 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
     expect(executable).not.toMatch(/create or replace function public\.upsert_line_appointment_reminder_rule/i);
     expect(executable).not.toMatch(/create or replace function public\.apply_line_automation_schedule/i);
     expect(executable).not.toMatch(/api\.line\.me|cron|pg_cron/i);
+  });
+
+  it("adds a shared delivery task ledger without rewriting Broadcast or jobs", () => {
+    const sql = read(LINE_DELIVERY_TASKS_MIGRATION_FILE);
+    const executable = sql
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    expect(LINE_DELIVERY_TASKS_MIGRATION_FILE).toContain("20261021120000");
+    expect(sql).toMatch(/create table if not exists public\.line_delivery_tasks/);
+    expect(sql).toMatch(/line_delivery_tasks_delivery_key_key/);
+    expect(sql).toMatch(/enqueue_line_delivery_task/);
+    expect(sql).toMatch(/claim_line_delivery_task/);
+    expect(sql).toMatch(/complete_line_delivery_task/);
+    expect(sql).toMatch(/line_automation_send_recipient_allowed/);
+    expect(sql).toMatch(/line_delivery_broadcast_eligible/);
+    expect(sql).toMatch(/pg_advisory_xact_lock/);
+    expect(sql).toMatch(/for update/i);
+    expect(sql).toMatch(/Do not apply on Production until Owner confirms/);
+    expect(executable).not.toMatch(/alter table public\.line_broadcasts/i);
+    expect(executable).not.toMatch(/create or replace function public\.claim_line_broadcast_send/i);
+    expect(executable).not.toMatch(/drop table public\.line_automation_jobs/i);
+    expect(executable).not.toMatch(/api\.line\.me|cron|pg_cron/i);
+    expect(executable).not.toMatch(/line_user_id text/);
   });
 });

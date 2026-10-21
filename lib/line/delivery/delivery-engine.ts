@@ -1,9 +1,11 @@
 /**
- * First-stage LINE delivery engine shared by broadcast and automation.
+ * Fail-closed LINE delivery planner/adapter used by tests.
  *
- * In-memory claim + record only. Fail-closed: send flags stay shut, the mock
- * adapter never reaches LINE, and timeout / unknown outcomes are never retried.
- * Does not claim existing Broadcast rows, enable Cron, or apply remote SQL.
+ * Duplicate-send prevention for workers is the SQL ledger in
+ * line_delivery_tasks (unique delivery_key + FOR UPDATE claim). This in-memory
+ * Map is not a production lock. Send flags stay shut. The mock adapter never
+ * reaches LINE. Does not claim existing Broadcast rows, enable Cron, or apply
+ * remote SQL.
  */
 import {
   LINE_AUTOMATION_JOB_NEVER_RESEND_STATUSES,

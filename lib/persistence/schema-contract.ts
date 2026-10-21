@@ -127,6 +127,10 @@ export const LINE_CUSTOMER_BINDINGS_MIGRATION_FILE =
 export const LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE =
   "supabase/migrations/20261017161000_line_customer_bindings_preview_upgrade.sql";
 
+/** Shared LINE delivery task ledger. Additive. Default closed. Do not apply on Production until Owner confirms. */
+export const LINE_DELIVERY_TASKS_MIGRATION_FILE =
+  "supabase/migrations/20261021120000_line_delivery_tasks.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",
@@ -146,6 +150,7 @@ export const LINE_TABLES = [
   "line_customer_binding_rebinds",
   "line_customer_bind_challenges",
   "line_customer_bind_challenge_secrets",
+  "line_delivery_tasks",
 ] as const;
 
 /** Must never appear as stored columns (second books). */
