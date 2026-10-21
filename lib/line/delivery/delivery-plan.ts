@@ -6,9 +6,10 @@
  * atomic claiming, signed credentials, quotas, delivery and reconciliation.
  */
 import { LINE_AUTOMATION_SEND_OPEN } from "@/lib/line/automations/production-safe-flags";
+import { lineDeliveryKey, type DeliveryKind } from "@/lib/line/delivery/delivery-key";
 import { LINE_BROADCAST_SEND_OPEN } from "@/lib/line/line-flag";
 
-export type DeliveryKind = "broadcast" | "automation";
+export type { DeliveryKind };
 export type DeliveryDecision =
   | "blocked_send_closed"
   | "blocked_no_consent"
@@ -73,9 +74,8 @@ export function planLineDelivery(
   }
   if (candidate.scheduledAtMs > options.nowMs) return blocked("blocked_not_due");
 
-  // Length-prefixed segments prevent collisions when IDs contain separators.
-  const parts = [candidate.kind, candidate.organizationId, candidate.deliveryId, candidate.recipientId];
-  const deliveryKey = parts.map((part) => `${part.length}:${part}`).join("|");
+  const deliveryKey = lineDeliveryKey(candidate);
+  if (!deliveryKey) return blocked("blocked_invalid_identity");
   if (options.existingDeliveryKeys.has(deliveryKey)) return blocked("blocked_duplicate");
   return { decision: "ready_for_review", deliveryKey, sentLine: false };
 }
