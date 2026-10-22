@@ -12,6 +12,8 @@ import { LineAppointmentReminderDryRunCard } from "@/features/line/automations/L
 import { LineTestPushAcceptanceCard } from "@/features/line/automations/LineTestPushAcceptanceCard";
 import { LineTestPushPrepCard } from "@/features/line/automations/LineTestPushPrepCard";
 import { LineAppointmentReminderPlanCard } from "@/features/line/automations/LineAppointmentReminderPlanCard";
+import { LineDeliveryMockWorkerCard } from "@/features/line/automations/LineDeliveryMockWorkerCard";
+import { LineDeliveryRecordsCard } from "@/features/line/automations/LineDeliveryRecordsCard";
 import { LineOwnerSelfReminderCard } from "@/features/line/automations/LineOwnerSelfReminderCard";
 import { canShowLineAutomations, LINE_AUTOMATION_ROLES } from "@/lib/line/automations/access";
 import { LINE_AUTOMATION_CATALOG, LINE_AUTOMATION_TABS } from "@/lib/line/automations/catalog";
@@ -72,6 +74,8 @@ const AUTOMATION_FILES = [
   "features/line/automations/LineTestPushPrepCard.tsx",
   "features/line/automations/LineTestPushAcceptanceCard.tsx",
   "features/line/automations/LineCustomerBindingsCard.tsx",
+  "features/line/automations/LineDeliveryRecordsCard.tsx",
+  "features/line/automations/LineDeliveryMockWorkerCard.tsx",
   "lib/line/automations/access.ts",
   "lib/line/automations/actions.ts",
   "lib/line/automations/catalog.ts",
@@ -262,6 +266,22 @@ describe("LINE automation access and page wiring", () => {
     expect(accept).toMatch(
       /disabled[^>]*data-line-test-push-accept-send|data-line-test-push-accept-send[^>]*disabled/,
     );
+
+    const records = renderToStaticMarkup(
+      createElement(LineDeliveryRecordsCard, { organizationId: ORG_ENJOYE_ID }),
+    );
+    expect(records).toContain("發送任務紀錄");
+    expect(records).toContain("Mock 接受不代表真實 LINE 已送達");
+    expect(records).toContain('data-line-delivery-sent="false"');
+    expect(records).not.toMatch(/U[A-Za-z0-9]{32}|channel_secret|line_user_id/);
+
+    const worker = renderToStaticMarkup(
+      createElement(LineDeliveryMockWorkerCard, { organizationId: ORG_ENJOYE_ID }),
+    );
+    expect(worker).toContain("Mock 發送 Worker");
+    expect(worker).toContain("Mock 模式，不會發送 LINE");
+    expect(worker).toContain("未發送任何真實 LINE 訊息");
+    expect(worker).toContain('data-line-delivery-sent="false"');
   });
 });
 
@@ -282,7 +302,10 @@ describe("LINE automation safety", () => {
       /loadLineOfficialAccountAction|loadLineBroadcastPrepareAction|LineTestPush|DryRun|OwnerSelf|PlanCard/,
     );
     expect(source("features/line/automations/LineAutomationLabWorkspace.tsx")).toMatch(
-      /LineTestPushPrepCard|LineAppointmentReminderDryRunCard|LineOwnerSelfReminderCard/,
+      /LineTestPushPrepCard|LineAppointmentReminderDryRunCard|LineOwnerSelfReminderCard|LineDeliveryMockWorkerCard/,
+    );
+    expect(source("features/line/automations/LineAutomationHistoryWorkspace.tsx")).toMatch(
+      /LineDeliveryRecordsCard/,
     );
     expect(source("features/line/automations/LineAutomationRuleEditor.tsx")).toMatch(
       /saveLineAutomationRule|data-line-automation-save/,

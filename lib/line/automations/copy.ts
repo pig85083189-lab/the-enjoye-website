@@ -123,3 +123,33 @@ export const LINE_CUSTOMER_BIND_UNBIND = "解除綁定";
 export const LINE_CUSTOMER_BIND_NO_EDIT = "已驗證的 LINE 識別不可手動修改";
 export const LINE_CUSTOMER_BIND_IDENTITY =
   "我已現場確認這位顧客的身分。八碼驗證不能代替現場確認。";
+export const LINE_DELIVERY_RECORDS_TITLE = "發送任務紀錄";
+export const LINE_DELIVERY_RECORDS_HINT =
+  "這是店長可查的發送任務紀錄。Mock 接受不代表真實 LINE 已送達。不會顯示 LINE User ID、密文或憑證。";
+export const LINE_DELIVERY_RECORDS_EMPTY = "尚無發送任務紀錄。";
+export const LINE_DELIVERY_RECORDS_KIND_LABEL = "通知類型";
+export const LINE_DELIVERY_RECORDS_CREATED_LABEL = "建立時間";
+export const LINE_DELIVERY_RECORDS_STATUS_LABEL = "任務狀態";
+export const LINE_DELIVERY_RECORDS_MOCK_LABEL = "Mock 是否接受";
+export const LINE_DELIVERY_RECORDS_ERROR_LABEL = "失敗原因";
+export const LINE_DELIVERY_RECORDS_CONFIRM_LABEL = "是否需要人工確認";
+export const LINE_DELIVERY_KIND_BROADCAST = "群發";
+export const LINE_DELIVERY_KIND_AUTOMATION = "自動通知";
+export const LINE_DELIVERY_STATUS_PLANNED = "待執行";
+export const LINE_DELIVERY_STATUS_CLAIMED = "已領取，尚未完成";
+export const LINE_DELIVERY_STATUS_BLOCKED = "已阻擋";
+export const LINE_DELIVERY_STATUS_ACCEPTED = "已接受";
+export const LINE_DELIVERY_STATUS_FAILED = "失敗";
+export const LINE_DELIVERY_STATUS_PENDING = "待人工確認";
+export const LINE_DELIVERY_MOCK_ACCEPTED = "Mock 已接受（未發送真實 LINE）";
+export const LINE_DELIVERY_MOCK_NOT_ACCEPTED = "尚未被 Mock 接受";
+export const LINE_DELIVERY_NEEDS_CONFIRMATION = "需要人工確認";
+export const LINE_DELIVERY_NO_CONFIRMATION = "不需人工確認";
+export const LINE_DELIVERY_WORKER_TITLE = "Mock 發送 Worker";
+export const LINE_DELIVERY_WORKER_HINT =
+  "店長可手動執行一次 Mock Worker。只會呼叫本機 Mock，不會連接 LINE Messaging API，也不會啟動排程。";
+export const LINE_DELIVERY_WORKER_BADGE = "Mock 模式，不會發送 LINE";
+export const LINE_DELIVERY_WORKER_RUN = "執行一次 Mock Worker";
+export const LINE_DELIVERY_WORKER_NOT_SENT = "未發送任何真實 LINE 訊息";
+export const LINE_DELIVERY_WORKER_NO_WORK = "目前沒有可執行的發送任務";
+export const LINE_DELIVERY_WORKER_DONE = "Mock Worker 已完成此次執行，仍未發送真實 LINE";
