@@ -429,7 +429,7 @@ function planHolidays(input: {
   const occurrences = (input.holidaysProvided ? input.holidayOccurrences ?? [] : []).filter((row) =>
     rule.selectedTimingIds.includes(row.holidayId),
   );
-  if (!LINE_HOLIDAY_CALENDAR_READY && occurrences.length === 0) {
+  if (!LINE_HOLIDAY_CALENDAR_READY) {
     input.missingDependencies.push("holiday_calendar");
     input.skipped.push(
       skip(input.organizationId, type, "blocked_missing_source", "正式節日日期來源尚未完成，不建立節慶排程"),
