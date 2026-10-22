@@ -20,6 +20,7 @@ import {
   LINE_BROADCAST_CHANNEL_LOCK_MIGRATION_FILE,
   LINE_DELIVERY_TASKS_MIGRATION_FILE,
   LINE_DELIVERY_WORKER_MIGRATION_FILE,
+  LINE_DELIVERY_BROADCAST_QUOTA_UNIFY_MIGRATION_FILE,
 } from "@/lib/persistence/schema-contract";
 
 const ROOT = process.cwd();
@@ -47,7 +48,7 @@ describe("Phase 3D LINE delivery cross-flow quota", () => {
     expect(LINE_TEST_PUSH_OPEN).toBe(false);
     expect(LINE_BROADCAST_DAILY_LIMIT).toBe(3);
     expect(LINE_DELIVERY_QUOTA_COUNTS_OFFICIAL_BROADCASTS).toBe(true);
-    expect(LINE_OFFICIAL_BROADCAST_CONSUMED_COUNTS_DELIVERY_TASKS).toBe(false);
+    expect(LINE_OFFICIAL_BROADCAST_CONSUMED_COUNTS_DELIVERY_TASKS).toBe(true);
     expect(LINE_DELIVERY_BROADCAST_QUOTA_USED_RPC).toBe("line_delivery_broadcast_quota_used");
     expect(LINE_BROADCAST_CONSUMED_ON_TAIPEI_DAY_RPC).toBe("line_broadcast_consumed_on_taipei_day");
 
@@ -66,6 +67,7 @@ describe("Phase 3D LINE delivery cross-flow quota", () => {
     expect(delivery).not.toMatch(/alter table public\.line_broadcasts/);
     expect(ledger).not.toMatch(/create or replace function public\.claim_line_broadcast_send/);
     expect(source(OFFICIAL_CLAIM)).toMatch(/claim_line_broadcast_send/);
+    expect(LINE_DELIVERY_BROADCAST_QUOTA_UNIFY_MIGRATION_FILE).toContain("20261021140000");
   });
 
   it("keeps the cross-flow runner off Preview, Production, and official send", () => {

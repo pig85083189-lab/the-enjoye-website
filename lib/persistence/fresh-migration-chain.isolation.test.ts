@@ -15,6 +15,7 @@ import {
   LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE,
   LINE_DELIVERY_TASKS_MIGRATION_FILE,
   LINE_DELIVERY_WORKER_MIGRATION_FILE,
+  LINE_DELIVERY_BROADCAST_QUOTA_UNIFY_MIGRATION_FILE,
   OPERATIONAL_MIGRATION_FILE,
   STRATEGY_B_RLS_MIGRATION_FILE,
 } from "./schema-contract";
@@ -61,6 +62,7 @@ const EXPECTED_CHAIN = [
   "20261017161000_line_customer_bindings_preview_upgrade.sql",
   "20261021120000_line_delivery_tasks.sql",
   "20261021130000_line_delivery_worker.sql",
+  "20261021140000_line_delivery_broadcast_quota_unify.sql",
 ] as const;
 
 function read(rel: string): string {
@@ -281,5 +283,28 @@ describe("Phase 1C-6H.2P2A fresh migration chain", () => {
     expect(executable).not.toMatch(/drop table public\.line_automation_jobs/i);
     expect(executable).not.toMatch(/api\.line\.me|cron|pg_cron/i);
     expect(executable).not.toMatch(/line_user_id text/);
+  });
+
+  it("unifies official and delivery Broadcast quota without opening send", () => {
+    const sql = read(LINE_DELIVERY_BROADCAST_QUOTA_UNIFY_MIGRATION_FILE);
+    const executable = sql
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    expect(LINE_DELIVERY_BROADCAST_QUOTA_UNIFY_MIGRATION_FILE).toContain("20261021140000");
+    expect(sql).toMatch(/line_broadcast_shared_quota_used/);
+    expect(sql).toMatch(/line_delivery_key_segment/);
+    expect(sql).toMatch(/line_broadcast_take_shared_quota_locks/);
+    expect(sql).toMatch(/87210001/);
+    expect(sql).toMatch(/870121/);
+    expect(sql).toMatch(/create or replace function public\.claim_line_broadcast_send/);
+    expect(sql).toMatch(/line_broadcast_campaign_on_delivery_ledger/);
+    expect(sql).toMatch(/Do not apply on Production until Owner confirms/);
+    expect(executable).not.toMatch(/broadcast_formal_runtime_open\s*=\s*true/);
+    expect(executable).not.toMatch(/alter table public\.line_broadcasts/i);
+    expect(executable).not.toMatch(/drop table public\.line_automation_jobs/i);
+    expect(executable).not.toMatch(/api\.line\.me|cron|pg_cron/i);
+    expect(executable).not.toMatch(/line_user_id text/);
+    expect(executable).not.toMatch(/grant execute on function public\.claim_line_broadcast_send[^;]+anon/);
   });
 });

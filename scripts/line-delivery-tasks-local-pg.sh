@@ -48,6 +48,8 @@ createdb "$DB"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261021120000_line_delivery_tasks.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261021130000_line_delivery_worker.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261021130000_line_delivery_worker.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261021140000_line_delivery_broadcast_quota_unify.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261021140000_line_delivery_broadcast_quota_unify.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/line-delivery-tasks.local-cases.sql"
 
 KEY_A="$("${PSQL[@]}" -At -c "select '10:automation|14:org-the-enjoye|18:appt-keep:day_before|6:cust-2';")"

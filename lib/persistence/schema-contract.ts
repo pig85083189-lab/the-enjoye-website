@@ -135,6 +135,10 @@ export const LINE_DELIVERY_TASKS_MIGRATION_FILE =
 export const LINE_DELIVERY_WORKER_MIGRATION_FILE =
   "supabase/migrations/20261021130000_line_delivery_worker.sql";
 
+/** Shared official + delivery Broadcast Taipei quota. Additive. Does not rewrite 2130000 or official HTTP send. */
+export const LINE_DELIVERY_BROADCAST_QUOTA_UNIFY_MIGRATION_FILE =
+  "supabase/migrations/20261021140000_line_delivery_broadcast_quota_unify.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",

@@ -12,9 +12,9 @@ export const LINE_DELIVERY_BROADCAST_ELIGIBLE_RPC = "line_delivery_broadcast_eli
 export const LINE_DELIVERY_BROADCAST_QUOTA_USED_RPC = "line_delivery_broadcast_quota_used";
 export const LINE_BROADCAST_CONSUMED_ON_TAIPEI_DAY_RPC = "line_broadcast_consumed_on_taipei_day";
 
-/** Delivery quota counts official Broadcast consumption. Official claim does not count delivery tasks. */
+/** Delivery quota counts official Broadcast consumption. Official consumed now unions delivery campaigns. */
 export const LINE_DELIVERY_QUOTA_COUNTS_OFFICIAL_BROADCASTS = true;
-export const LINE_OFFICIAL_BROADCAST_CONSUMED_COUNTS_DELIVERY_TASKS = false;
+export const LINE_OFFICIAL_BROADCAST_CONSUMED_COUNTS_DELIVERY_TASKS = true;
 
 export const LINE_DELIVERY_DB_STATUSES = [
   "planned",

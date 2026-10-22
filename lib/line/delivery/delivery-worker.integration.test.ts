@@ -31,6 +31,7 @@ describe("Phase 3C LINE delivery mock worker", () => {
     const runner = source(RUNNER);
     expect(runner).toMatch(/unix socket/);
     expect(runner).toMatch(/20261021130000_line_delivery_worker\.sql/);
+    expect(runner).toMatch(/20261021140000_line_delivery_broadcast_quota_unify\.sql/);
     expect(runner).not.toMatch(/bfzquejrtgqzzarhkiya|knccefcxncglgpmvgqlp|api\.line\.me/);
   });
 
