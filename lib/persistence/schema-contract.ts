@@ -115,6 +115,30 @@ export const LINE_BROADCAST_CHANNEL_LOCK_MIGRATION_FILE =
 export const LINE_AUTOMATION_RULES_MIGRATION_FILE =
   "supabase/migrations/20261017120000_line_automation_rules.sql";
 
+/** LINE automation schedule engine. Additive upgrade of Phase 2B jobs. Default closed. Do not apply on Production until Owner confirms. */
+export const LINE_AUTOMATION_SCHEDULE_MIGRATION_FILE =
+  "supabase/migrations/20261017140000_line_automation_schedule_engine.sql";
+
+/** LINE customer bindings for trusted recipient verification. Additive. Default closed. Do not apply on Production until Owner confirms. */
+export const LINE_CUSTOMER_BINDINGS_MIGRATION_FILE =
+  "supabase/migrations/20261017160000_line_customer_bindings.sql";
+
+/** Preview leftover bind-table upgrade. Re-applies the compatible 160000 body. Additive. Do not apply on Production until Owner confirms. */
+export const LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE =
+  "supabase/migrations/20261017161000_line_customer_bindings_preview_upgrade.sql";
+
+/** Shared LINE delivery task ledger. Additive. Default closed. Do not apply on Production until Owner confirms. */
+export const LINE_DELIVERY_TASKS_MIGRATION_FILE =
+  "supabase/migrations/20261021120000_line_delivery_tasks.sql";
+
+/** LINE delivery mock worker, owner-safe records, and broadcast quota lock. Additive. Does not rewrite 2120000 or Broadcast. */
+export const LINE_DELIVERY_WORKER_MIGRATION_FILE =
+  "supabase/migrations/20261021130000_line_delivery_worker.sql";
+
+/** Shared official + delivery Broadcast Taipei quota. Additive. Does not rewrite 2130000 or official HTTP send. */
+export const LINE_DELIVERY_BROADCAST_QUOTA_UNIFY_MIGRATION_FILE =
+  "supabase/migrations/20261021140000_line_delivery_broadcast_quota_unify.sql";
+
 export const LINE_TABLES = [
   "line_official_accounts",
   "line_official_account_secrets",
@@ -128,6 +152,13 @@ export const LINE_TABLES = [
   "line_webhook_events",
   "line_broadcast_oneshot_permits",
   "line_automation_rules",
+  "line_automation_jobs",
+  "line_customer_bindings",
+  "line_customer_binding_secrets",
+  "line_customer_binding_rebinds",
+  "line_customer_bind_challenges",
+  "line_customer_bind_challenge_secrets",
+  "line_delivery_tasks",
 ] as const;
 
 /** Must never appear as stored columns (second books). */
