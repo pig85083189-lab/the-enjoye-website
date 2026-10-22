@@ -33,6 +33,38 @@ values
 on conflict (organization_id) do update
 set broadcast_enabled = excluded.broadcast_enabled;
 
+-- Mirror the official helper so quota_used takes the real function path.
+-- Counts only line_broadcasts. Never counts line_delivery_tasks.
+create or replace function public.line_broadcast_consumed_on_taipei_day(
+  p_organization_id text,
+  p_at timestamptz default now()
+)
+returns integer
+language sql
+stable
+set search_path = public
+as $$
+  select count(*)::integer
+  from public.line_broadcasts s
+  where s.organization_id = p_organization_id
+    and (
+      (
+        s.send_claimed_at is not null
+        and (s.send_claimed_at at time zone 'Asia/Taipei')::date
+          = (p_at at time zone 'Asia/Taipei')::date
+      )
+      or (
+        s.send_claimed_at is null
+        and s.status in ('accepted', 'sending', 'pending_confirmation')
+        and (coalesce(s.confirmed_at, s.created_at) at time zone 'Asia/Taipei')::date
+          = (p_at at time zone 'Asia/Taipei')::date
+      )
+    );
+$$;
+
+revoke all on function public.line_broadcast_consumed_on_taipei_day(text, timestamptz)
+  from public, anon, authenticated;
+
 insert into public.staff_auth_memberships (
   id, user_id, auth_user_id, organization_id, role, display_name, is_active
 ) values (
