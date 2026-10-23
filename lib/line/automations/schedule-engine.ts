@@ -2,6 +2,7 @@ import { isLineAutomationId, lineAutomationBuiltinTimingIds } from "@/lib/line/a
 import { isReminderEligibleStatus } from "@/lib/line/automations/appointment-reminder-schedule";
 import { LINE_AUTOMATION_SEND_OPEN } from "@/lib/line/automations/production-safe-flags";
 import {
+  LINE_BIRTHDAY_ANNUAL_FINGERPRINT_READY,
   LINE_COUPON_CATALOG_READY,
   LINE_HOLIDAY_CALENDAR_READY,
   LINE_AUTOMATION_SCHEDULE_TIMEZONE,
@@ -16,7 +17,9 @@ import {
   type LineAutomationSkippedCandidate,
 } from "@/lib/line/automations/schedule-types";
 import {
+  annualBirthdayJobFingerprint,
   automationJobFingerprint,
+  birthdayOccurrenceYmdForFireAt,
   computeAutomationFireAt,
 } from "@/lib/line/automations/schedule-fire-at";
 import type { LineAutomationId } from "@/lib/line/automations/types";
@@ -65,7 +68,25 @@ function propose(input: {
   fireAt: string;
   template: string;
   recipientReady: boolean;
+  birthdayYmd?: string | null;
 }): LineAutomationProposedJob {
+  let fingerprint = automationJobFingerprint(input);
+  if (input.automationType === "birthday_greeting" && LINE_BIRTHDAY_ANNUAL_FINGERPRINT_READY) {
+    const occurrenceYmd = input.birthdayYmd
+      ? birthdayOccurrenceYmdForFireAt({
+          birthdayYmd: input.birthdayYmd,
+          timingId: input.timingId as "birthday_morning" | "days_before_3",
+          fireAt: input.fireAt,
+        })
+      : null;
+    if (!occurrenceYmd) throw new Error("Invalid birthday occurrence");
+    fingerprint = annualBirthdayJobFingerprint({
+      organizationId: input.organizationId,
+      customerId: input.customerId,
+      timingId: input.timingId,
+      occurrenceYmd,
+    });
+  }
   return {
     organizationId: input.organizationId,
     automationType: input.automationType,
@@ -73,7 +94,7 @@ function propose(input: {
     eventId: input.eventId,
     customerId: input.customerId,
     timingId: input.timingId,
-    fingerprint: automationJobFingerprint(input),
+    fingerprint,
     fireAt: input.fireAt,
     messageSnapshot: input.template,
     recipientReady: input.recipientReady,
@@ -388,6 +409,7 @@ function planBirthdays(input: {
       eventKind: "customer_birthday",
       eventId: customer.id,
       customerId: customer.id,
+      birthdayYmd: customer.birthdayYmd,
       timings: timings.builtin,
       template: rule.template,
       recipientReady: customer.verifiedLineBinding === true,
@@ -626,6 +648,7 @@ function pushTimingJobs(input: {
   timings: string[];
   template: string;
   recipientReady: boolean;
+  birthdayYmd?: string | null;
   nowMs: number;
   fireAtFor: (timingId: string) => string | null;
   proposed: LineAutomationProposedJob[];
@@ -664,6 +687,7 @@ function pushTimingJobs(input: {
         fireAt,
         template: input.template,
         recipientReady: input.recipientReady,
+        birthdayYmd: input.birthdayYmd,
       }),
     );
   }
