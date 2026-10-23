@@ -25,6 +25,18 @@ describe("Phase 3 annual birthday identity (not yet wired to SQL)", () => {
     expect(identity("2027-02-28")).toContain("|2027");
   });
 
+  it.each([
+    { organizationId: "other-org", customerId: "customer-1", timingId: "birthday_morning" },
+    { organizationId: "org-a|birthday_greeting", customerId: "customer-1", timingId: "birthday_morning" },
+    { organizationId: "org-a", customerId: "customer|1", timingId: "birthday_morning" },
+    { organizationId: "org-a", customerId: "", timingId: "birthday_morning" },
+    { organizationId: "org-a", customerId: "customer-1", timingId: "not-a-timing" },
+  ])("rejects malformed identity components: %j", (components) => {
+    expect(() => annualBirthdayJobFingerprint({
+      ...components, occurrenceYmd: "2027-11-01",
+    })).toThrow("Invalid birthday fingerprint input");
+  });
+
   it("rejects invalid occurrence dates", () => {
     expect(() => identity("2027-02-29")).toThrow("Invalid birthday occurrence");
   });
