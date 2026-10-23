@@ -53,6 +53,41 @@ jobs:
               statements = parse_sql(path.read_text(encoding="utf-8"))
               print(f"{path.name}: parsed {len(statements)} PostgreSQL statements")
           PY
+      - name: Verify birthday identity helper on disposable PostgreSQL
+        run: |
+          docker run --rm -d --name line-phase3-postgres -e POSTGRES_PASSWORD=localtest -e POSTGRES_DB=line_phase3_test postgres:16-alpine
+          trap 'docker rm -f line-phase3-postgres >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do
+            if docker exec line-phase3-postgres pg_isready -U postgres -d line_phase3_test >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test -c 'CREATE ROLE anon; CREATE ROLE authenticated;'
+          docker exec -i line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test < supabase/migrations/20261023110000_line_automation_birthday_fingerprint_v2_helper.sql
+          docker exec -i line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test <<'SQL'
+          DO $test$
+          DECLARE actual text;
+          BEGIN
+            SELECT public.line_automation_birthday_fingerprint_v2('org-test', 'customer-1', 'birthday_morning', '2027-02-28'::date) INTO actual;
+            IF actual IS DISTINCT FROM 'org-test|birthday_greeting|customer-1|birthday_morning|2027' THEN
+              RAISE EXCEPTION 'unexpected annual birthday identity: %', actual;
+            END IF;
+            SELECT public.line_automation_birthday_fingerprint_v2('org-test', 'customer-1', 'days_before_3', '2027-01-01'::date) INTO actual;
+            IF actual IS DISTINCT FROM 'org-test|birthday_greeting|customer-1|days_before_3|2027' THEN
+              RAISE EXCEPTION 'unexpected cross-year birthday identity: %', actual;
+            END IF;
+            BEGIN
+              PERFORM public.line_automation_birthday_fingerprint_v2('org-test|bad', 'customer-1', 'birthday_morning', '2027-01-01'::date);
+              RAISE EXCEPTION 'invalid organization was accepted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+            BEGIN
+              PERFORM public.line_automation_birthday_fingerprint_v2('org-test', 'customer-1', 'unknown', '2027-01-01'::date);
+              RAISE EXCEPTION 'invalid timing was accepted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+          END;
+          $test$;
+          SQL
       - name: TypeScript static check
         run: npx tsc --noEmit
       - name: Run Phase 3 isolation suite
