@@ -74,6 +74,24 @@ export function automationJobFingerprint(input: {
   ].join("|");
 }
 
+/** Birthday occurrence identity for a single Taipei calendar year.
+ * This is not yet used by the schedule planner: the database validator in
+ * 20261017140000 requires the legacy four-part fingerprint. Switch both
+ * sides atomically in an additive migration before enabling annual jobs.
+ */
+export function annualBirthdayJobFingerprint(input: {
+  organizationId: string;
+  customerId: string;
+  timingId: string;
+  occurrenceYmd: string;
+}): string {
+  if (!isValidTaipeiYmd(input.occurrenceYmd)) {
+    throw new Error("Invalid birthday occurrence");
+  }
+  const year = input.occurrenceYmd.slice(0, 4);
+  return [input.organizationId, "birthday_greeting", input.customerId, input.timingId, year].join("|");
+}
+
 export function computeAutomationFireAt(input: {
   automationType: LineAutomationId;
   timingId: string;
