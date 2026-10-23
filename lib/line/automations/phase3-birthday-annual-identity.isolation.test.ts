@@ -61,6 +61,27 @@ describe("Phase 3 annual birthday identity (not yet wired to SQL)", () => {
     })).toBe("2027-02-28");
   });
 
+  it.each([
+    "2027-01-01T03:00:00.000Z",
+    "2027-01-01T02:00:30.000Z",
+    "2027-01-01T02:00:00",
+    "not-a-date",
+  ])("rejects noncanonical birthday send timestamp %s", (fireAt) => {
+    expect(birthdayOccurrenceYmdForFireAt({
+      birthdayYmd: "1990-01-01",
+      timingId: "birthday_morning",
+      fireAt,
+    })).toBeNull();
+  });
+
+  it("accepts a correctly offset Taipei morning timestamp", () => {
+    expect(birthdayOccurrenceYmdForFireAt({
+      birthdayYmd: "1990-01-01",
+      timingId: "birthday_morning",
+      fireAt: "2027-01-01T10:00:00+08:00",
+    })).toBe("2027-01-01");
+  });
+
   it("rejects invalid occurrence dates", () => {
     expect(() => identity("2027-02-29")).toThrow("Invalid birthday occurrence");
   });
