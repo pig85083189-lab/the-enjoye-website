@@ -110,7 +110,7 @@ export function birthdayOccurrenceYmdForFireAt(input: {
 }): string | null {
   if (!isValidTaipeiYmd(input.birthdayYmd) ||
       (input.timingId !== "birthday_morning" && input.timingId !== "days_before_3") ||
-      !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(input.fireAt)) return null;
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(input.fireAt)) return null;
   const sendMs = Date.parse(input.fireAt);
   if (!Number.isFinite(sendMs)) return null;
   const sendLocal = utcIsoToTaipeiLocal(new Date(sendMs).toISOString());
