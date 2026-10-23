@@ -35,8 +35,12 @@ jobs:
       # Use a disposable runner-only resolution; do not rewrite the lockfile
       # or alter production dependencies in this isolated test workflow.
       - name: Install dependencies in isolated runner
+        id: install
         run: npm install --ignore-scripts --no-save --package-lock=false --no-audit --no-fund
+      - name: Generate Next.js route types without building or deploying
+        run: npx next typegen
       - name: TypeScript static check
         run: npx tsc --noEmit
       - name: Run Phase 3 isolation suite
+        if: always() && steps.install.outcome == 'success'
         run: npm run test:line-phase3
