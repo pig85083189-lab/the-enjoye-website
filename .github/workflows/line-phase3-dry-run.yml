@@ -1,0 +1,30 @@
+name: LINE Phase 3 isolated tests
+
+# Manual-only: never deploys, sends LINE, applies migrations, or uses secrets.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: "true"
+      LINE_AUTOMATION_SEND_OPEN: "false"
+    steps:
+      - name: Check out current branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: TypeScript static check
+        run: npx tsc --noEmit
+      - name: Run Phase 3 isolation suite
+        run: npm run test:line-phase3
