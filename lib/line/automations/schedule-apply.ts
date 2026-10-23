@@ -58,6 +58,20 @@ export function diffLineAutomationSchedule(input: {
       )
       .map((job) => job.fingerprint),
   );
+  // An existing legacy birthday job and a new annual fingerprint represent
+  // the same customer/timing occurrence. Never silently cancel + reinsert
+  // during cutover: the SQL cancel guard deliberately rejects cancellation
+  // while that birthday remains eligible. Require an explicit migration.
+  const legacyBirthdayCollisions = new Set(
+    existing
+      .filter((job) => job.automationType === "birthday_greeting")
+      .map((job) => [job.eventId, job.customerId, job.timingId].join("|")),
+  );
+  const isAnnualBirthdayCollision = (job: LineAutomationProposedJob): boolean =>
+    job.automationType === "birthday_greeting" &&
+    job.fingerprint.split("|").length === 5 &&
+    legacyBirthdayCollisions.has([job.eventId, job.customerId, job.timingId].join("|")) &&
+    !existing.some((row) => row.fingerprint === job.fingerprint);
   const insert: LineAutomationProposedJob[] = [];
   const update: Array<LineAutomationProposedJob & { id: string }> = [];
   const cancel: LineAutomationExistingJob[] = [];
@@ -71,6 +85,16 @@ export function diffLineAutomationSchedule(input: {
     }
     const next = desired.get(job.fingerprint);
     if (!next) {
+      if (job.automationType === "birthday_greeting" &&
+          [...desired.values()].some((candidate) =>
+            candidate.automationType === "birthday_greeting" &&
+            candidate.eventId === job.eventId &&
+            candidate.customerId === job.customerId &&
+            candidate.timingId === job.timingId &&
+            candidate.fingerprint !== job.fingerprint)) {
+        unchanged.push(job);
+        continue;
+      }
       if (shouldCancelExistingJob({ job, desired, plan: input.plan })) {
         cancel.push(job);
       } else {
@@ -95,6 +119,7 @@ export function diffLineAutomationSchedule(input: {
   }
 
   for (const job of desired.values()) {
+    if (isAnnualBirthdayCollision(job)) continue;
     const existingStatus = existing.find((row) => row.fingerprint === job.fingerprint)?.status;
     if (blocked.has(job.fingerprint) || !canInsertAutomationJob(existingStatus)) continue;
     insert.push(job);
