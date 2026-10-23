@@ -31,8 +31,11 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+      # The existing lockfile has a picomatch hoisting inconsistency.
+      # Use a disposable runner-only resolution; do not rewrite the lockfile
+      # or alter production dependencies in this isolated test workflow.
+      - name: Install dependencies in isolated runner
+        run: npm install --ignore-scripts --no-save --package-lock=false --no-audit --no-fund
       - name: TypeScript static check
         run: npx tsc --noEmit
       - name: Run Phase 3 isolation suite
