@@ -105,7 +105,7 @@ export function diffLineAutomationSchedule(input: {
             candidate.eventId === job.eventId &&
             candidate.customerId === job.customerId &&
             candidate.timingId === job.timingId &&
-            isAnnualBirthdayCollision(candidate))) {
+            candidate.fingerprint !== job.fingerprint))) {
         unchanged.push(job);
         continue;
       }
