@@ -39,6 +39,20 @@ jobs:
         run: npm install --ignore-scripts --no-save --package-lock=false --no-audit --no-fund
       - name: Generate Next.js route types without building or deploying
         run: npx next typegen
+      - name: Parse Phase 3 SQL migrations without database access
+        run: |
+          python -m pip install --disable-pip-version-check --quiet 'pglast==7.10'
+          python - <<'PY'
+          from pathlib import Path
+          from pglast import parse_sql
+          paths = [
+              Path("supabase/migrations/20261023110000_line_automation_birthday_fingerprint_v2_helper.sql"),
+              Path("supabase/migrations/20261023120000_line_automation_birthday_annual_schedule_contract.sql"),
+          ]
+          for path in paths:
+              statements = parse_sql(path.read_text(encoding="utf-8"))
+              print(f"{path.name}: parsed {len(statements)} PostgreSQL statements")
+          PY
       - name: TypeScript static check
         run: npx tsc --noEmit
       - name: Run Phase 3 isolation suite
