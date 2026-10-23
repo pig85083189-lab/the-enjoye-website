@@ -11,7 +11,8 @@
     "test:isolation": "vitest run lib/tenant/tenant-isolation.isolation.test.ts",
     "test:reminder-dry-run": "vitest run lib/line/automations/appointment-reminder-dry-run.isolation.test.ts",
     "test:line-test-push-prep": "vitest run lib/line/automations/test-push-oneshot-prep.isolation.test.ts",
-    "test:line-test-push-acceptance": "vitest run lib/line/automations/test-push-oneshot-acceptance.isolation.test.ts"
+    "test:line-test-push-acceptance": "vitest run lib/line/automations/test-push-oneshot-acceptance.isolation.test.ts",
+    "test:line-phase3": "vitest run lib/line/automations/phase3-*.isolation.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
