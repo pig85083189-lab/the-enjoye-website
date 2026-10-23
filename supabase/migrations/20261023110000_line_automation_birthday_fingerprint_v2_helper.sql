@@ -16,9 +16,9 @@ immutable
 set search_path = public
 as $$
 begin
-  if p_organization_id is null or p_organization_id not like 'org-%'
-    or nullif(btrim(p_customer_id), '') is null
-    or p_timing_id not in ('birthday_morning', 'days_before_3')
+  if p_organization_id is null or p_organization_id not like 'org-%'\n    or position('|' in p_organization_id) > 0
+    or nullif(btrim(p_customer_id), '') is null\n    or position('|' in p_customer_id) > 0
+    or p_timing_id is null\n    or p_timing_id not in ('birthday_morning', 'days_before_3')
     or p_occurrence_date is null
   then
     raise exception 'invalid birthday fingerprint input' using errcode = '22023';
