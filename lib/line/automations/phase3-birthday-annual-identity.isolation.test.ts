@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { annualBirthdayJobFingerprint, nextBirthdayYmd } from "@/lib/line/automations/schedule-fire-at";
+import { annualBirthdayJobFingerprint, birthdayOccurrenceYmdForFireAt, nextBirthdayYmd } from "@/lib/line/automations/schedule-fire-at";
 
 describe("Phase 3 annual birthday identity (not yet wired to SQL)", () => {
   const identity = (occurrenceYmd: string) => annualBirthdayJobFingerprint({
@@ -35,6 +35,30 @@ describe("Phase 3 annual birthday identity (not yet wired to SQL)", () => {
     expect(() => annualBirthdayJobFingerprint({
       ...components, occurrenceYmd: "2027-11-01",
     })).toThrow("Invalid birthday fingerprint input");
+  });
+
+  it("derives January birthday year from December advance reminder", () => {
+    expect(birthdayOccurrenceYmdForFireAt({
+      birthdayYmd: "1990-01-01",
+      timingId: "days_before_3",
+      fireAt: "2026-12-29T02:00:00.000Z",
+    })).toBe("2027-01-01");
+  });
+
+  it("rejects send dates that do not correspond to the birthday", () => {
+    expect(birthdayOccurrenceYmdForFireAt({
+      birthdayYmd: "1990-01-01",
+      timingId: "birthday_morning",
+      fireAt: "2026-12-29T02:00:00.000Z",
+    })).toBeNull();
+  });
+
+  it("resolves leap-day birthday observed on February 28 in non-leap years", () => {
+    expect(birthdayOccurrenceYmdForFireAt({
+      birthdayYmd: "2000-02-29",
+      timingId: "birthday_morning",
+      fireAt: "2027-02-28T02:00:00.000Z",
+    })).toBe("2027-02-28");
   });
 
   it("rejects invalid occurrence dates", () => {
