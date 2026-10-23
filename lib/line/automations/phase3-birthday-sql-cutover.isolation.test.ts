@@ -6,9 +6,24 @@ import { describe, expect, it } from "vitest";
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 const sql = read("supabase/migrations/20261023120000_line_automation_birthday_annual_schedule_contract.sql");
 const flags = read("lib/line/automations/schedule-types.ts");
+const birthdayHelperSql = read("supabase/migrations/20261023110000_line_automation_birthday_fingerprint_v2_helper.sql");
+const applyDiff = read("lib/line/automations/schedule-apply.ts");
+const validation = read("lib/line/automations/schedule-validate.ts");
 const planner = read("lib/line/automations/schedule-engine.ts");
 
 describe("Phase 3 birthday SQL cutover contract", () => {
+  it("keeps the birthday helper valid SQL text without escaped newline tokens", () => {
+    expect(birthdayHelperSql).not.toContain(String.fromCharCode(92, 110));
+    expect(birthdayHelperSql).toContain("create or replace function public.line_automation_birthday_fingerprint_v2(");
+    expect(birthdayHelperSql).toContain("p_occurrence_date is null");
+  });
+
+  it("keeps JS validation legacy-only while the annual cutover flag is false", () => {
+    expect(flags).toMatch(/LINE_BIRTHDAY_ANNUAL_FINGERPRINT_READY\\s*=\\s*false/);
+    expect(validation).toContain("if (fingerprint !== expectedFingerprint)");
+    expect(applyDiff).toContain("isAnnualBirthdayCollision(job)");
+  });
+
   it("keeps the annual identity disabled until database verification", () => {
     expect(flags).toMatch(/LINE_BIRTHDAY_ANNUAL_FINGERPRINT_READY\s*=\s*false/);
     expect(planner).toContain("LINE_BIRTHDAY_ANNUAL_FINGERPRINT_READY");
