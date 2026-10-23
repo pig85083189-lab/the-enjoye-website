@@ -97,6 +97,30 @@ export function annualBirthdayJobFingerprint(input: {
   return [input.organizationId, "birthday_greeting", input.customerId, input.timingId, year].join("|");
 }
 
+/**
+ * Resolve the birthday occurrence from a proposed send time. Advance reminders
+ * can be sent in December for a January birthday, so the send year is not
+ * necessarily the birthday occurrence year.
+ * Preparatory only: the legacy schedule SQL contract is still active.
+ */
+export function birthdayOccurrenceYmdForFireAt(input: {
+  birthdayYmd: string;
+  timingId: "birthday_morning" | "days_before_3";
+  fireAt: string;
+}): string | null {
+  if (!isValidTaipeiYmd(input.birthdayYmd)) return null;
+  const sendMs = Date.parse(input.fireAt);
+  if (!Number.isFinite(sendMs)) return null;
+  const sendYmd = utcIsoToTaipeiLocal(new Date(sendMs).toISOString()).dateYmd;
+  const occurrenceYmd = input.timingId === "days_before_3"
+    ? addTaipeiCalendarDays(sendYmd, 3)
+    : sendYmd;
+  if (!isValidTaipeiYmd(occurrenceYmd)) return null;
+  const year = Number(occurrenceYmd.slice(0, 4));
+  const expected = resolveMonthDay(year, input.birthdayYmd.slice(5, 7), input.birthdayYmd.slice(8, 10));
+  return expected === occurrenceYmd ? occurrenceYmd : null;
+}
+
 export function computeAutomationFireAt(input: {
   automationType: LineAutomationId;
   timingId: string;
