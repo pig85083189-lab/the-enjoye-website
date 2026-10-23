@@ -88,6 +88,11 @@ export function annualBirthdayJobFingerprint(input: {
   if (!isValidTaipeiYmd(input.occurrenceYmd)) {
     throw new Error("Invalid birthday occurrence");
   }
+  if (!input.organizationId.startsWith("org-") || input.organizationId.includes("|") ||
+      !input.customerId.trim() || input.customerId.includes("|") ||
+      !["birthday_morning", "days_before_3"].includes(input.timingId)) {
+    throw new Error("Invalid birthday fingerprint input");
+  }
   const year = input.occurrenceYmd.slice(0, 4);
   return [input.organizationId, "birthday_greeting", input.customerId, input.timingId, year].join("|");
 }
