@@ -19,7 +19,7 @@ describe("Phase 3 birthday SQL cutover contract", () => {
   });
 
   it("keeps JS validation legacy-only while the annual cutover flag is false", () => {
-    expect(flags).toMatch(/LINE_BIRTHDAY_ANNUAL_FINGERPRINT_READY\\s*=\\s*false/);
+    expect(flags).toMatch(/LINE_BIRTHDAY_ANNUAL_FINGERPRINT_READY\s*=\s*false/);
     expect(validation).toContain("if (fingerprint !== expectedFingerprint)");
     expect(applyDiff).toContain("isAnnualBirthdayCollision(job)");
   });
