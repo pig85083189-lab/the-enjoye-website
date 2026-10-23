@@ -108,10 +108,14 @@ export function birthdayOccurrenceYmdForFireAt(input: {
   timingId: "birthday_morning" | "days_before_3";
   fireAt: string;
 }): string | null {
-  if (!isValidTaipeiYmd(input.birthdayYmd)) return null;
+  if (!isValidTaipeiYmd(input.birthdayYmd) ||
+      (input.timingId !== "birthday_morning" && input.timingId !== "days_before_3") ||
+      !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(input.fireAt)) return null;
   const sendMs = Date.parse(input.fireAt);
   if (!Number.isFinite(sendMs)) return null;
-  const sendYmd = utcIsoToTaipeiLocal(new Date(sendMs).toISOString()).dateYmd;
+  const sendLocal = utcIsoToTaipeiLocal(new Date(sendMs).toISOString());
+  if (sendLocal.hm !== LINE_AUTOMATION_MORNING_HM || sendMs % 60_000 !== 0) return null;
+  const sendYmd = sendLocal.dateYmd;
   const occurrenceYmd = input.timingId === "days_before_3"
     ? addTaipeiCalendarDays(sendYmd, 3)
     : sendYmd;
