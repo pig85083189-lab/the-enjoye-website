@@ -44,6 +44,32 @@ describe("Phase 3 appointment reschedule and cancellation isolation", () => {
     expect(result.cancel.map(job => job.id)).toEqual(["job-1"]);
   });
 
+  it("does not cancel when appointment source was not scanned", () => {
+    const unscanned = {
+      ...plan([]),
+      cancelPolicy: { allowCancel: true, disabledTypes: [], scannedEvents: [] },
+    };
+    const result = diffLineAutomationSchedule({ organizationId, plan: unscanned, existingJobs: [existing] });
+    expect(result.cancel).toHaveLength(0);
+    expect(result.unchanged.map(job => job.id)).toContain("job-1");
+  });
+
+  it("does not touch jobs belonging to another organization", () => {
+    const otherOrg = { ...existing, organizationId: "org-other" };
+    const result = diffLineAutomationSchedule({ organizationId, plan: plan([]), existingJobs: [otherOrg] });
+    expect(result.cancel).toHaveLength(0);
+    expect(result.update).toHaveLength(0);
+    expect(result.unchanged).toHaveLength(0);
+  });
+
+  it("never cancels a claimed reminder even if the appointment was canceled", () => {
+    const result = diffLineAutomationSchedule({
+      organizationId, plan: plan([]), existingJobs: [{ ...existing, status: "claimed" }],
+    });
+    expect(result.cancel).toHaveLength(0);
+    expect(result.update).toHaveLength(0);
+  });
+
   it.each(["claimed", "accepted", "pending_confirmation", "reconciled"] as const)(
     "does not mutate or resend a %s reminder",
     (status) => {
