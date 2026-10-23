@@ -1,7 +1,16 @@
 name: LINE Phase 3 isolated tests
 
-# Manual-only: never deploys, sends LINE, applies migrations, or uses secrets.
+# Read-only PR and manual checks: never deploys, sends LINE, applies migrations, or uses secrets.
 on:
+  pull_request:
+    branches:
+      - cursor/line-automation-phase-2a-schedule-7c7d
+    paths:
+      - 'lib/line/automations/**'
+      - 'supabase/migrations/20261023*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/line-phase3-dry-run.yml'
   workflow_dispatch:
 
 permissions:
