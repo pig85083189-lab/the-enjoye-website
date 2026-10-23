@@ -22,7 +22,9 @@ describe("Phase 3 safe rollout blockers", () => {
     });
     expect(newFp).not.toBe(oldFp);
     expect(legacySql).toContain("p_organization_id || '|' || v_type || '|' || v_event_id || '|' || v_timing");
-    expect(planner).toContain("fingerprint: automationJobFingerprint(input)");
+    expect(planner).toContain("LINE_BIRTHDAY_ANNUAL_FINGERPRINT_READY");
+    expect(planner).toContain("automationJobFingerprint({");
+    expect(holidayTypes).toMatch(/LINE_BIRTHDAY_ANNUAL_FINGERPRINT_READY\s*=\s*false/);
     // Remove this guard only in the same PR that migrates SQL validation and planner.
   });
 
