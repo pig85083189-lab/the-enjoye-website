@@ -41,7 +41,7 @@ jobs:
         run: npx next typegen
       - name: Parse Phase 3 SQL migrations without database access
         run: |
-          python -m pip install --disable-pip-version-check --quiet 'pglast==7.10'
+          python -m pip install --disable-pip-version-check --quiet 'pglast==7.20'
           python - <<'PY'
           from pathlib import Path
           from pglast import parse_sql
