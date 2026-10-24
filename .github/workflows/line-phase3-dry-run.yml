@@ -293,6 +293,29 @@ jobs:
             IF (SELECT count(*) FROM public.line_automation_jobs) <> 1 THEN
               RAISE EXCEPTION 'invalid requests changed schedule job count';
             END IF;
+            INSERT INTO public.line_automation_jobs (
+              id, organization_id, automation_type, event_kind, event_id,
+              customer_id, timing_id, fingerprint, scheduled_for,
+              status, request_id, message_snapshot, recipient_ready
+            ) VALUES (
+              'laj-pending-test', 'org-test', 'birthday_greeting', 'customer_birthday', 'customer-2',
+              'customer-2', 'birthday_morning', 'org-test|birthday_greeting|customer-2|birthday_morning',
+              '2027-04-01 10:00:00+08', 'scheduled', 'req-pending', 'Test message', false
+            );
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"cancel":[{"organization_id":"org-test","id":"laj-pending-test","fingerprint":"forged"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'forged cancellation fingerprint unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+            IF NOT EXISTS (
+              SELECT 1 FROM public.line_automation_jobs
+              WHERE id = 'laj-pending-test' AND status = 'scheduled'
+            ) THEN
+              RAISE EXCEPTION 'forged cancellation changed scheduled job';
+            END IF;
           END;
           $test$;
           SQL
