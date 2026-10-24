@@ -64,6 +64,17 @@ jobs:
           docker exec line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test -c 'CREATE ROLE anon; CREATE ROLE authenticated;'
           docker exec -i line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test < supabase/migrations/20261023110000_line_automation_birthday_fingerprint_v2_helper.sql
           docker exec -i line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test <<'SQL'
+          DO $security$
+          BEGIN
+            IF has_function_privilege('anon', 'public.line_automation_birthday_fingerprint_v2(text,text,text,date)', 'EXECUTE')
+              OR has_function_privilege('authenticated', 'public.line_automation_birthday_fingerprint_v2(text,text,text,date)', 'EXECUTE')
+            THEN
+              RAISE EXCEPTION 'birthday helper unexpectedly exposed to API roles';
+            END IF;
+          END;
+          $security$;
+          SQL
+          docker exec -i line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test <<'SQL'
           DO $test$
           DECLARE actual text;
           BEGIN
