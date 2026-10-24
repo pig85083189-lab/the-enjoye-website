@@ -329,6 +329,57 @@ jobs:
             END IF;
           END;
           $test$;
+          -- Positive-path integration fixture: explicit trusted customer and birthday sources.
+          CREATE OR REPLACE FUNCTION public.line_automation_schedule_event_kind(text)
+            RETURNS text LANGUAGE sql STABLE AS 'SELECT CASE WHEN $1 = ''birthday_greeting'' THEN ''customer_birthday'' ELSE NULL END';
+          CREATE OR REPLACE FUNCTION public.line_automation_schedule_timing_allowed(text,text)
+            RETURNS boolean LANGUAGE sql STABLE AS 'SELECT $1 = ''birthday_greeting'' AND $2 = ''birthday_morning''';
+          CREATE OR REPLACE FUNCTION public.line_automation_schedule_customer_belongs(text,text)
+            RETURNS boolean LANGUAGE sql STABLE AS 'SELECT $1 = ''org-test'' AND $2 = ''customer-positive''';
+          CREATE OR REPLACE FUNCTION public.line_automation_schedule_event_belongs(text,text,text,text,text)
+            RETURNS boolean LANGUAGE sql STABLE AS 'SELECT $1 = ''org-test'' AND $2 = ''birthday_greeting'' AND $3 = ''customer_birthday'' AND $4 = ''customer-positive'' AND $5 = ''customer-positive''';
+          CREATE OR REPLACE FUNCTION public.line_automation_schedule_expected_fire_at(text,text,text,text,text,text)
+            RETURNS timestamptz LANGUAGE sql STABLE AS 'SELECT CASE WHEN $1 = ''org-test'' AND $4 = ''customer-positive'' THEN ''2027-05-08T02:00:00Z''::timestamptz ELSE NULL END';
+          CREATE FUNCTION public.line_automation_schedule_recipient_ready(text,text)
+            RETURNS boolean LANGUAGE sql STABLE AS 'SELECT false';
+          DO $positive$
+          DECLARE
+            payload jsonb := jsonb_build_object(
+              'insert', jsonb_build_array(jsonb_build_object(
+                'organization_id','org-test','automation_type','birthday_greeting',
+                'event_kind','customer_birthday','event_id','customer-positive',
+                'customer_id','customer-positive','timing_id','birthday_morning',
+                'fingerprint','org-test|birthday_greeting|customer-positive|birthday_morning|2027',
+                'scheduled_for','2027-05-08T02:00:00Z','message_snapshot','Happy birthday'
+              ))
+            );
+            first_result jsonb;
+            second_result jsonb;
+          BEGIN
+            SELECT public.apply_line_automation_schedule('org-test',payload) INTO first_result;
+            IF (first_result->>'inserted')::int <> 1 OR first_result->>'sent_line' IS DISTINCT FROM 'false' THEN
+              RAISE EXCEPTION 'valid annual birthday insert failed: %', first_result;
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM public.line_automation_jobs
+              WHERE organization_id = 'org-test'
+                AND customer_id = 'customer-positive'
+                AND fingerprint = 'org-test|birthday_greeting|customer-positive|birthday_morning|2027'
+                AND status = 'pending_recipient'
+                AND recipient_ready IS FALSE
+            ) THEN
+              RAISE EXCEPTION 'valid birthday job not persisted as pending recipient';
+            END IF;
+            SELECT public.apply_line_automation_schedule('org-test',payload) INTO second_result;
+            IF (second_result->>'inserted')::int <> 0 THEN
+              RAISE EXCEPTION 'duplicate annual birthday was inserted: %', second_result;
+            END IF;
+            IF (SELECT count(*) FROM public.line_automation_jobs
+                WHERE customer_id = 'customer-positive') <> 1 THEN
+              RAISE EXCEPTION 'duplicate annual birthday job persisted';
+            END IF;
+          END;
+          $positive$;
           SQL
       - name: TypeScript static check
         run: npx tsc --noEmit
