@@ -316,6 +316,17 @@ jobs:
             ) THEN
               RAISE EXCEPTION 'forged cancellation changed scheduled job';
             END IF;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"insert":[{"organization_id":"org-test","automation_type":"birthday_greeting","event_kind":"customer_birthday","event_id":"customer-3","customer_id":"customer-3","timing_id":"birthday_morning","fingerprint":"org-test|birthday_greeting|customer-3|birthday_morning","scheduled_for":"2027-02-28T02:00:00Z","message_snapshot":"Test message"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'unverified customer insert unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+            IF (SELECT count(*) FROM public.line_automation_jobs) <> 2 THEN
+              RAISE EXCEPTION 'rejected unverified customer insert changed job count';
+            END IF;
           END;
           $test$;
           SQL
