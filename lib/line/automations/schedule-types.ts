@@ -4,6 +4,9 @@ import type { LineAutomationId } from "@/lib/line/automations/types";
 export const LINE_AUTOMATION_SCHEDULE_TIMEZONE = "Asia/Taipei";
 export const LINE_AUTOMATION_MORNING_HM = "10:00";
 
+/** Keep annual birthday identity disabled until the additive SQL validation, update and cancellation migration is verified. */
+export const LINE_BIRTHDAY_ANNUAL_FINGERPRINT_READY = false;
+
 export const LINE_HOLIDAY_CALENDAR_READY = false;
 export const LINE_COUPON_CATALOG_READY = false;
 

@@ -58,6 +58,34 @@ export function diffLineAutomationSchedule(input: {
       )
       .map((job) => job.fingerprint),
   );
+  // An existing legacy birthday job and a new annual fingerprint represent
+  // the same customer/timing occurrence. Never silently cancel + reinsert
+  // during cutover: the SQL cancel guard deliberately rejects cancellation
+  // while that birthday remains eligible. Require an explicit migration.
+  const birthdayOccurrenceYear = (scheduledFor: string, timingId: string): number | null => {
+    const timestamp = Date.parse(scheduledFor);
+    if (!Number.isFinite(timestamp)) return null;
+    const advanceDays = timingId === "days_before_3" ? 3 : 0;
+    // Taiwan is UTC+8 without DST. Use the birthday date, not the send date.
+    return new Date(timestamp + (8 * 60 * 60 * 1000) + advanceDays * 86_400_000).getUTCFullYear();
+  };
+  const isAnnualBirthdayCollision = (job: LineAutomationProposedJob): boolean => {
+    if (job.automationType !== "birthday_greeting") return false;
+    const legacyPrefix = [job.organizationId, "birthday_greeting", job.eventId, job.timingId].join("|");
+    const annualYear = job.fingerprint.startsWith(legacyPrefix + "|")
+      ? Number(job.fingerprint.slice(legacyPrefix.length + 1))
+      : NaN;
+    if (!Number.isInteger(annualYear) || annualYear < 1) return false;
+    return existing.some((row) =>
+      row.automationType === "birthday_greeting" &&
+      row.fingerprint === legacyPrefix &&
+      row.eventId === job.eventId &&
+      row.customerId === job.customerId &&
+      row.timingId === job.timingId &&
+      // Unknown dates must fail closed, not silently permit a duplicate.
+      (birthdayOccurrenceYear(row.scheduledFor, row.timingId) ?? annualYear) === annualYear
+    );
+  };
   const insert: LineAutomationProposedJob[] = [];
   const update: Array<LineAutomationProposedJob & { id: string }> = [];
   const cancel: LineAutomationExistingJob[] = [];
@@ -71,6 +99,16 @@ export function diffLineAutomationSchedule(input: {
     }
     const next = desired.get(job.fingerprint);
     if (!next) {
+      if (job.automationType === "birthday_greeting" &&
+          [...desired.values()].some((candidate) =>
+            candidate.automationType === "birthday_greeting" &&
+            candidate.eventId === job.eventId &&
+            candidate.customerId === job.customerId &&
+            candidate.timingId === job.timingId &&
+            candidate.fingerprint !== job.fingerprint)) {
+        unchanged.push(job);
+        continue;
+      }
       if (shouldCancelExistingJob({ job, desired, plan: input.plan })) {
         cancel.push(job);
       } else {
@@ -95,6 +133,7 @@ export function diffLineAutomationSchedule(input: {
   }
 
   for (const job of desired.values()) {
+    if (isAnnualBirthdayCollision(job)) continue;
     const existingStatus = existing.find((row) => row.fingerprint === job.fingerprint)?.status;
     if (blocked.has(job.fingerprint) || !canInsertAutomationJob(existingStatus)) continue;
     insert.push(job);

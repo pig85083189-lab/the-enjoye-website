@@ -74,6 +74,57 @@ export function automationJobFingerprint(input: {
   ].join("|");
 }
 
+/** Birthday occurrence identity for a single Taipei calendar year.
+ * This is not yet used by the schedule planner: the database validator in
+ * 20261017140000 requires the legacy four-part fingerprint. Switch both
+ * sides atomically in an additive migration before enabling annual jobs.
+ */
+export function annualBirthdayJobFingerprint(input: {
+  organizationId: string;
+  customerId: string;
+  timingId: string;
+  occurrenceYmd: string;
+}): string {
+  if (!isValidTaipeiYmd(input.occurrenceYmd)) {
+    throw new Error("Invalid birthday occurrence");
+  }
+  if (!input.organizationId.startsWith("org-") || input.organizationId.includes("|") ||
+      !input.customerId.trim() || input.customerId.includes("|") ||
+      !["birthday_morning", "days_before_3"].includes(input.timingId)) {
+    throw new Error("Invalid birthday fingerprint input");
+  }
+  const year = input.occurrenceYmd.slice(0, 4);
+  return [input.organizationId, "birthday_greeting", input.customerId, input.timingId, year].join("|");
+}
+
+/**
+ * Resolve the birthday occurrence from a proposed send time. Advance reminders
+ * can be sent in December for a January birthday, so the send year is not
+ * necessarily the birthday occurrence year.
+ * Preparatory only: the legacy schedule SQL contract is still active.
+ */
+export function birthdayOccurrenceYmdForFireAt(input: {
+  birthdayYmd: string;
+  timingId: "birthday_morning" | "days_before_3";
+  fireAt: string;
+}): string | null {
+  if (!isValidTaipeiYmd(input.birthdayYmd) ||
+      (input.timingId !== "birthday_morning" && input.timingId !== "days_before_3") ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(input.fireAt)) return null;
+  const sendMs = Date.parse(input.fireAt);
+  if (!Number.isFinite(sendMs)) return null;
+  const sendLocal = utcIsoToTaipeiLocal(new Date(sendMs).toISOString());
+  if (sendLocal.hm !== LINE_AUTOMATION_MORNING_HM || sendMs % 60_000 !== 0) return null;
+  const sendYmd = sendLocal.dateYmd;
+  const occurrenceYmd = input.timingId === "days_before_3"
+    ? addTaipeiCalendarDays(sendYmd, 3)
+    : sendYmd;
+  if (!isValidTaipeiYmd(occurrenceYmd)) return null;
+  const year = Number(occurrenceYmd.slice(0, 4));
+  const expected = resolveMonthDay(year, input.birthdayYmd.slice(5, 7), input.birthdayYmd.slice(8, 10));
+  return expected === occurrenceYmd ? occurrenceYmd : null;
+}
+
 export function computeAutomationFireAt(input: {
   automationType: LineAutomationId;
   timingId: string;

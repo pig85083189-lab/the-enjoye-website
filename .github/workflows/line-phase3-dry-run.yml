@@ -1,0 +1,500 @@
+name: LINE Phase 3 isolated tests
+
+# Read-only PR and manual checks: never deploys, sends LINE, applies migrations, or uses secrets.
+on:
+  pull_request:
+    branches:
+      - cursor/line-automation-phase-2a-schedule-7c7d
+    paths:
+      - 'lib/line/automations/**'
+      - 'supabase/migrations/20261023*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/line-phase3-dry-run.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: "true"
+      LINE_AUTOMATION_SEND_OPEN: "false"
+    steps:
+      - name: Check out current branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      # The existing lockfile has a picomatch hoisting inconsistency.
+      # Use a disposable runner-only resolution; do not rewrite the lockfile
+      # or alter production dependencies in this isolated test workflow.
+      - name: Install dependencies in isolated runner
+        id: install
+        run: npm install --ignore-scripts --no-save --package-lock=false --no-audit --no-fund
+      - name: Generate Next.js route types without building or deploying
+        run: npx next typegen
+      - name: Parse Phase 3 SQL migrations without database access
+        run: |
+          python -m pip install --disable-pip-version-check --quiet 'pglast==7.20'
+          python - <<'PY'
+          from pathlib import Path
+          from pglast import parse_sql
+          paths = [
+              Path("supabase/migrations/20261023110000_line_automation_birthday_fingerprint_v2_helper.sql"),
+              Path("supabase/migrations/20261023120000_line_automation_birthday_annual_schedule_contract.sql"),
+          ]
+          for path in paths:
+              statements = parse_sql(path.read_text(encoding="utf-8"))
+              print(f"{path.name}: parsed {len(statements)} PostgreSQL statements")
+          PY
+      - name: Verify birthday identity helper on disposable PostgreSQL
+        run: |
+          docker run --rm -d --name line-phase3-postgres -e POSTGRES_PASSWORD=localtest -e POSTGRES_DB=line_phase3_test postgres:16-alpine
+          trap 'docker rm -f line-phase3-postgres >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do
+            if docker exec line-phase3-postgres psql -U postgres -d line_phase3_test -tAc 'SELECT 1' 2>/dev/null | grep -qx 1; then break; fi
+            sleep 1
+          done
+          docker exec line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test -c 'CREATE ROLE anon; CREATE ROLE authenticated;'
+          docker exec -i line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test < supabase/migrations/20261023110000_line_automation_birthday_fingerprint_v2_helper.sql
+          docker exec -i line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test <<'SQL'
+          DO $security$
+          BEGIN
+            IF has_function_privilege('anon', 'public.line_automation_birthday_fingerprint_v2(text,text,text,date)', 'EXECUTE')
+              OR has_function_privilege('authenticated', 'public.line_automation_birthday_fingerprint_v2(text,text,text,date)', 'EXECUTE')
+            THEN
+              RAISE EXCEPTION 'birthday helper unexpectedly exposed to API roles';
+            END IF;
+          END;
+          $security$;
+          SQL
+          docker exec -i line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test <<'SQL'
+          DO $test$
+          DECLARE actual text;
+          BEGIN
+            SELECT public.line_automation_birthday_fingerprint_v2('org-test', 'customer-1', 'birthday_morning', '2027-02-28'::date) INTO actual;
+            IF actual IS DISTINCT FROM 'org-test|birthday_greeting|customer-1|birthday_morning|2027' THEN
+              RAISE EXCEPTION 'unexpected annual birthday identity: %', actual;
+            END IF;
+            SELECT public.line_automation_birthday_fingerprint_v2('org-test', 'customer-1', 'days_before_3', '2027-01-01'::date) INTO actual;
+            IF actual IS DISTINCT FROM 'org-test|birthday_greeting|customer-1|days_before_3|2027' THEN
+              RAISE EXCEPTION 'unexpected cross-year birthday identity: %', actual;
+            END IF;
+            BEGIN
+              PERFORM public.line_automation_birthday_fingerprint_v2('org-test|bad', 'customer-1', 'birthday_morning', '2027-01-01'::date);
+              RAISE EXCEPTION 'invalid organization was accepted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+            BEGIN
+              PERFORM public.line_automation_birthday_fingerprint_v2('org-test', 'customer-1', 'unknown', '2027-01-01'::date);
+              RAISE EXCEPTION 'invalid timing was accepted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+          END;
+          $test$;
+          SQL
+      - name: Compile birthday annual RPC replacement in disposable PostgreSQL
+        run: |
+          docker run --rm -d --name line-phase3-rpc-postgres -e POSTGRES_PASSWORD=localtest -e POSTGRES_DB=line_phase3_rpc postgres:16-alpine
+          trap 'docker rm -f line-phase3-rpc-postgres >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do
+            if docker exec line-phase3-rpc-postgres psql -U postgres -d line_phase3_rpc -tAc 'SELECT 1' 2>/dev/null | grep -qx 1; then break; fi
+            sleep 1
+          done
+          docker exec -i line-phase3-rpc-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_rpc <<'SQL'
+          CREATE ROLE anon;
+          CREATE ROLE authenticated;
+          CREATE SCHEMA auth;
+          CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT NULL::uuid';
+          CREATE FUNCTION public.user_is_org_owner(text) RETURNS boolean LANGUAGE sql STABLE AS 'SELECT false';
+          CREATE TABLE public.line_automation_jobs (
+            id text PRIMARY KEY, organization_id text NOT NULL, automation_type text NOT NULL,
+            event_kind text, event_id text NOT NULL, appointment_app_id text,
+            customer_id text NOT NULL, customer_app_id text, timing_id text NOT NULL,
+            fingerprint text NOT NULL, scheduled_for timestamptz NOT NULL,
+            status text NOT NULL, request_id text NOT NULL, message_snapshot text NOT NULL,
+            recipient_ready boolean NOT NULL, skip_reason text, updated_at timestamptz DEFAULT now()
+          );
+          CREATE UNIQUE INDEX line_phase3_rpc_active_fp ON public.line_automation_jobs(organization_id,fingerprint)
+            WHERE status IN ('scheduled','pending_recipient','claimed');
+          CREATE FUNCTION public.line_automation_schedule_event_kind(text) RETURNS text LANGUAGE sql AS 'SELECT NULL::text';
+          CREATE FUNCTION public.line_automation_schedule_timing_allowed(text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_customer_belongs(text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_event_belongs(text,text,text,text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_rule_allows(text,text,text,text) RETURNS void LANGUAGE plpgsql AS 'BEGIN RETURN; END';
+          CREATE FUNCTION public.line_automation_schedule_expected_fire_at(text,text,text,text,text,text) RETURNS timestamptz LANGUAGE sql AS 'SELECT NULL::timestamptz';
+          CREATE FUNCTION public.line_automation_schedule_event_state(text,text,text,text) RETURNS text LANGUAGE sql AS 'SELECT ''no''::text';
+          CREATE FUNCTION public.line_automation_schedule_apply_recipient(text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_lock_org(text) RETURNS void LANGUAGE plpgsql AS 'BEGIN RETURN; END';
+          SQL
+          docker exec -i line-phase3-rpc-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_rpc < supabase/migrations/20261023110000_line_automation_birthday_fingerprint_v2_helper.sql
+          docker exec -i line-phase3-rpc-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_rpc < supabase/migrations/20261023120000_line_automation_birthday_annual_schedule_contract.sql
+          docker exec -i line-phase3-rpc-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_rpc <<'SQL'
+          DO $test$
+          BEGIN
+            IF has_function_privilege('anon', 'public.apply_line_automation_schedule(text,jsonb)', 'EXECUTE') THEN
+              RAISE EXCEPTION 'anonymous user can execute schedule RPC';
+            END IF;
+            IF NOT has_function_privilege('authenticated', 'public.apply_line_automation_schedule(text,jsonb)', 'EXECUTE') THEN
+              RAISE EXCEPTION 'authenticated user cannot execute owner-gated schedule RPC';
+            END IF;
+            IF has_function_privilege('authenticated', 'public.line_automation_schedule_validate_item(text,jsonb)', 'EXECUTE') THEN
+              RAISE EXCEPTION 'schedule validator unexpectedly public';
+            END IF;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule('org-test', '{}'::jsonb);
+              RAISE EXCEPTION 'unauthenticated schedule apply unexpectedly succeeded';
+            EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+            END;
+          END;
+          $test$;
+          SQL
+      - name: Exercise schedule RPC authorization and empty-plan behavior
+        run: |
+          docker run --rm -d --name line-phase3-auth-postgres -e POSTGRES_PASSWORD=localtest -e POSTGRES_DB=line_phase3_auth postgres:16-alpine
+          trap 'docker rm -f line-phase3-auth-postgres >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do
+            if docker exec line-phase3-auth-postgres psql -U postgres -d line_phase3_auth -tAc 'SELECT 1' 2>/dev/null | grep -qx 1; then break; fi
+            sleep 1
+          done
+          docker exec -i line-phase3-auth-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_auth <<'SQL'
+          CREATE ROLE anon;
+          CREATE ROLE authenticated;
+          CREATE SCHEMA auth;
+          CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT NULL::uuid';
+          CREATE FUNCTION public.user_is_org_owner(text) RETURNS boolean LANGUAGE sql STABLE AS 'SELECT false';
+          CREATE TABLE public.line_automation_jobs (
+            id text PRIMARY KEY, organization_id text NOT NULL, automation_type text NOT NULL,
+            event_kind text, event_id text NOT NULL, appointment_app_id text,
+            customer_id text NOT NULL, customer_app_id text, timing_id text NOT NULL,
+            fingerprint text NOT NULL, scheduled_for timestamptz NOT NULL,
+            status text NOT NULL, request_id text NOT NULL, message_snapshot text NOT NULL,
+            recipient_ready boolean NOT NULL, skip_reason text, updated_at timestamptz DEFAULT now()
+          );
+          CREATE UNIQUE INDEX line_phase3_auth_active_fp ON public.line_automation_jobs(organization_id,fingerprint)
+            WHERE status IN ('scheduled','pending_recipient','claimed');
+          CREATE FUNCTION public.line_automation_schedule_event_kind(text) RETURNS text LANGUAGE sql AS 'SELECT NULL::text';
+          CREATE FUNCTION public.line_automation_schedule_timing_allowed(text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_customer_belongs(text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_event_belongs(text,text,text,text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_rule_allows(text,text,text,text) RETURNS void LANGUAGE plpgsql AS 'BEGIN RETURN; END';
+          CREATE FUNCTION public.line_automation_schedule_expected_fire_at(text,text,text,text,text,text) RETURNS timestamptz LANGUAGE sql AS 'SELECT NULL::timestamptz';
+          CREATE FUNCTION public.line_automation_schedule_event_state(text,text,text,text) RETURNS text LANGUAGE sql AS 'SELECT ''no''::text';
+          CREATE FUNCTION public.line_automation_schedule_apply_recipient(text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_lock_org(text) RETURNS void LANGUAGE plpgsql AS 'BEGIN RETURN; END';
+          SQL
+          docker exec -i line-phase3-auth-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_auth < supabase/migrations/20261023110000_line_automation_birthday_fingerprint_v2_helper.sql
+          docker exec -i line-phase3-auth-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_auth < supabase/migrations/20261023120000_line_automation_birthday_annual_schedule_contract.sql
+          docker exec -i line-phase3-auth-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_auth <<'SQL'
+          CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT ''00000000-0000-0000-0000-000000000001''::uuid';
+          DO $test$
+          BEGIN
+            BEGIN
+              PERFORM public.apply_line_automation_schedule('org-test', '{}'::jsonb);
+              RAISE EXCEPTION 'non-owner unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+            END;
+          END;
+          $test$;
+          CREATE OR REPLACE FUNCTION public.user_is_org_owner(text) RETURNS boolean LANGUAGE sql STABLE AS 'SELECT true';
+          DO $test$
+          DECLARE result jsonb;
+          BEGIN
+            SELECT public.apply_line_automation_schedule('org-test', '{"insert":[],"update":[],"cancel":[]}'::jsonb) INTO result;
+            IF result->>'ok' IS DISTINCT FROM 'true' OR result->>'sent_line' IS DISTINCT FROM 'false'
+              OR (result->>'inserted')::int <> 0 OR (result->>'updated')::int <> 0 OR (result->>'canceled')::int <> 0 THEN
+              RAISE EXCEPTION 'unexpected empty-plan response: %', result;
+            END IF;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule('wrong-org', '{}'::jsonb);
+              RAISE EXCEPTION 'invalid organization unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule('org-test', '{"organization_id":"org-other"}'::jsonb);
+              RAISE EXCEPTION 'cross-org mutation unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+            END;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule('org-test', '[]'::jsonb);
+              RAISE EXCEPTION 'non-object mutations unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+            INSERT INTO public.line_automation_jobs (
+              id, organization_id, automation_type, event_kind, event_id,
+              customer_id, timing_id, fingerprint, scheduled_for,
+              status, request_id, message_snapshot, recipient_ready
+            ) VALUES (
+              'laj-claimed-test', 'org-test', 'birthday_greeting', 'customer_birthday', 'customer-1',
+              'customer-1', 'birthday_morning', 'org-test|birthday_greeting|customer-1|birthday_morning',
+              '2027-02-28 10:00:00+08', 'claimed', 'req-test', 'Test message', false
+            );
+            SELECT public.apply_line_automation_schedule(
+              'org-test',
+              jsonb_build_object(
+                'cancel', jsonb_build_array(jsonb_build_object(
+                  'organization_id', 'org-test', 'id', 'laj-claimed-test',
+                  'fingerprint', 'org-test|birthday_greeting|customer-1|birthday_morning'
+                )),
+                'update', jsonb_build_array(jsonb_build_object(
+                  'organization_id', 'org-test', 'id', 'laj-claimed-test',
+                  'scheduled_for', '2027-03-01T02:00:00Z'
+                ))
+              )
+            ) INTO result;
+            IF (result->>'canceled')::int <> 0 OR (result->>'updated')::int <> 0 THEN
+              RAISE EXCEPTION 'claimed job was mutated: %', result;
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM public.line_automation_jobs
+              WHERE id = 'laj-claimed-test' AND status = 'claimed'
+                AND scheduled_for = '2027-02-28 10:00:00+08'::timestamptz
+            ) THEN
+              RAISE EXCEPTION 'claimed job changed despite protected state';
+            END IF;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"insert":[{"organization_id":"org-test","automation_type":"unknown"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'invalid automation unexpectedly inserted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"insert":[{"organization_id":"org-other","automation_type":"birthday_greeting"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'cross-org insert unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+            END;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"cancel":[{"organization_id":"org-other","id":"laj-claimed-test"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'cross-org cancellation unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+            END;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"update":[{"organization_id":"org-other","id":"laj-claimed-test"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'cross-org update unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+            END;
+            IF (SELECT count(*) FROM public.line_automation_jobs) <> 1 THEN
+              RAISE EXCEPTION 'invalid requests changed schedule job count';
+            END IF;
+            INSERT INTO public.line_automation_jobs (
+              id, organization_id, automation_type, event_kind, event_id,
+              customer_id, timing_id, fingerprint, scheduled_for,
+              status, request_id, message_snapshot, recipient_ready
+            ) VALUES (
+              'laj-pending-test', 'org-test', 'birthday_greeting', 'customer_birthday', 'customer-2',
+              'customer-2', 'birthday_morning', 'org-test|birthday_greeting|customer-2|birthday_morning',
+              '2027-04-01 10:00:00+08', 'scheduled', 'req-pending', 'Test message', false
+            );
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"cancel":[{"organization_id":"org-test","id":"laj-pending-test","fingerprint":"forged"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'forged cancellation fingerprint unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+            IF NOT EXISTS (
+              SELECT 1 FROM public.line_automation_jobs
+              WHERE id = 'laj-pending-test' AND status = 'scheduled'
+            ) THEN
+              RAISE EXCEPTION 'forged cancellation changed scheduled job';
+            END IF;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"insert":[{"organization_id":"org-test","automation_type":"birthday_greeting","event_kind":"customer_birthday","event_id":"customer-3","customer_id":"customer-3","timing_id":"birthday_morning","fingerprint":"org-test|birthday_greeting|customer-3|birthday_morning","scheduled_for":"2027-02-28T02:00:00Z","message_snapshot":"Test message"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'unverified customer insert unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+            IF (SELECT count(*) FROM public.line_automation_jobs) <> 2 THEN
+              RAISE EXCEPTION 'rejected unverified customer insert changed job count';
+            END IF;
+          END;
+          $test$;
+          -- Positive-path integration fixture: explicit trusted customer and birthday sources.
+          CREATE OR REPLACE FUNCTION public.line_automation_schedule_event_kind(text)
+            RETURNS text LANGUAGE sql STABLE AS 'SELECT CASE WHEN $1 = ''birthday_greeting'' THEN ''customer_birthday'' ELSE NULL END';
+          CREATE OR REPLACE FUNCTION public.line_automation_schedule_timing_allowed(text,text)
+            RETURNS boolean LANGUAGE sql STABLE AS 'SELECT $1 = ''birthday_greeting'' AND $2 = ''birthday_morning''';
+          CREATE OR REPLACE FUNCTION public.line_automation_schedule_customer_belongs(text,text)
+            RETURNS boolean LANGUAGE sql STABLE AS 'SELECT $1 = ''org-test'' AND $2 = ''customer-positive''';
+          CREATE OR REPLACE FUNCTION public.line_automation_schedule_event_belongs(text,text,text,text,text)
+            RETURNS boolean LANGUAGE sql STABLE AS 'SELECT $1 = ''org-test'' AND $2 = ''birthday_greeting'' AND $3 = ''customer_birthday'' AND $4 = ''customer-positive'' AND $5 = ''customer-positive''';
+          CREATE OR REPLACE FUNCTION public.line_automation_schedule_expected_fire_at(text,text,text,text,text,text)
+            RETURNS timestamptz LANGUAGE sql STABLE AS 'SELECT CASE WHEN $1 = ''org-test'' AND $4 = ''customer-positive'' THEN ''2027-05-08T02:00:00Z''::timestamptz ELSE NULL END';
+          CREATE FUNCTION public.line_automation_schedule_recipient_ready(text,text)
+            RETURNS boolean LANGUAGE sql STABLE AS 'SELECT false';
+          DO $positive$
+          DECLARE
+            payload jsonb := jsonb_build_object(
+              'insert', jsonb_build_array(jsonb_build_object(
+                'organization_id','org-test','automation_type','birthday_greeting',
+                'event_kind','customer_birthday','event_id','customer-positive',
+                'customer_id','customer-positive','timing_id','birthday_morning',
+                'fingerprint','org-test|birthday_greeting|customer-positive|birthday_morning|2027',
+                'scheduled_for','2027-05-08T02:00:00Z','message_snapshot','Happy birthday'
+              ))
+            );
+            first_result jsonb;
+            second_result jsonb;
+          BEGIN
+            SELECT public.apply_line_automation_schedule('org-test',payload) INTO first_result;
+            IF (first_result->>'inserted')::int <> 1 OR first_result->>'sent_line' IS DISTINCT FROM 'false' THEN
+              RAISE EXCEPTION 'valid annual birthday insert failed: %', first_result;
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM public.line_automation_jobs
+              WHERE organization_id = 'org-test'
+                AND customer_id = 'customer-positive'
+                AND fingerprint = 'org-test|birthday_greeting|customer-positive|birthday_morning|2027'
+                AND status = 'pending_recipient'
+                AND recipient_ready IS FALSE
+            ) THEN
+              RAISE EXCEPTION 'valid birthday job not persisted as pending recipient';
+            END IF;
+            SELECT public.apply_line_automation_schedule('org-test',payload) INTO second_result;
+            IF (second_result->>'inserted')::int <> 0 THEN
+              RAISE EXCEPTION 'duplicate annual birthday was inserted: %', second_result;
+            END IF;
+            IF (SELECT count(*) FROM public.line_automation_jobs
+                WHERE customer_id = 'customer-positive') <> 1 THEN
+              RAISE EXCEPTION 'duplicate annual birthday job persisted';
+            END IF;
+          END;
+          $positive$;
+          -- Updating an existing birthday must preserve the identity and pending-recipient boundary.
+          CREATE FUNCTION public.line_automation_schedule_apply_recipient(text,boolean)
+            RETURNS TABLE(status text,recipient_ready boolean)
+            LANGUAGE sql IMMUTABLE AS $recipient$
+              SELECT CASE WHEN $2 THEN 'scheduled'
+                WHEN $1 = 'scheduled' THEN 'scheduled'
+                ELSE 'pending_recipient' END, $2 IS TRUE;
+            $recipient$;
+          CREATE FUNCTION public.line_automation_schedule_assert_job_identity(
+            text, jsonb, public.line_automation_jobs
+          ) RETURNS void LANGUAGE plpgsql AS $identity$
+          BEGIN
+            IF $2->>'organization_id' IS DISTINCT FROM $1
+              OR $2->>'fingerprint' IS DISTINCT FROM $3.fingerprint
+              OR $2->>'automation_type' IS DISTINCT FROM $3.automation_type
+              OR $2->>'event_id' IS DISTINCT FROM $3.event_id
+              OR $2->>'customer_id' IS DISTINCT FROM $3.customer_id
+              OR $2->>'timing_id' IS DISTINCT FROM $3.timing_id THEN
+              RAISE EXCEPTION 'job identity mismatch' USING ERRCODE='22023';
+            END IF;
+          END;
+          $identity$;
+          DO $update$
+          DECLARE result jsonb;
+          BEGIN
+            SELECT public.apply_line_automation_schedule(
+              'org-test', jsonb_build_object('update', jsonb_build_array(jsonb_build_object(
+                'organization_id','org-test',
+                'id',(SELECT id FROM public.line_automation_jobs WHERE customer_id='customer-positive'),
+                'automation_type','birthday_greeting',
+                'event_id','customer-positive',
+                'customer_id','customer-positive',
+                'timing_id','birthday_morning',
+                'fingerprint','org-test|birthday_greeting|customer-positive|birthday_morning|2027',
+                'scheduled_for','2027-05-08T02:00:00Z',
+                'message_snapshot','Updated birthday greeting'
+              )))
+            ) INTO result;
+            IF (result->>'updated')::int <> 1 OR result->>'sent_line' IS DISTINCT FROM 'false' THEN
+              RAISE EXCEPTION 'valid birthday update failed: %', result;
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM public.line_automation_jobs
+              WHERE customer_id='customer-positive'
+                AND fingerprint='org-test|birthday_greeting|customer-positive|birthday_morning|2027'
+                AND scheduled_for='2027-05-08T02:00:00Z'::timestamptz
+                AND message_snapshot='Updated birthday greeting'
+                AND status='pending_recipient'
+                AND recipient_ready IS FALSE
+            ) THEN
+              RAISE EXCEPTION 'birthday update changed identity or recipient safety state';
+            END IF;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test', jsonb_build_object('update', jsonb_build_array(jsonb_build_object(
+                  'organization_id','org-test',
+                  'id',(SELECT id FROM public.line_automation_jobs WHERE customer_id='customer-positive'),
+                  'automation_type','birthday_greeting',
+                  'event_id','customer-positive',
+                  'customer_id','customer-forged',
+                  'timing_id','birthday_morning',
+                  'fingerprint','org-test|birthday_greeting|customer-positive|birthday_morning|2027',
+                  'scheduled_for','2027-05-08T02:00:00Z'
+                )))
+              );
+              RAISE EXCEPTION 'forged customer update unexpectedly succeeded';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+          END;
+          $update$;
+          -- Cancellation is allowed only after authoritative source says event no longer exists.
+          CREATE TABLE public.line_automation_rules (
+            organization_id text NOT NULL, automation_type text NOT NULL,
+            enabled boolean NOT NULL, timing_ids text[] NOT NULL,
+            timing_config jsonb NOT NULL DEFAULT '{}'::jsonb
+          );
+          INSERT INTO public.line_automation_rules(organization_id,automation_type,enabled,timing_ids)
+            VALUES ('org-test','birthday_greeting',true,ARRAY['birthday_morning']);
+          DO $cancel$
+          DECLARE result jsonb;
+          BEGIN
+            SELECT public.apply_line_automation_schedule(
+              'org-test',
+              jsonb_build_object('cancel',jsonb_build_array(jsonb_build_object(
+                'organization_id','org-test',
+                'id',(SELECT id FROM public.line_automation_jobs WHERE customer_id='customer-positive'),
+                'fingerprint','org-test|birthday_greeting|customer-positive|birthday_morning|2027'
+              )))
+            ) INTO result;
+            IF (result->>'canceled')::int <> 1 OR result->>'sent_line' IS DISTINCT FROM 'false' THEN
+              RAISE EXCEPTION 'valid cancellation failed: %', result;
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM public.line_automation_jobs
+              WHERE customer_id='customer-positive' AND status='canceled'
+                AND skip_reason='schedule_recomputed'
+            ) THEN
+              RAISE EXCEPTION 'canceled birthday job did not persist cancellation state';
+            END IF;
+            SELECT public.apply_line_automation_schedule(
+              'org-test',
+              jsonb_build_object('cancel',jsonb_build_array(jsonb_build_object(
+                'organization_id','org-test',
+                'id',(SELECT id FROM public.line_automation_jobs WHERE customer_id='customer-positive'),
+                'fingerprint','org-test|birthday_greeting|customer-positive|birthday_morning|2027'
+              )))
+            ) INTO result;
+            IF (result->>'canceled')::int <> 0 THEN
+              RAISE EXCEPTION 'repeated cancellation mutated completed job: %', result;
+            END IF;
+          END;
+          $cancel$;
+          SQL
+      - name: TypeScript static check
+        run: npx tsc --noEmit
+      - name: Run Phase 3 isolation suite
+        if: always() && steps.install.outcome == 'success'
+        run: npm run test:line-phase3
