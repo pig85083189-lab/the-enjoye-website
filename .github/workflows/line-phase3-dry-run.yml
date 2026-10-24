@@ -226,6 +226,46 @@ jobs:
               RAISE EXCEPTION 'non-object mutations unexpectedly permitted';
             EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
             END;
+            INSERT INTO public.line_automation_jobs (
+              id, organization_id, automation_type, event_kind, event_id,
+              customer_id, timing_id, fingerprint, scheduled_for,
+              status, request_id, message_snapshot, recipient_ready
+            ) VALUES (
+              'laj-claimed-test', 'org-test', 'birthday_greeting', 'customer_birthday', 'customer-1',
+              'customer-1', 'birthday_morning', 'org-test|birthday_greeting|customer-1|birthday_morning',
+              '2027-02-28 10:00:00+08', 'claimed', 'req-test', 'Test message', false
+            );
+            SELECT public.apply_line_automation_schedule(
+              'org-test',
+              jsonb_build_object(
+                'cancel', jsonb_build_array(jsonb_build_object(
+                  'organization_id', 'org-test', 'id', 'laj-claimed-test',
+                  'fingerprint', 'org-test|birthday_greeting|customer-1|birthday_morning'
+                )),
+                'update', jsonb_build_array(jsonb_build_object(
+                  'organization_id', 'org-test', 'id', 'laj-claimed-test',
+                  'scheduled_for', '2027-03-01T02:00:00Z'
+                ))
+              )
+            ) INTO result;
+            IF (result->>'canceled')::int <> 0 OR (result->>'updated')::int <> 0 THEN
+              RAISE EXCEPTION 'claimed job was mutated: %', result;
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM public.line_automation_jobs
+              WHERE id = 'laj-claimed-test' AND status = 'claimed'
+                AND scheduled_for = '2027-02-28 10:00:00+08'::timestamptz
+            ) THEN
+              RAISE EXCEPTION 'claimed job changed despite protected state';
+            END IF;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"insert":[{"organization_id":"org-test","automation_type":"unknown"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'invalid automation unexpectedly inserted';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
           END;
           $test$;
           SQL
