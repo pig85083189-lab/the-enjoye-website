@@ -99,6 +99,62 @@ jobs:
           END;
           $test$;
           SQL
+      - name: Compile birthday annual RPC replacement in disposable PostgreSQL
+        run: |
+          docker run --rm -d --name line-phase3-rpc-postgres -e POSTGRES_PASSWORD=localtest -e POSTGRES_DB=line_phase3_rpc postgres:16-alpine
+          trap 'docker rm -f line-phase3-rpc-postgres >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 30); do
+            if docker exec line-phase3-rpc-postgres psql -U postgres -d line_phase3_rpc -tAc 'SELECT 1' 2>/dev/null | grep -qx 1; then break; fi
+            sleep 1
+          done
+          docker exec -i line-phase3-rpc-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_rpc <<'SQL'
+          CREATE ROLE anon;
+          CREATE ROLE authenticated;
+          CREATE SCHEMA auth;
+          CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT NULL::uuid';
+          CREATE FUNCTION public.user_is_org_owner(text) RETURNS boolean LANGUAGE sql STABLE AS 'SELECT false';
+          CREATE TABLE public.line_automation_jobs (
+            id text PRIMARY KEY, organization_id text NOT NULL, automation_type text NOT NULL,
+            event_kind text, event_id text NOT NULL, appointment_app_id text,
+            customer_id text NOT NULL, customer_app_id text, timing_id text NOT NULL,
+            fingerprint text NOT NULL, scheduled_for timestamptz NOT NULL,
+            status text NOT NULL, request_id text NOT NULL, message_snapshot text NOT NULL,
+            recipient_ready boolean NOT NULL, skip_reason text, updated_at timestamptz DEFAULT now()
+          );
+          CREATE UNIQUE INDEX line_phase3_rpc_active_fp ON public.line_automation_jobs(organization_id,fingerprint)
+            WHERE status IN ('scheduled','pending_recipient','claimed');
+          CREATE FUNCTION public.line_automation_schedule_event_kind(text) RETURNS text LANGUAGE sql AS 'SELECT NULL::text';
+          CREATE FUNCTION public.line_automation_schedule_timing_allowed(text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_customer_belongs(text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_event_belongs(text,text,text,text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_rule_allows(text,text,text,text) RETURNS void LANGUAGE plpgsql AS 'BEGIN RETURN; END';
+          CREATE FUNCTION public.line_automation_schedule_expected_fire_at(text,text,text,text,text,text) RETURNS timestamptz LANGUAGE sql AS 'SELECT NULL::timestamptz';
+          CREATE FUNCTION public.line_automation_schedule_event_state(text,text,text,text) RETURNS text LANGUAGE sql AS 'SELECT ''no''::text';
+          CREATE FUNCTION public.line_automation_schedule_apply_recipient(text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+          CREATE FUNCTION public.line_automation_schedule_lock_org(text) RETURNS void LANGUAGE plpgsql AS 'BEGIN RETURN; END';
+          SQL
+          docker exec -i line-phase3-rpc-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_rpc < supabase/migrations/20261023110000_line_automation_birthday_fingerprint_v2_helper.sql
+          docker exec -i line-phase3-rpc-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_rpc < supabase/migrations/20261023120000_line_automation_birthday_annual_schedule_contract.sql
+          docker exec -i line-phase3-rpc-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_rpc <<'SQL'
+          DO $test$
+          BEGIN
+            IF has_function_privilege('anon', 'public.apply_line_automation_schedule(text,jsonb)', 'EXECUTE') THEN
+              RAISE EXCEPTION 'anonymous user can execute schedule RPC';
+            END IF;
+            IF NOT has_function_privilege('authenticated', 'public.apply_line_automation_schedule(text,jsonb)', 'EXECUTE') THEN
+              RAISE EXCEPTION 'authenticated user cannot execute owner-gated schedule RPC';
+            END IF;
+            IF has_function_privilege('authenticated', 'public.line_automation_schedule_validate_item(text,jsonb)', 'EXECUTE') THEN
+              RAISE EXCEPTION 'schedule validator unexpectedly public';
+            END IF;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule('org-test', '{}'::jsonb);
+              RAISE EXCEPTION 'unauthenticated schedule apply unexpectedly succeeded';
+            EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+            END;
+          END;
+          $test$;
+          SQL
       - name: TypeScript static check
         run: npx tsc --noEmit
       - name: Run Phase 3 isolation suite
