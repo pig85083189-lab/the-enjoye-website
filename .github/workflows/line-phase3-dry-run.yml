@@ -381,6 +381,13 @@ jobs:
           END;
           $positive$;
           -- Updating an existing birthday must preserve the identity and pending-recipient boundary.
+          CREATE FUNCTION public.line_automation_schedule_apply_recipient(text,boolean)
+            RETURNS TABLE(status text,recipient_ready boolean)
+            LANGUAGE sql IMMUTABLE AS $recipient$
+              SELECT CASE WHEN $2 THEN 'scheduled'
+                WHEN $1 = 'scheduled' THEN 'scheduled'
+                ELSE 'pending_recipient' END, $2 IS TRUE;
+            $recipient$;
           CREATE FUNCTION public.line_automation_schedule_assert_job_identity(
             text, jsonb, public.line_automation_jobs
           ) RETURNS void LANGUAGE plpgsql AS $identity$
