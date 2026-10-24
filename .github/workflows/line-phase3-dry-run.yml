@@ -380,6 +380,69 @@ jobs:
             END IF;
           END;
           $positive$;
+          -- Updating an existing birthday must preserve the identity and pending-recipient boundary.
+          CREATE FUNCTION public.line_automation_schedule_assert_job_identity(
+            text, jsonb, public.line_automation_jobs
+          ) RETURNS void LANGUAGE plpgsql AS $identity$
+          BEGIN
+            IF $2->>'organization_id' IS DISTINCT FROM $1
+              OR $2->>'fingerprint' IS DISTINCT FROM $3.fingerprint
+              OR $2->>'automation_type' IS DISTINCT FROM $3.automation_type
+              OR $2->>'event_id' IS DISTINCT FROM $3.event_id
+              OR $2->>'customer_id' IS DISTINCT FROM $3.customer_id
+              OR $2->>'timing_id' IS DISTINCT FROM $3.timing_id THEN
+              RAISE EXCEPTION 'job identity mismatch' USING ERRCODE='22023';
+            END IF;
+          END;
+          $identity$;
+          DO $update$
+          DECLARE result jsonb;
+          BEGIN
+            SELECT public.apply_line_automation_schedule(
+              'org-test', jsonb_build_object('update', jsonb_build_array(jsonb_build_object(
+                'organization_id','org-test',
+                'id',(SELECT id FROM public.line_automation_jobs WHERE customer_id='customer-positive'),
+                'automation_type','birthday_greeting',
+                'event_id','customer-positive',
+                'customer_id','customer-positive',
+                'timing_id','birthday_morning',
+                'fingerprint','org-test|birthday_greeting|customer-positive|birthday_morning|2027',
+                'scheduled_for','2027-05-08T02:00:00Z',
+                'message_snapshot','Updated birthday greeting'
+              )))
+            ) INTO result;
+            IF (result->>'updated')::int <> 1 OR result->>'sent_line' IS DISTINCT FROM 'false' THEN
+              RAISE EXCEPTION 'valid birthday update failed: %', result;
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM public.line_automation_jobs
+              WHERE customer_id='customer-positive'
+                AND fingerprint='org-test|birthday_greeting|customer-positive|birthday_morning|2027'
+                AND scheduled_for='2027-05-08T02:00:00Z'::timestamptz
+                AND message_snapshot='Updated birthday greeting'
+                AND status='pending_recipient'
+                AND recipient_ready IS FALSE
+            ) THEN
+              RAISE EXCEPTION 'birthday update changed identity or recipient safety state';
+            END IF;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test', jsonb_build_object('update', jsonb_build_array(jsonb_build_object(
+                  'organization_id','org-test',
+                  'id',(SELECT id FROM public.line_automation_jobs WHERE customer_id='customer-positive'),
+                  'automation_type','birthday_greeting',
+                  'event_id','customer-positive',
+                  'customer_id','customer-forged',
+                  'timing_id','birthday_morning',
+                  'fingerprint','org-test|birthday_greeting|customer-positive|birthday_morning|2027',
+                  'scheduled_for','2027-05-08T02:00:00Z'
+                )))
+              );
+              RAISE EXCEPTION 'forged customer update unexpectedly succeeded';
+            EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+            END;
+          END;
+          $update$;
           -- Cancellation is allowed only after authoritative source says event no longer exists.
           CREATE TABLE public.line_automation_rules (
             organization_id text NOT NULL, automation_type text NOT NULL,
