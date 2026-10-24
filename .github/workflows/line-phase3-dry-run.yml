@@ -266,6 +266,33 @@ jobs:
               RAISE EXCEPTION 'invalid automation unexpectedly inserted';
             EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
             END;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"insert":[{"organization_id":"org-other","automation_type":"birthday_greeting"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'cross-org insert unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+            END;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"cancel":[{"organization_id":"org-other","id":"laj-claimed-test"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'cross-org cancellation unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+            END;
+            BEGIN
+              PERFORM public.apply_line_automation_schedule(
+                'org-test',
+                '{"update":[{"organization_id":"org-other","id":"laj-claimed-test"}]}'::jsonb
+              );
+              RAISE EXCEPTION 'cross-org update unexpectedly permitted';
+            EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+            END;
+            IF (SELECT count(*) FROM public.line_automation_jobs) <> 1 THEN
+              RAISE EXCEPTION 'invalid requests changed schedule job count';
+            END IF;
           END;
           $test$;
           SQL
