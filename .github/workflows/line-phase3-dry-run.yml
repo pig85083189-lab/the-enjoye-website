@@ -380,6 +380,48 @@ jobs:
             END IF;
           END;
           $positive$;
+          -- Cancellation is allowed only after authoritative source says event no longer exists.
+          CREATE TABLE public.line_automation_rules (
+            organization_id text NOT NULL, automation_type text NOT NULL,
+            enabled boolean NOT NULL, timing_ids text[] NOT NULL,
+            timing_config jsonb NOT NULL DEFAULT '{}'::jsonb
+          );
+          INSERT INTO public.line_automation_rules(organization_id,automation_type,enabled,timing_ids)
+            VALUES ('org-test','birthday_greeting',true,ARRAY['birthday_morning']);
+          DO $cancel$
+          DECLARE result jsonb;
+          BEGIN
+            SELECT public.apply_line_automation_schedule(
+              'org-test',
+              jsonb_build_object('cancel',jsonb_build_array(jsonb_build_object(
+                'organization_id','org-test',
+                'id',(SELECT id FROM public.line_automation_jobs WHERE customer_id='customer-positive'),
+                'fingerprint','org-test|birthday_greeting|customer-positive|birthday_morning|2027'
+              )))
+            ) INTO result;
+            IF (result->>'canceled')::int <> 1 OR result->>'sent_line' IS DISTINCT FROM 'false' THEN
+              RAISE EXCEPTION 'valid cancellation failed: %', result;
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM public.line_automation_jobs
+              WHERE customer_id='customer-positive' AND status='canceled'
+                AND skip_reason='schedule_recomputed'
+            ) THEN
+              RAISE EXCEPTION 'canceled birthday job did not persist cancellation state';
+            END IF;
+            SELECT public.apply_line_automation_schedule(
+              'org-test',
+              jsonb_build_object('cancel',jsonb_build_array(jsonb_build_object(
+                'organization_id','org-test',
+                'id',(SELECT id FROM public.line_automation_jobs WHERE customer_id='customer-positive'),
+                'fingerprint','org-test|birthday_greeting|customer-positive|birthday_morning|2027'
+              )))
+            ) INTO result;
+            IF (result->>'canceled')::int <> 0 THEN
+              RAISE EXCEPTION 'repeated cancellation mutated completed job: %', result;
+            END IF;
+          END;
+          $cancel$;
           SQL
       - name: TypeScript static check
         run: npx tsc --noEmit
