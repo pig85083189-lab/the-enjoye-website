@@ -58,7 +58,7 @@ jobs:
           docker run --rm -d --name line-phase3-postgres -e POSTGRES_PASSWORD=localtest -e POSTGRES_DB=line_phase3_test postgres:16-alpine
           trap 'docker rm -f line-phase3-postgres >/dev/null 2>&1 || true' EXIT
           for i in $(seq 1 30); do
-            if docker exec line-phase3-postgres pg_isready -U postgres -d line_phase3_test >/dev/null 2>&1; then break; fi
+            if docker exec line-phase3-postgres psql -U postgres -d line_phase3_test -tAc 'SELECT 1' 2>/dev/null | grep -qx 1; then break; fi
             sleep 1
           done
           docker exec line-phase3-postgres psql -v ON_ERROR_STOP=1 -U postgres -d line_phase3_test -c 'CREATE ROLE anon; CREATE ROLE authenticated;'
