@@ -17,6 +17,8 @@ export type SlotCheckInput = {
   staffVerified: boolean;
   locationVerified: boolean;
   serviceVerified: boolean;
+  /** Explicit confirmation that the authoritative repository returned complete data. */
+  scheduleSnapshotComplete: boolean;
 };
 
 export type SlotCheckResult =
@@ -41,7 +43,7 @@ export function checkBookingSlot(input: SlotCheckInput): SlotCheckResult {
   if (!input.staffVerified || !input.locationVerified || !input.serviceVerified) {
     return { available: false, reason: "NOT_VERIFIED" };
   }
-  if (!input.workingHours || !input.breaks || !input.approvedTimeOff || !input.occupiedAppointments) {
+  if (!input.scheduleSnapshotComplete || !input.workingHours || !input.breaks || !input.approvedTimeOff || !input.occupiedAppointments) {
     return { available: false, reason: "MISSING_SCHEDULE" };
   }
   const startMinutes = minutes(input.startTime);
@@ -56,7 +58,9 @@ export function checkBookingSlot(input: SlotCheckInput): SlotCheckResult {
     return { available: false, reason: "INVALID_INPUT" };
   }
   const day = new Date(midnight + TAIWAN_OFFSET_MINUTES * 60000).getUTCDay();
-  const hours = input.workingHours.find(row => row.dayOfWeek === day);
+  const matchingHours = input.workingHours.filter(row => row.dayOfWeek === day);
+  if (matchingHours.length > 1) return { available: false, reason: "INVALID_INPUT" };
+  const hours = matchingHours[0];
   if (!hours || !hours.isWorking) return { available: false, reason: "OUTSIDE_HOURS" };
   const workStart = minutes(hours.startTime);
   const workEnd = minutes(hours.endTime);
