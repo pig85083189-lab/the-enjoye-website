@@ -67,9 +67,9 @@ export function createSupabaseBookingScheduleRepository(db: Db): BookingSchedule
       // The schedule is incomplete until all seven weekday rows are explicitly configured.
       const weekdays = new Set(hours.map(h => h.day_of_week));
       if (hours.length !== 7 || weekdays.size !== 7 || [...weekdays].some(d => !Number.isInteger(d) || d < 0 || d > 6)) return base;
-      const activeStatuses = new Set(["scheduled", "confirmed", "checked_in", "in_progress"]);
+      const activeStatuses = new Set(["BOOKED", "CONFIRMED", "ARRIVED", "IN_SERVICE", "DRAFT"]);
       // Unknown appointment statuses are treated as occupied, never accidentally freed.
-      const cancelledStatuses = new Set(["cancelled", "canceled", "no_show", "completed"]);
+      const cancelledStatuses = new Set(["CANCELLED", "NO_SHOW", "COMPLETED"]);
       return {
         ...base, complete: true,
         workingHours: hours.map(h => ({
