@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/Card";
 import { CustomerTagChips } from "@/components/customers/CustomerTagChips";
 import { Customer360Tabs } from "./Customer360Tabs";
 import { CustomerSummaryPanel } from "./CustomerSummaryPanel";
+import { CustomerLineBindingCard } from "./CustomerLineBindingCard";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { ConsultationsTab } from "./tabs/ConsultationsTab";
 import { TreatmentsTab } from "./tabs/TreatmentsTab";
@@ -516,7 +517,12 @@ function Customer360Workspace({
             aria-labelledby={`customer-tab-${tab === "wallet" || tab === "transactions" ? "financial" : tab}`}
           >
             {tab === "overview" ? (
+              <div className="space-y-4">
               <OverviewTab customer={customerForView} snapshot={snapshot} onOpenTab={onSelectTab} />
+                {remoteReadPilot && /^[0-9a-f-]{36}$/i.test(customer.id) && /^[0-9a-f-]{36}$/i.test(customer.organizationId) ? (
+                  <CustomerLineBindingCard customerId={customer.id} organizationId={customer.organizationId} />
+                ) : null}
+              </div>
             ) : null}
             {tab === "consultation" ? <ConsultationsTab customerId={customer.id} /> : null}
             {tab === "treatments" ? (
