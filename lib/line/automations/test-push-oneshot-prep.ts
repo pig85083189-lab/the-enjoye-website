@@ -3,7 +3,6 @@
  * Reuses existing env, quota, claim pipeline, and push adapter.
  * Does not open SEND, call a live LINE API, or apply remote SQL.
  */
-import { lineUserIdHint } from "@/lib/line/line-bind";
 import {
   LINE_BROADCAST_ONESHOT_ALLOWED_ORG_ID,
   LINE_BROADCAST_ONESHOT_BOT_BASIC_ID,
@@ -139,7 +138,10 @@ export function maskTestPushChannelId(channelId = TEST_PUSH_PREP_CHANNEL_ID): st
 }
 
 export function maskTestPushRecipient(input: TestPushRecipientSnapshot): string {
-  if (input.rawUserId) return lineUserIdHint(input.rawUserId);
+  if (input.rawUserId) {
+    const id = input.rawUserId.trim();
+    return id.length > 4 ? `••••${id.slice(-4)}` : TEST_PUSH_RECIPIENT_UNKNOWN_HINT;
+  }
   const hint = (input.hint ?? "").trim();
   if (hint.startsWith("••••")) return hint;
   return TEST_PUSH_RECIPIENT_UNKNOWN_HINT;
