@@ -517,11 +517,9 @@ export function LineOfficialAccountSettings({
                 Webhook 網址與輪替操作目前限制在工程師診斷模式，避免誤覆蓋現有官方帳號的接收設定。
               </p>
               <p className="text-sm text-text" data-line-webhook-status-value>
-                {webhook?.url
-                  ? "系統已有 Webhook 網址，但仍需確認 LINE Developers 的 Webhook 設定及實際事件接收。"
-                  : account?.secretConfigured
-                    ? "已保存 Channel Secret，但尚未取得可使用的 Webhook 網址。請由工程師檢查 Token 建立與環境設定。"
-                    : "請先保存 Channel Secret，才能進行 Webhook 設定。"}
+                {!account?.secretConfigured
+                  ? "請先保存 Channel Secret，才能進行 Webhook 設定。"
+                  : "Channel Secret 已保存。此店長頁面不讀取受限制的 Webhook Token，因此無法在這裡判定網址是否已建立；請由工程師確認 Token 與 LINE Developers 的實際接收設定。"}
               </p>
               <p className="text-[12px] text-secondary-text">
                 目前不會自動變更 LINE Developers 設定，也不會啟用群發或開放會員預約資料。
