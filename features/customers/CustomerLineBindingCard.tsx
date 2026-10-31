@@ -118,7 +118,6 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
           {feedback && <p role="status" className="text-sm text-secondary-text">{feedback}</p>}
           <p className="text-xs text-secondary-text">所有操作都會經過伺服器端店長權限、LINE 官方帳號及安全綁定功能開關檢查。功能未開放時不會建立綁定。</p>
         </div>
-      )}
           )}
         </div>
       )}
