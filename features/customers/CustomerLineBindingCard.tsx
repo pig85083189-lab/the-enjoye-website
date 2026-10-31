@@ -19,6 +19,10 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
     let active = true;
     setRow(null);
     setStatus("loading");
+    setIdentityConfirmed(false);
+    setShowManualTools(false);
+    setIssuedCode(null);
+    setFeedback("");
     void loadLineCustomerBindings(organizationId).then((result) => {
       if (!active) return;
       if (!result.ok || !result.data) {
@@ -65,6 +69,7 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
   }
 
   const binding = row?.binding;
+  const manualPending = binding?.status === "pending";
   const trusted = status === "ready" && isTrustedCustomerBinding(binding);
   const label = status === "loading" ? "讀取中" :
     status === "unavailable" ? "無法確認" :
@@ -96,8 +101,8 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
       {!trusted && status === "ready" && (
         <div className="space-y-3">
           <div className="rounded-xl border border-border/70 p-4 text-sm">
-            <p className="font-medium text-text">會員自行驗證，系統管理連結</p>
-            <p className="mt-1 text-secondary-text">未來將由顧客在會員中心完成身分驗證，再由後台依店家範圍安全建立連結。目前自動連結尚未開放，無法確認的資料不會自動配對。</p>
+            <p className="font-medium text-text">{manualPending ? "人工驗證待完成" : "會員自行驗證，系統管理連結"}</p>
+            <p className="mt-1 text-secondary-text">{manualPending ? "目前有尚未完成的人工驗證流程。請由授權店長核對顧客身分與 LINE 驗證狀態；未確認前不得開放會員資料。" : "未來將由顧客在會員中心完成身分驗證，再由後台依店家範圍安全建立連結。目前自動連結尚未開放，無法確認的資料不會自動配對。"}</p>
           </div>
           <button type="button" aria-expanded={showManualTools} onClick={() => setShowManualTools(value => !value)} className="text-sm font-medium text-primary underline-offset-4 hover:underline">{showManualTools ? "收起人工驗證工具" : "特殊情況：開啟人工驗證工具"}</button>
           {showManualTools && (
@@ -121,9 +126,11 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
           )}
         </div>
       )}
-      <Link href="/staff/settings/line" className="inline-flex min-h-11 items-center text-sm font-medium text-primary underline-offset-4 hover:underline">
-        查看 LINE 官方帳號設定
-      </Link>
+      {showManualTools && (
+        <Link href="/staff/settings/line" className="inline-flex min-h-11 items-center text-sm font-medium text-primary underline-offset-4 hover:underline">
+          店家 LINE 官方帳號設定
+        </Link>
+      )}
     </Card>
   );
 }
