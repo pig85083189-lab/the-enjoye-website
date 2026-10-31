@@ -7,6 +7,7 @@ const base: SlotCheckInput = {
   staffVerified: true,
   locationVerified: true,
   serviceVerified: true,
+  scheduleSnapshotComplete: true,
   workingHours: [{ dayOfWeek: 1, startTime: "09:00", endTime: "21:00", isWorking: true }],
   breaks: [],
   approvedTimeOff: [],
@@ -22,6 +23,8 @@ function assert(reason: string, input: SlotCheckInput, expected: string) {
 export function runSlotEvaluatorChecks() {
   assert("normal slot", base, "AVAILABLE");
   assert("unverified staff", { ...base, staffVerified: false }, "NOT_VERIFIED");
+  assert("incomplete schedule feed", { ...base, scheduleSnapshotComplete: false }, "MISSING_SCHEDULE");
+  assert("ambiguous working hours", { ...base, workingHours: [...base.workingHours!, ...base.workingHours!] }, "INVALID_INPUT");
   assert("missing hours", { ...base, workingHours: null }, "MISSING_SCHEDULE");
   assert("outside hours", { ...base, startTime: "08:30" }, "OUTSIDE_HOURS");
   assert("end outside hours", { ...base, startTime: "20:30" }, "OUTSIDE_HOURS");
