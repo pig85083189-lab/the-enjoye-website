@@ -136,7 +136,7 @@ export async function startLineCustomerBindAction(input: {
   });
   if (!decision.ok) return { ...decision, sentLine: false };
   const hmacKey = await deriveOwnerBindHmacKey(verified.organizationId);
-  if (!hmacKey.key) {
+  if (hmacKey.key === null) {
     return { ok: false, reason: "not_configured", message: hmacKey.message, sentLine: false };
   }
   const supabase = await createClient();
