@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { CustomerEmptyState } from "@/features/customers/CustomerEmptyState";
+import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { CustomerLineBindingCard } from "@/features/customers/CustomerLineBindingCard";
 import type { Customer360Snapshot } from "@/features/customers/use-customer-360";
 import { formatTwd } from "@/lib/commerce/money";
@@ -34,6 +35,7 @@ interface OverviewTabProps {
 
 export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps) {
   const [showAllTimeline, setShowAllTimeline] = useState(false);
+  const { organization } = useOrganization();
   const timeline = showAllTimeline ? snapshot.timeline : snapshot.timelinePreview;
   const prefs = customer.preferences;
   const hasPrefs = Boolean(
@@ -97,7 +99,7 @@ export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps)
       </div>
 
       <div className="order-5 min-[768px]:order-3">
-        <CustomerLineBindingCard />
+        <CustomerLineBindingCard customerId={customer.id} organizationId={organization.id} />
       </div>
 
       <div className="order-6 max-[767px]:hidden min-[768px]:order-3">
