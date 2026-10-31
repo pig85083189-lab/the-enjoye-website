@@ -509,6 +509,26 @@ export function LineOfficialAccountSettings({
             </Card>
           ) : null}
 
+          {!engineer ? (
+            <Card data-line-webhook-status padding="lg" className="space-y-3">
+              <h2 className="text-[16px] font-semibold text-text">LINE Webhook 與會員綁定</h2>
+              <p className="text-[13px] text-secondary-text">
+                Messaging API 連線測試成功，不代表 Webhook 已完成設定或顧客已綁定。
+                Webhook 網址與輪替操作目前限制在工程師診斷模式，避免誤覆蓋現有官方帳號的接收設定。
+              </p>
+              <p className="text-sm text-text" data-line-webhook-status-value>
+                {webhook?.url
+                  ? "系統已有 Webhook 網址，但仍需確認 LINE Developers 的 Webhook 設定及實際事件接收。"
+                  : account?.channelSecretConfigured
+                    ? "已保存 Channel Secret，但尚未取得可使用的 Webhook 網址。請由工程師檢查 Token 建立與環境設定。"
+                    : "請先保存 Channel Secret，才能進行 Webhook 設定。"}
+              </p>
+              <p className="text-[12px] text-secondary-text">
+                目前不會自動變更 LINE Developers 設定，也不會啟用群發或開放會員預約資料。
+              </p>
+            </Card>
+          ) : null}
+
           {engineer ? (
           <Card data-line-owner-bind data-line-engineer-diagnostics padding="lg" className="space-y-3">
             <h2 className="text-[16px] font-semibold text-text">工程師診斷</h2>
