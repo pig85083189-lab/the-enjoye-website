@@ -519,7 +519,7 @@ export function LineOfficialAccountSettings({
               <p className="text-sm text-text" data-line-webhook-status-value>
                 {webhook?.url
                   ? "系統已有 Webhook 網址，但仍需確認 LINE Developers 的 Webhook 設定及實際事件接收。"
-                  : account?.channelSecretConfigured
+                  : account?.secretConfigured
                     ? "已保存 Channel Secret，但尚未取得可使用的 Webhook 網址。請由工程師檢查 Token 建立與環境設定。"
                     : "請先保存 Channel Secret，才能進行 Webhook 設定。"}
               </p>
