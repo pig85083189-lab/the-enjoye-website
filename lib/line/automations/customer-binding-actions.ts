@@ -70,7 +70,9 @@ async function loadVerifiedOwner(requestedOrganizationId?: string | null) {
   return { ok: true as const, actor, organizationId: verified.organizationId };
 }
 
-async function deriveOwnerBindHmacKey(organizationId: string): Promise<string | null> {
+type BindKeyResult = { key: string } | { key: null; message: string };
+
+async function deriveOwnerBindHmacKey(organizationId: string): Promise<BindKeyResult> {
   const supabase = await createClient();
   const tokenRead = await supabase.rpc(OWNER_READ_LINE_WEBHOOK_TOKEN_CIPHER_RPC, {
     p_organization_id: organizationId,
@@ -78,7 +80,9 @@ async function deriveOwnerBindHmacKey(organizationId: string): Promise<string | 
   const tokenRow = tokenRead.data && typeof tokenRead.data === "object" ? tokenRead.data : {};
   const tokenCipher = String((tokenRow as { token_cipher?: unknown }).token_cipher ?? "");
   const token = tokenCipher.startsWith("v1.") ? decryptLineCredential(tokenCipher) : null;
-  if (!token || !token.ok) return null;
+  if (tokenRead.error) return { key: null, message: "無法讀取 LINE Webhook 設定，請確認店長權限後重試" };
+  if (!tokenCipher) return { key: null, message: "尚未建立 LINE Webhook 公開 Token，請先至 LINE 官方帳號設定完成 Webhook 連線" };
+  if (!token || !token.ok) return { key: null, message: "LINE Webhook Token 無法解密，請檢查憑證加密設定" };
   const secretRead = await supabase.rpc(READ_LINE_WEBHOOK_CHANNEL_SECRET_CIPHER_RPC, {
     p_organization_id: organizationId,
     p_public_token: token.plaintext,
@@ -86,8 +90,10 @@ async function deriveOwnerBindHmacKey(organizationId: string): Promise<string | 
   const secretRow = secretRead.data && typeof secretRead.data === "object" ? secretRead.data : {};
   const secretCipher = String((secretRow as { channel_secret_cipher?: unknown }).channel_secret_cipher ?? "");
   const secret = secretCipher.startsWith("v1.") ? decryptLineCredential(secretCipher) : null;
-  if (!secret || !secret.ok) return null;
-  return deriveLineCustomerBindHmacKey(secret.plaintext, organizationId);
+  if (secretRead.error) return { key: null, message: "無法讀取 LINE Channel Secret，請檢查官方帳號設定" };
+  if (!secretCipher) return { key: null, message: "尚未保存 LINE Channel Secret，請先完成官方帳號設定" };
+  if (!secret || !secret.ok) return { key: null, message: "LINE Channel Secret 無法解密，請檢查憑證加密設定" };
+  return { key: deriveLineCustomerBindHmacKey(secret.plaintext, organizationId) };
 }
 
 export async function loadLineCustomerBindings(
@@ -130,15 +136,15 @@ export async function startLineCustomerBindAction(input: {
   });
   if (!decision.ok) return { ...decision, sentLine: false };
   const hmacKey = await deriveOwnerBindHmacKey(verified.organizationId);
-  if (!hmacKey) {
-    return { ok: false, reason: "not_configured", message: "請先保存 LINE 官方帳號憑證與 Webhook", sentLine: false };
+  if (!hmacKey.key) {
+    return { ok: false, reason: "not_configured", message: hmacKey.message, sentLine: false };
   }
   const supabase = await createClient();
   const started = await supabase.rpc(START_LINE_CUSTOMER_BIND_RPC, {
     p_organization_id: verified.organizationId,
     p_customer_id: input.customerId.trim(),
     p_identity_confirmed: true,
-    p_bind_hmac_key: hmacKey,
+    p_bind_hmac_key: hmacKey.key,
   });
   const payload = started.data && typeof started.data === "object" ? started.data : {};
   const code = String((payload as { code?: unknown }).code ?? "");
