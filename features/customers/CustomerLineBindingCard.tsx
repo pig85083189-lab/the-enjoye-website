@@ -9,6 +9,7 @@ import { hasPendingCustomerRebind, isTrustedCustomerBinding, type LineCustomerBi
 export function CustomerLineBindingCard({ customerId, organizationId }: { customerId: string; organizationId: string }) {
   const [row, setRow] = useState<LineCustomerBindingRow | null>(null);
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
+  const [showManualTools, setShowManualTools] = useState(false);
   const [busy, setBusy] = useState(false);
   const [issuedCode, setIssuedCode] = useState<{ code: string; expiresAt: string } | null>(null);
   const [feedback, setFeedback] = useState("");
@@ -74,25 +75,32 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
   return (
     <Card padding="md" data-customer-line-binding-card className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-[15px] font-semibold text-text">LINE 會員綁定</h3>
+        <h3 className="text-[15px] font-semibold text-text">會員帳號連結</h3>
         <span className="rounded-full bg-[#F5F0EE] px-3 py-1 text-xs font-medium text-secondary-text">{label}</span>
       </div>
       <p className="text-sm text-secondary-text">
-        完成 LINE 身分驗證與店長確認後，會員中心才能依授權顯示顧客自己的預約紀錄。
+        此處顯示顧客與會員帳號的連結狀態。未完成安全身分驗證前，會員中心不會讀取店內顧客資料。
       </p>
       {trusted ? (
         <p className="text-sm text-text">已完成驗證{binding?.hint ? ` · LINE 識別提示 ${binding.hint}` : ""}。此處不顯示 LINE User ID。</p>
       ) : (
         <div className="rounded-xl border border-border/70 bg-[#FBF8F7] px-4 py-3">
-          <p className="text-sm font-medium text-text">{status === "unavailable" ? "無法確認綁定狀態" : "安全綁定需經店長授權"}</p>
+          <p className="text-sm font-medium text-text">{status === "unavailable" ? "無法確認綁定狀態" : "連結需經安全身分驗證"}</p>
           <p className="mt-1 text-xs leading-relaxed text-secondary-text">
             {status === "unavailable"
               ? "目前無法安全讀取綁定資料，請確認登入身分及測試環境設定。"
-              : "綁定碼必須由已授權的店長產生，並透過官方 LINE 驗證及再次確認。此頁可由已授權店長啟動驗證；若 LINE Webhook 或試行開關尚未設定，系統會拒絕操作。"}
+              : "人工驗證僅用於例外處理，需由已授權店長確認顧客同意，並透過官方 LINE 驗證。若店家尚未完成 LINE 設定，系統會拒絕操作。"}
           </p>
         </div>
       )}
       {!trusted && status === "ready" && (
+        <div className="space-y-3">
+          <div className="rounded-xl border border-border/70 p-4 text-sm">
+            <p className="font-medium text-text">會員自行驗證，系統管理連結</p>
+            <p className="mt-1 text-secondary-text">未來將由顧客在會員中心完成身分驗證，再由後台依店家範圍安全建立連結。目前自動連結尚未開放，無法確認的資料不會自動配對。</p>
+          </div>
+          <button type="button" aria-expanded={showManualTools} onClick={() => setShowManualTools(value => !value)} className="text-sm font-medium text-primary underline-offset-4 hover:underline">{showManualTools ? "收起人工驗證工具" : "特殊情況：開啟人工驗證工具"}</button>
+          {showManualTools && (
         <div className="space-y-3 rounded-xl border border-border/70 p-4">
           <label className="flex items-start gap-2 text-sm text-text">
             <input type="checkbox" checked={identityConfirmed} onChange={event => setIdentityConfirmed(event.target.checked)} className="mt-1" />
@@ -109,6 +117,9 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
           </div>}
           {feedback && <p role="status" className="text-sm text-secondary-text">{feedback}</p>}
           <p className="text-xs text-secondary-text">所有操作都會經過伺服器端店長權限、LINE 官方帳號及安全綁定功能開關檢查。功能未開放時不會建立綁定。</p>
+        </div>
+      )}
+          )}
         </div>
       )}
       <Link href="/staff/settings/line" className="inline-flex min-h-11 items-center text-sm font-medium text-primary underline-offset-4 hover:underline">
