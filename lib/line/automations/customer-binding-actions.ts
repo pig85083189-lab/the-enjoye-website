@@ -186,6 +186,13 @@ export async function confirmLineCustomerBindingAction(input: {
   if (reason === "duplicate") {
     return { ok: false, reason: "invalid_input", message: "此 LINE 身分已被確認，原綁定維持有效", sentLine: false };
   }
+  // A successful RPC transport response is not proof of a verified binding.
+  // Fail closed if the returned database state is unexpected or incomplete.
+  if ((payload as { verified?: unknown }).verified !== true ||
+      (payload as { status?: unknown }).status !== "active" ||
+      (payload as { organization_id?: unknown }).organization_id !== verified.organizationId) {
+    return { ok: false, reason: "error", message: "尚未確認 LINE 身分驗證完成，請重新整理後檢查狀態", sentLine: false };
+  }
   return { ok: true, message: "已現場確認並啟用顧客 LINE 綁定", sentLine: false };
 }
 
