@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { CustomerEmptyState } from "@/features/customers/CustomerEmptyState";
+import { CustomerLineBindingCard } from "@/features/customers/CustomerLineBindingCard";
 import type { Customer360Snapshot } from "@/features/customers/use-customer-360";
 import { formatTwd } from "@/lib/commerce/money";
 import {
@@ -93,6 +94,10 @@ export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps)
             新增追蹤
           </Button>
         </Card>
+      </div>
+
+      <div className="order-5 min-[768px]:order-3">
+        <CustomerLineBindingCard />
       </div>
 
       <div className="order-6 max-[767px]:hidden min-[768px]:order-3">
