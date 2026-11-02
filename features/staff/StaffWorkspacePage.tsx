@@ -268,8 +268,10 @@ export function StaffWorkspacePage({
       const localRows = listWorkingHours(organization.id, { locationId });
       const validStaff = new Set(memberships.filter(m => m.isActive).map(m => m.userId));
       for (const row of rows) {
+        if (!row || typeof row.staff_id !== "string" || typeof row.start_time !== "string" || typeof row.end_time !== "string") throw new Error("雲端班表欄位缺失，沒有還原");
         const start = row.start_time.slice(0, 5), end = row.end_time.slice(0, 5);
-        if (!validStaff.has(row.staff_id) || !Number.isInteger(row.day_of_week) || row.day_of_week < 0 || row.day_of_week > 6 || !/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end) || start >= end || typeof row.is_working !== "boolean") throw new Error("雲端班表驗證失敗，沒有還原");
+        const validTime = /^([01]\\d|2[0-3]):[0-5]\\d$/.test(start) && /^([01]\\d|2[0-3]):[0-5]\\d$/.test(end);
+        if (!validStaff.has(row.staff_id) || !Number.isInteger(row.day_of_week) || row.day_of_week < 0 || row.day_of_week > 6 || !validTime || start >= end || typeof row.is_working !== "boolean") throw new Error("雲端班表驗證失敗，沒有還原");
       }
       const seenCloudDays = new Set<string>();
       for (const row of rows) {
