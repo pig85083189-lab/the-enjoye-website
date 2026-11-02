@@ -22,7 +22,8 @@ export function findLeaveAppointmentConflicts(
   return appointments.filter((appointment) => {
     if (!appointment.id || !appointment.status ||
       !Number.isFinite(Date.parse(appointment.starts_at)) ||
-      !Number.isFinite(Date.parse(appointment.ends_at))) {
+      !Number.isFinite(Date.parse(appointment.ends_at)) ||
+      Date.parse(appointment.starts_at) >= Date.parse(appointment.ends_at)) {
       // Incomplete appointment data must not silently pass an approval check.
       throw new Error("APPOINTMENT_DATA_INCOMPLETE");
     }
