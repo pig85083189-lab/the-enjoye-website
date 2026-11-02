@@ -44,3 +44,28 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!data) return NextResponse.json({ error: "REQUEST_NOT_PENDING_OR_NOT_FOUND" }, { status: 409 });
   return NextResponse.json({ request: data }, { headers: { "Cache-Control": "no-store" } });
 }
+
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  const resolved = await getAuthenticatedStaffMembership();
+  if (resolved.status !== "ok") return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  const membership = resolved.membership;
+  const locationId = new URL(request.url).searchParams.get("locationId");
+  if (!locationId || !membership.locationIds.includes(locationId)) {
+    return NextResponse.json({ error: "LOCATION_NOT_AUTHORIZED" }, { status: 403 });
+  }
+  const { id } = await context.params;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    return NextResponse.json({ error: "INVALID_REQUEST_ID" }, { status: 400 });
+  }
+  const admin = createServiceRoleClient();
+  if (!admin) return NextResponse.json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
+  // Staff can withdraw only their own pending request. No deletion of audit history.
+  const { data, error } = await admin.from("staff_leave_requests")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("id", id).eq("organization_id", membership.organizationId)
+    .eq("location_id", locationId).eq("staff_membership_id", membership.id)
+    .eq("status", "pending").select("id,status").maybeSingle();
+  if (error) return NextResponse.json({ error: "LEAVE_WITHDRAW_FAILED" }, { status: 503 });
+  if (!data) return NextResponse.json({ error: "REQUEST_NOT_PENDING_OR_NOT_OWNED" }, { status: 409 });
+  return NextResponse.json({ request: data }, { headers: { "Cache-Control": "no-store" } });
+}
