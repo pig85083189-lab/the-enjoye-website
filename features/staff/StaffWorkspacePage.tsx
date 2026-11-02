@@ -134,6 +134,8 @@ export function StaffWorkspacePage({
   const [mobileDayIndex, setMobileDayIndex] = useState(() => todayIndexInWeek(new Date()));
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [scheduleSyncBusy, setScheduleSyncBusy] = useState(false);
+  const [scheduleSyncMessage, setScheduleSyncMessage] = useState("");
   const [qvTab, setQvTab] = useState<"today" | "hours" | "breaks" | "timeoff">("today");
   const [quickOpen, setQuickOpen] = useState(false);
   const [breakDate, setBreakDate] = useState(() => formatYmd(new Date()));
@@ -187,6 +189,26 @@ export function StaffWorkspacePage({
     if (!isClient || !locationId) return [];
     return listWorkingHours(organization.id, { locationId });
   }, [isClient, locationId, organization.id, revision]);
+
+  async function importBrowserSchedule() {
+    if (!locationId || scheduleSyncBusy || !canAddStaff) return;
+    const rows = listWorkingHours(organization.id, { locationId });
+    if (rows.length === 0) { setScheduleSyncMessage("目前沒有可匯入的本機班表，未修改雲端資料。"); return; }
+    if (!window.confirm("要將目前這個瀏覽器的 " + rows.length + " 筆排班首次匯入正式雲端嗎？如果雲端已有資料，系統會拒絕覆蓋。")) return;
+    setScheduleSyncBusy(true);
+    setScheduleSyncMessage("");
+    try {
+      const response = await fetch("/api/staff/working-hours", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locationId, rows: rows.map(({ staffId, dayOfWeek, startTime, endTime, isWorking }) => ({ staffId, dayOfWeek, startTime, endTime, isWorking })) }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "IMPORT_FAILED");
+      setScheduleSyncMessage("成功匯入 " + result.imported + " 筆班表。瀏覽器原始資料已保留。");
+    } catch (error) {
+      setScheduleSyncMessage("未完成匯入：" + (error instanceof Error ? error.message : "UNKNOWN_ERROR"));
+    } finally { setScheduleSyncBusy(false); }
+  }
 
   const breaks = useMemo(() => {
     void revision;
@@ -412,6 +434,7 @@ export function StaffWorkspacePage({
               新增員工
             </Button>
           ) : null}
+          {canAddStaff && <button type="button" disabled={scheduleSyncBusy} onClick={() => void importBrowserSchedule()} className="inline-flex h-9 items-center rounded-full border border-border bg-surface px-4 text-[13px] font-medium text-text disabled:opacity-50">{scheduleSyncBusy ? "匯入中…" : "首次匯入雲端班表"}</button>}
           <a href="/staff/staff/scheduling" className="inline-flex h-9 items-center rounded-full border border-border bg-surface px-4 text-[13px] font-medium text-text hover:bg-primary-light/30">人員排班與休假</a>
           <div className="hidden w-[220px] shrink-0 min-[720px]:block">
             <OrgLocationSwitcher compact />
@@ -419,6 +442,7 @@ export function StaffWorkspacePage({
         </div>
       </header>
 
+      {scheduleSyncMessage && <p role="status" className="mb-3 rounded-xl border border-border bg-surface p-3 text-sm text-text">{scheduleSyncMessage}</p>}
       <div className="mb-3 min-[720px]:hidden">
         <OrgLocationSwitcher compact />
       </div>
