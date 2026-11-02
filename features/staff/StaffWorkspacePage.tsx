@@ -190,6 +190,7 @@ export function StaffWorkspacePage({
     if (!isClient || !locationId || memberships.length === 0 || !remoteRosterLocked) return;
     let cancelled = false;
     const controller = new AbortController();
+    const startingRevision = getStaffScheduleRevision();
     void (async () => {
       try {
         const response = await fetch("/api/staff/working-hours?locationId=" + encodeURIComponent(locationId), { cache: "no-store", signal: controller.signal });
@@ -204,7 +205,7 @@ export function StaffWorkspacePage({
         const same = current.length === rows.length && rows.every((row: {staffId:string;dayOfWeek:DayOfWeek;startTime:string;endTime:string;isWorking:boolean}) =>
           current.some(item => item.staffId === row.staffId && item.dayOfWeek === row.dayOfWeek &&
             item.startTime === row.startTime && item.endTime === row.endTime && item.isWorking === row.isWorking));
-        if (same || cancelled) return;
+        if (same || cancelled || getStaffScheduleRevision() !== startingRevision) return;
         // Keep a recoverable browser snapshot before replacing stale local schedule.
         const backupKey = "beauty-os:cloud-schedule-backup:" + organization.id + ":" + locationId;
         if (current.length > 0) localStorage.setItem(backupKey, JSON.stringify(current));
