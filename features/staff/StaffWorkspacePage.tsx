@@ -266,20 +266,25 @@ export function StaffWorkspacePage({
       const rows: Array<{staff_id:string;day_of_week:number;start_time:string;end_time:string;is_working:boolean}> = result.rows ?? [];
       if (!Array.isArray(rows) || rows.length === 0) throw new Error("雲端尚無班表，沒有修改本機資料");
       const localRows = listWorkingHours(organization.id, { locationId });
-      if (localRows.length > 0) {
-        setScheduleSyncMessage("雲端已讀取 " + rows.length + " 筆。本機已有 " + localRows.length + " 筆班表，為避免覆蓋，沒有自動還原。");
-        return;
-      }
-      if (!window.confirm("本機沒有班表。要從雲端還原 " + rows.length + " 筆排班到這個瀏覽器嗎？")) return;
       const validStaff = new Set(memberships.filter(m => m.isActive).map(m => m.userId));
       for (const row of rows) {
         const start = row.start_time.slice(0, 5), end = row.end_time.slice(0, 5);
         if (!validStaff.has(row.staff_id) || !Number.isInteger(row.day_of_week) || row.day_of_week < 0 || row.day_of_week > 6 || !/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end) || start >= end || typeof row.is_working !== "boolean") throw new Error("雲端班表驗證失敗，沒有還原");
       }
+      const seenCloudDays = new Set<string>();
+      for (const row of rows) {
+        const key = row.staff_id + ":" + row.day_of_week;
+        if (seenCloudDays.has(key)) throw new Error("雲端班表含重複星期資料，沒有還原");
+        seenCloudDays.add(key);
+      }
+      const confirmation = localRows.length > 0
+        ? "本機已有 " + localRows.length + " 筆班表。要以雲端 " + rows.length + " 筆資料更新相同員工及星期的本機班表嗎？其他本機紀錄不會刪除。"
+        : "本機沒有班表。要從雲端還原 " + rows.length + " 筆排班到這個瀏覽器嗎？";
+      if (!window.confirm(confirmation)) return;
       for (const row of rows) {
         upsertWorkingHours(organization.id, { locationId, staffId: row.staff_id, dayOfWeek: row.day_of_week as DayOfWeek, startTime: row.start_time.slice(0, 5), endTime: row.end_time.slice(0, 5), isWorking: row.is_working });
       }
-      setScheduleSyncMessage("已從雲端還原 " + rows.length + " 筆班表到這個瀏覽器；尚未啟用自動雙向同步。");
+      setScheduleSyncMessage("已從雲端同步 " + rows.length + " 筆班表到這個瀏覽器（僅更新相同員工及星期，不刪除其他本機紀錄）；尚未啟用自動雙向同步。");
     } catch (error) {
       setScheduleSyncMessage("雲端讀取未完成：" + (error instanceof Error ? error.message : "UNKNOWN_ERROR"));
     } finally { setCloudScheduleBusy(false); }
