@@ -54,7 +54,7 @@ export async function GET(request: Request) {
   // A single unresolved leave request is enough to block diagnostic slots for
   // the affected day. This is deliberately conservative until leave sources
   // and approval semantics are unified.
-  const { data: leaves, error: leaveError } = await admin.from("staff_leave_requests")
+  const { data: leaves, error: leaveError } = await admin.from("booking_staff_time_off")
     .select("starts_at,ends_at,status")
     .eq("organization_id", member.organizationId).eq("location_id", locationId)
     .eq("staff_membership_id", staff[0].id)
