@@ -64,6 +64,7 @@ export function calculateAvailableStarts(input: AvailabilityInput): string[] {
     if (to <= from) throw new Error("INVALID_BREAK");
     occupied.push({ start: utcDay - TAIPEI_OFFSET_MS + from * 60_000, end: utcDay - TAIPEI_OFFSET_MS + to * 60_000 });
   }
+  if (input.notBefore !== undefined && !input.notBefore.endsWith("Z") && !input.notBefore.endsWith("+08:00")) throw new Error("INVALID_BOOKING_CUTOFF");
   const notBefore = input.notBefore === undefined ? Number.NEGATIVE_INFINITY : Date.parse(input.notBefore);
   if (Number.isNaN(notBefore)) throw new Error("INVALID_BOOKING_CUTOFF");
   const starts = new Set<number>();
