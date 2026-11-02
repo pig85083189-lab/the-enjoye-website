@@ -835,7 +835,13 @@ export function StaffWorkspacePage({
               }
               onDeleteBreak={(id) => withError(() => deleteBreak(organization.id, id))}
               onCreateTimeOff={() => { void submitTimeOffRequest(); }}
-              onDeleteTimeOff={(id) => withError(() => deleteTimeOff(organization.id, id))}
+              onDeleteTimeOff={(id) => {
+                if (cloudTimeOff.some(row => row.id === id)) {
+                  setError("雲端休假紀錄不能只從本機刪除，請透過店長審核流程處理。");
+                  return;
+                }
+                withError(() => deleteTimeOff(organization.id, id));
+              }}
               onBreakDate={setBreakDate}
               onBreakStart={setBreakStart}
               onBreakEnd={setBreakEnd}
@@ -902,7 +908,13 @@ export function StaffWorkspacePage({
             }
             onDeleteBreak={(id) => withError(() => deleteBreak(organization.id, id))}
             onCreateTimeOff={() => { void submitTimeOffRequest(); }}
-            onDeleteTimeOff={(id) => withError(() => deleteTimeOff(organization.id, id))}
+            onDeleteTimeOff={(id) => {
+                if (cloudTimeOff.some(row => row.id === id)) {
+                  setError("雲端休假紀錄不能只從本機刪除，請透過店長審核流程處理。");
+                  return;
+                }
+                withError(() => deleteTimeOff(organization.id, id));
+              }}
             onBreakDate={setBreakDate}
             onBreakStart={setBreakStart}
             onBreakEnd={setBreakEnd}
