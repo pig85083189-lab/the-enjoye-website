@@ -620,6 +620,11 @@ export function StaffWorkspacePage({
         <OrgLocationSwitcher compact />
       </div>
 
+      {remoteRosterLocked && !canAddStaff && (cloudLeaveLoading || cloudLeaveMessage) && (
+        <p role="status" className="mb-3 rounded-xl border border-border bg-surface p-3 text-sm text-text">
+          {cloudLeaveLoading ? "正在載入雲端休假紀錄…" : cloudLeaveMessage}
+        </p>
+      )}
       {remoteRosterLocked && canAddStaff && (
         <section className="mb-4 rounded-2xl border border-border bg-white p-4">
           <h2 className="text-base font-semibold text-text">休假待審核</h2>
