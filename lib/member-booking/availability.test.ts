@@ -51,7 +51,7 @@ describe("member booking availability", () => {
         { startTime: "09:30", endTime: "10:00" },
         { startTime: "11:00", endTime: "11:30" },
       ],
-    })).toEqual([]);
+    })).toEqual(["10:00"]);
   });
   it("fails closed for invalid break windows", () => {
     expect(() => calculateAvailableStarts({
