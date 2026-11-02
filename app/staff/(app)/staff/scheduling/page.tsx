@@ -11,5 +11,5 @@ export default async function StaffSchedulingPage() {
   if (!resolved.membership?.isActive) {
     return <div className="rounded-2xl border border-border bg-surface p-6">無法存取排班管理：員工帳號未啟用。</div>;
   }
-  return <StaffLeaveApprovalPreview role={resolved.membership.role} />;
+  return <StaffLeaveApprovalPreview role={resolved.membership.role} locationIds={resolved.membership.locationIds} />;
 }
