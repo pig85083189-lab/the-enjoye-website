@@ -230,7 +230,7 @@ export function StaffWorkspacePage({
       const validStaff = new Set(memberships.filter(m => m.isActive).map(m => m.userId));
       for (const row of rows) {
         const start = row.start_time.slice(0, 5), end = row.end_time.slice(0, 5);
-        if (!validStaff.has(row.staff_id) || !Number.isInteger(row.day_of_week) || row.day_of_week < 0 || row.day_of_week > 6 || !/^\\d{2}:\\d{2}$/.test(start) || !/^\\d{2}:\\d{2}$/.test(end) || start >= end || typeof row.is_working !== "boolean") throw new Error("雲端班表驗證失敗，沒有還原");
+        if (!validStaff.has(row.staff_id) || !Number.isInteger(row.day_of_week) || row.day_of_week < 0 || row.day_of_week > 6 || !/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end) || start >= end || typeof row.is_working !== "boolean") throw new Error("雲端班表驗證失敗，沒有還原");
       }
       for (const row of rows) {
         upsertWorkingHours(organization.id, { locationId, staffId: row.staff_id, dayOfWeek: row.day_of_week as DayOfWeek, startTime: row.start_time.slice(0, 5), endTime: row.end_time.slice(0, 5), isWorking: row.is_working });
