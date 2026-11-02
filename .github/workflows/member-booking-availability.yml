@@ -1,0 +1,38 @@
+name: Member booking availability tests
+
+on:
+  pull_request:
+    paths:
+      - "lib/member-booking/**"
+      - "app/api/staff/booking-availability-preview/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/member-booking-availability.yml"
+  push:
+    branches:
+      - feature/staff-leave-approval-ui-20261102
+    paths:
+      - "lib/member-booking/**"
+      - "app/api/staff/booking-availability-preview/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/member-booking-availability.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  availability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Test availability calculations
+        run: npx vitest run lib/member-booking/availability.test.ts
+      - name: Check TypeScript
+        run: npx tsc --noEmit
