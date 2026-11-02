@@ -52,6 +52,16 @@ export async function POST(request: Request) {
     .select("user_id,is_active").eq("organization_id", member.organizationId)
     .eq("user_id", staffId).eq("is_active", true).maybeSingle();
   if (staffError || !staff) return fail("STAFF_NOT_AUTHORIZED", 403);
+  // A staff member belonging to the organization is not necessarily assigned
+  // to this location. Require a cloud schedule row at the requested location.
+  const { count: locationScheduleCount, error: locationScheduleError } = await admin
+    .from("booking_staff_working_hours")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", member.organizationId)
+    .eq("location_id", locationId)
+    .eq("staff_id", staffId);
+  if (locationScheduleError) return fail("STAFF_LOCATION_CHECK_FAILED", 503);
+  if (!locationScheduleCount) return fail("STAFF_LOCATION_NOT_VERIFIED", 403);
   // Both request and manager-directed entries remain pending until the
   // appointment-to-tenant mapping and conflict check are proven.
   // Never mark a leave APPROVED in this endpoint.
