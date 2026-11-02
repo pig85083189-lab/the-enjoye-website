@@ -157,6 +157,7 @@ export function StaffWorkspacePage({
   const [cloudLeaveLoading, setCloudLeaveLoading] = useState(false);
   const [cloudLeaveLoaded, setCloudLeaveLoaded] = useState(false);
   const [cloudLeaveRevision, setCloudLeaveRevision] = useState(0);
+  const [reviewingLeaveId, setReviewingLeaveId] = useState<string | null>(null);
 
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [staffInvites, setStaffInvites] = useState<StaffInviteRecord[]>([]);
@@ -461,8 +462,9 @@ export function StaffWorkspacePage({
   }
 
   async function rejectCloudLeave(id: string) {
-    if (!canAddStaff || !locationId) return;
+    if (!canAddStaff || !locationId || reviewingLeaveId || !cloudLeaveLoaded || cloudLeaveLoading) return;
     if (!window.confirm("確定拒絕這筆休假申請？")) return;
+    setReviewingLeaveId(id);
     setError("");
     try {
       const response = await fetch("/api/staff/time-off", {
@@ -476,6 +478,8 @@ export function StaffWorkspacePage({
       setNotice("休假申請已拒絕，雲端紀錄正在更新。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "休假審核失敗");
+    } finally {
+      setReviewingLeaveId(null);
     }
   }
 
@@ -643,7 +647,8 @@ export function StaffWorkspacePage({
                   {row.reason && <div className="text-secondary-text">{row.reason}</div>}
                 </div>
                 <button type="button" onClick={() => void rejectCloudLeave(row.id)}
-                  className="rounded-lg border border-border px-3 py-2 text-sm text-text hover:bg-gray-50">拒絕申請</button>
+                  disabled={reviewingLeaveId !== null || cloudLeaveLoading || !cloudLeaveLoaded}
+                  className="rounded-lg border border-border px-3 py-2 text-sm text-text hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50">{reviewingLeaveId === row.id ? "處理中…" : "拒絕申請"}</button>
               </div>
             ))}
           </div>
