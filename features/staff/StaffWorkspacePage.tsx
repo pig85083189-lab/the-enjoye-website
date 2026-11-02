@@ -412,6 +412,7 @@ export function StaffWorkspacePage({
               新增員工
             </Button>
           ) : null}
+          <a href="/staff/staff/scheduling" className="inline-flex h-9 items-center rounded-full border border-border bg-surface px-4 text-[13px] font-medium text-text hover:bg-primary-light/30">人員排班與休假</a>
           <div className="hidden w-[220px] shrink-0 min-[720px]:block">
             <OrgLocationSwitcher compact />
           </div>
