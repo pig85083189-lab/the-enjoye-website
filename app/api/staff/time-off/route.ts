@@ -62,6 +62,20 @@ export async function POST(request: Request) {
     .eq("staff_id", staffId);
   if (locationScheduleError) return fail("STAFF_LOCATION_CHECK_FAILED", 503);
   if (!locationScheduleCount) return fail("STAFF_LOCATION_NOT_VERIFIED", 403);
+  // Avoid duplicate or overlapping pending leave requests for the same staff.
+  // A failed query must block creation rather than assume there are no overlaps.
+  const { data: overlapping, error: overlapError } = await admin
+    .from("booking_staff_time_off")
+    .select("id")
+    .eq("organization_id", member.organizationId)
+    .eq("location_id", locationId)
+    .eq("staff_id", staffId)
+    .in("status", ["REQUESTED", "APPROVED"])
+    .lt("start_at", endAt)
+    .gt("end_at", startAt)
+    .limit(1);
+  if (overlapError || !overlapping) return fail("LEAVE_OVERLAP_CHECK_FAILED", 503);
+  if (overlapping.length > 0) return fail("LEAVE_TIME_OVERLAP", 409);
   // Both request and manager-directed entries remain pending until the
   // appointment-to-tenant mapping and conflict check are proven.
   // Never mark a leave APPROVED in this endpoint.
