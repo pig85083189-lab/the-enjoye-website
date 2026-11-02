@@ -18,6 +18,8 @@ export type AvailabilityInput = {
   slotMinutes?: number;
   workingDays: WorkingDay[];
   busy: BusyInterval[];
+  /** Current instant or booking cutoff. Earlier starts are never offered. */
+  notBefore?: string;
 };
 const LOCAL_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const LOCAL_CLOCK = /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/;
@@ -51,6 +53,8 @@ export function calculateAvailableStarts(input: AvailabilityInput): string[] {
   const weekday = new Date(utcDay).getUTCDay();
   const shifts = workingDays.filter(day => day.staffId === staffId && day.dayOfWeek === weekday && day.isWorking);
   const occupied = busy.map(parseBusy);
+  const notBefore = input.notBefore === undefined ? Number.NEGATIVE_INFINITY : Date.parse(input.notBefore);
+  if (Number.isNaN(notBefore)) throw new Error("INVALID_BOOKING_CUTOFF");
   const starts = new Set<number>();
   for (const shift of shifts) {
     const from = clockMinutes(shift.startTime), to = clockMinutes(shift.endTime);
@@ -59,6 +63,7 @@ export function calculateAvailableStarts(input: AvailabilityInput): string[] {
     for (let minute = first; minute + serviceMinutes <= to; minute += slotMinutes) {
       const start = utcDay - TAIPEI_OFFSET_MS + minute * 60_000;
       const end = start + serviceMinutes * 60_000;
+      if (start < notBefore) continue;
       if (occupied.some(interval => interval.start < end && interval.end > start)) continue;
       starts.add(minute);
     }
