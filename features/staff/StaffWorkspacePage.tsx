@@ -31,6 +31,7 @@ import {
   listBreaks,
   listTimeOff,
   listWorkingHours,
+  replaceLocationWorkingHoursFromCloud,
   subscribeStaffSchedule,
   upsertWorkingHours,
 } from "@/lib/staff-schedule/store";
@@ -184,6 +185,37 @@ export function StaffWorkspacePage({
       }
     }
   }, [isClient, locationId, memberships, organization.id, revision]);
+
+  useEffect(() => {
+    if (!isClient || !locationId || memberships.length === 0) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch("/api/staff/working-hours?locationId=" + encodeURIComponent(locationId), { cache: "no-store", signal: controller.signal });
+        if (!response.ok) return;
+        const result = await response.json();
+        if (cancelled || !Array.isArray(result.rows) || result.rows.length === 0) return;
+        const rows = result.rows.map((row: {staff_id:string;day_of_week:number;start_time:string;end_time:string;is_working:boolean}) => ({
+          staffId: row.staff_id, dayOfWeek: row.day_of_week as DayOfWeek,
+          startTime: row.start_time.slice(0,5), endTime: row.end_time.slice(0,5), isWorking: row.is_working,
+        }));
+        const current = listWorkingHours(organization.id, { locationId });
+        const same = current.length === rows.length && rows.every((row: {staffId:string;dayOfWeek:DayOfWeek;startTime:string;endTime:string;isWorking:boolean}) =>
+          current.some(item => item.staffId === row.staffId && item.dayOfWeek === row.dayOfWeek &&
+            item.startTime === row.startTime && item.endTime === row.endTime && item.isWorking === row.isWorking));
+        if (same || cancelled) return;
+        // Keep a recoverable browser snapshot before replacing stale local schedule.
+        const backupKey = "beauty-os:cloud-schedule-backup:" + organization.id + ":" + locationId;
+        if (current.length > 0) localStorage.setItem(backupKey, JSON.stringify(current));
+        replaceLocationWorkingHoursFromCloud(organization.id, locationId, rows);
+        setScheduleSyncMessage("已自動載入雲端最新班表（" + rows.length + " 筆）。");
+      } catch {
+        // Offline or unavailable cloud: leave existing browser schedule intact.
+      }
+    })();
+    return () => { cancelled = true; controller.abort(); };
+  }, [isClient, locationId, organization.id, memberships]);
 
   const workingHours = useMemo(() => {
     void revision;
