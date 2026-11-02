@@ -154,6 +154,8 @@ export function StaffWorkspacePage({
     createdAt: string;
   }>>([]);
   const [cloudLeaveMessage, setCloudLeaveMessage] = useState("");
+  const [cloudLeaveLoading, setCloudLeaveLoading] = useState(false);
+  const [cloudLeaveLoaded, setCloudLeaveLoaded] = useState(false);
   const [cloudLeaveRevision, setCloudLeaveRevision] = useState(0);
 
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -291,11 +293,15 @@ export function StaffWorkspacePage({
   useEffect(() => {
     if (!isClient || !locationId || !remoteRosterLocked) {
       setCloudTimeOff([]);
+      setCloudLeaveLoaded(false);
+      setCloudLeaveLoading(false);
       return;
     }
     let cancelled = false;
     const controller = new AbortController();
     setCloudTimeOff([]);
+    setCloudLeaveLoaded(false);
+    setCloudLeaveLoading(true);
     void (async () => {
       try {
         const response = await fetch("/api/staff/time-off?locationId=" + encodeURIComponent(locationId),
@@ -313,9 +319,12 @@ export function StaffWorkspacePage({
           startAt: row.start_at, endAt: row.end_at,
           reason: row.reason || undefined, status: row.status, createdAt: row.created_at,
         })));
+        setCloudLeaveLoaded(true);
         setCloudLeaveMessage("");
       } catch {
         if (!cancelled) setCloudLeaveMessage("雲端休假紀錄尚未載入，請確認資料表與權限設定。");
+      } finally {
+        if (!cancelled) setCloudLeaveLoading(false);
       }
     })();
     return () => { cancelled = true; controller.abort(); };
@@ -616,8 +625,9 @@ export function StaffWorkspacePage({
           <h2 className="text-base font-semibold text-text">休假待審核</h2>
           <p className="mt-1 text-xs text-secondary-text">核准功能須等預約衝突檢查完成後開放。</p>
           {cloudLeaveMessage && <p role="status" className="mt-2 text-sm text-secondary-text">{cloudLeaveMessage}</p>}
+          {cloudLeaveLoading && <p role="status" className="mt-2 text-sm text-secondary-text">正在載入雲端休假紀錄…</p>}
           <div className="mt-3 space-y-2">
-            {cloudTimeOff.filter(row => row.status === "REQUESTED").length === 0 && (
+            {cloudLeaveLoaded && cloudTimeOff.filter(row => row.status === "REQUESTED").length === 0 && (
               <p className="text-sm text-secondary-text">目前沒有待審核的雲端休假申請。</p>
             )}
             {cloudTimeOff.filter(row => row.status === "REQUESTED").map(row => (
