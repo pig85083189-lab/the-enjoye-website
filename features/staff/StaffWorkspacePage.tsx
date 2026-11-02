@@ -135,6 +135,7 @@ export function StaffWorkspacePage({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [scheduleSyncBusy, setScheduleSyncBusy] = useState(false);
+  const [cloudScheduleBusy, setCloudScheduleBusy] = useState(false);
   const [scheduleSyncMessage, setScheduleSyncMessage] = useState("");
   const [qvTab, setQvTab] = useState<"today" | "hours" | "breaks" | "timeoff">("today");
   const [quickOpen, setQuickOpen] = useState(false);
@@ -208,6 +209,36 @@ export function StaffWorkspacePage({
     } catch (error) {
       setScheduleSyncMessage("未完成匯入：" + (error instanceof Error ? error.message : "UNKNOWN_ERROR"));
     } finally { setScheduleSyncBusy(false); }
+  }
+
+  async function restoreCloudSchedule() {
+    if (!locationId || cloudScheduleBusy || !canAddStaff) return;
+    setCloudScheduleBusy(true);
+    setScheduleSyncMessage("");
+    try {
+      const response = await fetch("/api/staff/working-hours?locationId=" + encodeURIComponent(locationId), { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "CLOUD_READ_FAILED");
+      const rows: Array<{staff_id:string;day_of_week:number;start_time:string;end_time:string;is_working:boolean}> = result.rows ?? [];
+      if (!Array.isArray(rows) || rows.length === 0) throw new Error("雲端尚無班表，沒有修改本機資料");
+      const localRows = listWorkingHours(organization.id, { locationId });
+      if (localRows.length > 0) {
+        setScheduleSyncMessage("雲端已讀取 " + rows.length + " 筆。本機已有 " + localRows.length + " 筆班表，為避免覆蓋，沒有自動還原。");
+        return;
+      }
+      if (!window.confirm("本機沒有班表。要從雲端還原 " + rows.length + " 筆排班到這個瀏覽器嗎？")) return;
+      const validStaff = new Set(memberships.filter(m => m.isActive).map(m => m.userId));
+      for (const row of rows) {
+        const start = row.start_time.slice(0, 5), end = row.end_time.slice(0, 5);
+        if (!validStaff.has(row.staff_id) || !Number.isInteger(row.day_of_week) || row.day_of_week < 0 || row.day_of_week > 6 || !/^\\d{2}:\\d{2}$/.test(start) || !/^\\d{2}:\\d{2}$/.test(end) || start >= end || typeof row.is_working !== "boolean") throw new Error("雲端班表驗證失敗，沒有還原");
+      }
+      for (const row of rows) {
+        upsertWorkingHours(organization.id, { locationId, staffId: row.staff_id, dayOfWeek: row.day_of_week as DayOfWeek, startTime: row.start_time.slice(0, 5), endTime: row.end_time.slice(0, 5), isWorking: row.is_working });
+      }
+      setScheduleSyncMessage("已從雲端還原 " + rows.length + " 筆班表到這個瀏覽器；尚未啟用自動雙向同步。");
+    } catch (error) {
+      setScheduleSyncMessage("雲端讀取未完成：" + (error instanceof Error ? error.message : "UNKNOWN_ERROR"));
+    } finally { setCloudScheduleBusy(false); }
   }
 
   const breaks = useMemo(() => {
@@ -434,6 +465,7 @@ export function StaffWorkspacePage({
               新增員工
             </Button>
           ) : null}
+          {canAddStaff && <button type="button" disabled={cloudScheduleBusy} onClick={() => void restoreCloudSchedule()} className="inline-flex h-9 items-center rounded-full border border-border bg-surface px-4 text-[13px] font-medium text-text disabled:opacity-50">{cloudScheduleBusy ? "讀取中…" : "從雲端還原班表"}</button>}
           {canAddStaff && <button type="button" disabled={scheduleSyncBusy} onClick={() => void importBrowserSchedule()} className="inline-flex h-9 items-center rounded-full border border-border bg-surface px-4 text-[13px] font-medium text-text disabled:opacity-50">{scheduleSyncBusy ? "匯入中…" : "首次匯入雲端班表"}</button>}
           <a href="/staff/staff/scheduling" className="inline-flex h-9 items-center rounded-full border border-border bg-surface px-4 text-[13px] font-medium text-text hover:bg-primary-light/30">人員排班與休假</a>
           <div className="hidden w-[220px] shrink-0 min-[720px]:block">
