@@ -148,6 +148,14 @@ export function StaffWorkspacePage({
   const [offStart, setOffStart] = useState("09:00");
   const [offEnd, setOffEnd] = useState("21:00");
   const [offReason, setOffReason] = useState("");
+  const [cloudTimeOff, setCloudTimeOff] = useState<Array<{
+    id: string; staffId: string; locationId: string; startAt: string;
+    endAt: string; reason?: string; status: "REQUESTED" | "APPROVED" | "REJECTED";
+    createdAt: string;
+  }>>([]);
+  const [cloudLeaveMessage, setCloudLeaveMessage] = useState("");
+  const [cloudLeaveRevision, setCloudLeaveRevision] = useState(0);
+
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [staffInvites, setStaffInvites] = useState<StaffInviteRecord[]>([]);
   const canAddStaff = canManageStaff(membership?.role);
@@ -280,11 +288,47 @@ export function StaffWorkspacePage({
     return listBreaks(organization.id, { locationId });
   }, [isClient, locationId, organization.id, revision]);
 
+  useEffect(() => {
+    if (!isClient || !locationId || !remoteRosterLocked) {
+      setCloudTimeOff([]);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setCloudTimeOff([]);
+    void (async () => {
+      try {
+        const response = await fetch("/api/staff/time-off?locationId=" + encodeURIComponent(locationId),
+          { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error("CLOUD_LEAVE_READ_FAILED");
+        const payload: { rows?: Array<{
+          id: string; staff_id: string; location_id: string;
+          start_at: string; end_at: string; reason: string | null;
+          status: "REQUESTED" | "APPROVED" | "REJECTED"; created_at: string;
+        }> } = await response.json();
+        if (!Array.isArray(payload.rows) || payload.rows.length > 200) throw new Error("INVALID_CLOUD_LEAVE");
+        if (cancelled) return;
+        setCloudTimeOff(payload.rows.map(row => ({
+          id: row.id, staffId: row.staff_id, locationId: row.location_id,
+          startAt: row.start_at, endAt: row.end_at,
+          reason: row.reason || undefined, status: row.status, createdAt: row.created_at,
+        })));
+        setCloudLeaveMessage("");
+      } catch {
+        if (!cancelled) setCloudLeaveMessage("雲端休假紀錄尚未載入，請確認資料表與權限設定。");
+      }
+    })();
+    return () => { cancelled = true; controller.abort(); };
+  }, [isClient, locationId, remoteRosterLocked, cloudLeaveRevision]);
+
   const timeOff = useMemo(() => {
     void revision;
     if (!isClient || !locationId) return [];
-    return listTimeOff(organization.id, { locationId });
-  }, [isClient, locationId, organization.id, revision]);
+    const local = listTimeOff(organization.id, { locationId });
+    const ids = new Set(cloudTimeOff.map(row => row.id));
+    return [...cloudTimeOff.map(row => ({ ...row, organizationId: organization.id })),
+      ...local.filter(row => !ids.has(row.id))];
+  }, [isClient, locationId, organization.id, revision, cloudTimeOff]);
 
   const weekStart = useMemo(() => {
     const base = startOfStaffWeek(now);
@@ -407,6 +451,7 @@ export function StaffWorkspacePage({
         reason: offReason || undefined, status: "REQUESTED",
       });
       setOffReason("");
+      setCloudLeaveRevision(value => value + 1);
       setNotice("休假已送出至雲端，等待審核；目前不會阻擋客人預約。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "休假申請失敗");
