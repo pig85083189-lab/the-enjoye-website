@@ -14,6 +14,10 @@ export async function GET(request: Request) {
   }
   const membership = resolved.membership;
   const url = new URL(request.url);
+  const locationId = url.searchParams.get("locationId");
+  if (!locationId || !membership.locationIds.includes(locationId)) {
+    return NextResponse.json({ error: "LOCATION_NOT_AUTHORIZED" }, { status: 403 });
+  }
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
   if (!from || !to || !/^\\d{4}-\\d{2}-\\d{2}$/.test(from) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(to) || from > to) {
@@ -31,7 +35,7 @@ export async function GET(request: Request) {
   let query = admin.from("staff_leave_requests")
     .select("id,staff_membership_id,leave_type,starts_at,ends_at,reason,status,reviewed_at,review_note,created_at")
     .eq("organization_id", membership.organizationId)
-    .eq("location_id", membership.locationId)
+    .eq("location_id", locationId)
     .lt("starts_at", new Date(end + 86400000).toISOString())
     .gt("ends_at", new Date(start).toISOString())
     .order("starts_at", { ascending: true })
