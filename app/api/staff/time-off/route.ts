@@ -64,3 +64,35 @@ export async function POST(request: Request) {
   if (error || !data) return fail("LEAVE_CREATE_FAILED", 503);
   return NextResponse.json({ created: true, row: data, notice: "PENDING_CONFLICT_VERIFICATION" }, { status: 201, headers: noStore });
 }
+
+/**
+ * Manager review. Rejection is safe to persist now.
+ * Approval remains blocked until the production appointment tenant mapping
+ * and conflict query are verified, never infer safety from an empty result.
+ */
+export async function PATCH(request: Request) {
+  const auth = await getAuthenticatedStaffMembership();
+  if (auth.status !== "ok") return fail("UNAUTHORIZED", 401);
+  const member = auth.membership;
+  if (!MANAGERS.has(member.role)) return fail("MANAGER_REQUIRED", 403);
+  let body: unknown;
+  try { body = await request.json(); } catch { return fail("INVALID_BODY", 400); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return fail("INVALID_BODY", 400);
+  const { id, locationId, decision } = body as Record<string, unknown>;
+  if (typeof locationId !== "string" || !member.locationIds.includes(locationId)) return fail("LOCATION_NOT_AUTHORIZED", 403);
+  if (typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+    return fail("INVALID_LEAVE_ID", 400);
+  if (decision !== "APPROVE" && decision !== "REJECT") return fail("INVALID_DECISION", 400);
+  if (decision === "APPROVE") return fail("APPOINTMENT_SCOPE_UNVERIFIED", 409);
+  const admin = createServiceRoleClient();
+  if (!admin) return fail("DATABASE_UNAVAILABLE", 503);
+  const { data, error } = await admin.from("booking_staff_time_off")
+    .update({ status: "REJECTED", reviewed_by: member.userId,
+      reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", id).eq("organization_id", member.organizationId)
+    .eq("location_id", locationId).eq("status", "REQUESTED")
+    .select("id,status,reviewed_at").maybeSingle();
+  if (error) return fail("LEAVE_REVIEW_FAILED", 503);
+  if (!data) return fail("LEAVE_NOT_PENDING", 409);
+  return NextResponse.json({ reviewed: true, row: data }, { headers: noStore });
+}
