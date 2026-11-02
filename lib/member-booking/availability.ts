@@ -41,6 +41,8 @@ function clockMinutes(value: string): number {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 function parseBusy(interval: BusyInterval): { start: number; end: number } {
+  if (!interval.startAt.endsWith("Z") && !interval.startAt.endsWith("+08:00")) throw new Error("INVALID_BUSY_INTERVAL");
+  if (!interval.endAt.endsWith("Z") && !interval.endAt.endsWith("+08:00")) throw new Error("INVALID_BUSY_INTERVAL");
   const start = Date.parse(interval.startAt), end = Date.parse(interval.endAt);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new Error("INVALID_BUSY_INTERVAL");
   return { start, end };
