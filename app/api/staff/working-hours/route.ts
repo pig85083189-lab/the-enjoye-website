@@ -5,7 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase/admin";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 const MANAGERS = new Set(["OWNER", "MANAGER"]);
-const HM = /^([01]\\d|2[0-3]):[0-5]\\d$/;
+const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export async function GET(request: Request) {
   const resolved = await getAuthenticatedStaffMembership();
