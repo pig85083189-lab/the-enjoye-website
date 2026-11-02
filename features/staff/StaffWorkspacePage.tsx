@@ -349,22 +349,30 @@ export function StaffWorkspacePage({
     return workingHours.filter((item) => item.staffId === selectedStaffId);
   }
 
-  function mutateHours(
+  async function saveCloudDay(input: {staffId:string;dayOfWeek:DayOfWeek;startTime:string;endTime:string;isWorking:boolean}) {
+    const response = await fetch("/api/staff/working-hours", { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({locationId,...input}) });
+    const result = await response.json();
+    if (!response.ok || !result.saved) throw new Error(result.error || "SCHEDULE_SAVE_FAILED");
+    upsertWorkingHours(organization.id, {locationId,...input});
+  }
+
+  async function mutateHours(
     dayOfWeek: DayOfWeek,
     patch: { isWorking?: boolean; startTime?: string; endTime?: string },
   ) {
-    if (!selectedStaffId) return;
+    if (!selectedStaffId || scheduleSyncBusy) return;
     const current = hoursForSelected().find((item) => item.dayOfWeek === dayOfWeek);
-    withError(() => {
-      upsertWorkingHours(organization.id, {
-        locationId,
-        staffId: selectedStaffId,
-        dayOfWeek,
-        startTime: patch.startTime ?? current?.startTime ?? "09:00",
-        endTime: patch.endTime ?? current?.endTime ?? "21:00",
-        isWorking: patch.isWorking ?? current?.isWorking ?? true,
-      });
-    });
+    setScheduleSyncBusy(true);
+    try {
+      await saveCloudDay({staffId:selectedStaffId,dayOfWeek,
+        startTime:patch.startTime ?? current?.startTime ?? "09:00",
+        endTime:patch.endTime ?? current?.endTime ?? "21:00",
+        isWorking:patch.isWorking ?? current?.isWorking ?? true});
+      setError("");
+      setScheduleSyncMessage("班表已儲存至雲端。");
+    } catch (err) {
+      setError("雲端儲存失敗，本機未修改：" + (err instanceof Error ? err.message : "UNKNOWN_ERROR"));
+    } finally { setScheduleSyncBusy(false); }
   }
 
   function handleStaffCreated(result: {
@@ -407,20 +415,18 @@ export function StaffWorkspacePage({
     });
   }
 
-  function applyPattern(pattern: "mon-fri" | "mon-sat") {
-    if (!selectedStaffId) return;
-    const drafts = planApplyWorkingHoursPattern({
-      locationId,
-      staffId: selectedStaffId,
-      hours: hoursForSelected(),
-      pattern,
-    });
-    withError(() => {
-      for (const draft of drafts) {
-        upsertWorkingHours(organization.id, draft);
-      }
-    });
-    setQuickOpen(false);
+  async function applyPattern(pattern: "mon-fri" | "mon-sat") {
+    if (!selectedStaffId || scheduleSyncBusy) return;
+    const drafts = planApplyWorkingHoursPattern({ locationId, staffId: selectedStaffId, hours: hoursForSelected(), pattern });
+    setScheduleSyncBusy(true);
+    try {
+      for (const draft of drafts) await saveCloudDay(draft);
+      setError("");
+      setScheduleSyncMessage("排班範本已逐日儲存至雲端。");
+      setQuickOpen(false);
+    } catch (err) {
+      setError("範本儲存中斷，部分日期可能已更新，請檢查班表：" + (err instanceof Error ? err.message : "UNKNOWN_ERROR"));
+    } finally { setScheduleSyncBusy(false); }
   }
 
   const emptyAll = isClient && workspace.rows.length === 0;
