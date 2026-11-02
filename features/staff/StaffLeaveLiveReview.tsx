@@ -64,6 +64,25 @@ export function StaffLeaveLiveReview({ locationIds, manager }: { locationIds: st
     } finally { setSubmitting(false); }
   }
 
+  async function reject(id: string) {
+    if (!manager || reviewing || !window.confirm("確定駁回這筆休假申請？此動作會記錄審核人與時間。")) return;
+    setReviewing(id);
+    try {
+      const response = await fetch("/api/staff/leave-requests/" + encodeURIComponent(id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locationId, action: "reject", note: "" }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "REVIEW_FAILED");
+      setRows((prev) => prev.map((row) => row.id === id ? { ...row, status: "rejected" } : row));
+      setChecks((prev) => { const next = { ...prev }; delete next[id]; return next; });
+      setNotice("已正式駁回申請並記錄審核人及時間。");
+    } catch (error) {
+      setNotice("駁回失敗，資料未確認變更：" + (error instanceof Error ? error.message : "UNKNOWN_ERROR"));
+    } finally { setReviewing(null); }
+  }
+
   async function check(id: string) {
     setReviewing(id);
     try {
@@ -112,6 +131,9 @@ export function StaffLeaveLiveReview({ locationIds, manager }: { locationIds: st
           <p className="mt-1 text-sm">{row.status} · {row.reason || "無備註"}</p>
           {manager && row.status === "pending" && (
             <button type="button" disabled={reviewing === row.id} onClick={() => check(row.id)} className="mt-2 rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50">檢查既有預約衝突</button>
+          )}
+          {manager && row.status === "pending" && (
+            <button type="button" disabled={reviewing !== null} onClick={() => reject(row.id)} className="ml-2 mt-2 rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50">正式駁回</button>
           )}
           {checks[row.id] && <p role="status" className="mt-2 text-sm">檢查結果：{checks[row.id].blockingCount} 筆衝突。{checks[row.id].message}</p>}
         </article>
