@@ -85,6 +85,7 @@ export async function POST(request: Request) {
     status: "REQUESTED", source: mode === "DIRECT" ? "MANAGER_DIRECT" : "STAFF_REQUEST",
     requested_by: member.userId,
   }).select("id,status,source").single();
+  if (error?.code === "23P01") return fail("LEAVE_TIME_OVERLAP", 409);
   if (error || !data) return fail("LEAVE_CREATE_FAILED", 503);
   return NextResponse.json({ created: true, row: data, notice: "PENDING_CONFLICT_VERIFICATION" }, { status: 201, headers: noStore });
 }
