@@ -635,10 +635,10 @@ export function StaffWorkspacePage({
             {cloudLeaveLoaded && cloudTimeOff.filter(row => row.status === "REQUESTED").length === 0 && (
               <p className="text-sm text-secondary-text">目前沒有待審核的雲端休假申請。</p>
             )}
-            {cloudTimeOff.filter(row => row.status === "REQUESTED").map(row => (
+            {(cloudLeaveLoaded ? cloudTimeOff : []).filter(row => row.status === "REQUESTED").map(row => (
               <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3">
                 <div className="text-sm text-text">
-                  <strong>{memberships.find(item => item.userId === row.staffId)?.userId ?? row.staffId}</strong>
+                  <strong>{memberships.find(item => item.userId === row.staffId)?.displayName || row.staffId}</strong>
                   <div>{new Date(row.startAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })} 至 {new Date(row.endAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</div>
                   {row.reason && <div className="text-secondary-text">{row.reason}</div>}
                 </div>
