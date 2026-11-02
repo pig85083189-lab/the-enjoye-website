@@ -36,3 +36,12 @@
 ## 2026-11-02 補充：既有休假 API
 
 開發分支另有 `app/api/staff/leave-requests/route.ts`、`[id]/route.ts`、`[id]/conflicts/route.ts`，使用 `staff_leave_requests` 表。衝突端點已示範以 `organizations.app_id`、`locations.app_id` 對應 UUID，再查 `appointments`。這與新增的 `booking_staff_time_off` 是兩套不同的休假來源，正式整合前必須決定單一權威來源，避免雙重休假狀態與重複封鎖。該端點仍將 `approvalEnabled` 固定為 false，不可據此宣稱核准已安全啟用。
+
+## 2026-11-02 正式資料庫唯讀驗證與休假表建立
+
+- 已套用 `booking_staff_time_off_v1` migration，`public.booking_staff_time_off` 已存在，查詢確認目前 0 筆資料；RLS 已啟用，`anon` 與 `authenticated` 無直接 SELECT 權限。此操作只建立資料結構，未建立測試休假紀錄。
+- `booking_staff_working_hours` 目前 14 筆：`staff-001` 與 `staff-muy4glz6-0g09f4` 各有 7 筆不同星期資料，分店皆為 `loc-enjoye-main`。
+- `organizations.app_id='org-the-enjoye'` 與 `locations.app_id='loc-enjoye-main'` 的 UUID 關聯實際查詢僅有 1 筆符合。
+- 同一組組織與分店下，正式 `appointments` 有 7 筆，全部為 `BOOKED`，其 `staff_id` 均為 `staff-001`，與排班的 staff ID 一致。此結果只涵蓋查詢當下的資料，不代表其他狀態或未來預約都已驗證。
+- `app/api/staff/time-off/route.ts` 的 POST 只新增 `REQUESTED`，PATCH 的 `APPROVE` 仍固定回覆 409；不可因資料表已建立而解除安全閘門。
+- **仍待完成**：兩套休假來源統一、核准時的正式預約衝突檢查及併發保護、休息時間資料來源、會員身份驗證與原子預約寫入、實際測試通過紀錄。正式會員預約不可開放。
