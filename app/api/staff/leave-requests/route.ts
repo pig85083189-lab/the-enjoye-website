@@ -107,6 +107,7 @@ export async function POST(request: Request) {
     reason: reason.trim(),
     status: "pending",
   }).select("id,status,starts_at,ends_at").single();
+  if (error?.code === "23P01") return NextResponse.json({ error: "LEAVE_ALREADY_REQUESTED" }, { status: 409 });
   if (error) return NextResponse.json({ error: "LEAVE_CREATE_FAILED" }, { status: 503 });
   return NextResponse.json({ request: data }, { status: 201, headers: { "Cache-Control": "no-store" } });
 }
