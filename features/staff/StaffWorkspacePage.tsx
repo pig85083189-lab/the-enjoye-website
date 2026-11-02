@@ -451,6 +451,25 @@ export function StaffWorkspacePage({
     }
   }
 
+  async function rejectCloudLeave(id: string) {
+    if (!canAddStaff || !locationId) return;
+    if (!window.confirm("確定拒絕這筆休假申請？")) return;
+    setError("");
+    try {
+      const response = await fetch("/api/staff/time-off", {
+        method: "PATCH", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, locationId, decision: "REJECT" }),
+      });
+      const result: { error?: string } = await response.json();
+      if (!response.ok) throw new Error(result.error || "休假審核失敗");
+      setCloudLeaveRevision(value => value + 1);
+      setNotice("休假申請已拒絕，雲端紀錄正在更新。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "休假審核失敗");
+    }
+  }
+
   function hoursForSelected() {
     if (!selectedStaffId) return [];
     return workingHours.filter((item) => item.staffId === selectedStaffId);
@@ -591,6 +610,30 @@ export function StaffWorkspacePage({
       <div className="mb-3 min-[720px]:hidden">
         <OrgLocationSwitcher compact />
       </div>
+
+      {remoteRosterLocked && canAddStaff && (
+        <section className="mb-4 rounded-2xl border border-border bg-white p-4">
+          <h2 className="text-base font-semibold text-text">休假待審核</h2>
+          <p className="mt-1 text-xs text-secondary-text">核准功能須等預約衝突檢查完成後開放。</p>
+          {cloudLeaveMessage && <p role="status" className="mt-2 text-sm text-secondary-text">{cloudLeaveMessage}</p>}
+          <div className="mt-3 space-y-2">
+            {cloudTimeOff.filter(row => row.status === "REQUESTED").length === 0 && (
+              <p className="text-sm text-secondary-text">目前沒有待審核的雲端休假申請。</p>
+            )}
+            {cloudTimeOff.filter(row => row.status === "REQUESTED").map(row => (
+              <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3">
+                <div className="text-sm text-text">
+                  <strong>{memberships.find(item => item.userId === row.staffId)?.userId ?? row.staffId}</strong>
+                  <div>{new Date(row.startAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })} 至 {new Date(row.endAt).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</div>
+                  {row.reason && <div className="text-secondary-text">{row.reason}</div>}
+                </div>
+                <button type="button" onClick={() => void rejectCloudLeave(row.id)}
+                  className="rounded-lg border border-border px-3 py-2 text-sm text-text hover:bg-gray-50">拒絕申請</button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mb-2.5 grid grid-cols-2 gap-2 min-[1200px]:grid-cols-4 min-[1200px]:gap-3">
         <SummaryCard
