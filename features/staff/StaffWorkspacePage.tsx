@@ -762,7 +762,7 @@ export function StaffWorkspacePage({
                     startAt: combineLocalDateTime(offDate, offStart).toISOString(),
                     endAt: combineLocalDateTime(offDate, offEnd).toISOString(),
                     reason: offReason || undefined,
-                    status: "APPROVED",
+                    status: "REQUESTED",
                   });
                   setOffReason("");
                 })
@@ -842,7 +842,7 @@ export function StaffWorkspacePage({
                   startAt: combineLocalDateTime(offDate, offStart).toISOString(),
                   endAt: combineLocalDateTime(offDate, offEnd).toISOString(),
                   reason: offReason || undefined,
-                  status: "APPROVED",
+                  status: "REQUESTED",
                 });
                 setOffReason("");
               })
