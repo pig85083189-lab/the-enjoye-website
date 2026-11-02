@@ -65,7 +65,7 @@ export function StaffLeaveApprovalPreview({ role, locationIds }: { role: string;
         <Link href="/staff/staff" className="rounded-xl border border-border bg-surface px-4 py-2 text-sm text-text">返回員工管理</Link>
       </header>
       <div role="status" className="rounded-xl border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900">
-        功能預覽版：目前所有排休與審核操作僅在此頁面暫存，不會寫入正式資料庫、通知員工或封鎖會員預約。現有固定班表不受影響。
+        分階段測試：下方「真實休假申請資料」區可連接已設定的資料庫並送出申請、正式駁回；其餘月曆與示範申請仍僅暫存在畫面中。正式核准及預約空檔同步尚未開放。
       </div>
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {[
@@ -119,7 +119,7 @@ export function StaffLeaveApprovalPreview({ role, locationIds }: { role: string;
       {tab === "review" && (
         <section className="space-y-3">
           <StaffLeaveLiveReview locationIds={locationIds} manager={manager} />
-          <p className="text-sm text-secondary-text">{manager ? "店長審核示意：核准前應先檢查既有預約衝突。" : "目前角色僅可查看示範申請，不可核准或駁回。"}</p>
+          <p className="text-sm text-secondary-text">{manager ? "下方為示範審核，不會寫入資料庫；真實申請與正式駁回請使用上方真實資料區。" : "目前角色僅可查看示範申請，不可核准或駁回。"}</p>
           {requests.map((r) => <article key={r.id} className="rounded-2xl border border-border bg-surface p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div><h3 className="font-semibold">{r.staff}</h3><p className="text-sm text-secondary-text">{r.date} · {r.kind}</p></div>
@@ -127,8 +127,8 @@ export function StaffLeaveApprovalPreview({ role, locationIds }: { role: string;
             </div>
             <p className="mt-3 text-sm">原因：{r.reason || "未填寫"}</p>
             {manager && r.status === "REQUESTED" && <div className="mt-3 flex gap-2">
-              <button type="button" onClick={() => review(r.id, "REJECTED")} className="rounded-lg border border-border px-4 py-2 text-sm">駁回（示範）</button>
-              <button type="button" onClick={() => review(r.id, "APPROVED")} className="rounded-lg bg-primary px-4 py-2 text-sm text-white">核准（示範）</button>
+              <button type="button" onClick={() => review(r.id, "REJECTED")} className="rounded-lg border border-border px-4 py-2 text-sm">駁回（僅示範）</button>
+              <button type="button" onClick={() => review(r.id, "APPROVED")} className="rounded-lg bg-primary px-4 py-2 text-sm text-white">核准（僅示範）</button>
             </div>}
           </article>)}
         </section>
