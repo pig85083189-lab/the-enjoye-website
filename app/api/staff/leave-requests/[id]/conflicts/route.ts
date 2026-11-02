@@ -33,7 +33,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
   const { data: staff, error: staffError } = await admin.from("staff_auth_memberships")
     .select("user_id,organization_id").eq("id", leave.staff_membership_id).maybeSingle();
-  if (staffError || !staff || staff.organization_id !== membership.organizationId) {
+  if (staffError || !staff || staff.organization_id !== membership.organizationId || typeof staff.user_id !== "string" || !staff.user_id.trim()) {
     return NextResponse.json({ error: "STAFF_IDENTITY_UNVERIFIED" }, { status: 503 });
   }
   const { data: org, error: orgError } = await admin.from("organizations")
@@ -52,10 +52,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   if (appointmentsError || !appointments || appointments.length >= 501) {
     return NextResponse.json({ error: "APPOINTMENT_CHECK_UNAVAILABLE" }, { status: 503 });
   }
-  return NextResponse.json({
-    status: appointments.length ? "conflict" : "no_conflicts_found",
+  // An empty result is not proof of safety until staff identity and every booking writer share an atomic lock.\n  return NextResponse.json({\n    status: appointments.length ? "conflict" : "no_conflicts_found",
     blockingCount: appointments.length,
     approvalEnabled: false,
-    message: "僅完成既有預約衝突查詢；正式核准仍需原子化檢查與班表同步。",
+    identityMappingVerified: false,
+    message: appointments.length ? "查到既有預約衝突，不能核准休假。" : "目前未查到衝突，但員工 ID 對應與同步預約鎖尚未完成驗證，不能據此核准。",
   }, { headers: { "Cache-Control": "no-store" } });
 }
