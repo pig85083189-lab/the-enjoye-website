@@ -28,11 +28,14 @@ export async function GET(request: Request) {
   if (!admin) return NextResponse.json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
 
   const { data: staff, error: staffError } = await admin.from("staff_auth_memberships")
-    .select("id").eq("organization_id", member.organizationId).eq("user_id", staffId).eq("is_active", true).limit(2);
+    .select("user_id,is_active").eq("organization_id", member.organizationId)
+    .eq("user_id", staffId).eq("is_active", true).limit(2);
   if (staffError || !staff || staff.length !== 1) return NextResponse.json({ error: "STAFF_UNVERIFIED" }, { status: 503 });
-  const { data: assigned, error: assignedError } = await admin.from("staff_auth_membership_locations")
-    .select("location_id").eq("membership_id", staff[0].id).eq("location_id", locationId).limit(2);
-  if (assignedError || !assigned || assigned.length !== 1) return NextResponse.json({ error: "STAFF_LOCATION_UNVERIFIED" }, { status: 503 });
+  // Same staff-location verification as the existing staff time-off API.
+  const { count: scheduleCount, error: scheduleError } = await admin.from("booking_staff_working_hours")
+    .select("id", { count: "exact", head: true }).eq("organization_id", member.organizationId)
+    .eq("location_id", locationId).eq("staff_id", staffId);
+  if (scheduleError || !scheduleCount) return NextResponse.json({ error: "STAFF_LOCATION_UNVERIFIED" }, { status: 503 });
 
   const { data: orgs, error: orgError } = await admin.from("organizations").select("id").eq("app_id", member.organizationId).limit(2);
   const { data: locations, error: locationError } = await admin.from("locations").select("id,organization_id").eq("app_id", locationId).limit(2);
