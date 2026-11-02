@@ -38,6 +38,21 @@ describe("member booking availability", () => {
       breaks: [{ startTime: "10:00", endTime: "10:30" }],
     })).toEqual(["10:30", "11:00"]);
   });
+  it("keeps the next valid start when a break ends exactly on its boundary", () => {
+    expect(calculateAvailableStarts({
+      ...monday,
+      breaks: [{ startTime: "09:00", endTime: "10:00" }],
+    })).toEqual(["10:00", "10:30", "11:00"]);
+  });
+  it("excludes slots that overlap either of multiple breaks", () => {
+    expect(calculateAvailableStarts({
+      ...monday,
+      breaks: [
+        { startTime: "09:30", endTime: "10:00" },
+        { startTime: "11:00", endTime: "11:30" },
+      ],
+    })).toEqual([]);
+  });
   it("fails closed for invalid break windows", () => {
     expect(() => calculateAvailableStarts({
       ...monday, breaks: [{ startTime: "11:00", endTime: "10:00" }],
