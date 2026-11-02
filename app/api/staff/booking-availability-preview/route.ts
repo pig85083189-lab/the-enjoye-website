@@ -51,6 +51,18 @@ export async function GET(request: Request) {
   const { data: appointments, error: appointmentError } = await admin.from("appointments")
     .select("starts_at,ends_at,status").eq("organization_id", orgs[0].id).eq("location_id", locations[0].id)
     .eq("staff_id", staffId).lt("starts_at", dayEnd).gt("ends_at", new Date(dayStart).toISOString()).limit(501);
+  // A single unresolved leave request is enough to block diagnostic slots for
+  // the affected day. This is deliberately conservative until leave sources
+  // and approval semantics are unified.
+  const { data: leaves, error: leaveError } = await admin.from("staff_leave_requests")
+    .select("starts_at,ends_at,status")
+    .eq("organization_id", member.organizationId).eq("location_id", locationId)
+    .eq("staff_membership_id", staff[0].id)
+    .in("status", ["pending", "approved"])
+    .lt("starts_at", dayEnd).gt("ends_at", new Date(dayStart).toISOString()).limit(501);
+  if (leaveError || !leaves || leaves.length >= 501) {
+    return NextResponse.json({ error: "LEAVE_SOURCE_UNAVAILABLE" }, { status: 503 });
+  }
   if (shiftError || appointmentError || !shifts || !appointments || shifts.length > 7 || appointments.length >= 501) {
     return NextResponse.json({ error: "SCHEDULE_OR_BOOKINGS_UNAVAILABLE" }, { status: 503 });
   }
@@ -63,11 +75,14 @@ export async function GET(request: Request) {
         staffId: s.staff_id, dayOfWeek: s.day_of_week,
         startTime: s.start_time, endTime: s.end_time, isWorking: s.is_working,
       })),
-      busy: appointments.map(a => ({ startAt: a.starts_at, endAt: a.ends_at })),
+      busy: [
+        ...appointments.map(a => ({ startAt: a.starts_at, endAt: a.ends_at })),
+        ...leaves.map(l => ({ startAt: l.starts_at, endAt: l.ends_at })),
+      ],
     });
     return NextResponse.json({
       status: "diagnostic_only", bookable: false, starts,
-      warning: "Not member-bookable: approved leave, breaks and atomic booking locks are not yet integrated.",
+      warning: "Not member-bookable: one leave source is checked, but alternate leave records, breaks and atomic booking locks are not yet integrated.",
     }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "AVAILABILITY_DATA_INVALID" }, { status: 503 });
