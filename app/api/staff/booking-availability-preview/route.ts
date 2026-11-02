@@ -49,16 +49,16 @@ export async function GET(request: Request) {
     .select("staff_id,day_of_week,start_time,end_time,is_working")
     .eq("organization_id", member.organizationId).eq("location_id", locationId).eq("staff_id", staffId).limit(8);
   const { data: appointments, error: appointmentError } = await admin.from("appointments")
-    .select("starts_at,ends_at,status").eq("organization_id", orgs[0].id).eq("location_id", locations[0].id)
-    .eq("staff_id", staffId).lt("starts_at", dayEnd).gt("ends_at", new Date(dayStart).toISOString()).limit(501);
+    .select("start_at,end_at,status").eq("organization_id", orgs[0].id).eq("location_id", locations[0].id)
+    .eq("staff_id", staffId).lt("start_at", dayEnd).gt("end_at", new Date(dayStart).toISOString()).limit(501);
   // A single unresolved leave request is enough to block diagnostic slots for
   // the affected day. This is deliberately conservative until leave sources
   // and approval semantics are unified.
   const { data: leaves, error: leaveError } = await admin.from("booking_staff_time_off")
     .select("starts_at,ends_at,status")
     .eq("organization_id", member.organizationId).eq("location_id", locationId)
-    .eq("staff_membership_id", staff[0].id)
-    .in("status", ["pending", "approved"])
+    .eq("staff_id", staffId)
+    .in("status", ["REQUESTED", "APPROVED"])
     .lt("starts_at", dayEnd).gt("ends_at", new Date(dayStart).toISOString()).limit(501);
   if (leaveError || !leaves || leaves.length >= 501) {
     return NextResponse.json({ error: "LEAVE_SOURCE_UNAVAILABLE" }, { status: 503 });
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
       })),
       busy: [
         ...appointments.map(a => ({ startAt: a.starts_at, endAt: a.ends_at })),
-        ...leaves.map(l => ({ startAt: l.starts_at, endAt: l.ends_at })),
+        ...leaves.map(l => ({ startAt: l.start_at, endAt: l.end_at })),
       ],
     });
     return NextResponse.json({
