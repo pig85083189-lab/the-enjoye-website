@@ -43,6 +43,18 @@ describe("member booking availability", () => {
       ...monday, breaks: [{ startTime: "11:00", endTime: "10:00" }],
     })).toThrow("INVALID_BREAK");
   });
+  it("blocks a slot overlapping a booking that began on the previous day", () => {
+    expect(calculateAvailableStarts({
+      ...monday,
+      busy: [{ startAt: "2026-11-01T23:00:00+08:00", endAt: "2026-11-02T09:30:00+08:00" }],
+    })).toEqual(["09:30", "10:00", "10:30", "11:00"]);
+  });
+  it("does not block adjacent appointments whose end equals the next start", () => {
+    expect(calculateAvailableStarts({
+      ...monday,
+      busy: [{ startAt: "2026-11-02T08:00:00+08:00", endAt: "2026-11-02T09:00:00+08:00" }],
+    })).toEqual(["09:00", "09:30", "10:00", "10:30", "11:00"]);
+  });
   it("rejects malformed dates, clocks, and booking intervals", () => {
     expect(() => calculateAvailableStarts({ ...monday, date: "2026-02-30" })).toThrow("INVALID_DATE");
     expect(() => calculateAvailableStarts({ ...monday, workingDays: [{ ...monday.workingDays[0], startTime: "25:00" }] })).toThrow("INVALID_CLOCK");
