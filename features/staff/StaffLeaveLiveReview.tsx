@@ -23,6 +23,7 @@ export function StaffLeaveLiveReview({ locationIds, manager }: { locationIds: st
   const [leaveReason, setLeaveReason] = useState("");
   const [checks, setChecks] = useState<Record<string, ConflictResult>>({});
   const [reviewing, setReviewing] = useState<string | null>(null);
+  const [viewerId, setViewerId] = useState("");
 
   async function load() {
     if (!locationId) return;
@@ -37,6 +38,7 @@ export function StaffLeaveLiveReview({ locationIds, manager }: { locationIds: st
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "READ_FAILED");
       setRows(result.requests ?? []);
+      setViewerId(result.viewer?.staffMembershipId ?? "");
       setNotice("已讀取真實資料，僅顯示接下來約三個月內的申請。");
     } catch (error) {
       setRows([]);
@@ -62,6 +64,20 @@ export function StaffLeaveLiveReview({ locationIds, manager }: { locationIds: st
     } catch (error) {
       setNotice("申請未完成：" + (error instanceof Error ? error.message : "UNKNOWN_ERROR"));
     } finally { setSubmitting(false); }
+  }
+
+  async function withdraw(id: string) {
+    if (reviewing || !window.confirm("確定撤回自己的待審核休假申請？")) return;
+    setReviewing(id);
+    try {
+      const response = await fetch("/api/staff/leave-requests/" + encodeURIComponent(id) + "?locationId=" + encodeURIComponent(locationId), { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "WITHDRAW_FAILED");
+      setRows((prev) => prev.map((row) => row.id === id ? { ...row, status: "cancelled" } : row));
+      setNotice("已撤回申請，紀錄會保留。");
+    } catch (error) {
+      setNotice("撤回失敗：" + (error instanceof Error ? error.message : "UNKNOWN_ERROR"));
+    } finally { setReviewing(null); }
   }
 
   async function reject(id: string) {
@@ -131,6 +147,9 @@ export function StaffLeaveLiveReview({ locationIds, manager }: { locationIds: st
           <p className="mt-1 text-sm">{row.status} · {row.reason || "無備註"}</p>
           {manager && row.status === "pending" && (
             <button type="button" disabled={reviewing === row.id} onClick={() => check(row.id)} className="mt-2 rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50">檢查既有預約衝突</button>
+          )}
+          {row.status === "pending" && row.staff_membership_id === viewerId && (
+            <button type="button" disabled={reviewing !== null} onClick={() => withdraw(row.id)} className="ml-2 mt-2 rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50">撤回我的申請</button>
           )}
           {manager && row.status === "pending" && (
             <button type="button" disabled={reviewing !== null} onClick={() => reject(row.id)} className="ml-2 mt-2 rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50">正式駁回</button>
