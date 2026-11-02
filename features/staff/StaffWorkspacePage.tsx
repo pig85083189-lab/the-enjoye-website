@@ -325,10 +325,9 @@ export function StaffWorkspacePage({
     void revision;
     if (!isClient || !locationId) return [];
     const local = listTimeOff(organization.id, { locationId });
-    const ids = new Set(cloudTimeOff.map(row => row.id));
-    return [...cloudTimeOff.map(row => ({ ...row, organizationId: organization.id })),
-      ...local.filter(row => !ids.has(row.id))];
-  }, [isClient, locationId, organization.id, revision, cloudTimeOff]);
+    if (remoteRosterLocked) return cloudTimeOff.map(row => ({ ...row, organizationId: organization.id }));
+    return local;
+  }, [isClient, locationId, organization.id, revision, cloudTimeOff, remoteRosterLocked]);
 
   const weekStart = useMemo(() => {
     const base = startOfStaffWeek(now);
@@ -444,12 +443,6 @@ export function StaffWorkspacePage({
           ? "休假雲端儲存失敗，請確認資料表已建立"
           : payload.error || "休假申請未成功儲存");
       }
-      // Mirror the successful cloud request into the existing Quick View until
-      // the read-side cloud hydration is wired up.
-      createTimeOff(organization.id, {
-        locationId, staffId: selectedStaffId, startAt, endAt,
-        reason: offReason || undefined, status: "REQUESTED",
-      });
       setOffReason("");
       setCloudLeaveRevision(value => value + 1);
       setNotice("休假已送出至雲端，等待審核；目前不會阻擋客人預約。");
