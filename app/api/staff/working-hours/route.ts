@@ -62,3 +62,34 @@ export async function POST(request: Request) {
   if (error) return NextResponse.json({ error: error.code === "23505" ? "SERVER_SCHEDULE_ALREADY_EXISTS" : "SCHEDULE_IMPORT_FAILED" }, { status: error.code === "23505" ? 409 : 503 });
   return NextResponse.json({ imported: rows.length }, { status: 201, headers: { "Cache-Control": "no-store" } });
 }
+
+/** Single-day cloud update, scoped to the authenticated manager's organization and location. */
+export async function PATCH(request: Request) {
+  const resolved = await getAuthenticatedStaffMembership();
+  if (resolved.status !== "ok") return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  const member = resolved.membership;
+  if (!MANAGERS.has(member.role)) return NextResponse.json({ error: "MANAGER_REQUIRED" }, { status: 403 });
+  let body: unknown;
+  try { body = await request.json(); } catch { return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 }); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 });
+  const b = body as Record<string, unknown>;
+  const { locationId, staffId, dayOfWeek, startTime, endTime, isWorking } = b;
+  if (typeof locationId !== "string" || !member.locationIds.includes(locationId) ||
+    typeof staffId !== "string" || !Number.isInteger(dayOfWeek) || (dayOfWeek as number) < 0 || (dayOfWeek as number) > 6 ||
+    typeof startTime !== "string" || !HM.test(startTime) || typeof endTime !== "string" || !HM.test(endTime) ||
+    startTime >= endTime || typeof isWorking !== "boolean") return NextResponse.json({ error: "INVALID_SCHEDULE_ROW" }, { status: 400 });
+  const admin = createServiceRoleClient();
+  if (!admin) return NextResponse.json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
+  const { data: staff, error: staffError } = await admin.from("staff_auth_memberships")
+    .select("user_id,is_active").eq("organization_id", member.organizationId).eq("user_id", staffId).eq("is_active", true).maybeSingle();
+  if (staffError || !staff) return NextResponse.json({ error: "STAFF_NOT_AUTHORIZED" }, { status: 403 });
+  // Update only an already-imported row. Missing rows fail closed rather than silently creating availability.
+  const { data, error } = await admin.from("booking_staff_working_hours")
+    .update({ start_time: startTime, end_time: endTime, is_working: isWorking, updated_at: new Date().toISOString() })
+    .eq("organization_id", member.organizationId).eq("location_id", locationId)
+    .eq("staff_id", staffId).eq("day_of_week", dayOfWeek as number)
+    .select("staff_id,day_of_week,start_time,end_time,is_working").maybeSingle();
+  if (error) return NextResponse.json({ error: "SCHEDULE_SAVE_FAILED" }, { status: 503 });
+  if (!data) return NextResponse.json({ error: "SCHEDULE_NOT_IMPORTED" }, { status: 409 });
+  return NextResponse.json({ saved: true, row: data }, { headers: { "Cache-Control": "no-store" } });
+}
