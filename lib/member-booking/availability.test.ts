@@ -70,6 +70,15 @@ describe("member booking availability", () => {
       busy: [{ startAt: "2026-11-02T08:00:00+08:00", endAt: "2026-11-02T09:00:00+08:00" }],
     })).toEqual(["09:00", "09:30", "10:00", "10:30", "11:00"]);
   });
+  it("rejects busy intervals and cutoffs without explicit timezone", () => {
+    expect(() => calculateAvailableStarts({
+      ...monday,
+      busy: [{ startAt: "2026-11-02T09:00:00", endAt: "2026-11-02T10:00:00" }],
+    })).toThrow("INVALID_BUSY_INTERVAL");
+    expect(() => calculateAvailableStarts({
+      ...monday, notBefore: "2026-11-02T09:00:00",
+    })).toThrow("INVALID_BOOKING_CUTOFF");
+  });
   it("rejects malformed dates, clocks, and booking intervals", () => {
     expect(() => calculateAvailableStarts({ ...monday, date: "2026-02-30" })).toThrow("INVALID_DATE");
     expect(() => calculateAvailableStarts({ ...monday, workingDays: [{ ...monday.workingDays[0], startTime: "25:00" }] })).toThrow("INVALID_CLOCK");
