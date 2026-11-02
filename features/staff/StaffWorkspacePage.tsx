@@ -187,7 +187,7 @@ export function StaffWorkspacePage({
   }, [isClient, locationId, memberships, organization.id, revision]);
 
   useEffect(() => {
-    if (!isClient || !locationId || memberships.length === 0) return;
+    if (!isClient || !locationId || memberships.length === 0 || !remoteRosterLocked) return;
     let cancelled = false;
     const controller = new AbortController();
     void (async () => {
@@ -195,7 +195,7 @@ export function StaffWorkspacePage({
         const response = await fetch("/api/staff/working-hours?locationId=" + encodeURIComponent(locationId), { cache: "no-store", signal: controller.signal });
         if (!response.ok) return;
         const result = await response.json();
-        if (cancelled || !Array.isArray(result.rows) || result.rows.length === 0) return;
+        if (cancelled || !Array.isArray(result.rows) || result.rows.length === 0 || result.rows.length > 500) return;
         const rows = result.rows.map((row: {staff_id:string;day_of_week:number;start_time:string;end_time:string;is_working:boolean}) => ({
           staffId: row.staff_id, dayOfWeek: row.day_of_week as DayOfWeek,
           startTime: row.start_time.slice(0,5), endTime: row.end_time.slice(0,5), isWorking: row.is_working,
@@ -215,7 +215,7 @@ export function StaffWorkspacePage({
       }
     })();
     return () => { cancelled = true; controller.abort(); };
-  }, [isClient, locationId, organization.id, memberships]);
+  }, [isClient, locationId, organization.id, memberships, remoteRosterLocked]);
 
   const workingHours = useMemo(() => {
     void revision;
