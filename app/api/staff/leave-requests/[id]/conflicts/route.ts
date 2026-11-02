@@ -52,7 +52,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   if (appointmentsError || !appointments || appointments.length >= 501) {
     return NextResponse.json({ error: "APPOINTMENT_CHECK_UNAVAILABLE" }, { status: 503 });
   }
-  // An empty result is not proof of safety until staff identity and every booking writer share an atomic lock.\n  return NextResponse.json({\n    status: appointments.length ? "conflict" : "no_conflicts_found",
+  // An empty result is not proof of safety until staff identity and every booking writer share an atomic lock.
+  return NextResponse.json({\n    status: appointments.length ? "conflict" : "no_conflicts_found",
     blockingCount: appointments.length,
     approvalEnabled: false,
     identityMappingVerified: false,
