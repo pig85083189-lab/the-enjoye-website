@@ -625,15 +625,27 @@ export function StaffWorkspacePage({
       </div>
 
       {remoteRosterLocked && !canAddStaff && (cloudLeaveLoading || cloudLeaveMessage) && (
-        <p role="status" className="mb-3 rounded-xl border border-border bg-surface p-3 text-sm text-text">
-          {cloudLeaveLoading ? "正在載入雲端休假紀錄…" : cloudLeaveMessage}
-        </p>
+        <div role="status" className="mb-3 rounded-xl border border-border bg-surface p-3 text-sm text-text">
+          <span>{cloudLeaveLoading ? "正在載入雲端休假紀錄…" : cloudLeaveMessage}</span>
+          {!cloudLeaveLoading && cloudLeaveMessage && (
+            <button type="button" onClick={() => setCloudLeaveRevision(value => value + 1)}
+              className="ml-3 rounded-lg border border-border px-3 py-1 text-sm hover:bg-gray-50">重新載入</button>
+          )}
+        </div>
       )}
       {remoteRosterLocked && canAddStaff && (
         <section className="mb-4 rounded-2xl border border-border bg-white p-4">
           <h2 className="text-base font-semibold text-text">休假待審核</h2>
           <p className="mt-1 text-xs text-secondary-text">核准功能須等預約衝突檢查完成後開放。</p>
-          {cloudLeaveMessage && <p role="status" className="mt-2 text-sm text-secondary-text">{cloudLeaveMessage}</p>}
+          {cloudLeaveMessage && (
+            <div role="status" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-secondary-text">
+              <span>{cloudLeaveMessage}</span>
+              {!cloudLeaveLoading && (
+                <button type="button" onClick={() => setCloudLeaveRevision(value => value + 1)}
+                  className="rounded-lg border border-border px-3 py-1 text-sm hover:bg-gray-50">重新載入</button>
+              )}
+            </div>
+          )}
           {cloudLeaveLoading && <p role="status" className="mt-2 text-sm text-secondary-text">正在載入雲端休假紀錄…</p>}
           <div className="mt-3 space-y-2">
             {cloudLeaveLoaded && cloudTimeOff.filter(row => row.status === "REQUESTED").length === 0 && (
