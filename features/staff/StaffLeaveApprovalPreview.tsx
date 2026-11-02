@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { StaffLeaveLiveReview } from "./StaffLeaveLiveReview";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, ShieldCheck } from "lucide-react";
 
 type RequestStatus = "REQUESTED" | "APPROVED" | "REJECTED";
@@ -21,7 +22,7 @@ const INITIAL: LeaveRequest[] = [
 const STATUS: Record<RequestStatus, string> = { REQUESTED: "待審核", APPROVED: "已核准", REJECTED: "已駁回" };
 const pad = (n: number) => String(n).padStart(2, "0");
 
-export function StaffLeaveApprovalPreview({ role }: { role: string }) {
+export function StaffLeaveApprovalPreview({ role, locationIds }: { role: string; locationIds: string[] }) {
   const manager = role === "OWNER" || role === "MANAGER" || role === "ADMIN";
   const [tab, setTab] = useState<"calendar" | "review" | "request">("calendar");
   const [month, setMonth] = useState(10);
@@ -117,6 +118,7 @@ export function StaffLeaveApprovalPreview({ role }: { role: string }) {
       )}
       {tab === "review" && (
         <section className="space-y-3">
+          <StaffLeaveLiveReview locationIds={locationIds} manager={manager} />
           <p className="text-sm text-secondary-text">{manager ? "店長審核示意：核准前應先檢查既有預約衝突。" : "目前角色僅可查看示範申請，不可核准或駁回。"}</p>
           {requests.map((r) => <article key={r.id} className="rounded-2xl border border-border bg-surface p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
