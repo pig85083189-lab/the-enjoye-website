@@ -377,6 +377,42 @@ export function StaffWorkspacePage({
     }
   }
 
+  async function submitTimeOffRequest() {
+    if (!selectedStaffId || !locationId) return;
+    setError("");
+    try {
+      const startAt = combineLocalDateTime(offDate, offStart).toISOString();
+      const endAt = combineLocalDateTime(offDate, offEnd).toISOString();
+      if (Date.parse(startAt) >= Date.parse(endAt)) throw new Error("休假結束時間必須晚於開始時間");
+      const response = await fetch("/api/staff/time-off", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          locationId, staffId: selectedStaffId, startAt, endAt,
+          reason: offReason || undefined,
+          mode: canAddStaff ? "DIRECT" : "REQUEST",
+        }),
+      });
+      const payload: { error?: string; row?: { id: string } } = await response.json();
+      if (!response.ok || !payload.row?.id) {
+        throw new Error(payload.error === "LEAVE_CREATE_FAILED"
+          ? "休假雲端儲存失敗，請確認資料表已建立"
+          : payload.error || "休假申請未成功儲存");
+      }
+      // Mirror the successful cloud request into the existing Quick View until
+      // the read-side cloud hydration is wired up.
+      createTimeOff(organization.id, {
+        locationId, staffId: selectedStaffId, startAt, endAt,
+        reason: offReason || undefined, status: "REQUESTED",
+      });
+      setOffReason("");
+      setNotice("休假已送出至雲端，等待審核；目前不會阻擋客人預約。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "休假申請失敗");
+    }
+  }
+
   function hoursForSelected() {
     if (!selectedStaffId) return [];
     return workingHours.filter((item) => item.staffId === selectedStaffId);
@@ -753,20 +789,7 @@ export function StaffWorkspacePage({
                 })
               }
               onDeleteBreak={(id) => withError(() => deleteBreak(organization.id, id))}
-              onCreateTimeOff={() =>
-                selectedStaffId &&
-                withError(() => {
-                  createTimeOff(organization.id, {
-                    locationId,
-                    staffId: selectedStaffId,
-                    startAt: combineLocalDateTime(offDate, offStart).toISOString(),
-                    endAt: combineLocalDateTime(offDate, offEnd).toISOString(),
-                    reason: offReason || undefined,
-                    status: "REQUESTED",
-                  });
-                  setOffReason("");
-                })
-              }
+              onCreateTimeOff={() => { void submitTimeOffRequest(); }}
               onDeleteTimeOff={(id) => withError(() => deleteTimeOff(organization.id, id))}
               onBreakDate={setBreakDate}
               onBreakStart={setBreakStart}
@@ -833,20 +856,7 @@ export function StaffWorkspacePage({
               })
             }
             onDeleteBreak={(id) => withError(() => deleteBreak(organization.id, id))}
-            onCreateTimeOff={() =>
-              selectedStaffId &&
-              withError(() => {
-                createTimeOff(organization.id, {
-                  locationId,
-                  staffId: selectedStaffId,
-                  startAt: combineLocalDateTime(offDate, offStart).toISOString(),
-                  endAt: combineLocalDateTime(offDate, offEnd).toISOString(),
-                  reason: offReason || undefined,
-                  status: "REQUESTED",
-                });
-                setOffReason("");
-              })
-            }
+            onCreateTimeOff={() => { void submitTimeOffRequest(); }}
             onDeleteTimeOff={(id) => withError(() => deleteTimeOff(organization.id, id))}
             onBreakDate={setBreakDate}
             onBreakStart={setBreakStart}
