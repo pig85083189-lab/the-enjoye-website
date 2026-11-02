@@ -23,6 +23,15 @@ describe("member booking availability", () => {
     expect(calculateAvailableStarts({ ...monday, workingDays: [{ ...monday.workingDays[0], isWorking: false }] })).toEqual([]);
     expect(calculateAvailableStarts({ ...monday, staffId: "staff-002" })).toEqual([]);
   });
+  it("excludes past slots using an explicit Taiwan-time cutoff", () => {
+    expect(calculateAvailableStarts({
+      ...monday,
+      notBefore: "2026-11-02T10:15:00+08:00",
+    })).toEqual(["10:30", "11:00"]);
+  });
+  it("rejects invalid booking cutoffs", () => {
+    expect(() => calculateAvailableStarts({ ...monday, notBefore: "invalid" })).toThrow("INVALID_BOOKING_CUTOFF");
+  });
   it("rejects malformed dates, clocks, and booking intervals", () => {
     expect(() => calculateAvailableStarts({ ...monday, date: "2026-02-30" })).toThrow("INVALID_DATE");
     expect(() => calculateAvailableStarts({ ...monday, workingDays: [{ ...monday.workingDays[0], startTime: "25:00" }] })).toThrow("INVALID_CLOCK");
