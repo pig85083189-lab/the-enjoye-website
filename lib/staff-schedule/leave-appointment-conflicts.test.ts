@@ -38,6 +38,19 @@ describe("leave appointment conflicts", () => {
       booking("not-a-date", leave.endAt),
     ])).toThrow("APPOINTMENT_DATA_INCOMPLETE");
   });
+  it("rejects inverted or zero-length appointment intervals", () => {
+    expect(() => findLeaveAppointmentConflicts(leave, [
+      booking("2026-11-10T08:00:00.000Z", "2026-11-10T07:00:00.000Z"),
+    ])).toThrow("APPOINTMENT_DATA_INCOMPLETE");
+    expect(() => findLeaveAppointmentConflicts(leave, [
+      booking("2026-11-10T06:00:00.000Z", "2026-11-10T06:00:00.000Z"),
+    ])).toThrow("APPOINTMENT_DATA_INCOMPLETE");
+  });
+  it("does not silently accept invalid timestamps even on canceled bookings", () => {
+    expect(() => findLeaveAppointmentConflicts(leave, [
+      booking("invalid", leave.endAt, "CANCELLED"),
+    ])).toThrow("APPOINTMENT_DATA_INCOMPLETE");
+  });
   it("rejects malformed leave ranges", () => {
     expect(() => findLeaveAppointmentConflicts({
       startAt: leave.endAt, endAt: leave.startAt,
