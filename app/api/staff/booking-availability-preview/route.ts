@@ -69,6 +69,13 @@ export async function GET(request: Request) {
   if (shiftError || appointmentError || !shifts || !appointments || shifts.length > 7 || appointments.length >= 501) {
     return NextResponse.json({ error: "SCHEDULE_OR_BOOKINGS_UNAVAILABLE" }, { status: 503 });
   }
+  // Never interpret an incomplete or duplicated weekly import as availability.
+  // A complete weekly schedule has exactly one row for each weekday.
+  const weekdays = new Set(shifts.map(row => row.day_of_week));
+  if (shifts.length !== 7 || weekdays.size !== 7 ||
+      shifts.some(row => !Number.isInteger(row.day_of_week) || row.day_of_week < 0 || row.day_of_week > 6)) {
+    return NextResponse.json({ error: "INCOMPLETE_WEEKLY_SCHEDULE" }, { status: 503 });
+  }
   // Treat every returned appointment as busy, including cancelled ones, until the
   // canonical booking status rules are verified. Conservative diagnostic only.
   try {
