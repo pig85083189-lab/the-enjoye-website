@@ -32,6 +32,17 @@ describe("member booking availability", () => {
   it("rejects invalid booking cutoffs", () => {
     expect(() => calculateAvailableStarts({ ...monday, notBefore: "invalid" })).toThrow("INVALID_BOOKING_CUTOFF");
   });
+  it("excludes staff breaks without excluding adjacent valid slots", () => {
+    expect(calculateAvailableStarts({
+      ...monday,
+      breaks: [{ startTime: "10:00", endTime: "10:30" }],
+    })).toEqual(["11:00"]);
+  });
+  it("fails closed for invalid break windows", () => {
+    expect(() => calculateAvailableStarts({
+      ...monday, breaks: [{ startTime: "11:00", endTime: "10:00" }],
+    })).toThrow("INVALID_BREAK");
+  });
   it("rejects malformed dates, clocks, and booking intervals", () => {
     expect(() => calculateAvailableStarts({ ...monday, date: "2026-02-30" })).toThrow("INVALID_DATE");
     expect(() => calculateAvailableStarts({ ...monday, workingDays: [{ ...monday.workingDays[0], startTime: "25:00" }] })).toThrow("INVALID_CLOCK");
