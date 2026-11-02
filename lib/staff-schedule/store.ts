@@ -272,7 +272,7 @@ export function createTimeOff(
     startAt: input.startAt,
     endAt: input.endAt,
     reason: input.reason,
-    status: input.status ?? "APPROVED",
+    status: input.status ?? "REQUESTED",
     createdAt: new Date().toISOString(),
   };
   const key = getStaffTimeOffKey(organizationId);
