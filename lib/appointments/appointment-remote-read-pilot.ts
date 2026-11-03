@@ -19,6 +19,7 @@ import {
 } from "@/lib/persistence/authenticated-appointment-read-store";
 import {
   loadAuthenticatedIdentityCatalog,
+  type AuthenticatedIdentityScope,
   type IdentitySupabaseClient,
 } from "@/lib/persistence/authenticated-identity-catalog";
 
@@ -34,8 +35,9 @@ export {
 
 export async function createAuthenticatedAppointmentReadPersistence(
   client: IdentitySupabaseClient,
+  scope?: AuthenticatedIdentityScope,
 ) {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, scope);
   return {
     identity,
     appointments: new AppointmentRemoteAdapter(

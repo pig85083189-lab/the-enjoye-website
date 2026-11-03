@@ -37,6 +37,11 @@ import {
   resolveAccessibleOrganizationId,
 } from "@/lib/tenant/access";
 import {
+  getRemoteTenantRevision,
+  listRemoteLocations,
+  listRemoteOrganizations,
+} from "@/lib/tenant/remote-tenant-directory";
+import {
   getCurrentLocationStorageKey,
   LEGACY_GLOBAL_LOCATION_KEY,
 } from "@/lib/tenant/storage-keys";
@@ -61,7 +66,12 @@ function writeJson(key: string, value: unknown): void {
 
 export function listOrganizations(): Organization[] {
   const overrides = readJson<Record<string, Partial<Organization>>>(ORG_OVERRIDES_STORAGE_KEY, {});
-  return SEED_ORGANIZATIONS.map((org) => ({ ...org, ...overrides[org.id] }));
+  const seeded = SEED_ORGANIZATIONS.map((org) => ({ ...org, ...overrides[org.id] }));
+  const seededIds = new Set(seeded.map((organization) => organization.id));
+  const remote = listRemoteOrganizations().filter(
+    (organization) => !seededIds.has(organization.id),
+  );
+  return [...seeded, ...remote];
 }
 
 export function listOrganizationsForUser(userId: string): Organization[] {
@@ -95,10 +105,17 @@ export function updateOrganizationLocal(
 
 export function listLocations(organizationId: string): Location[] {
   const overrides = readJson<Record<string, Partial<Location>>>(LOCATION_OVERRIDES_STORAGE_KEY, {});
-  return SEED_LOCATIONS.filter((l) => l.organizationId === organizationId).map((loc) => ({
-    ...loc,
-    ...overrides[loc.id],
-  }));
+  const seeded = SEED_LOCATIONS.filter((location) => location.organizationId === organizationId).map(
+    (location) => ({
+      ...location,
+      ...overrides[location.id],
+    }),
+  );
+  const seededIds = new Set(seeded.map((location) => location.id));
+  const remote = listRemoteLocations(organizationId).filter(
+    (location) => !seededIds.has(location.id),
+  );
+  return [...seeded, ...remote];
 }
 
 export function getPrimaryLocation(organizationId: string): Location | undefined {
@@ -399,7 +416,7 @@ export function getOrganizationSnapshot(): string {
     orgId === "none"
       ? ""
       : (window.localStorage.getItem(getCurrentLocationStorageKey(orgId)) ?? "");
-  return encodeOrganizationSnapshot({
+  const encoded = encodeOrganizationSnapshot({
     authSnapshot: getStaffAuthSnapshot(),
     organizationId: orgId,
     orgOverrides: window.localStorage.getItem(ORG_OVERRIDES_STORAGE_KEY) ?? "",
@@ -409,4 +426,5 @@ export function getOrganizationSnapshot(): string {
       window.localStorage.getItem(MEMBERSHIP_OVERRIDES_STORAGE_KEY) ?? "",
     locationPtr,
   });
+  return `${encoded}|remote:${getRemoteTenantRevision()}`;
 }

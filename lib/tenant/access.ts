@@ -10,6 +10,11 @@
 
 import { SEED_LOCATIONS, SEED_ORGANIZATIONS } from "@/data/seed-organizations";
 import {
+  hasRemoteOrganization,
+  listRemoteLocations,
+  listRemoteOrganizations,
+} from "@/lib/tenant/remote-tenant-directory";
+import {
   getMembership,
   listAllMemberships,
 } from "@/lib/staff-auth/membership-query";
@@ -45,7 +50,10 @@ export function getActiveMembership(
 /** Application-layer membership gate (mock). Not a security boundary. */
 export function canAccessOrganization(userId: string, organizationId: string): boolean {
   if (!organizationId || !userId) return false;
-  if (!SEED_ORGANIZATIONS.some((o) => o.id === organizationId)) return false;
+  const known =
+    SEED_ORGANIZATIONS.some((organization) => organization.id === organizationId) ||
+    hasRemoteOrganization(organizationId);
+  if (!known) return false;
   return Boolean(getActiveMembership(organizationId, userId));
 }
 
@@ -62,7 +70,12 @@ export function listAccessibleOrganizations(userId: string): Organization[] {
       .filter((m) => m.userId === userId && m.isActive)
       .map((m) => m.organizationId),
   );
-  return SEED_ORGANIZATIONS.filter((o) => allowed.has(o.id));
+  const seeded = SEED_ORGANIZATIONS.filter((organization) => allowed.has(organization.id));
+  const seededIds = new Set(seeded.map((organization) => organization.id));
+  const remote = listRemoteOrganizations().filter(
+    (organization) => allowed.has(organization.id) && !seededIds.has(organization.id),
+  );
+  return [...seeded, ...remote];
 }
 
 /**
@@ -83,9 +96,17 @@ export function resolveAccessibleOrganizationId(
 }
 
 export function canAccessLocation(organizationId: string, locationId: string): boolean {
-  return SEED_LOCATIONS.some(
-    (l) => l.id === locationId && l.organizationId === organizationId && l.isActive,
-  );
+  if (
+    SEED_LOCATIONS.some(
+      (location) =>
+        location.id === locationId &&
+        location.organizationId === organizationId &&
+        location.isActive,
+    )
+  ) {
+    return true;
+  }
+  return listRemoteLocations(organizationId).some((location) => location.id === locationId);
 }
 
 export function assertCanAccessLocation(organizationId: string, locationId: string): void {

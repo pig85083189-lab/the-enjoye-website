@@ -20,9 +20,11 @@ export class UnmappedIdentityError extends Error {
 export type IdentityCatalogFailureReason =
   | "unauthenticated"
   | "missing_membership"
+  | "missing_scope"
   | "ambiguous_membership"
   | "ambiguous_mapping"
   | "missing_mapping"
+  | "location_forbidden"
   | "invalid_operational_staff";
 
 export class IdentityCatalogError extends Error {
