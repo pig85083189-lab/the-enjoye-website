@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useSyncExternalStore,
   type ReactNode,
@@ -26,12 +27,16 @@ import {
   persistOrganizationId,
   resolveCurrentLocation,
   subscribeOrganization,
+  emitOrgChange,
 } from "./organization-store";
 import { getCurrentUserId } from "./access";
 import { canUseFeature } from "./entitlements";
 import type { FeatureKey } from "@/types/saas";
 import { resolveActiveMembershipsForAuthUser } from "@/lib/staff-auth/identity";
 import { getStaffAuthUserId } from "@/lib/staff-auth/session";
+import { createBrowserClientOrNull } from "@/lib/supabase/client";
+import { loadRemoteTenantDirectory } from "@/lib/tenant/load-remote-tenant-directory";
+import { replaceRemoteTenantDirectory } from "@/lib/tenant/remote-tenant-directory";
 
 interface OrganizationContextValue {
   organization: Organization;
@@ -56,6 +61,29 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     getOrganizationSnapshot,
     () => "ssr",
   );
+  const authUserId = getStaffAuthUserId();
+
+  useEffect(() => {
+    const client = createBrowserClientOrNull();
+    if (!client || !authUserId) {
+      replaceRemoteTenantDirectory([], []);
+      emitOrgChange();
+      return undefined;
+    }
+    let cancelled = false;
+    void loadRemoteTenantDirectory(client)
+      .then((directory) => {
+        if (cancelled) return;
+        replaceRemoteTenantDirectory(directory.organizations, directory.locations);
+        emitOrgChange();
+      })
+      .catch(() => {
+        // Keep the previous directory. A failed read must not reveal another organization.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUserId]);
 
   const value = useMemo<OrganizationContextValue>(() => {
     const authUserId = getStaffAuthUserId();

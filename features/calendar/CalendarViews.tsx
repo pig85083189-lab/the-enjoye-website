@@ -9,6 +9,7 @@ import {
   STATUS_LABEL,
   combineLocalDateTime,
   formatYmd,
+  guestUnverifiedCalendarLabel,
   occupiesCalendarSlot,
   startOfDay,
   type ScheduleAppointment,
@@ -194,12 +195,13 @@ export function AppointmentBlock({
       : (typeTone?.accent ?? STATUS_ACCENT[item.status]);
   const startHm = calendarAppointmentHm(item.startAt, useTaipeiTime);
   const endHm = calendarAppointmentHm(item.endAt, useTaipeiTime);
+  const unverifiedLabel = guestUnverifiedCalendarLabel(item.statusReason);
   const tooltip = [
     `${startHm}–${endHm}`,
     item.customerName,
     item.serviceName,
     hideStaffName ? null : item.staffName,
-    STATUS_LABEL[item.status],
+    unverifiedLabel ?? STATUS_LABEL[item.status],
   ]
     .filter(Boolean)
     .join(" · ");
@@ -270,6 +272,11 @@ export function AppointmentBlock({
         <p className="truncate text-[12px] font-semibold leading-tight text-text">
           {item.customerName}
         </p>
+        {unverifiedLabel ? (
+          <p className="truncate text-[10px] font-medium leading-tight text-primary">
+            {unverifiedLabel}
+          </p>
+        ) : null}
         {showService ? (
           <p className="truncate text-[11px] leading-tight text-secondary-text">
             {item.serviceName}

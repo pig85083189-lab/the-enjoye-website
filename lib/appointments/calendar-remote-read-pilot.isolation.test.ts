@@ -38,7 +38,6 @@ import type {
 } from "@/lib/persistence/authenticated-identity-catalog";
 import { getPersistenceDriver } from "@/lib/persistence/driver";
 import { formatTaipeiAppointmentDisplay } from "@/lib/persistence/appointment-time";
-import { UnmappedIdentityError } from "@/lib/persistence/identity-errors";
 import { LOC_ENJOYE_PRIMARY_ID, ORG_ENJOYE_ID } from "@/lib/tenant/constants";
 
 const AUTH_UUID = "cd037b07-d6fe-49a3-91eb-9735ec65665c";
@@ -591,6 +590,9 @@ describe("Phase 1C-5D calendar remote read pilot", () => {
         "2026-10-09T16:00:00.000Z",
         ownerClient(),
       ),
-    ).rejects.toBeInstanceOf(UnmappedIdentityError);
+    ).rejects.toMatchObject({
+      name: "IdentityCatalogError",
+      reason: "location_forbidden",
+    });
   });
 });

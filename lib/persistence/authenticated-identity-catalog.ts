@@ -1,7 +1,9 @@
 /**
  * Authenticated IdentityCatalog read path.
  * Read-only. Never upserts organization / location / membership / profile.
- * Fails closed when the session is missing, membership is missing, or mapping is ambiguous.
+ * A session with several organizations must name the selected organization.
+ * The loader never picks the first membership.
+ * Fails closed when the session, membership, organization, or location is missing.
  */
 
 import { isAuthUuid } from "@/lib/staff-auth/staff-id";
@@ -50,6 +52,12 @@ type MembershipRow = {
   is_active: boolean;
 };
 
+/** Selected tenant. locationAppId is required by calendar reads. */
+export type AuthenticatedIdentityScope = {
+  organizationAppId: string;
+  locationAppId?: string;
+};
+
 export interface LoadedAuthenticatedIdentity {
   catalog: IdentityCatalog;
   mapper: CanonicalIdMapper;
@@ -86,13 +94,75 @@ function toScoped(row: { id: string; app_id: string | null; organization_id: str
   return { dbId: row.id, appId: row.app_id, organizationDbId: row.organization_id };
 }
 
+type MembershipLocationRow = { membership_id: string; location_id: string };
+
+/**
+ * Empty staff_auth_membership_locations means every location in that organization.
+ * A non-empty set is an allow-list of location app ids. This matches the
+ * membership table comment and does not grant locations from another organization.
+ */
+async function assertLocationPermitted(
+  client: IdentitySupabaseClient,
+  membershipId: string,
+  locationAppId: string,
+  locations: MappedOrgScoped[],
+): Promise<void> {
+  const location = locations.find((row) => row.appId === locationAppId);
+  if (!location) {
+    throw new IdentityCatalogError("location_forbidden", "這個分店不屬於目前選擇的店家");
+  }
+  const grants = (
+    await readRows<MembershipLocationRow>(
+      client
+        .from("staff_auth_membership_locations")
+        .select("membership_id, location_id")
+        .eq("membership_id", membershipId),
+    )
+  ).filter((row) => row.membership_id === membershipId && row.location_id);
+  if (grants.length > 0 && !grants.some((row) => row.location_id === locationAppId)) {
+    throw new IdentityCatalogError("location_forbidden", "沒有這個分店的權限");
+  }
+}
+
+function selectMembership(
+  memberships: MembershipRow[],
+  organizationAppId: string,
+): MembershipRow {
+  if (!organizationAppId) {
+    if (memberships.length === 1) return memberships[0]!;
+    if (memberships.length === 0) {
+      throw new IdentityCatalogError(
+        "missing_membership",
+        "No authenticated staff_auth_memberships row for this Auth user",
+      );
+    }
+    throw new IdentityCatalogError(
+      "ambiguous_membership",
+      "Authenticated membership mapping is ambiguous",
+    );
+  }
+  const matches = memberships.filter((row) => row.organization_id === organizationAppId);
+  if (matches.length === 0) {
+    throw new IdentityCatalogError("missing_membership", "此帳號沒有這個店家的員工身分");
+  }
+  if (matches.length > 1) {
+    throw new IdentityCatalogError(
+      "ambiguous_membership",
+      "Authenticated membership mapping is ambiguous",
+    );
+  }
+  return matches[0]!;
+}
+
 /**
  * Load identity mappings for the currently authenticated session.
  * Does not hardcode organization / location UUIDs.
  * Does not treat profiles.id as operational staff id.
+ * Does not choose the first organization when the session has several.
  */
 export async function loadAuthenticatedIdentityCatalog(
   client: IdentitySupabaseClient,
+  scope?: AuthenticatedIdentityScope,
 ): Promise<LoadedAuthenticatedIdentity> {
   const session = await client.auth.getUser();
   if (session.error) {
@@ -112,20 +182,7 @@ export async function loadAuthenticatedIdentityCatalog(
     )
   ).filter((row) => row.is_active && row.auth_user_id === authUserId);
 
-  if (memberships.length === 0) {
-    throw new IdentityCatalogError(
-      "missing_membership",
-      "No authenticated staff_auth_memberships row for this Auth user",
-    );
-  }
-  if (memberships.length > 1) {
-    throw new IdentityCatalogError(
-      "ambiguous_membership",
-      "Authenticated membership mapping is ambiguous",
-    );
-  }
-
-  const membership = memberships[0]!;
+  const membership = selectMembership(memberships, scope?.organizationAppId?.trim() ?? "");
   if (isAuthUuid(membership.user_id) || membership.user_id === authUserId) {
     throw new IdentityCatalogError(
       "invalid_operational_staff",
@@ -155,6 +212,11 @@ export async function loadAuthenticatedIdentityCatalog(
   )
     .map(toScoped)
     .filter((row): row is MappedOrgScoped => Boolean(row));
+
+  const requestedLocation = scope?.locationAppId?.trim() ?? "";
+  if (requestedLocation) {
+    await assertLocationPermitted(client, membership.id, requestedLocation, locations);
+  }
 
   const customers = (
     await readRows<CustomerRow>(

@@ -18,6 +18,7 @@ import {
   createAuthenticatedAppointmentReadPersistence,
 } from "@/lib/appointments/appointment-remote-read-pilot";
 import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-identity-catalog";
+import { IdentityCatalogError } from "@/lib/persistence/identity-errors";
 
 export {
   CALENDAR_REMOTE_READ_PILOT_ENV,
@@ -36,10 +37,21 @@ export async function listRemoteCalendarAppointmentsByLocationAndRange(
   endsAt: string,
   client: IdentitySupabaseClient,
 ): Promise<ScheduleAppointment[]> {
-  const persistence = await createAuthenticatedAppointmentReadPersistence(client);
+  const organizationAppId = organizationId.trim();
+  const selectedLocationAppId = locationAppId.trim();
+  if (!organizationAppId || !selectedLocationAppId) {
+    throw new IdentityCatalogError("missing_scope", "必須先選擇店家與分店");
+  }
+  const persistence = await createAuthenticatedAppointmentReadPersistence(client, {
+    organizationAppId,
+    locationAppId: selectedLocationAppId,
+  });
+  if (persistence.identity.organizationAppId !== organizationAppId) {
+    throw new IdentityCatalogError("missing_membership", "此帳號沒有這個店家的員工身分");
+  }
   return persistence.appointments.listByLocationAndRange({
-    organizationId,
-    locationAppId,
+    organizationId: organizationAppId,
+    locationAppId: selectedLocationAppId,
     startsAt,
     endsAt,
   });
