@@ -20,6 +20,7 @@ import {
   STATUS_LABEL,
   formatHm,
   formatYmd,
+  guestUnverifiedCalendarLabel,
   type CanonicalAppointmentStatus,
   type ScheduleAppointment,
 } from "@/lib/appointments/domain";
@@ -128,6 +129,7 @@ export function AppointmentQuickView({
   const canEdit = actions.canEdit;
   const canCancel = actions.canCancel;
   const membership = item.membership ?? customer?.membership ?? "regular";
+  const unverifiedLabel = guestUnverifiedCalendarLabel(item.statusReason);
   const display = formatCalendarAppointmentDisplay(
     item.startAt,
     item.endAt,
@@ -212,10 +214,10 @@ export function AppointmentQuickView({
                 {item.customerName}
               </h2>
               <Badge
-                tone={membershipTone[membership]}
+                tone={unverifiedLabel ? "new" : membershipTone[membership]}
                 className="px-1.5 py-px text-[10px]"
               >
-                {MEMBERSHIP_LABEL[membership]}
+                {unverifiedLabel ?? MEMBERSHIP_LABEL[membership]}
               </Badge>
             </div>
             {customer?.phone ? (

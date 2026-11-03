@@ -58,6 +58,17 @@ export const STATUS_LABEL: Record<CanonicalAppointmentStatus, string> = {
   NO_SHOW: "未到",
 };
 
+export const GUEST_UNVERIFIED_STATUS_REASON = "GUEST_UNVERIFIED";
+export const GUEST_UNVERIFIED_CALENDAR_LABEL = "新客／未驗證";
+
+export function guestUnverifiedCalendarLabel(
+  statusReason?: string | null,
+): string | null {
+  return statusReason === GUEST_UNVERIFIED_STATUS_REASON
+    ? GUEST_UNVERIFIED_CALENDAR_LABEL
+    : null;
+}
+
 const TRANSITIONS: Record<CanonicalAppointmentStatus, CanonicalAppointmentStatus[]> = {
   DRAFT: ["BOOKED", "CANCELLED"],
   BOOKED: ["CONFIRMED", "CANCELLED", "NO_SHOW", "ARRIVED"],
