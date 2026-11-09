@@ -51,7 +51,22 @@ export async function GET(request: Request) {
   if ((data?.length ?? 0) === 500) {
     return NextResponse.json({ error: "LEAVE_RESULT_LIMIT" }, { status: 503 });
   }
-  return NextResponse.json({ status: "ready", requests: data ?? [], viewer: { role: membership.role, staffMembershipId: membership.id } }, { headers: { "Cache-Control": "no-store" } });
+  // Resolve names on the server within the authenticated tenant, never from client-provided IDs.
+  const ids = [...new Set((data ?? []).map((row) => row.staff_membership_id))];
+  let names = new Map<string, string>();
+  if (ids.length) {
+    const { data: people, error: peopleError } = await admin.from("staff_auth_memberships")
+      .select("id,display_name")
+      .eq("organization_id", membership.organizationId)
+      .in("id", ids);
+    if (peopleError) return NextResponse.json({ error: "STAFF_NAME_READ_FAILED" }, { status: 503 });
+    names = new Map((people ?? []).map((person) => [person.id, person.display_name || "未設定姓名"]));
+  }
+  const requests = (data ?? []).map((row) => ({
+    ...row,
+    staff_display_name: names.get(row.staff_membership_id) ?? "未設定姓名",
+  }));
+  return NextResponse.json({ status: "ready", requests, viewer: { role: membership.role, staffMembershipId: membership.id } }, { headers: { "Cache-Control": "no-store" } });
 }
 
 const LEAVE_TYPES = new Set(["scheduled_off", "annual", "personal", "sick"]);
