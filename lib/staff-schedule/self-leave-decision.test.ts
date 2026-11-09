@@ -54,12 +54,17 @@ describe("staff self-leave: minimum one on duty all day", () => {
       outcome: "BLOCKED", reasons: ["INVALID_INPUT"],
     });
   });
-  it("does not count an already unavailable requesting employee", () => {
+  it("blocks a duplicate leave request for an already unavailable employee", () => {
     expect(decideSelfLeave({
       ...base, staff: [
         { ...staff[0], unavailable: [slot(9, 18)] },
         { ...staff[1], unavailable: [slot(12, 13)] },
       ],
-    })).toEqual({ outcome: "MANAGER_REVIEW", reasons: ["MINIMUM_STAFF"] });
+    })).toEqual({ outcome: "BLOCKED", reasons: ["INVALID_INPUT"] });
+  });
+  it("blocks leave on a day without an assigned shift", () => {
+    expect(decideSelfLeave({ ...base, staff: [
+      { ...staff[0], working: [] }, staff[1],
+    ] })).toEqual({ outcome: "BLOCKED", reasons: ["INVALID_INPUT"] });
   });
 });
