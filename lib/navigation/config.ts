@@ -1,5 +1,6 @@
 import {
   CalendarDays,
+  CalendarCheck2,
   ClipboardList,
   Flower2,
   Landmark,
@@ -224,6 +225,16 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     description: "營運報表（唯讀推導）",
     requiredPermissions: ["report.read"],
     roles: ["OWNER", "MANAGER", "ACCOUNTANT"],
+  },
+  {
+    id: "my-leave",
+    label: "我的休假",
+    href: "/staff/my-leave",
+    icon: CalendarCheck2,
+    group: "team",
+    status: "ready",
+    description: "月曆一次勾選多天，送出待店長統一確認",
+    roles: ["OWNER", "MANAGER", "STAFF"],
   },
   {
     id: "staff",
