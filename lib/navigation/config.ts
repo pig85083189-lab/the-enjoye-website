@@ -237,6 +237,16 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     roles: ["OWNER", "MANAGER", "STAFF"],
   },
   {
+    id: "leave-review",
+    label: "休假審核",
+    href: "/staff/leave-review",
+    icon: ClipboardList,
+    group: "team",
+    status: "ready",
+    description: "查看全員休假申請與待確認清單（目前唯讀）",
+    roles: ["OWNER", "MANAGER"],
+  },
+  {
     id: "staff",
     label: "員工",
     href: "/staff/staff",
