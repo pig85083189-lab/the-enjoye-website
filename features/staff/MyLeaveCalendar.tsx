@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   const today = new Date();
@@ -12,12 +12,34 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState("");
-  const [saved, setSaved] = useState<string[]>([]);
+  const [requests, setRequests] = useState<Array<{id:string;starts_at:string;status:string;review_note:string|null}>>([]);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
   const [error, setError] = useState("");
   const [year, m] = month.split("-").map(Number);
   const count = new Date(year, m, 0).getDate();
   const offset = new Date(year, m - 1, 1).getDay();
   const days = useMemo(() => Array.from({ length: count }, (_, i) => month + "-" + String(i + 1).padStart(2, "0")), [count, month]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const [y, mo] = month.split("-").map(Number);
+    const last = String(new Date(y, mo, 0).getDate()).padStart(2, "0");
+    const params = new URLSearchParams({locationId,from:month+"-01",to:month+"-"+last});
+    setLoading(true);
+    fetch("/api/staff/leave-requests?"+params,{signal:controller.signal,cache:"no-store"})
+      .then(async response => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error ?? "讀取申請失敗");
+        const own = (result.requests ?? []).filter((item:{staff_membership_id:string}) =>
+          item.staff_membership_id === result.viewer?.staffMembershipId);
+        setRequests(own);
+      }).catch(e => {if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "讀取申請失敗");})
+      .finally(() => {if (!controller.signal.aborted) setLoading(false);});
+    return () => controller.abort();
+  },[locationId,month,refresh]);
+  const requestByDate = useMemo(() => new Map(requests.map(r => [
+    new Date(new Date(r.starts_at).getTime()+8*3600000).toISOString().slice(0,10),r
+  ])),[requests]);
   const minMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   const maxMonth = new Date(today.getFullYear(), today.getMonth() + 6, 1);
   const currentMonth = new Date(year, m - 1, 1);
@@ -39,7 +61,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error === "LEAVE_ALREADY_REQUESTED"
         ? "部分日期已申請過，請重新選擇。" : "送出失敗：" + (result.error ?? response.status));
-      setSaved(old => [...new Set([...old, ...selected])]);
+      setRefresh(n => n+1);
       setNotice("已送出 " + selected.length + " 天休假申請，等待店長統一確認。");
       setSelected([]); setReason("");
     } catch (e) { setError(e instanceof Error ? e.message : "送出失敗"); }
@@ -58,17 +80,25 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         {["日","一","二","三","四","五","六"].map(d => <span key={d} style={{ textAlign: "center", color: "#81767a" }}>{d}</span>)}
         {Array.from({ length: offset }, (_, i) => <span key={"empty-" + i} />)}
         {days.map(date => {
-          const picked = selected.includes(date), already = saved.includes(date);
+          const picked = selected.includes(date), request = requestByDate.get(date), already = request?.status === "pending" || request?.status === "approved";
           const valid = Date.parse(date + "T00:00:00+08:00") >= Date.now() - 86400000;
           return <button key={date} type="button" disabled={!valid || already} aria-pressed={picked}
             onClick={() => setSelected(old => picked ? old.filter(d => d !== date) : [...old, date].sort())}
             style={{ minHeight: 42, borderRadius: 9, border: picked ? "2px solid #ad7382" : "1px solid #ddd",
-              background: picked ? "#f5e5e9" : already ? "#e8f1e8" : "transparent",
+              background: picked ? "#f5e5e9" : request?.status === "rejected" ? "#fff0e8" : already ? "#e8f1e8" : "transparent",
               opacity: valid ? 1 : 0.4, fontWeight: picked ? 700 : 400 }}>
-            {Number(date.slice(-2))}
+            {Number(date.slice(-2))}{request && <span style={{display:"block",fontSize:10}}>{request.status==="rejected"?"退回":request.status==="approved"?"核准":request.status==="pending"?"待審":"取消"}</span>}
           </button>;
         })}
       </div>
+      {loading && <p role="status">正在載入已申請的休假…</p>}
+      {requests.some(r=>r.status==="rejected") && <div style={{marginTop:16,padding:12,border:"1px solid #e8c9ba",borderRadius:10}}>
+        <strong>店長退回的日期，請重新安排</strong>
+        {requests.filter(r=>r.status==="rejected").map(r=><p key={r.id} style={{marginTop:8,fontSize:13}}>
+          {new Date(new Date(r.starts_at).getTime()+8*3600000).toISOString().slice(0,10)}：
+          {r.review_note || "請改選其他日期"}（原日期已解除占用）
+        </p>)}
+      </div>}
       <p style={{ marginTop: 20 }}>已選擇 {selected.length} 天：{selected.map(d => d.slice(5).replace("-", "/")).join("、") || "尚未選擇"}</p>
       <label htmlFor="leave-reason" style={{ display: "block", marginTop: 16 }}>備註（選填）</label>
       <textarea id="leave-reason" maxLength={1000} value={reason} onChange={e => setReason(e.target.value)}
