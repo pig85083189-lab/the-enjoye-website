@@ -12,7 +12,7 @@ import {
 } from "@/lib/navigation";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
-import { LogOut } from "lucide-react";
+import { LogOut, Gift } from "lucide-react";
 
 export default function MorePage() {
   const router = useRouter();
@@ -37,6 +37,8 @@ export default function MorePage() {
           {membership?.displayName ?? session?.name ?? "員工"} · {membership?.role ?? "STAFF"}
         </p>
       </Card>
+
+      <Link href="/staff/rewards" className="block"><Card padding="lg" className="transition-colors hover:border-primary/30"><div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-light text-primary"><Gift className="h-5 w-5"/></div><div><p className="font-semibold">會員獎勵中心</p><p className="text-sm text-secondary-text">會員幣、優惠券與 ENJOYE PET · UI 預覽</p></div></div></Card></Link>
 
       {grouped.map(({ group, items }) => (
         <section key={group.id} className="space-y-3">
