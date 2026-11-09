@@ -70,6 +70,20 @@ export function decideSelfLeave(input: {
     return { outcome: "BLOCKED", reasons: ["INCOMPLETE_SNAPSHOT"] };
   }
 
+  const requester = staff.find(s => s.staffId === requestingStaffId)!;
+  const boundaries = [...new Set([millis(leave.startAt), millis(leave.endAt),
+    ...requester.working.flatMap(w => [millis(w.startAt), millis(w.endAt)])])]
+    .filter(t => t >= millis(leave.startAt) && t <= millis(leave.endAt))
+    .sort((a, b) => a - b);
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    if (!requester.working.some(w => contains(w, boundaries[i]))) {
+      return { outcome: "BLOCKED", reasons: ["INVALID_INPUT"] };
+    }
+  }
+  if (requester.unavailable.some(u => overlaps(u, leave))) {
+    return { outcome: "BLOCKED", reasons: ["INVALID_INPUT"] };
+  }
+
   const reasons: Array<"APPOINTMENT_CONFLICT" | "MINIMUM_STAFF"> = [];
   if (appointments.some(a => overlaps(a, leave))) reasons.push("APPOINTMENT_CONFLICT");
 
