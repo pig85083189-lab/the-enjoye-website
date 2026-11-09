@@ -5,7 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const DAY = 86400000;
-const DATE = /^\\d{4}-\\d{2}-\\d{2}$/;
+const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 
 /** Batch submission for collective-review (B) leave. All dates remain pending. */
 export async function POST(request: Request) {
