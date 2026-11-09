@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
+import { ReturnLeaveRequests } from "./ReturnLeaveRequests";
 
 type Leave = {
   id: string;
@@ -118,6 +119,7 @@ export function LeaveReviewOverview() {
           {selectedDate && <button type="button" onClick={() => setSelectedDate(null)}
             style={{ marginTop: 14, textDecoration: "underline", color: "#895367" }}>顯示整月申請</button>}
         </div>
+        {locationId && <ReturnLeaveRequests key={month + locationId} locationId={locationId} requests={rows} onReturned={ids => setRows(old => old.map(row => ids.includes(row.id) ? {...row,status:"rejected"} : row))} />}
         <h2 style={{ fontWeight: 650, fontSize: 18, marginBottom: 12 }}>
           {selectedDate ? selectedDate + " 申請明細" : "整月申請明細"}
         </h2>
