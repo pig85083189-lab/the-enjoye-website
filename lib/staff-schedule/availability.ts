@@ -133,7 +133,7 @@ export function getStaffAvailability(query: AvailabilityQuery): AvailabilityResu
     staffId,
     from: dayStart,
     to: dayEnd,
-  }).filter((item) => item.status === "APPROVED");
+  }).filter((item) => item.status === "APPROVED" || item.status === "REQUESTED");
   for (const off of offs) {
     if (rangesOverlap(startAt, endAt, off.startAt, off.endAt)) {
       reasons.push("TIME_OFF");
