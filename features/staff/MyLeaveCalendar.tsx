@@ -67,6 +67,20 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
     } catch (e) { setError(e instanceof Error ? e.message : "送出失敗"); }
     finally { setSubmitting(false); }
   };
+  const cancelLeave = async (date: string) => {
+    if (submitting || loading || !window.confirm("確定取消 " + date + " 的休假嗎？")) return;
+    setSubmitting(true); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/staff/leave-requests/cancel", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({locationId,date}),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "取消失敗");
+      setNotice("已取消休假。"); setRefresh(n => n+1);
+    } catch (e) { setError(e instanceof Error ? e.message : "取消失敗"); }
+    finally { setSubmitting(false); }
+  };
   return (
     <section style={{ maxWidth: 560, margin: "32px auto", padding: 24, border: "1px solid #e5e1e0", borderRadius: 18 }}>
       <h1 style={{ fontSize: 26, fontWeight: 650, marginBottom: 8 }}>我的休假</h1>
