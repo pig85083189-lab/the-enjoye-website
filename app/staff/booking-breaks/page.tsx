@@ -36,6 +36,7 @@ export default function BookingBreaksPage() {
     if (sorted.some((row,i) => i > 0 && sorted[i-1].end > row.start)) {
       setMessage("休息時段不可重疊。"); return;
     }
+    if (sorted.length === 0 && !window.confirm("確定要清除這一天所有已儲存的休息時段嗎？")) return;
     setBusy(true); setMessage("");
     try {
       const response = await fetch("/api/staff/booking-breaks", {
@@ -44,7 +45,8 @@ export default function BookingBreaksPage() {
       });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error || "儲存失敗");
-      setMessage("已儲存。會員預約同步仍待驗證，尚未開放預約。");
+      setLoaded(false);
+      setMessage("已儲存。請重新讀取以確認最新資料。會員預約同步仍待驗證，尚未開放預約。");
     } catch (error) { setMessage(error instanceof Error ? error.message : "儲存失敗"); }
     finally { setBusy(false); }
   }
