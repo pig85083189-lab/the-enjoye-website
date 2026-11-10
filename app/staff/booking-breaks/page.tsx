@@ -54,16 +54,16 @@ export default function BookingBreaksPage() {
       <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 12 }}>美容師休息時間管理</h1>
       <p style={{ marginBottom: 20 }}>管理員測試功能。請先輸入所屬門市與美容師代碼並讀取，才能編輯。正式會員預約尚未開放。</p>
       <div style={{ display: "grid", gap: 12 }}>
-        <label>門市代碼<input style={inputStyle} value={locationId} onChange={e => { setLocationId(e.target.value); setLoaded(false); }} placeholder="例如 loc-enjoye-main" /></label>
-        <label>美容師代碼<input style={inputStyle} value={staffId} onChange={e => { setStaffId(e.target.value); setLoaded(false); }} placeholder="例如 staff-001" /></label>
-        <label>日期<input style={inputStyle} type="date" value={date} onChange={e => { setDate(e.target.value); setLoaded(false); }} /></label>
+        <label>門市代碼<input style={inputStyle} value={locationId} disabled={busy} onChange={e => { setLocationId(e.target.value); setLoaded(false); }} placeholder="例如 loc-enjoye-main" /></label>
+        <label>美容師代碼<input style={inputStyle} value={staffId} disabled={busy} onChange={e => { setStaffId(e.target.value); setLoaded(false); }} placeholder="例如 staff-001" /></label>
+        <label>日期<input style={inputStyle} type="date" value={date} disabled={busy} onChange={e => { setDate(e.target.value); setLoaded(false); }} /></label>
         <button type="button" disabled={!valid || busy} onClick={load} style={{ padding: 12, borderRadius: 8, background: "#e6d7d3", color: "#222" }}>讀取休息時間</button>
         {loaded && <>
           {breaks.map((row, index) => (
             <div key={index} style={{ display: "flex", alignItems: "end", gap: 10 }}>
-              <label style={{ flex: 1 }}>開始<input type="time" style={inputStyle} value={row.start} onChange={e => setBreaks(old => old.map((r,i) => i === index ? { ...r, start: e.target.value } : r))} /></label>
-              <label style={{ flex: 1 }}>結束<input type="time" style={inputStyle} value={row.end} onChange={e => setBreaks(old => old.map((r,i) => i === index ? { ...r, end: e.target.value } : r))} /></label>
-              <button type="button" onClick={() => setBreaks(old => old.filter((_,i) => i !== index))}>移除</button>
+              <label style={{ flex: 1 }}>開始<input type="time" disabled={busy} style={inputStyle} value={row.start} onChange={e => setBreaks(old => old.map((r,i) => i === index ? { ...r, start: e.target.value } : r))} /></label>
+              <label style={{ flex: 1 }}>結束<input type="time" disabled={busy} style={inputStyle} value={row.end} onChange={e => setBreaks(old => old.map((r,i) => i === index ? { ...r, end: e.target.value } : r))} /></label>
+              <button type="button" disabled={busy} onClick={() => setBreaks(old => old.filter((_,i) => i !== index))}>移除</button>
             </div>
           ))}
           <button type="button" disabled={busy || breaks.length >= 12} onClick={() => setBreaks(old => [...old, { start: "12:00", end: "13:00" }])}>新增休息時段</button>
