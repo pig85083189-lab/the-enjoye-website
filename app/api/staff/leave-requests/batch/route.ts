@@ -41,20 +41,25 @@ export async function POST(request: Request) {
   });
   if (error) {
     const message = error.message || "";
-    const conflict = /CONFLICT|EXISTS|OVERLAP|APPOINTMENT/.test(message);
+    const code = error.code || "UNKNOWN";
     const known = [
       "MEMBERSHIP_OR_LOCATION_NOT_AUTHORIZED", "LOCATION_ORGANIZATION_MISMATCH",
       "DATE_OUT_OF_RANGE", "NOT_SELF_MANAGED_LEAVE", "TIME_OFF_CONFLICT",
       "LEAVE_ALREADY_EXISTS", "APPOINTMENT_CONFLICT", "FORBIDDEN",
-    ].find(code => message.includes(code));
-    // Log only diagnostic categories, never request data or credentials.
+    ].find(item => message.includes(item));
+    const missingRpc = code === "PGRST202" || /function.*not found/i.test(message);
+    const denied = code === "42501" || code === "PGRST301" || /permission denied/i.test(message);
+    const conflict = /CONFLICT|EXISTS|OVERLAP|APPOINTMENT/.test(message);
+    const category = missingRpc ? "LEAVE_RPC_UNAVAILABLE" :
+      denied ? "LEAVE_RPC_PERMISSION_DENIED" :
+      conflict ? "LEAVE_CONFLICT" : known || "LEAVE_SAVE_FAILED";
     console.error("[staff-self-leave] RPC failed", {
-      code: error.code || "unknown", category: known || "UNEXPECTED_RPC_ERROR",
+      code, category, httpStatus: error.details ? "has_details" : "no_details",
     });
-    return NextResponse.json(
-      { error: conflict ? "LEAVE_CONFLICT" : known || "LEAVE_SAVE_FAILED" },
-      { status: conflict ? 409 : known === "DATE_OUT_OF_RANGE" ? 400 : 503 },
-    );
+    return NextResponse.json({ error: category, diagnosticCode: code }, {
+      status: conflict ? 409 : category === "DATE_OUT_OF_RANGE" ? 400 : 503,
+      headers: { "Cache-Control": "no-store" },
+    });
   }
   return NextResponse.json({ requests: [data], status: "approved" }, { status: 201, headers: { "Cache-Control": "no-store" } });
 }
