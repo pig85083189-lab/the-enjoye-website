@@ -52,7 +52,12 @@ export async function POST(request: Request) {
   }
   const admin = createServiceRoleClient();
   if (!admin) return fail(503, "DATABASE_UNAVAILABLE");
-  // Resolve the organization only from the authenticated membership.
+  // Validate staff belongs to this tenant and location before privileged RPC.
+  const { data: schedule, error: scheduleError } = await admin.from("booking_staff_working_hours")
+    .select("staff_id").eq("organization_id", member.organizationId)
+    .eq("location_id", locationId).eq("staff_id", staffId).limit(1);
+  if (scheduleError) return fail(503, "STAFF_SCHEDULE_UNAVAILABLE");
+  if (!schedule || schedule.length !== 1) return fail(404, "STAFF_NOT_IN_LOCATION");
   const { data, error } = await admin.rpc("booking_staff_breaks_replace_day_v1", {
     p_organization_id: member.organizationId,
     p_location_id: locationId,
