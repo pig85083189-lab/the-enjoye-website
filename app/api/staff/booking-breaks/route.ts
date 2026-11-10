@@ -24,6 +24,15 @@ function validDay(date: string): boolean {
  */
 export async function POST(request: Request) {
   if (process.env.BEAUTY_OS_BOOKING_BREAKS_WRITE_ENABLED !== "true") return fail(503, "BREAK_WRITE_DISABLED");
+  // Reject cross-origin browser writes before accessing privileged service-role data.
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("host");
+  if (!origin || !host) return fail(403, "ORIGIN_REQUIRED");
+  let originUrl: URL;
+  try { originUrl = new URL(origin); } catch { return fail(403, "INVALID_ORIGIN"); }
+  if (originUrl.host !== host || !["https:", "http:"].includes(originUrl.protocol)) return fail(403, "CROSS_ORIGIN_FORBIDDEN");
+  if (originUrl.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(originUrl.hostname)) return fail(403, "INSECURE_ORIGIN");
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return fail(415, "JSON_REQUIRED");
   const auth = await getAuthenticatedStaffMembership();
   if (auth.status !== "ok") return fail(401, "UNAUTHORIZED");
   const member = auth.membership;
