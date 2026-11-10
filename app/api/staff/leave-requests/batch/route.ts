@@ -4,55 +4,45 @@ import { createServiceRoleClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY = 86400000;
-const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 
-/** Batch submission for collective-review (B) leave. All dates remain pending. */
 export async function POST(request: Request) {
   const auth = await getAuthenticatedStaffMembership();
   if (auth.status !== "ok") return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const member = auth.membership;
-  let body: unknown;
-  try { body = await request.json(); } catch { return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 }); }
-  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 });
-  const { locationId, dates, reason } = body as Record<string, unknown>;
+  let body: Record<string, unknown>;
+  try {
+    const value: unknown = await request.json();
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("body");
+    body = value as Record<string, unknown>;
+  } catch { return NextResponse.json({ error: "INVALID_BODY" }, { status: 400 }); }
+  const { locationId, dates, reason } = body;
   if (typeof locationId !== "string" || !member.locationIds.includes(locationId)) return NextResponse.json({ error: "LOCATION_NOT_AUTHORIZED" }, { status: 403 });
   if (!Array.isArray(dates) || dates.length < 1 || dates.length > 31 ||
     dates.some(d => typeof d !== "string" || !DATE.test(d)) ||
-    new Set(dates).size !== dates.length ||
-    typeof reason !== "string" || reason.length > 1000) {
+    new Set(dates).size !== dates.length || typeof reason !== "string" || reason.length > 1000) {
     return NextResponse.json({ error: "INVALID_LEAVE_DETAILS" }, { status: 400 });
   }
   const now = Date.now();
-  const starts = (dates as string[]).map(d => Date.parse(d + "T00:00:00+08:00"));
-  if (starts.some((s, i) => !Number.isFinite(s) ||
-    new Date(s + 8 * 3600000).toISOString().slice(0, 10) !== dates[i] ||
-    s < now - DAY || s > now + 180 * DAY)) {
-    return NextResponse.json({ error: "DATE_OUT_OF_RANGE" }, { status: 400 });
-  }
+  if ((dates as string[]).some(d => {
+    const start = Date.parse(d + "T00:00:00+08:00");
+    return !Number.isFinite(start) || new Date(start + 8 * 3600000).toISOString().slice(0,10) !== d ||
+      start < now - DAY || start > now + 180 * DAY;
+  })) return NextResponse.json({ error: "DATE_OUT_OF_RANGE" }, { status: 400 });
   const admin = createServiceRoleClient();
   if (!admin) return NextResponse.json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
-  const earliest = Math.min(...starts);
-  const latest = Math.max(...starts) + DAY;
-  const { data: existing, error: readError } = await admin.from("staff_leave_requests")
-    .select("starts_at,ends_at").eq("organization_id", member.organizationId)
-    .eq("location_id", locationId).eq("staff_membership_id", member.id)
-    .in("status", ["pending", "approved"])
-    .lt("starts_at", new Date(latest).toISOString())
-    .gt("ends_at", new Date(earliest).toISOString()).limit(500);
-  if (readError || !existing || existing.length === 500) return NextResponse.json({ error: "LEAVE_READ_FAILED" }, { status: 503 });
-  if (starts.some(s => existing.some(e => Date.parse(e.starts_at) < s + DAY && Date.parse(e.ends_at) > s))) {
-    return NextResponse.json({ error: "LEAVE_ALREADY_REQUESTED" }, { status: 409 });
+  // Each RPC is atomic with booking time-off. Multi-day batches are deliberately
+  // rejected until a single-transaction batch RPC is available: no partial days.
+  if (dates.length !== 1) return NextResponse.json({ error: "ONE_DAY_AT_A_TIME" }, { status: 400 });
+  const { data, error } = await admin.rpc("staff_self_leave_set_v1", {
+    p_membership_id: member.id, p_location_id: locationId,
+    p_date: dates[0], p_cancel: false, p_reason: reason.trim(),
+  });
+  if (error) {
+    const message = error.message || "";
+    const conflict = /CONFLICT|EXISTS|OVERLAP|APPOINTMENT/.test(message);
+    return NextResponse.json({ error: conflict ? "LEAVE_CONFLICT" : "LEAVE_SAVE_FAILED" }, { status: conflict ? 409 : 503 });
   }
-  const rows = starts.map(s => ({
-    organization_id: member.organizationId, location_id: locationId,
-    staff_membership_id: member.id, leave_type: "scheduled_off",
-    starts_at: new Date(s).toISOString(), ends_at: new Date(s + DAY).toISOString(),
-    reason: reason.trim(), status: "pending",
-  }));
-  // A single insert statement avoids partial acceptance of a multi-day request.
-  const { data, error } = await admin.from("staff_leave_requests").insert(rows).select("id,status,starts_at,ends_at");
-  if (error?.code === "23P01" || error?.code === "23505") return NextResponse.json({ error: "LEAVE_ALREADY_REQUESTED" }, { status: 409 });
-  if (error || !data || data.length !== rows.length) return NextResponse.json({ error: "LEAVE_CREATE_FAILED" }, { status: 503 });
-  return NextResponse.json({ requests: data, status: "pending" }, { status: 201, headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ requests: [data], status: "approved" }, { status: 201, headers: { "Cache-Control": "no-store" } });
 }
