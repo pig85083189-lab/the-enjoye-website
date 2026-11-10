@@ -41,7 +41,7 @@ export function dbAppointmentFromUnknown(row: Record<string, unknown>): DbAppoin
   const location_id = asString(row.location_id);
   const customer_id = asString(row.customer_id);
   const service_id = asString(row.service_id);
-  const app_id = asString(row.app_id);
+  // Member bookings created by the atomic RPC may have no legacy app_id.\n  // Use the immutable DB UUID as a deterministic read-only calendar identity.\n  const app_id = asString(row.app_id) || `member-booking-${id}`;
   const starts_at = asString(row.starts_at);
   const ends_at = asString(row.ends_at);
   const status = asString(row.status);
