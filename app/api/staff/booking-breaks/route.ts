@@ -4,8 +4,8 @@ import { createServiceRoleClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const DATE = /^\\d{4}-\\d{2}-\\d{2}$/;
-const CLOCK = /^([01]\\d|2[0-3]):([0-5]\\d)$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const CLOCK = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const MANAGERS = new Set(["OWNER", "MANAGER", "ADMIN"]);
 const headers = { "Cache-Control": "no-store" };
 function fail(status: number, error: string) {
