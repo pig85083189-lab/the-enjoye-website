@@ -93,6 +93,7 @@ function toScoped(row: { id: string; app_id: string | null; organization_id: str
  */
 export async function loadAuthenticatedIdentityCatalog(
   client: IdentitySupabaseClient,
+  organizationAppId?: string,
 ): Promise<LoadedAuthenticatedIdentity> {
   const session = await client.auth.getUser();
   if (session.error) {
@@ -110,7 +111,7 @@ export async function loadAuthenticatedIdentityCatalog(
         .select("id, user_id, auth_user_id, organization_id, role, is_active")
         .eq("auth_user_id", authUserId),
     )
-  ).filter((row) => row.is_active && row.auth_user_id === authUserId);
+  ).filter((row) => row.is_active && row.auth_user_id === authUserId && (!organizationAppId || row.organization_id === organizationAppId));
 
   if (memberships.length === 0) {
     throw new IdentityCatalogError(
