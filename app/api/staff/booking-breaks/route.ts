@@ -74,3 +74,38 @@ export async function POST(request: Request) {
   }
   return NextResponse.json({ ok: true, saved: data, syncVerified: false }, { headers });
 }
+
+/** Read one staff member's saved breaks for a Taiwan-local calendar day. */
+export async function GET(request: Request) {
+  if (process.env.BEAUTY_OS_BOOKING_BREAKS_WRITE_ENABLED !== "true") return fail(503, "BREAK_MANAGEMENT_DISABLED");
+  const auth = await getAuthenticatedStaffMembership();
+  if (auth.status !== "ok") return fail(401, "UNAUTHORIZED");
+  const member = auth.membership;
+  if (!MANAGERS.has(member.role)) return fail(403, "MANAGER_REQUIRED");
+  const params = new URL(request.url).searchParams;
+  const locationId = params.get("locationId");
+  const staffId = params.get("staffId");
+  const date = params.get("date");
+  if (!locationId || !member.locationIds.includes(locationId)) return fail(403, "LOCATION_NOT_AUTHORIZED");
+  if (!staffId || !/^[a-zA-Z0-9_-]{1,128}$/.test(staffId) ||
+      !date || !DATE.test(date) || !validDay(date)) return fail(400, "INVALID_BREAK_QUERY");
+  const admin = createServiceRoleClient();
+  if (!admin) return fail(503, "DATABASE_UNAVAILABLE");
+  const { data: schedule, error: scheduleError } = await admin.from("booking_staff_working_hours")
+    .select("staff_id").eq("organization_id", member.organizationId)
+    .eq("location_id", locationId).eq("staff_id", staffId).limit(1);
+  if (scheduleError) return fail(503, "STAFF_SCHEDULE_UNAVAILABLE");
+  if (!schedule || schedule.length !== 1) return fail(404, "STAFF_NOT_IN_LOCATION");
+  const from = date + "T00:00:00+08:00";
+  const until = new Date(Date.parse(from) + 86400000).toISOString();
+  const { data, error } = await admin.from("booking_staff_breaks")
+    .select("starts_at,ends_at").eq("organization_id", member.organizationId)
+    .eq("location_id", locationId).eq("staff_id", staffId)
+    .lt("starts_at", until).gt("ends_at", from).order("starts_at").limit(13);
+  if (error || !data || data.length > 12) return fail(503, "BREAK_READ_UNAVAILABLE");
+  const breaks = data.map(row => ({
+    start: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(row.starts_at)),
+    end: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(row.ends_at)),
+  }));
+  return NextResponse.json({ ok: true, date, staffId, breaks }, { headers });
+}
