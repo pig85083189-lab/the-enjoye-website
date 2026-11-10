@@ -42,7 +42,19 @@ export async function POST(request: Request) {
   if (error) {
     const message = error.message || "";
     const conflict = /CONFLICT|EXISTS|OVERLAP|APPOINTMENT/.test(message);
-    return NextResponse.json({ error: conflict ? "LEAVE_CONFLICT" : "LEAVE_SAVE_FAILED" }, { status: conflict ? 409 : 503 });
+    const known = [
+      "MEMBERSHIP_OR_LOCATION_NOT_AUTHORIZED", "LOCATION_ORGANIZATION_MISMATCH",
+      "DATE_OUT_OF_RANGE", "NOT_SELF_MANAGED_LEAVE", "TIME_OFF_CONFLICT",
+      "LEAVE_ALREADY_EXISTS", "APPOINTMENT_CONFLICT", "FORBIDDEN",
+    ].find(code => message.includes(code));
+    // Log only diagnostic categories, never request data or credentials.
+    console.error("[staff-self-leave] RPC failed", {
+      code: error.code || "unknown", category: known || "UNEXPECTED_RPC_ERROR",
+    });
+    return NextResponse.json(
+      { error: conflict ? "LEAVE_CONFLICT" : known || "LEAVE_SAVE_FAILED" },
+      { status: conflict ? 409 : known === "DATE_OUT_OF_RANGE" ? 400 : 503 },
+    );
   }
   return NextResponse.json({ requests: [data], status: "approved" }, { status: 201, headers: { "Cache-Control": "no-store" } });
 }
