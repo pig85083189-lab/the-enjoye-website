@@ -179,21 +179,6 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
       {readFailed && <button type="button" onClick={()=>setRefresh(n=>n+1)} style={{marginTop:12,padding:10,border:"1px solid #ddd",borderRadius:8}}>重新讀取月曆</button>}
       <h2 style={{fontSize:18,marginTop:24}}>排休日期</h2>
       <p style={{fontSize:13,color:"#756d70"}}>點選月曆日期可選取整天排休；已排休日期可在下方取消。</p>
-      {<div style={{marginTop:18,padding:14,border:"1px solid #e5e1e0",borderRadius:12}}>
-        <p style={{fontSize:13,color:"#756d70",marginBottom:10}}>已排休或舊制待審日期不可新增休息時段。請先取消整天排休。</p>
-        <h2 style={{fontSize:18,marginBottom:10}}>特殊未排休的休息時間（選擇時段）</h2>
-        <strong>{breakDate?breakDate+" 休息時段":"請先點選月曆日期"}</strong>
-        {breakLoaded && <>
-          {breaks.map((b,i)=><div key={i} style={{display:"flex",gap:8,alignItems:"end",marginTop:12}}>
-            <label style={{flex:1}}>開始<input type="time" value={b.start} disabled={submitting} onChange={e=>setBreaks(old=>old.map((v,j)=>j===i?{...v,start:e.target.value}:v))} style={{display:"block",width:"100%",padding:8,border:"1px solid #ddd",borderRadius:8}} /></label>
-            <label style={{flex:1}}>結束<input type="time" value={b.end} disabled={submitting} onChange={e=>setBreaks(old=>old.map((v,j)=>j===i?{...v,end:e.target.value}:v))} style={{display:"block",width:"100%",padding:8,border:"1px solid #ddd",borderRadius:8}} /></label>
-            <button type="button" disabled={submitting} onClick={()=>setBreaks(old=>old.filter((_,j)=>i!==j))}>移除</button>
-          </div>)}
-          <button type="button" disabled={submitting||breaks.length>=12} onClick={()=>setBreaks(old=>[...old,{start:"12:00",end:"13:00"}])} style={{marginTop:14}}>＋ 新增時段</button>
-          <button type="button" disabled={submitting} onClick={saveBreaks} style={{display:"block",width:"100%",marginTop:14,padding:12,background:"#9b6575",color:"white",borderRadius:10}}>儲存休息時段</button>
-        </>}
-        {breakDate && !breakLoaded && <button type="button" disabled={submitting} onClick={()=>loadBreaks(breakDate)} style={{marginTop:12}}>重新讀取休息時段</button>}
-      </div>}
       {requests.some(r=>r.status==="rejected") && <div style={{marginTop:16,padding:12,border:"1px solid #e8c9ba",borderRadius:10}}>
         <strong>店長退回的日期，請重新安排</strong>
         {requests.filter(r=>r.status==="rejected").map(r=><p key={r.id} style={{marginTop:8,fontSize:13}}>
@@ -208,7 +193,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
           <button type="button" disabled={submitting||loading||readFailed} onClick={()=>cancelLeave(date)}>取消休假</button>
         </div>;
       })}
-      {<><p style={{ marginTop: 20 }}>已選擇 {selected.length} 天：{selected.map(d => d.slice(5).replace("-", "/")).join("、") || "尚未選擇"}</p>
+      <><p style={{ marginTop: 20 }}>已選擇 {selected.length} 天：{selected.map(d => d.slice(5).replace("-", "/")).join("、") || "尚未選擇"}</p>
       <label htmlFor="leave-reason" style={{ display: "block", marginTop: 16 }}>備註（選填）</label>
       <textarea id="leave-reason" maxLength={1000} value={reason} onChange={e => setReason(e.target.value)}
         style={{ width: "100%", minHeight: 76, border: "1px solid #ddd", borderRadius: 8, padding: 10 }} />
@@ -216,7 +201,22 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         style={{ width: "100%", padding: 14, marginTop: 16, borderRadius: 10, background: "#9b6575", color: "white", opacity: !selected.length || submitting ? .5 : 1 }}>
         {submitting ? "儲存中…" : "儲存休假（立即生效）"}
       </button>
-      </>}
+      </>
+      <div style={{marginTop:18,padding:14,border:"1px solid #e5e1e0",borderRadius:12}}>
+        <p style={{fontSize:13,color:"#756d70",marginBottom:10}}>已排休或舊制待審日期不可新增休息時段。請先取消整天排休。</p>
+        <h2 style={{fontSize:18,marginBottom:10}}>特殊未排休的休息時間（選擇時段）</h2>
+        <strong>{breakDate?breakDate+" 休息時段":"請先點選月曆日期"}</strong>
+        {breakLoaded && <>
+          {breaks.map((b,i)=><div key={i} style={{display:"flex",gap:8,alignItems:"end",marginTop:12}}>
+            <label style={{flex:1}}>開始<input type="time" value={b.start} disabled={submitting} onChange={e=>setBreaks(old=>old.map((v,j)=>j===i?{...v,start:e.target.value}:v))} style={{display:"block",width:"100%",padding:8,border:"1px solid #ddd",borderRadius:8}} /></label>
+            <label style={{flex:1}}>結束<input type="time" value={b.end} disabled={submitting} onChange={e=>setBreaks(old=>old.map((v,j)=>j===i?{...v,end:e.target.value}:v))} style={{display:"block",width:"100%",padding:8,border:"1px solid #ddd",borderRadius:8}} /></label>
+            <button type="button" disabled={submitting} onClick={()=>setBreaks(old=>old.filter((_,j)=>i!==j))}>移除</button>
+          </div>)}
+          <button type="button" disabled={submitting||breaks.length>=12} onClick={()=>setBreaks(old=>[...old,{start:"12:00",end:"13:00"}])} style={{marginTop:14}}>＋ 新增時段</button>
+          <button type="button" disabled={submitting} onClick={saveBreaks} style={{display:"block",width:"100%",marginTop:14,padding:12,background:"#9b6575",color:"white",borderRadius:10}}>儲存休息時段</button>
+        </>}
+        {breakDate && !breakLoaded && <button type="button" disabled={submitting} onClick={()=>loadBreaks(breakDate)} style={{marginTop:12}}>重新讀取休息時段</button>}
+      </div>
       <div style={{marginTop:20,padding:14,border:"1px solid #e5e1e0",borderRadius:12}}>
         <h2 style={{fontSize:18,marginBottom:8}}>統一休息時間（選擇時段）</h2>
         <p style={{fontSize:13,color:"#756d70"}}>適用每個上班日，不必逐日設定；整天排休日期自動略過。修改從明日起生效，已有預約衝突時會拒絕儲存。</p>
