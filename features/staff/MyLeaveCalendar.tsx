@@ -9,6 +9,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
     return next.getFullYear() + "-" + String(next.getMonth() + 1).padStart(2, "0");
   });
   const [selected, setSelected] = useState<string[]>([]);
+  const [activeDate,setActiveDate]=useState("");
   const [reason, setReason] = useState("");
   const [mode, setMode] = useState<"leave"|"break">("leave");
   const [dailyStart,setDailyStart]=useState("12:00");
@@ -57,7 +58,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   const shift = (direction: number) => {
     const d = new Date(year, m - 1 + direction, 1);
     setMonth(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
-    setSelected([]);
+    setSelected([]);setActiveDate("");
     setBreakDate("");setBreakLoaded(false);
     setNotice("");
     setError("");
@@ -166,9 +167,9 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         {days.map(date => {
           const picked = selected.includes(date), request = requestByDate.get(date), already = request?.status === "pending" || request?.status === "approved";
           const valid = date >= new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-          return <button key={date} type="button" disabled={!valid || already || loading || submitting || readFailed} aria-pressed={picked||breakDate===date}
-            onClick={() => {setSelected(old => picked ? old.filter(item => item !== date) : [...old, date].sort());if(!already)void loadBreaks(date);}}
-            style={{ minHeight: 42, borderRadius: 9, border: (picked||breakDate===date) ? "2px solid #ad7382" : "1px solid #ddd",
+          return <button key={date} type="button" disabled={!valid || loading || submitting || readFailed} aria-pressed={activeDate===date}
+            onClick={() => {setActiveDate(date);if(!already)void loadBreaks(date);else {setBreakDate("");setBreakLoaded(false);}}}
+            style={{ minHeight: 42, borderRadius: 9, border: (picked||activeDate===date) ? "2px solid #ad7382" : "1px solid #ddd",
               background: (mode==="leave"?picked:breakDate===date) ? "#f5e5e9" : request?.status === "rejected" ? "#fff0e8" : already ? "#e8f1e8" : "transparent",
               opacity: valid ? 1 : 0.4, fontWeight: (mode==="leave"?picked:breakDate===date) ? 700 : 400 }}>
             {Number(date.slice(-2))}{request && <span style={{display:"block",fontSize:10}}>{request.status==="rejected"?"退回":request.status==="approved"?"已排休":request.status==="pending"?"舊制待審":"取消"}</span>}
@@ -178,7 +179,8 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
       {loading && <p role="status">正在載入已申請的休假…</p>}
       {readFailed && <button type="button" onClick={()=>setRefresh(n=>n+1)} style={{marginTop:12,padding:10,border:"1px solid #ddd",borderRadius:8}}>重新讀取月曆</button>}
       <h2 style={{fontSize:18,marginTop:24}}>排休日期</h2>
-      <p style={{fontSize:13,color:"#756d70"}}>點選月曆日期可選取整天排休；已排休日期可在下方取消。</p>
+      <p style={{fontSize:13,color:"#756d70"}}>先點選上方日期，再按「加入排休日期」；可選多天一次儲存。已排休日期可在下方取消。</p>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10}}><strong>{activeDate||"尚未選擇日期"}</strong><button type="button" disabled={!activeDate||submitting||loading||readFailed||["approved","pending"].includes(requestByDate.get(activeDate)?.status??"")} onClick={()=>setSelected(old=>old.includes(activeDate)?old.filter(d=>d!==activeDate):[...old,activeDate].sort())}>{selected.includes(activeDate)?"移除排休選取":"加入排休日期"}</button></div>
       {requests.some(r=>r.status==="rejected") && <div style={{marginTop:16,padding:12,border:"1px solid #e8c9ba",borderRadius:10}}>
         <strong>店長退回的日期，請重新安排</strong>
         {requests.filter(r=>r.status==="rejected").map(r=><p key={r.id} style={{marginTop:8,fontSize:13}}>
