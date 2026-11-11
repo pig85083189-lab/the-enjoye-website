@@ -11,6 +11,12 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [reason, setReason] = useState("");
   const [mode, setMode] = useState<"leave"|"break">("leave");
+  const [dailyStart,setDailyStart]=useState("12:00");
+  const [dailyEnd,setDailyEnd]=useState("13:00");
+  const [dailyEnabled,setDailyEnabled]=useState(false);
+  const [dailyLoaded,setDailyLoaded]=useState(false);
+  const [dailySaving,setDailySaving]=useState(false);
+  const [dailyEffective,setDailyEffective]=useState("");
   const [breakDate, setBreakDate] = useState("");
   const [breaks, setBreaks] = useState<Array<{start:string;end:string}>>([]);
   const [breakLoaded, setBreakLoaded] = useState(false);
@@ -85,6 +91,26 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
     } catch(e){setError(e instanceof Error?e.message:"儲存失敗");}
     finally{setSubmitting(false);}
   };
+  useEffect(() => {
+    let active=true;
+    fetch("/api/staff/recurring-break?"+new URLSearchParams({locationId}),{cache:"no-store"})
+      .then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error??"讀取固定休息時間失敗");return data;})
+      .then(data=>{if(!active)return;setDailyEnabled(Boolean(data.break));if(data.break){setDailyStart(data.break.start);setDailyEnd(data.break.end);setDailyEffective(data.break.effectiveFrom);}setDailyLoaded(true);})
+      .catch(e=>{if(active)setError(e instanceof Error?e.message:"讀取固定休息時間失敗");});
+    return()=>{active=false;};
+  },[locationId]);
+  const saveDaily = async () => {
+    if(!dailyLoaded||dailySaving||submitting)return;
+    if(dailyEnabled&&(!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(dailyStart)||!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(dailyEnd)||dailyStart>=dailyEnd)){setError("固定休息時間格式不正確");return;}
+    setDailySaving(true);setError("");setNotice("");
+    try {
+      const response=await fetch("/api/staff/recurring-break",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({locationId,start:dailyEnabled?dailyStart:null,end:dailyEnabled?dailyEnd:null})});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error==="APPOINTMENT_CONFLICT"?"未來已有顧客預約與固定休息時間衝突，請先處理預約。":data.error??"儲存失敗");
+      setDailyEffective(data.result?.effective_from??"");setNotice("統一休息時間已更新，從明日起生效。");
+    }catch(e){setError(e instanceof Error?e.message:"儲存失敗");}
+    finally{setDailySaving(false);}
+  };
   const submit = async () => {
     if (selected.length < 1 || submitting || loading || readFailed) return;
     setSubmitting(true); setError(""); setNotice("");
@@ -127,12 +153,8 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   };
   return (
     <section style={{ maxWidth: 560, margin: "32px auto", padding: 24, border: "1px solid #e5e1e0", borderRadius: 18 }}>
-      <h1 style={{ fontSize: 26, fontWeight: 650, marginBottom: 8 }}>我的休假</h1>
-      <p style={{ color: "#756d70", marginBottom: 24 }}>自行選擇休假日期，儲存後立即生效，不需店長審核。可一次選擇多天，點選日期即可加入或取消選取。</p>
-      <div style={{display:"flex",gap:8,marginBottom:18}}>
-        <button type="button" onClick={()=>{setMode("leave");setError("");}} aria-pressed={mode==="leave"} style={{flex:1,padding:10,borderRadius:10,background:mode==="leave"?"#f5e5e9":"#f6f4f3",border:"1px solid #d8c8c4"}}>整天排休</button>
-        <button type="button" onClick={()=>{setMode("break");setSelected([]);setError("");}} aria-pressed={mode==="break"} style={{flex:1,padding:10,borderRadius:10,background:mode==="break"?"#f5e5e9":"#f6f4f3",border:"1px solid #d8c8c4"}}>自訂休息時段</button>
-      </div>
+      <h1 style={{ fontSize: 26, fontWeight: 650, marginBottom: 8 }}>我的排休</h1>
+      <p style={{ color: "#756d70", marginBottom: 24 }}>上方月曆選擇日期，下方分別管理排休日期、特殊休息時間與每個上班日的統一休息時間。</p>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <button type="button" disabled={currentMonth <= minMonth} onClick={() => shift(-1)} aria-label="上個月">‹</button>
         <strong>{year} 年 {m} 月</strong>
@@ -144,9 +166,9 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         {days.map(date => {
           const picked = selected.includes(date), request = requestByDate.get(date), already = request?.status === "pending" || request?.status === "approved";
           const valid = date >= new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-          return <button key={date} type="button" disabled={!valid || already || loading || submitting || readFailed} aria-pressed={mode==="leave"?picked:breakDate===date}
-            onClick={() => mode==="leave" ? setSelected(old => picked ? old.filter(item => item !== date) : [...old, date].sort()) : loadBreaks(date)}
-            style={{ minHeight: 42, borderRadius: 9, border: (mode==="leave"?picked:breakDate===date) ? "2px solid #ad7382" : "1px solid #ddd",
+          return <button key={date} type="button" disabled={!valid || already || loading || submitting || readFailed} aria-pressed={picked||breakDate===date}
+            onClick={() => {setSelected(old => picked ? old.filter(item => item !== date) : [...old, date].sort());if(!already)void loadBreaks(date);}}
+            style={{ minHeight: 42, borderRadius: 9, border: (picked||breakDate===date) ? "2px solid #ad7382" : "1px solid #ddd",
               background: (mode==="leave"?picked:breakDate===date) ? "#f5e5e9" : request?.status === "rejected" ? "#fff0e8" : already ? "#e8f1e8" : "transparent",
               opacity: valid ? 1 : 0.4, fontWeight: (mode==="leave"?picked:breakDate===date) ? 700 : 400 }}>
             {Number(date.slice(-2))}{request && <span style={{display:"block",fontSize:10}}>{request.status==="rejected"?"退回":request.status==="approved"?"已排休":request.status==="pending"?"舊制待審":"取消"}</span>}
@@ -155,8 +177,11 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
       </div>
       {loading && <p role="status">正在載入已申請的休假…</p>}
       {readFailed && <button type="button" onClick={()=>setRefresh(n=>n+1)} style={{marginTop:12,padding:10,border:"1px solid #ddd",borderRadius:8}}>重新讀取月曆</button>}
-      {mode==="break" && <div style={{marginTop:18,padding:14,border:"1px solid #e5e1e0",borderRadius:12}}>
+      <h2 style={{fontSize:18,marginTop:24}}>排休日期</h2>
+      <p style={{fontSize:13,color:"#756d70"}}>點選月曆日期可選取整天排休；已排休日期可在下方取消。</p>
+      {<div style={{marginTop:18,padding:14,border:"1px solid #e5e1e0",borderRadius:12}}>
         <p style={{fontSize:13,color:"#756d70",marginBottom:10}}>已排休或舊制待審日期不可新增休息時段。請先取消整天排休。</p>
+        <h2 style={{fontSize:18,marginBottom:10}}>特殊未排休的休息時間（選擇時段）</h2>
         <strong>{breakDate?breakDate+" 休息時段":"請先點選月曆日期"}</strong>
         {breakLoaded && <>
           {breaks.map((b,i)=><div key={i} style={{display:"flex",gap:8,alignItems:"end",marginTop:12}}>
@@ -169,21 +194,21 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         </>}
         {breakDate && !breakLoaded && <button type="button" disabled={submitting} onClick={()=>loadBreaks(breakDate)} style={{marginTop:12}}>重新讀取休息時段</button>}
       </div>}
-      {mode==="leave" && requests.some(r=>r.status==="rejected") && <div style={{marginTop:16,padding:12,border:"1px solid #e8c9ba",borderRadius:10}}>
+      {requests.some(r=>r.status==="rejected") && <div style={{marginTop:16,padding:12,border:"1px solid #e8c9ba",borderRadius:10}}>
         <strong>店長退回的日期，請重新安排</strong>
         {requests.filter(r=>r.status==="rejected").map(r=><p key={r.id} style={{marginTop:8,fontSize:13}}>
           {new Date(new Date(r.starts_at).getTime()+8*3600000).toISOString().slice(0,10)}：
           {r.review_note || "請改選其他日期"}（原日期已解除占用）
         </p>)}
       </div>}
-      {mode==="leave" && requests.filter(r=>r.status==="approved").map(r => {
+      {requests.filter(r=>r.status==="approved").map(r => {
         const date = new Date(new Date(r.starts_at).getTime()+8*3600000).toISOString().slice(0,10);
         return <div key={r.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12}}>
           <span>{date} 已排休</span>
           <button type="button" disabled={submitting||loading||readFailed} onClick={()=>cancelLeave(date)}>取消休假</button>
         </div>;
       })}
-      {mode==="leave" && <><p style={{ marginTop: 20 }}>已選擇 {selected.length} 天：{selected.map(d => d.slice(5).replace("-", "/")).join("、") || "尚未選擇"}</p>
+      {<><p style={{ marginTop: 20 }}>已選擇 {selected.length} 天：{selected.map(d => d.slice(5).replace("-", "/")).join("、") || "尚未選擇"}</p>
       <label htmlFor="leave-reason" style={{ display: "block", marginTop: 16 }}>備註（選填）</label>
       <textarea id="leave-reason" maxLength={1000} value={reason} onChange={e => setReason(e.target.value)}
         style={{ width: "100%", minHeight: 76, border: "1px solid #ddd", borderRadius: 8, padding: 10 }} />
@@ -192,6 +217,19 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         {submitting ? "儲存中…" : "儲存休假（立即生效）"}
       </button>
       </>}
+      <div style={{marginTop:20,padding:14,border:"1px solid #e5e1e0",borderRadius:12}}>
+        <h2 style={{fontSize:18,marginBottom:8}}>統一休息時間（選擇時段）</h2>
+        <p style={{fontSize:13,color:"#756d70"}}>適用每個上班日，不必逐日設定；整天排休日期自動略過。修改從明日起生效，已有預約衝突時會拒絕儲存。</p>
+        <label style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
+          <input type="checkbox" checked={dailyEnabled} disabled={!dailyLoaded||dailySaving} onChange={e=>setDailyEnabled(e.target.checked)}/> 啟用統一休息時間
+        </label>
+        {dailyEnabled && <div style={{display:"flex",gap:8}}>
+          <label style={{flex:1}}>開始時間<input type="time" value={dailyStart} onChange={e=>setDailyStart(e.target.value)} style={{display:"block",width:"100%",padding:8,border:"1px solid #ddd",borderRadius:8}} /></label>
+          <label style={{flex:1}}>結束時間<input type="time" value={dailyEnd} onChange={e=>setDailyEnd(e.target.value)} style={{display:"block",width:"100%",padding:8,border:"1px solid #ddd",borderRadius:8}} /></label>
+        </div>}
+        {dailyEffective && <p style={{fontSize:12,marginTop:10}}>目前設定生效日：{dailyEffective}</p>}
+        <button type="button" disabled={!dailyLoaded||dailySaving||submitting} onClick={saveDaily} style={{width:"100%",padding:12,marginTop:14,borderRadius:10,background:"#9b6575",color:"white"}}>{dailySaving?"儲存中…":"儲存統一休息時間"}</button>
+      </div>
       {notice && <p role="status" style={{ color: "#28734d", marginTop: 12 }}>{notice}</p>}
       {error && <p role="alert" style={{ color: "#b22b3b", marginTop: 12 }}>{error.includes("signal is aborted")?"資料讀取暫時中斷，請按「重新讀取月曆」。":error}</p>}
       <p style={{ fontSize: 12, color: "#81767a", marginTop: 16 }}>若該日已有顧客預約，系統會拒絕排休。舊制待審資料仍保留。</p>
