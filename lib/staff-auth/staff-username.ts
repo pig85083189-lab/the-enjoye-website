@@ -13,3 +13,9 @@ export function validateStaffUsername(value: string): string | null {
   const normalized = normalizeStaffUsername(value);
   return normalized && !RESERVED.has(normalized) ? normalized : null;
 }
+
+/** Internal Auth identifier, never presented as an employee email address. */
+export function staffUsernameAuthEmail(username: string): string | null {
+  const normalized = validateStaffUsername(username);
+  return normalized ? `${normalized}@staff-login.the-enjoye.invalid` : null;
+}
