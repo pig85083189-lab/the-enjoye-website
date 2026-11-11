@@ -11,7 +11,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [activeDate,setActiveDate]=useState("");
   const [reason, setReason] = useState("");
-  const [mode, setMode] = useState<"leave"|"break">("leave");
+
   const [dailyStart,setDailyStart]=useState("12:00");
   const [dailyEnd,setDailyEnd]=useState("13:00");
   const [dailyEnabled,setDailyEnabled]=useState(false);
@@ -153,10 +153,10 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
     finally { setSubmitting(false); }
   };
   return (
-    <section style={{ maxWidth: 560, margin: "32px auto", padding: 24, border: "1px solid #e5e1e0", borderRadius: 18 }}>
-      <h1 style={{ fontSize: 26, fontWeight: 650, marginBottom: 8 }}>我的排休</h1>
-      <p style={{ color: "#756d70", marginBottom: 24 }}>上方月曆選擇日期，下方分別管理排休日期、特殊休息時間與每個上班日的統一休息時間。</p>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+    <section style={{ maxWidth: 1100, margin: "24px auto", padding: 24, border: "1px solid #eadfdd", borderRadius: 22, background: "#fffaf8" }}>
+      <h1 style={{ fontSize: 26, fontWeight: 650, marginBottom: 8 }}>我的休假</h1>
+      <p style={{ color: "#756d70", marginBottom: 24 }}>管理個人排休與休息時間，系統會自動同步至預約時段。</p>
+      <div className="leave-calendar-wrap"><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <button type="button" disabled={currentMonth <= minMonth} onClick={() => shift(-1)} aria-label="上個月">‹</button>
         <strong>{year} 年 {m} 月</strong>
         <button type="button" disabled={currentMonth >= maxMonth} onClick={() => shift(1)} aria-label="下個月">›</button>
@@ -170,15 +170,15 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
           return <button key={date} type="button" disabled={!valid || loading || submitting || readFailed} aria-pressed={activeDate===date}
             onClick={() => {setActiveDate(date);if(!already)void loadBreaks(date);else {setBreakDate("");setBreakLoaded(false);}}}
             style={{ minHeight: 42, borderRadius: 9, border: (picked||activeDate===date) ? "2px solid #ad7382" : "1px solid #ddd",
-              background: (mode==="leave"?picked:breakDate===date) ? "#f5e5e9" : request?.status === "rejected" ? "#fff0e8" : already ? "#e8f1e8" : "transparent",
+              background: (picked||activeDate===date) ? "#f5e5e9" : request?.status === "rejected" ? "#fff0e8" : already ? "#e8f1e8" : "transparent",
               opacity: valid ? 1 : 0.4, fontWeight: (mode==="leave"?picked:breakDate===date) ? 700 : 400 }}>
             {Number(date.slice(-2))}{request && <span style={{display:"block",fontSize:10}}>{request.status==="rejected"?"退回":request.status==="approved"?"已排休":request.status==="pending"?"舊制待審":"取消"}</span>}
           </button>;
         })}
       </div>
-      {loading && <p role="status">正在載入已申請的休假…</p>}
+      <div className="leave-legend"><span>▣ 整天排休</span><span>▤ 休息時段</span><span>▢ 選取日期</span></div></div><div className="leave-cards"><div className="leave-card">\n      {loading && <p role="status">正在載入已申請的休假…</p>}
       {readFailed && <button type="button" onClick={()=>setRefresh(n=>n+1)} style={{marginTop:12,padding:10,border:"1px solid #ddd",borderRadius:8}}>重新讀取月曆</button>}
-      <h2 style={{fontSize:18,marginTop:24}}>排休日期</h2>
+      <h2 style={{fontSize:19,marginTop:4}}>▦　排休日期</h2>
       <p style={{fontSize:13,color:"#756d70"}}>先點選上方日期，再按「加入排休日期」；可選多天一次儲存。已排休日期可在下方取消。</p>
       <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10}}><strong>{activeDate||"尚未選擇日期"}</strong><button type="button" disabled={!activeDate||submitting||loading||readFailed||["approved","pending"].includes(requestByDate.get(activeDate)?.status??"")} onClick={()=>setSelected(old=>old.includes(activeDate)?old.filter(d=>d!==activeDate):[...old,activeDate].sort())}>{selected.includes(activeDate)?"移除排休選取":"加入排休日期"}</button></div>
       {requests.some(r=>r.status==="rejected") && <div style={{marginTop:16,padding:12,border:"1px solid #e8c9ba",borderRadius:10}}>
@@ -204,9 +204,9 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         {submitting ? "儲存中…" : "儲存休假（立即生效）"}
       </button>
       </>
-      <div style={{marginTop:18,padding:14,border:"1px solid #e5e1e0",borderRadius:12}}>
+      </div><div className="leave-card">
         <p style={{fontSize:13,color:"#756d70",marginBottom:10}}>已排休或舊制待審日期不可新增休息時段。請先取消整天排休。</p>
-        <h2 style={{fontSize:18,marginBottom:10}}>特殊未排休的休息時間（選擇時段）</h2>
+        <h2 style={{fontSize:18,marginBottom:10}}>特殊未排休的休息時間</h2>
         <strong>{breakDate?breakDate+" 休息時段":"請先點選月曆日期"}</strong>
         {breakLoaded && <>
           {breaks.map((b,i)=><div key={i} style={{display:"flex",gap:8,alignItems:"end",marginTop:12}}>
@@ -219,8 +219,8 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         </>}
         {breakDate && !breakLoaded && <button type="button" disabled={submitting} onClick={()=>loadBreaks(breakDate)} style={{marginTop:12}}>重新讀取休息時段</button>}
       </div>
-      <div style={{marginTop:20,padding:14,border:"1px solid #e5e1e0",borderRadius:12}}>
-        <h2 style={{fontSize:18,marginBottom:8}}>統一休息時間（選擇時段）</h2>
+      </div><div className="leave-card">
+        <h2 style={{fontSize:18,marginBottom:8}}>統一休息時間</h2>
         <p style={{fontSize:13,color:"#756d70"}}>適用每個上班日，不必逐日設定；整天排休日期自動略過。修改從明日起生效，已有預約衝突時會拒絕儲存。</p>
         <label style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
           <input type="checkbox" checked={dailyEnabled} disabled={!dailyLoaded||dailySaving} onChange={e=>setDailyEnabled(e.target.checked)}/> 啟用統一休息時間
@@ -232,7 +232,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         {dailyEffective && <p style={{fontSize:12,marginTop:10}}>目前設定生效日：{dailyEffective}</p>}
         <button type="button" disabled={!dailyLoaded||dailySaving||submitting} onClick={saveDaily} style={{width:"100%",padding:12,marginTop:14,borderRadius:10,background:"#9b6575",color:"white"}}>{dailySaving?"儲存中…":"儲存統一休息時間"}</button>
       </div>
-      {notice && <p role="status" style={{ color: "#28734d", marginTop: 12 }}>{notice}</p>}
+      </div></div>\n      {notice && <p role="status" style={{ color: "#28734d", marginTop: 12 }}>{notice}</p>}
       {error && <p role="alert" style={{ color: "#b22b3b", marginTop: 12 }}>{error.includes("signal is aborted")?"資料讀取暫時中斷，請按「重新讀取月曆」。":error}</p>}
       <p style={{ fontSize: 12, color: "#81767a", marginTop: 16 }}>若該日已有顧客預約，系統會拒絕排休。舊制待審資料仍保留。</p>
     </section>
