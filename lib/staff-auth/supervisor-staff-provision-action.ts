@@ -4,6 +4,7 @@ import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/s
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { STAFF_AUTH_MEMBERSHIPS_TABLE, isStaffAuthRole } from "@/lib/staff-auth/membership-schema";
 import { lookupAuthUserIdForStaffEmail } from "@/lib/staff-auth/staff-invite-send-adapter";
+import { classifyBindingRecovery } from "@/lib/staff-auth/staff-provision-recovery";
 import { validateSupervisorPassword } from "@/lib/staff-auth/supervisor-password-reset-policy";
 
 export async function supervisorProvisionStaffLoginAction(input: {
@@ -63,10 +64,23 @@ export async function supervisorProvisionStaffLoginAction(input: {
   } catch {
     attachFailed = true;
   }
+  // A failed response may hide a successful database commit. Read back the
+  // membership before deciding whether to retry or report failure.
+  let recovery: ReturnType<typeof classifyBindingRecovery> = "unknown";
+  try {
+    const checked = await admin.from(STAFF_AUTH_MEMBERSHIPS_TABLE)
+      .select("auth_user_id").eq("id", target.id)
+      .eq("organization_id", input.organizationId).maybeSingle();
+    recovery = classifyBindingRecovery(Boolean(checked.error), Boolean(checked.data),
+      checked.data?.auth_user_id ?? null, userId);
+  } catch {
+    recovery = "unknown";
+  }
+  const actuallyBound = recovery === "bound";
   const {error: finalizeError} = await admin.from("staff_password_reset_audit")
-    .update({status: attachFailed ? "failed" : "succeeded", completed_at: new Date().toISOString()})
+    .update({status: actuallyBound ? "succeeded" : "failed", completed_at: new Date().toISOString()})
     .eq("id", audit.id).eq("status", "attempted");
   if (finalizeError) return fail("帳號操作已執行，但稽核結果無法確認，請聯絡管理員，勿重複開通");
-  if (attachFailed || !attached) return fail("帳號已建立但綁定未完成，請聯絡管理員，勿重複開通");
+  if (!actuallyBound) return fail("帳號已建立，但無法確認員工綁定成功；請聯絡管理員，勿重複開通");
   return {ok: true, message: "員工登入帳號已開通，可使用 Email 和設定的密碼登入"};
 }
