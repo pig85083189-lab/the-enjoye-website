@@ -52,7 +52,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
     setError("");
   };
   const submit = async () => {
-    if (selected.length !== 1 || submitting || loading || readFailed) return;
+    if (selected.length < 1 || submitting || loading || readFailed) return;
     setSubmitting(true); setError(""); setNotice("");
     try {
       const response = await fetch("/api/staff/leave-requests/batch", {
@@ -94,7 +94,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   return (
     <section style={{ maxWidth: 560, margin: "32px auto", padding: 24, border: "1px solid #e5e1e0", borderRadius: 18 }}>
       <h1 style={{ fontSize: 26, fontWeight: 650, marginBottom: 8 }}>我的休假</h1>
-      <p style={{ color: "#756d70", marginBottom: 24 }}>自行選擇休假日期，儲存後立即生效，不需店長審核。請一次選擇一天。</p>
+      <p style={{ color: "#756d70", marginBottom: 24 }}>自行選擇休假日期，儲存後立即生效，不需店長審核。可一次選擇多天，點選日期即可加入或取消選取。</p>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <button type="button" disabled={currentMonth <= minMonth} onClick={() => shift(-1)} aria-label="上個月">‹</button>
         <strong>{year} 年 {m} 月</strong>
@@ -107,7 +107,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
           const picked = selected.includes(date), request = requestByDate.get(date), already = request?.status === "pending" || request?.status === "approved";
           const valid = date >= new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
           return <button key={date} type="button" disabled={!valid || already || loading || submitting || readFailed} aria-pressed={picked}
-            onClick={() => setSelected(old => picked ? [] : [date])}
+            onClick={() => setSelected(old => picked ? old.filter(item => item !== date) : [...old, date].sort())}
             style={{ minHeight: 42, borderRadius: 9, border: picked ? "2px solid #ad7382" : "1px solid #ddd",
               background: picked ? "#f5e5e9" : request?.status === "rejected" ? "#fff0e8" : already ? "#e8f1e8" : "transparent",
               opacity: valid ? 1 : 0.4, fontWeight: picked ? 700 : 400 }}>
@@ -134,7 +134,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
       <label htmlFor="leave-reason" style={{ display: "block", marginTop: 16 }}>備註（選填）</label>
       <textarea id="leave-reason" maxLength={1000} value={reason} onChange={e => setReason(e.target.value)}
         style={{ width: "100%", minHeight: 76, border: "1px solid #ddd", borderRadius: 8, padding: 10 }} />
-      <button type="button" disabled={selected.length !== 1 || submitting || loading || readFailed} onClick={submit}
+      <button type="button" disabled={selected.length < 1 || submitting || loading || readFailed} onClick={submit}
         style={{ width: "100%", padding: 14, marginTop: 16, borderRadius: 10, background: "#9b6575", color: "white", opacity: !selected.length || submitting ? .5 : 1 }}>
         {submitting ? "儲存中…" : "儲存休假（立即生效）"}
       </button>
