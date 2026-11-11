@@ -219,7 +219,6 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
           <button type="button" disabled={submitting} onClick={saveBreaks} style={{display:"block",width:"100%",marginTop:14,padding:12,background:"#9b6575",color:"white",borderRadius:10}}>儲存休息時段</button>
         </>}
         {breakDate && !breakLoaded && <button type="button" disabled={submitting} onClick={()=>loadBreaks(breakDate)} style={{marginTop:12}}>重新讀取休息時段</button>}
-      </div>
       </div><div className="leave-card">
         <h2 style={{fontSize:18,marginBottom:8}}>統一休息時間</h2>
         <p style={{fontSize:13,color:"#756d70"}}>適用每個上班日，不必逐日設定；整天排休日期自動略過。修改從明日起生效，已有預約衝突時會拒絕儲存。</p>
