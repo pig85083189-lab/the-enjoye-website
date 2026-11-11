@@ -63,8 +63,8 @@ export function SupervisorPasswordPanel(props: {
         </button>
         {open ? (
           <form className="mt-3 space-y-3" onSubmit={provision}>
-            <p className="text-xs text-secondary-text">為 {props.targetName} 建立登入帳號，不寄送驗證信。使用自訂帳號與密碼，不需員工登入帳號 或驗證信。</p>
-            <label className="block text-xs">員工 Email
+            <p className="text-xs text-secondary-text">為 {props.targetName} 建立登入帳號，不寄送驗證信。使用自訂帳號與密碼，不需員工 Email 或驗證信。</p>
+            <label className="block text-xs">員工登入帳號
               <input type="text" autoComplete="off" required minLength={3} maxLength={32} value={username}
                 onChange={e => setUsername(e.target.value)}
                 placeholder="例如 yixin 或 1234" className="mt-1 w-full rounded-xl border border-border p-2" />
