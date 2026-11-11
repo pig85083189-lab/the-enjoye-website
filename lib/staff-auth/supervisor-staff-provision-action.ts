@@ -31,8 +31,9 @@ export async function supervisorProvisionStaffLoginAction(input: {
   if (target.auth_user_id) return fail("員工已有登入帳號，請使用主管設定員工密碼功能");
   if (target.email && target.email.trim().toLowerCase() !== email) return fail("Email 與員工資料不一致，請先更新員工基本資料");
   const {data: bound, error: boundError} = await admin.from(STAFF_AUTH_MEMBERSHIPS_TABLE)
-    .select("id").eq("organization_id", input.organizationId).eq("email", email).neq("id", input.membershipId).limit(1);
+    .select("id").ilike("email", email).neq("id", input.membershipId).limit(1);
   if (boundError || (bound && bound.length)) return fail("此 Email 已被其他員工使用，請檢查資料");
+  // Refuse to create another identity when the email belongs to a staff member in any organization.
   const lookup = await lookupAuthUserIdForStaffEmail(email);
   if (!lookup.ok) return fail(lookup.message);
   if (lookup.authUserId) return fail("此 Email 已存在登入帳號，為保護帳號安全，不會自動接管");
