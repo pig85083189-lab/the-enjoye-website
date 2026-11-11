@@ -138,7 +138,7 @@ export function StaffWorkspacePage({
   const [scheduleSyncBusy, setScheduleSyncBusy] = useState(false);
   const [cloudScheduleBusy, setCloudScheduleBusy] = useState(false);
   const [scheduleSyncMessage, setScheduleSyncMessage] = useState("");
-  const [qvTab, setQvTab] = useState<"today" | "hours" | "breaks" | "timeoff">("today");
+  const [qvTab, setQvTab] = useState<"today" | "hours" | "leave" | "profile">("today");
   const [quickOpen, setQuickOpen] = useState(false);
   const [breakDate, setBreakDate] = useState(() => formatYmd(new Date()));
   const [breakStart, setBreakStart] = useState("13:00");
