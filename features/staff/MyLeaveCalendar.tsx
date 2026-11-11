@@ -57,6 +57,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
     setError("");
   };
   const loadBreaks = async (date: string) => {
+    if (["approved","pending"].includes(requestByDate.get(date)?.status ?? "")) { setBreakDate(""); setBreakLoaded(false); setError("這一天已整天排休，請先取消整天排休，才能設定休息時段。"); return; }
     setBreakDate(date); setBreakLoaded(false); setError(""); setNotice("");
     setSubmitting(true);
     try {
@@ -70,6 +71,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   };
   const saveBreaks = async () => {
     if (!breakLoaded || !breakDate || submitting) return;
+    if (["approved","pending"].includes(requestByDate.get(breakDate)?.status ?? "")) { setError("已整天排休的日期不能設定休息時段。"); return; }
     const sorted=[...breaks].sort((a,b)=>a.start.localeCompare(b.start));
     const clock=/^([01]\d|2[0-3]):[0-5]\d$/;
     if(sorted.some((b,i)=>!clock.test(b.start)||!clock.test(b.end)||b.start>=b.end||(i>0&&sorted[i-1].end>b.start))){setError("休息時段不可重疊，且結束時間必須晚於開始時間。");return;}
@@ -142,7 +144,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         {days.map(date => {
           const picked = selected.includes(date), request = requestByDate.get(date), already = request?.status === "pending" || request?.status === "approved";
           const valid = date >= new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-          return <button key={date} type="button" disabled={!valid || (mode==="leave" && already) || loading || submitting || readFailed} aria-pressed={mode==="leave"?picked:breakDate===date}
+          return <button key={date} type="button" disabled={!valid || already || loading || submitting || readFailed} aria-pressed={mode==="leave"?picked:breakDate===date}
             onClick={() => mode==="leave" ? setSelected(old => picked ? old.filter(item => item !== date) : [...old, date].sort()) : loadBreaks(date)}
             style={{ minHeight: 42, borderRadius: 9, border: (mode==="leave"?picked:breakDate===date) ? "2px solid #ad7382" : "1px solid #ddd",
               background: (mode==="leave"?picked:breakDate===date) ? "#f5e5e9" : request?.status === "rejected" ? "#fff0e8" : already ? "#e8f1e8" : "transparent",
@@ -154,6 +156,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
       {loading && <p role="status">正在載入已申請的休假…</p>}
       {readFailed && <button type="button" onClick={()=>setRefresh(n=>n+1)} style={{marginTop:12,padding:10,border:"1px solid #ddd",borderRadius:8}}>重新讀取月曆</button>}
       {mode==="break" && <div style={{marginTop:18,padding:14,border:"1px solid #e5e1e0",borderRadius:12}}>
+        <p style={{fontSize:13,color:"#756d70",marginBottom:10}}>已排休或舊制待審日期不可新增休息時段。請先取消整天排休。</p>
         <strong>{breakDate?breakDate+" 休息時段":"請先點選月曆日期"}</strong>
         {breakLoaded && <>
           {breaks.map((b,i)=><div key={i} style={{display:"flex",gap:8,alignItems:"end",marginTop:12}}>
