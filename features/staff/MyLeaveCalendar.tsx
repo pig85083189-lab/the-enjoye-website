@@ -38,7 +38,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         const own = (result.requests ?? []).filter((item:{staff_membership_id:string}) =>
           item.staff_membership_id === result.viewer?.staffMembershipId);
         setRequests(own);
-      }).catch(e => {if (!controller.signal.aborted) setReadFailed(true); setError(e instanceof Error ? e.message : "讀取申請失敗");})
+      }).catch(e => {if (!controller.signal.aborted && !(e instanceof Error && e.name === "AbortError")) { setReadFailed(true); setError(e instanceof Error ? e.message : "讀取申請失敗"); }})
       .finally(() => {if (!controller.signal.aborted) setLoading(false);});
     return () => controller.abort();
   },[locationId,month,refresh]);
@@ -71,7 +71,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   const saveBreaks = async () => {
     if (!breakLoaded || !breakDate || submitting) return;
     const sorted=[...breaks].sort((a,b)=>a.start.localeCompare(b.start));
-    const clock=/^([01]\\d|2[0-3]):[0-5]\\d$/;
+    const clock=/^([01]\d|2[0-3]):[0-5]\d$/;
     if(sorted.some((b,i)=>!clock.test(b.start)||!clock.test(b.end)||b.start>=b.end||(i>0&&sorted[i-1].end>b.start))){setError("休息時段不可重疊，且結束時間必須晚於開始時間。");return;}
     if(!sorted.length&&!window.confirm("確定要清除當天全部休息時段嗎？"))return;
     setSubmitting(true);setError("");setNotice("");
