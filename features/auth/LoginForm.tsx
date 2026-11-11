@@ -11,11 +11,12 @@ import { listMyStaffMembershipsAction } from "@/lib/staff-auth/actions";
 import { safeStaffNextPath } from "@/lib/staff-auth/redirect";
 import { tryGetSupabaseEnv } from "@/lib/supabase/env";
 import { emitOrgChange } from "@/lib/tenant/organization-store";
+import { staffUsernameAuthEmail } from "@/lib/staff-auth/staff-username";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [errorKind, setErrorKind] = useState<
     "config" | "credentials" | "network" | ""
@@ -26,6 +27,11 @@ export function LoginForm() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorKind("");
+    const normalizedLogin = loginId.trim();
+    const authEmail = normalizedLogin.includes("@")
+      ? normalizedLogin.toLowerCase()
+      : staffUsernameAuthEmail(normalizedLogin);
+    if (!authEmail) { setErrorKind("credentials"); return; }
     if (!supabaseReady) {
       setErrorKind("config");
       return;
@@ -38,7 +44,7 @@ export function LoginForm() {
     setSubmitting(true);
     try {
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: authEmail,
         password,
       });
       if (signInError || !data.user) {
@@ -67,22 +73,22 @@ export function LoginForm() {
 
   return (
     <AuthCard data-staff-login-card>
-      <AuthBrand title="歡迎回來" description="使用工作 Email 登入你的工作空間" />
+      <AuthBrand title="歡迎回來" description="員工使用自訂帳號，主管可沿用原本 Email" />
 
       <form onSubmit={handleSubmit} className="space-y-5" data-staff-login>
         <div className="space-y-2">
-          <label htmlFor="email" className="block text-sm font-medium text-text">
+          <label htmlFor="loginId" className="block text-sm font-medium text-text">
             Email
           </label>
           <input
-            id="email"
-            name="email"
-            type="email"
+            id="loginId"
+            name="loginId"
+            type="text"
             autoComplete="username"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            value={loginId}
+            onChange={(event) => setLoginId(event.target.value)}
             className="h-12 w-full rounded-2xl border border-border bg-background px-4 text-[15px] text-text outline-none transition-colors placeholder:text-secondary-text/70 focus:border-primary"
-            placeholder="請輸入 Email"
+            placeholder="員工帳號，例如 yixin；主管可使用 Email"
           />
         </div>
 
@@ -112,7 +118,7 @@ export function LoginForm() {
         {errorKind === "credentials" ? (
           <AuthAlert
             tone="error"
-            title="Email 或密碼不正確"
+            title="登入帳號或密碼不正確"
             description="請確認後重新輸入，或使用忘記密碼。"
           />
         ) : null}
