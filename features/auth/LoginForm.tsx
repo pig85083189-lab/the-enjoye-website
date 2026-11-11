@@ -78,7 +78,7 @@ export function LoginForm() {
       <form onSubmit={handleSubmit} className="space-y-5" data-staff-login>
         <div className="space-y-2">
           <label htmlFor="loginId" className="block text-sm font-medium text-text">
-            Email
+            登入帳號或主管 Email
           </label>
           <input
             id="loginId"
