@@ -27,7 +27,9 @@ export async function supervisorProvisionStaffLoginAction(input: {
   const {data: target, error: targetError} = await admin.from(STAFF_AUTH_MEMBERSHIPS_TABLE)
     .select("id, organization_id, auth_user_id, role, is_active, email")
     .eq("id", input.membershipId).eq("organization_id", input.organizationId).maybeSingle();
-  if (targetError || !target || !isStaffAuthRole(target.role) || !target.is_active) return fail("員工資料不存在或尚未啟用");
+  if (targetError) return fail("無法讀取正式員工資料，請稍後再試");
+  if (!target) return fail("這位員工尚未同步至正式資料庫，請先儲存員工資料並重新整理，再開通登入帳號");
+  if (!isStaffAuthRole(target.role) || !target.is_active) return fail("員工資料尚未啟用，無法開通登入帳號");
   if (target.role === "OWNER" || (target.role === "MANAGER" && role !== "OWNER")) return fail("沒有權限開通此員工");
   if (target.auth_user_id) return fail("員工已有登入帳號，請使用主管設定員工密碼功能");
   if (target.email && target.email.trim().toLowerCase() !== email) return fail("Email 與員工資料不一致，請先更新員工基本資料");
