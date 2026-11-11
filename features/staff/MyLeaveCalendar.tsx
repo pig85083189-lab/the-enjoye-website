@@ -29,6 +29,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   const [refresh, setRefresh] = useState(0);
   const [error, setError] = useState("");
   const [showLeaveList,setShowLeaveList]=useState(false);
+  const [phase,setPhase]=useState<"leave"|"special"|"daily">("leave");
   const [year, m] = month.split("-").map(Number);
   const count = new Date(year, m, 0).getDate();
   const offset = new Date(year, m - 1, 1).getDay();
@@ -59,7 +60,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   const shift = (direction: number) => {
     const d = new Date(year, m - 1 + direction, 1);
     setMonth(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
-    setSelected([]);setActiveDate("");
+    setSelected([]);setActiveDate("");setPhase("leave");
     setBreakDate("");setBreakLoaded(false);
     setNotice("");
     setError("");
@@ -135,7 +136,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
       }
       setRefresh(n => n+1);
       setNotice("休假已儲存，預約時段同步封鎖。");
-      setSelected([]); setReason("");
+      setSelected([]); setReason("");setPhase("special");setActiveDate("");setBreakDate("");setBreakLoaded(false);
     } catch (e) { setError(e instanceof Error ? e.message : "送出失敗"); }
     finally { setSubmitting(false); }
   };
@@ -157,6 +158,11 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
     <section className="leave-page">
       <div className="leave-heading"><span className="leave-heading-icon">▦</span><div><h1>我的休假</h1>
       <p>管理整天排休、特殊休息時間與每日固定休息時間。</p></div></div><div className="leave-intro"><strong>休假與休息設定</strong><span>選擇日期後，在下方設定休假或休息時段</span></div>
+      <div className="leave-steps">
+        <button type="button" className={phase==="leave"?"current":""} onClick={()=>setPhase("leave")}>① 整月複選排休</button>
+        <button type="button" className={phase==="special"?"current":""} disabled={selected.length>0} onClick={()=>setPhase("special")}>② 特殊休息時段</button>
+        <button type="button" className={phase==="daily"?"current":""} disabled={selected.length>0} onClick={()=>setPhase("daily")}>③ 統一休息時間</button>
+      </div>
       <div className="leave-calendar-wrap"><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <button type="button" disabled={currentMonth <= minMonth} onClick={() => shift(-1)} aria-label="上個月">‹</button>
         <strong>{year} 年 {m} 月</strong>
@@ -168,8 +174,16 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         {days.map(date => {
           const picked = selected.includes(date), request = requestByDate.get(date), already = request?.status === "pending" || request?.status === "approved";
           const valid = date >= new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-          return <button key={date} type="button" disabled={!valid || loading || submitting || readFailed} aria-pressed={activeDate===date}
-            onClick={() => {setActiveDate(date);if(!already)void loadBreaks(date);else {setBreakDate("");setBreakLoaded(false);}}}
+          return <button key={date} type="button" disabled={!valid || loading || submitting || readFailed} aria-pressed={phase==="leave"?picked:activeDate===date}
+            onClick={() => {
+              setActiveDate(date);
+              if(phase==="leave"){
+                if(!already)setSelected(old=>old.includes(date)?old.filter(d=>d!==date):[...old,date].sort());
+              }else if(phase==="special"){
+                if(!already)void loadBreaks(date);
+                else {setBreakDate("");setBreakLoaded(false);setError("已排休的日期不能設定特殊休息時段。");}
+              }
+            }}
             style={{ minHeight: 42, borderRadius: 9, border: (picked||activeDate===date) ? "2px solid #ad7382" : "1px solid #ddd",
               background: (picked||activeDate===date) ? "#f5e5e9" : request?.status === "rejected" ? "#fff0e8" : already ? "#e8f1e8" : "transparent",
               opacity: valid ? 1 : 0.4, fontWeight: (picked||activeDate===date) ? 700 : 400 }}>
@@ -177,12 +191,12 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
           </button>;
         })}
       </div>
-      <div className="leave-legend"><span>● 已排休</span><span>▢ 選取日期</span></div></div><div className="leave-cards"><div className="leave-card">
+      <div className="leave-legend"><span>● 已排休</span><span>▢ {phase==="leave"?"點日期複選／取消":"點日期設定特殊時段"}</span></div></div><div className="leave-cards"><div className="leave-card" hidden={phase!=="leave"}>
       {loading && <p role="status">正在載入已申請的休假…</p>}
       {readFailed && <button type="button" onClick={()=>setRefresh(n=>n+1)} style={{marginTop:12,padding:10,border:"1px solid #ddd",borderRadius:8}}>重新讀取月曆</button>}
       <h2 style={{fontSize:19,marginTop:4}}>▦　排休日期</h2>
-      <p style={{fontSize:13,color:"#756d70"}}>先點選上方日期，再按「加入排休日期」；可選多天一次儲存。已排休日期可在下方取消。</p>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginTop:10}}><strong>{activeDate||"尚未選擇日期"}</strong><button type="button" disabled={!activeDate||submitting||loading||readFailed||["approved","pending"].includes(requestByDate.get(activeDate)?.status??"")} onClick={()=>setSelected(old=>old.includes(activeDate)?old.filter(d=>d!==activeDate):[...old,activeDate].sort())}>{selected.includes(activeDate)?"移除排休選取":"加入排休日期"}</button></div>
+      <p style={{fontSize:13,color:"#756d70"}}>直接點選月曆上的多個日期，再按「確認本月排休」。再次點選可取消選取。</p>
+      <div className="leave-selection-summary"><strong>本月已選取 {selected.length} 天</strong><button type="button" disabled={!selected.length} onClick={()=>setSelected([])}>清除選取</button></div>
       {requests.some(r=>r.status==="rejected") && <div style={{marginTop:16,padding:12,border:"1px solid #e8c9ba",borderRadius:10}}>
         <strong>店長退回的日期，請重新安排</strong>
         {requests.filter(r=>r.status==="rejected").map(r=><p key={r.id} style={{marginTop:8,fontSize:13}}>
@@ -204,11 +218,11 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         style={{ width: "100%", minHeight: 76, border: "1px solid #ddd", borderRadius: 8, padding: 10 }} />
       <button type="button" disabled={selected.length < 1 || submitting || loading || readFailed} onClick={submit}
         style={{ width: "100%", padding: 14, marginTop: 16, borderRadius: 10, background: "#9b6575", color: "white", opacity: !selected.length || submitting ? .5 : 1 }}>
-        {submitting ? "儲存中…" : "儲存休假（立即生效）"}
+        {submitting ? "儲存中…" : "確認本月排休"}
       </button>
       </>
-      </div><div className="leave-card">
-        <p style={{fontSize:13,color:"#756d70",marginBottom:10}}>已排休或舊制待審日期不可新增休息時段。請先取消整天排休。</p>
+      </div><div className="leave-card" hidden={phase!=="special"}>
+        <p style={{fontSize:13,color:"#756d70",marginBottom:10}}>排休送出後再選擇仍上班的特殊日期。未設定特殊時段的日期，使用統一休息時間。</p>
         <h2 style={{fontSize:18,marginBottom:10}}>特殊未排休的休息時間</h2>
         <strong>{breakDate?breakDate+" 休息時段":"請先點選月曆日期"}</strong>
         {breakLoaded && <>
@@ -221,7 +235,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
           <button type="button" disabled={submitting} onClick={saveBreaks} style={{display:"block",width:"100%",marginTop:14,padding:12,background:"#9b6575",color:"white",borderRadius:10}}>儲存休息時段</button>
         </>}
         {breakDate && !breakLoaded && <button type="button" disabled={submitting} onClick={()=>loadBreaks(breakDate)} style={{marginTop:12}}>重新讀取休息時段</button>}
-      </div><div className="leave-card">
+      </div><div className="leave-card" hidden={phase!=="daily"}>
         <h2 style={{fontSize:18,marginBottom:8}}>統一休息時間</h2>
         <p style={{fontSize:13,color:"#756d70"}}>適用每個上班日，不必逐日設定；整天排休日期自動略過。修改從明日起生效，已有預約衝突時會拒絕儲存。</p>
         <label style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
@@ -234,6 +248,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         {dailyEffective && <p style={{fontSize:12,marginTop:10}}>目前設定生效日：{dailyEffective}</p>}
         <button type="button" disabled={!dailyLoaded||dailySaving||submitting} onClick={saveDaily} style={{width:"100%",padding:12,marginTop:14,borderRadius:10,background:"#9b6575",color:"white"}}>{dailySaving?"儲存中…":"儲存統一休息時間"}</button>
       </div></div>
+      {phase==="special" && <button className="leave-next" type="button" onClick={()=>setPhase("daily")}>查看統一休息時間 →</button>}
       {notice && <p role="status" style={{ color: "#28734d", marginTop: 12 }}>{notice}</p>}
       {error && <p role="alert" style={{ color: "#b22b3b", marginTop: 12 }}>{error.includes("signal is aborted")?"資料讀取暫時中斷，請按「重新讀取月曆」。":error}</p>}
       <p style={{ fontSize: 12, color: "#81767a", marginTop: 16 }}>若該日已有顧客預約，系統會拒絕排休。舊制待審資料仍保留。</p>
@@ -245,8 +260,8 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
 .leave-calendar-wrap>div:nth-child(2){gap:8px!important}.leave-calendar-wrap>div:nth-child(2)>button{min-height:52px!important;border-radius:11px!important;transition:background .15s ease}
 .leave-calendar-wrap>div:nth-child(2)>button[aria-pressed=true]{outline:2px solid #9b6575;outline-offset:1px}
 .leave-legend{display:flex;justify-content:flex-end;gap:18px;font-size:12px;color:#817478;margin-top:16px}
-.leave-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:16px}
-.leave-card{min-width:0;background:white;border:1px solid #e9dddc;border-radius:18px;padding:20px;box-shadow:0 5px 22px #65425109}
+.leave-cards{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:16px}
+.leave-card[hidden]{display:none!important}.leave-steps{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}.leave-steps button{border:1px solid #e3d0d7;border-radius:12px;padding:12px 16px;background:white;color:#86576a;cursor:pointer;font-weight:600}.leave-steps button.current{background:#9b6575;color:white}.leave-steps button:disabled{opacity:.4}.leave-selection-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:#fcf3f5;border-radius:12px}.leave-next{display:block;margin:18px 0 0 auto;padding:13px 20px;background:#9b6575;color:white;border:0;border-radius:12px}.leave-card{min-width:0;background:white;border:1px solid #e9dddc;border-radius:18px;padding:20px;box-shadow:0 5px 22px #65425109}
 .leave-card h2{font-size:19px!important;line-height:1.5;color:#6d4554;margin:0 0 12px!important}
 .leave-card button{cursor:pointer;border:1px solid #dfc8d0;background:#fff7f9;color:#855569;border-radius:10px;padding:9px 12px}
 .leave-card button:disabled{cursor:not-allowed;opacity:.48}
