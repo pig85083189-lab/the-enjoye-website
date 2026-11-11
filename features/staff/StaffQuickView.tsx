@@ -25,6 +25,7 @@ import {
 import type { StaffBreak, StaffTimeOff, StaffWorkingHours } from "@/lib/staff-schedule/domain";
 import type { Location, StaffRole } from "@/types/saas";
 import { StaffInvitePanel } from "@/features/staff/StaffInvitePanel";
+import { SupervisorPasswordPanel } from "@/features/staff/SupervisorPasswordPanel";
 import type { StaffInviteRecord } from "@/lib/staff-auth/staff-invite-command";
 import { staffInviteLifecycleLabel } from "@/lib/staff-auth/staff-invite-visibility";
 import { cn } from "@/lib/utils";
@@ -94,6 +95,7 @@ interface StaffQuickViewProps {
   inviteSendOpen?: boolean;
   actorRole?: StaffRole | null;
   actorActive?: boolean;
+  actorAuthUserId?: string | null;
   pendingInvite?: StaffInviteRecord | null;
   onInviteChanged?: () => void;
 }
@@ -144,6 +146,7 @@ export function StaffQuickView({
   inviteSendOpen = false,
   actorRole = null,
   actorActive = false,
+  actorAuthUserId = null,
   pendingInvite = null,
   onInviteChanged,
 }: StaffQuickViewProps) {
@@ -232,6 +235,19 @@ export function StaffQuickView({
                 </p>
               </div>
             </div>
+
+            <SupervisorPasswordPanel
+              key={row.membershipId}
+              organizationId={organizationId}
+              membershipId={row.membershipId}
+              targetName={row.displayName}
+              targetAuthUserId={row.authUserId}
+              targetRole={row.role}
+              targetActive={row.isActive}
+              actorRole={actorRole}
+              actorActive={actorActive}
+              actorAuthUserId={actorAuthUserId}
+            />
 
             <div
               data-staff-qv-tabs
