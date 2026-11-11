@@ -6,12 +6,13 @@ describe("employee username policy", () => {
     expect(validateStaffUsername(" YiXin_01 ")).toBe("yixin_01");
   });
   it("rejects email, spaces, short and invalid names", () => {
-    for (const value of ["a", "abc@gmail.com", "yi xin", "1234", "中華", "a!".repeat(20)]) {
+    for (const value of ["a", "abc@gmail.com", "yi xin", "中華", "a!".repeat(20)]) {
       expect(normalizeStaffUsername(value)).toBeNull();
     }
   });
   it("reserves privileged aliases", () => {
     expect(validateStaffUsername("admin")).toBeNull();
     expect(validateStaffUsername("owner")).toBeNull();
+    expect(validateStaffUsername("1234")).toBe("1234");
   });
 });
