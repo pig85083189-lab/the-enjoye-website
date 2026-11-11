@@ -53,7 +53,7 @@ export async function supervisorProvisionStaffLoginAction(input: {
       .select("id").eq("auth_user_id", existingUserId).limit(1);
     const {data: customerLinks, error: customerError} = await admin.from("member_customer_links")
       .select("auth_user_id").eq("auth_user_id", existingUserId).limit(1);
-    if (staffError || customerError || staffLinks?.length || customerLinks?.length) {
+    // Older Beauty OS databases do not contain the member customer link table.\n    const missingCustomerTable = customerError?.code === "42P01" || customerError?.code === "PGRST205";\n    if (staffError || (customerError && !missingCustomerTable) || staffLinks?.length || customerLinks?.length) {
       return fail("此帳號已有其他身分綁定，無法重新開通");
     }
   }
