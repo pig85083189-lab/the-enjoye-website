@@ -176,7 +176,8 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
           </button>;
         })}
       </div>
-      <div className="leave-legend"><span>▣ 整天排休</span><span>▤ 休息時段</span><span>▢ 選取日期</span></div></div><div className="leave-cards"><div className="leave-card">\n      {loading && <p role="status">正在載入已申請的休假…</p>}
+      <div className="leave-legend"><span>▣ 整天排休</span><span>▤ 休息時段</span><span>▢ 選取日期</span></div></div><div className="leave-cards"><div className="leave-card">
+      {loading && <p role="status">正在載入已申請的休假…</p>}
       {readFailed && <button type="button" onClick={()=>setRefresh(n=>n+1)} style={{marginTop:12,padding:10,border:"1px solid #ddd",borderRadius:8}}>重新讀取月曆</button>}
       <h2 style={{fontSize:19,marginTop:4}}>▦　排休日期</h2>
       <p style={{fontSize:13,color:"#756d70"}}>先點選上方日期，再按「加入排休日期」；可選多天一次儲存。已排休日期可在下方取消。</p>
@@ -231,8 +232,8 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         </div>}
         {dailyEffective && <p style={{fontSize:12,marginTop:10}}>目前設定生效日：{dailyEffective}</p>}
         <button type="button" disabled={!dailyLoaded||dailySaving||submitting} onClick={saveDaily} style={{width:"100%",padding:12,marginTop:14,borderRadius:10,background:"#9b6575",color:"white"}}>{dailySaving?"儲存中…":"儲存統一休息時間"}</button>
-      </div>
-      </div></div>\n      {notice && <p role="status" style={{ color: "#28734d", marginTop: 12 }}>{notice}</p>}
+      </div></div>
+      {notice && <p role="status" style={{ color: "#28734d", marginTop: 12 }}>{notice}</p>}
       {error && <p role="alert" style={{ color: "#b22b3b", marginTop: 12 }}>{error.includes("signal is aborted")?"資料讀取暫時中斷，請按「重新讀取月曆」。":error}</p>}
       <p style={{ fontSize: 12, color: "#81767a", marginTop: 16 }}>若該日已有顧客預約，系統會拒絕排休。舊制待審資料仍保留。</p>
     </section>
