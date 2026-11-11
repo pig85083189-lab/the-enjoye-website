@@ -297,13 +297,17 @@ export function StaffOnboardingDialog({
         }
         let notice = "員工已建立於雲端，" + scheduleNotice + "。請確認登入啟用與會員預約時段。";
         if (offerCreateInvite && sendInvite) {
-          const invited = await inviteStaffLoginAction({
-            email: result.created.email ?? draft.email,
-            membershipId: result.created.id,
-            organizationId,
-            mode: "invite",
-          });
-          notice = formatStaffCreateInviteNotice({ invite: invited }) + "；" + scheduleNotice + "。請確認登入啟用與會員預約時段。";
+          try {
+            const invited = await inviteStaffLoginAction({
+              email: result.created.email ?? draft.email,
+              membershipId: result.created.id,
+              organizationId,
+              mode: "invite",
+            });
+            notice = formatStaffCreateInviteNotice({ invite: invited }) + "；" + scheduleNotice + "。請確認登入啟用與會員預約時段。";
+          } catch {
+            notice = "員工已建立，" + scheduleNotice + "，但登入邀請寄送失敗。請至員工詳情重新寄送，勿重複新增員工。";
+          }
         }
         onCreated({
           membership: result.created,
