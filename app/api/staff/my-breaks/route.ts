@@ -67,9 +67,9 @@ export async function POST(request:Request) {
   });
   if(error){
     const message=error.message??"";
-    const known=["APPOINTMENT_CONFLICT","BREAK_OVERLAP","INVALID_BREAK_DETAILS","STAFF_SCHEDULE_NOT_FOUND","DATE_OUT_OF_RANGE"].find(code=>message.includes(code));
+    const known=["FULL_DAY_LEAVE_CONFLICT","APPOINTMENT_CONFLICT","BREAK_OVERLAP","INVALID_BREAK_DETAILS","STAFF_SCHEDULE_NOT_FOUND","DATE_OUT_OF_RANGE"].find(code=>message.includes(code));
     console.error("[staff-self-breaks] save failed",error.code);
-    return fail(known==="APPOINTMENT_CONFLICT"||known==="BREAK_OVERLAP"?409:503,known??"BREAK_SAVE_FAILED");
+    return fail(known==="FULL_DAY_LEAVE_CONFLICT"||known==="APPOINTMENT_CONFLICT"||known==="BREAK_OVERLAP"?409:503,known??"BREAK_SAVE_FAILED");
   }
   return NextResponse.json({ok:true,saved:data},{headers});
 }
