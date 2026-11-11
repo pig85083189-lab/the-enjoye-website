@@ -2,7 +2,7 @@
 
 import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
-import { STAFF_AUTH_MEMBERSHIPS_TABLE } from "@/lib/staff-auth/membership-schema";
+import { STAFF_AUTH_MEMBERSHIPS_TABLE, isStaffAuthRole } from "@/lib/staff-auth/membership-schema";
 import {
   authorizeSupervisorPasswordReset,
   validateSupervisorPassword,
@@ -40,6 +40,8 @@ export async function supervisorSetStaffPasswordAction(input: {
     .eq("organization_id", input.organizationId)
     .maybeSingle();
   if (targetError || !target) return fail("找不到此員工的正式登入資料");
+
+  if (!isStaffAuthRole(target.role)) return fail("員工角色資料無效");
 
   const decision = authorizeSupervisorPasswordReset({
     actorAuthUserId: actor.id,
