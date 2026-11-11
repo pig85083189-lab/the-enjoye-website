@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, CalendarDays, Clock3, UserRound, CalendarOff } from "lucide-react";
+import Link from "next/link";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { formatYmd } from "@/lib/appointments/domain";
@@ -34,14 +35,14 @@ const DAYS: DayOfWeek[] = [1, 2, 3, 4, 5, 6, 0];
 export type StaffQuickViewTab =
   | "today"
   | "hours"
-  | "breaks"
-  | "timeoff";
+  | "leave"
+  | "profile";
 
 const TABS: Array<{ id: StaffQuickViewTab; label: string }> = [
   { id: "today", label: "今日概況" },
   { id: "hours", label: "固定班表" },
-  { id: "breaks", label: "休息時間" },
-  { id: "timeoff", label: "休假 / 請假" },
+  { id: "leave", label: "休假與休息" },
+  { id: "profile", label: "基本資料" },
 ];
 
 interface StaffQuickViewProps {
@@ -185,7 +186,7 @@ export function StaffQuickView({
         className={cn(
           "z-30 flex flex-col overflow-hidden border border-border bg-surface",
           "fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] max-h-[min(88vh,calc(100dvh-4.5rem-env(safe-area-inset-bottom)))] rounded-t-3xl shadow-[0_-4px_24px_rgba(48,43,43,0.08)]",
-          "min-[1200px]:relative min-[1200px]:inset-auto min-[1200px]:z-0 min-[1200px]:h-auto min-[1200px]:max-h-[calc(100dvh-6.5rem)] min-[1200px]:w-[400px] min-[1200px]:min-w-[400px] min-[1200px]:shrink-0 min-[1200px]:rounded-2xl min-[1200px]:shadow-none",
+          "min-[1200px]:relative min-[1200px]:inset-auto min-[1200px]:z-0 min-[1200px]:h-auto min-[1200px]:max-h-[calc(100dvh-6.5rem)] min-[1200px]:w-[460px] min-[1200px]:min-w-[460px] min-[1200px]:shrink-0 min-[1200px]:rounded-2xl min-[1200px]:shadow-none",
         )}
       >
         <div className="flex min-h-0 flex-1 flex-col">
@@ -235,7 +236,7 @@ export function StaffQuickView({
 
             <div
               data-staff-qv-tabs
-              className="mb-3 flex gap-1 rounded-xl bg-[#F7F4F2] p-1"
+              className="mb-4 grid grid-cols-4 gap-1 rounded-xl bg-[#F7F4F2] p-1"
               role="tablist"
               aria-label="員工詳情分頁"
             >
@@ -247,7 +248,7 @@ export function StaffQuickView({
                   aria-selected={tab === entry.id}
                   data-staff-tab={entry.id}
                   className={cn(
-                    "min-h-8 flex-1 rounded-lg px-1.5 text-[11px] font-medium transition-colors",
+                    "min-h-11 rounded-lg px-1 text-[11px] font-medium transition-colors",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
                     tab === entry.id
                       ? "bg-surface text-text shadow-[0_1px_2px_rgba(48,43,43,0.06)]"
@@ -317,6 +318,153 @@ export function StaffQuickView({
                   </dl>
                 </section>
 
+              </div>
+            ) : null}
+
+            {tab === "hours" ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[13px] font-medium text-text">固定班表</p>
+                  {canEdit ? (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        className="h-8 rounded-full border border-border px-2.5 text-[11px] text-secondary-text hover:bg-primary-light/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        onClick={() => setApplyOpen((open) => !open)}
+                      >
+                        套用
+                      </button>
+                      {applyOpen ? (
+                        <div className="absolute right-0 z-10 mt-1 w-40 rounded-xl border border-border bg-surface p-1 shadow-[0_8px_20px_rgba(48,43,43,0.08)]">
+                          <button
+                            type="button"
+                            className="flex h-9 w-full items-center rounded-lg px-2 text-left text-[12px] hover:bg-primary-light/40"
+                            onClick={() => {
+                              onApplyPattern("mon-fri");
+                              setApplyOpen(false);
+                            }}
+                          >
+                            套用週一到週五
+                          </button>
+                          <button
+                            type="button"
+                            className="flex h-9 w-full items-center rounded-lg px-2 text-left text-[12px] hover:bg-primary-light/40"
+                            onClick={() => {
+                              onApplyPattern("mon-sat");
+                              setApplyOpen(false);
+                            }}
+                          >
+                            套用週一到週六
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+                <ul className="space-y-1.5">
+                  {DAYS.map((dow) => {
+                    const rowHours = hours.find((item) => item.dayOfWeek === dow);
+                    const isWorking = rowHours?.isWorking ?? false;
+                    const start = rowHours?.startTime ?? "09:00";
+                    const end = rowHours?.endTime ?? "21:00";
+                    return (
+                      <li
+                        key={dow}
+                        className="flex min-h-11 flex-wrap items-center gap-2 rounded-xl border border-border/70 px-2.5 py-1.5"
+                      >
+                        <span className="w-10 text-[13px] font-medium text-text">
+                          {`星期${DAY_OF_WEEK_LABEL[dow]}`}
+                        </span>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                            isWorking
+                              ? "bg-[#E7F0EA] text-[#5C7F66]"
+                              : "bg-[#F1EEEC] text-[#7A7272]",
+                          )}
+                        >
+                          {isWorking ? "上班" : "休假"}
+                        </span>
+                        {canEdit ? (
+                          <>
+                            <label className="sr-only" htmlFor={`hours-on-${dow}`}>
+                              {DAY_OF_WEEK_LABEL[dow]}上班
+                            </label>
+                            <input
+                              id={`hours-on-${dow}`}
+                              type="checkbox"
+                              className="h-4 w-4 accent-primary"
+                              checked={isWorking}
+                              onChange={(event) =>
+                                onToggleWorking(dow, event.target.checked)
+                              }
+                            />
+                            <input
+                              type="time"
+                              className="min-h-9 rounded-lg border border-border px-1.5 text-[12px] disabled:text-secondary-text"
+                              value={start}
+                              disabled={!isWorking}
+                              onChange={(event) =>
+                                onChangeHours(dow, "startTime", event.target.value)
+                              }
+                            />
+                            <span className="text-secondary-text">→</span>
+                            <input
+                              type="time"
+                              className="min-h-9 rounded-lg border border-border px-1.5 text-[12px] disabled:text-secondary-text"
+                              value={end}
+                              disabled={!isWorking}
+                              onChange={(event) =>
+                                onChangeHours(dow, "endTime", event.target.value)
+                              }
+                            />
+                          </>
+                        ) : (
+                          <span className="text-[13px] tabular-nums text-text">
+                            {isWorking ? `${start} → ${end}` : "—"}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
+
+            {tab === "leave" ? (
+              <div className="space-y-3">
+                <section className="rounded-2xl border border-[#E9D8DD] bg-[#FCF6F7] p-4">
+                  <div className="flex items-center gap-2 text-[#89586A]"><CalendarOff className="h-4 w-4" /><h3 className="text-[14px] font-semibold">休假與休息管理</h3></div>
+                  <p className="mt-2 text-[12px] leading-6 text-secondary-text">排休、特殊休息時段與統一休息時間以正式「我的休假」資料為準。此處不再提供舊制新增，避免同一日期出現兩份設定。</p>
+                  {isCurrentUser ? (
+                    <Link href="/staff/my-leave" className="mt-3 flex min-h-10 items-center justify-center rounded-xl bg-[#986578] px-4 text-[13px] font-medium text-white">前往我的休假</Link>
+                  ) : canManage ? (
+                    <Link href="/staff/leave-management" className="mt-3 flex min-h-10 items-center justify-center rounded-xl bg-[#986578] px-4 text-[13px] font-medium text-white">前往員工休假管理</Link>
+                  ) : null}
+                </section>
+                <section className="rounded-2xl border border-border bg-white p-4">
+                  <h3 className="text-[13px] font-semibold text-text">舊版瀏覽器紀錄（僅供參考）</h3>
+                  <p className="mt-1 text-[11px] leading-5 text-secondary-text">以下是舊版本機排休與休息紀錄，不代表正式 Supabase 最新狀態，請以前往管理頁面的資料為準。</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-[#FAF7F5] p-3"><p className="text-[11px] text-secondary-text">舊版休息紀錄</p><p className="mt-1 text-[18px] font-semibold">{breakViews.length}</p></div>
+                    <div className="rounded-xl bg-[#FAF7F5] p-3"><p className="text-[11px] text-secondary-text">舊版未來休假</p><p className="mt-1 text-[18px] font-semibold">{upcoming.length}</p></div>
+                  </div>
+                </section>
+              </div>
+            ) : null}
+
+            {tab === "profile" ? (
+              <div className="space-y-3">
+                <section className="rounded-2xl border border-border bg-[#FAF7F5]/80 p-4">
+                  <div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-[#986578]" /><h3 className="text-[13px] font-semibold">員工基本資料與登入權限</h3></div>
+                  <dl className="mt-3 space-y-2 text-[13px]">
+                    <div className="flex justify-between gap-3"><dt className="text-secondary-text">姓名</dt><dd className="text-right">{row.displayName}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-secondary-text">職稱</dt><dd className="text-right">{row.title || "未設定"}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-secondary-text">角色</dt><dd className="text-right">{row.roleLabel}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-secondary-text">分店</dt><dd className="text-right">{row.locationLabel}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-secondary-text">登入狀態</dt><dd className="text-right">{staffInviteLifecycleLabel(row.inviteLifecycle)}</dd></div>
+                  </dl>
+                </section>
                 {canManage && onSaveProfile ? (
                   <section
                     data-staff-profile-edit
@@ -440,281 +588,7 @@ export function StaffQuickView({
                   binding={row.loginBinding}
                   onChanged={onInviteChanged}
                 />
-              </div>
-            ) : null}
 
-            {tab === "hours" ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[13px] font-medium text-text">固定班表</p>
-                  {canEdit ? (
-                    <div className="relative">
-                      <button
-                        type="button"
-                        className="h-8 rounded-full border border-border px-2.5 text-[11px] text-secondary-text hover:bg-primary-light/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                        onClick={() => setApplyOpen((open) => !open)}
-                      >
-                        套用
-                      </button>
-                      {applyOpen ? (
-                        <div className="absolute right-0 z-10 mt-1 w-40 rounded-xl border border-border bg-surface p-1 shadow-[0_8px_20px_rgba(48,43,43,0.08)]">
-                          <button
-                            type="button"
-                            className="flex h-9 w-full items-center rounded-lg px-2 text-left text-[12px] hover:bg-primary-light/40"
-                            onClick={() => {
-                              onApplyPattern("mon-fri");
-                              setApplyOpen(false);
-                            }}
-                          >
-                            套用週一到週五
-                          </button>
-                          <button
-                            type="button"
-                            className="flex h-9 w-full items-center rounded-lg px-2 text-left text-[12px] hover:bg-primary-light/40"
-                            onClick={() => {
-                              onApplyPattern("mon-sat");
-                              setApplyOpen(false);
-                            }}
-                          >
-                            套用週一到週六
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-                <ul className="space-y-1.5">
-                  {DAYS.map((dow) => {
-                    const rowHours = hours.find((item) => item.dayOfWeek === dow);
-                    const isWorking = rowHours?.isWorking ?? false;
-                    const start = rowHours?.startTime ?? "09:00";
-                    const end = rowHours?.endTime ?? "21:00";
-                    return (
-                      <li
-                        key={dow}
-                        className="flex min-h-11 flex-wrap items-center gap-2 rounded-xl border border-border/70 px-2.5 py-1.5"
-                      >
-                        <span className="w-10 text-[13px] font-medium text-text">
-                          {`星期${DAY_OF_WEEK_LABEL[dow]}`}
-                        </span>
-                        <span
-                          className={cn(
-                            "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                            isWorking
-                              ? "bg-[#E7F0EA] text-[#5C7F66]"
-                              : "bg-[#F1EEEC] text-[#7A7272]",
-                          )}
-                        >
-                          {isWorking ? "上班" : "休假"}
-                        </span>
-                        {canEdit ? (
-                          <>
-                            <label className="sr-only" htmlFor={`hours-on-${dow}`}>
-                              {DAY_OF_WEEK_LABEL[dow]}上班
-                            </label>
-                            <input
-                              id={`hours-on-${dow}`}
-                              type="checkbox"
-                              className="h-4 w-4 accent-primary"
-                              checked={isWorking}
-                              onChange={(event) =>
-                                onToggleWorking(dow, event.target.checked)
-                              }
-                            />
-                            <input
-                              type="time"
-                              className="min-h-9 rounded-lg border border-border px-1.5 text-[12px] disabled:text-secondary-text"
-                              value={start}
-                              disabled={!isWorking}
-                              onChange={(event) =>
-                                onChangeHours(dow, "startTime", event.target.value)
-                              }
-                            />
-                            <span className="text-secondary-text">→</span>
-                            <input
-                              type="time"
-                              className="min-h-9 rounded-lg border border-border px-1.5 text-[12px] disabled:text-secondary-text"
-                              value={end}
-                              disabled={!isWorking}
-                              onChange={(event) =>
-                                onChangeHours(dow, "endTime", event.target.value)
-                              }
-                            />
-                          </>
-                        ) : (
-                          <span className="text-[13px] tabular-nums text-text">
-                            {isWorking ? `${start} → ${end}` : "—"}
-                          </span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ) : null}
-
-            {tab === "breaks" ? (
-              <div className="space-y-3">
-                <p className="text-[13px] font-medium text-text">休息時間</p>
-                {breakViews.length === 0 ? (
-                  <p className="text-[13px] text-secondary-text">目前沒有休息時段</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {breakViews.map((item) => (
-                      <li
-                        key={item.id}
-                        className="flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2"
-                      >
-                        <div>
-                          <p className="text-[13px] font-medium text-text">
-                            {item.rangeLabel}
-                          </p>
-                          <p className="text-[11px] text-secondary-text">
-                            {item.dateLabel}
-                            {item.label ? ` · ${item.label}` : ""}
-                          </p>
-                        </div>
-                        {canEdit ? (
-                          <Button
-                            variant="ghost"
-                            className="h-9 min-h-9 px-2 text-[12px]"
-                            onClick={() => onDeleteBreak(item.id)}
-                          >
-                            移除
-                          </Button>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {canEdit ? (
-                  <div className="space-y-2 rounded-2xl border border-border p-3">
-                    <p className="text-[12px] text-secondary-text">新增休息</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="text-[11px] text-secondary-text">
-                        日期
-                        <input
-                          type="date"
-                          className="mt-1 min-h-10 w-full rounded-xl border border-border px-2 text-[13px]"
-                          value={breakDate}
-                          onChange={(event) => onBreakDate(event.target.value)}
-                        />
-                      </label>
-                      <label className="text-[11px] text-secondary-text">
-                        標籤
-                        <input
-                          className="mt-1 min-h-10 w-full rounded-xl border border-border px-2 text-[13px]"
-                          value={breakLabel}
-                          onChange={(event) => onBreakLabel(event.target.value)}
-                        />
-                      </label>
-                      <label className="text-[11px] text-secondary-text">
-                        開始
-                        <input
-                          type="time"
-                          className="mt-1 min-h-10 w-full rounded-xl border border-border px-2 text-[13px]"
-                          value={breakStart}
-                          onChange={(event) => onBreakStart(event.target.value)}
-                        />
-                      </label>
-                      <label className="text-[11px] text-secondary-text">
-                        結束
-                        <input
-                          type="time"
-                          className="mt-1 min-h-10 w-full rounded-xl border border-border px-2 text-[13px]"
-                          value={breakEnd}
-                          onChange={(event) => onBreakEnd(event.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <Button className="h-10 min-h-10 w-full rounded-full" onClick={onCreateBreak}>
-                      新增休息
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {tab === "timeoff" ? (
-              <div className="space-y-3">
-                <p className="text-[13px] font-medium text-text">即將到來的休假</p>
-                {upcoming.length === 0 ? (
-                  <p className="text-[13px] text-secondary-text">
-                    目前沒有即將到來的休假
-                  </p>
-                ) : (
-                  <ul className="space-y-2">
-                    {upcoming.map((item) => (
-                      <li
-                        key={item.id}
-                        className="flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2"
-                      >
-                        <div>
-                          <p className="text-[13px] font-medium text-text">{item.dateLabel}</p>
-                          <p className="text-[12px] text-secondary-text">{item.timeLabel}</p>
-                          {item.reason ? (
-                            <p className="text-[12px] text-secondary-text">{item.reason}</p>
-                          ) : null}
-                        </div>
-                        {canEdit ? (
-                          <Button
-                            variant="ghost"
-                            className="h-9 min-h-9 px-2 text-[12px]"
-                            onClick={() => onDeleteTimeOff(item.id)}
-                          >
-                            移除
-                          </Button>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {canEdit ? (
-                  <div className="space-y-2 rounded-2xl border border-border p-3">
-                    <p className="text-[12px] text-secondary-text">新增休假 / 請假</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="text-[11px] text-secondary-text">
-                        日期
-                        <input
-                          type="date"
-                          className="mt-1 min-h-10 w-full rounded-xl border border-border px-2 text-[13px]"
-                          value={offDate}
-                          onChange={(event) => onOffDate(event.target.value)}
-                        />
-                      </label>
-                      <label className="text-[11px] text-secondary-text">
-                        原因
-                        <input
-                          className="mt-1 min-h-10 w-full rounded-xl border border-border px-2 text-[13px]"
-                          value={offReason}
-                          placeholder="選填"
-                          onChange={(event) => onOffReason(event.target.value)}
-                        />
-                      </label>
-                      <label className="text-[11px] text-secondary-text">
-                        開始
-                        <input
-                          type="time"
-                          className="mt-1 min-h-10 w-full rounded-xl border border-border px-2 text-[13px]"
-                          value={offStart}
-                          onChange={(event) => onOffStart(event.target.value)}
-                        />
-                      </label>
-                      <label className="text-[11px] text-secondary-text">
-                        結束
-                        <input
-                          type="time"
-                          className="mt-1 min-h-10 w-full rounded-xl border border-border px-2 text-[13px]"
-                          value={offEnd}
-                          onChange={(event) => onOffEnd(event.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <Button className="h-10 min-h-10 w-full rounded-full" onClick={onCreateTimeOff}>
-                      新增休假 / 請假
-                    </Button>
-                  </div>
-                ) : null}
               </div>
             ) : null}
 
@@ -736,9 +610,9 @@ export function StaffQuickView({
               <Button
                 variant="outline"
                 className="h-10 min-h-10 w-full rounded-full"
-                onClick={() => onTabChange("timeoff")}
+                onClick={() => onTabChange("leave")}
               >
-                休假 / 請假
+                查看休假與休息
               </Button>
             </div>
           ) : null}
