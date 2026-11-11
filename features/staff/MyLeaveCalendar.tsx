@@ -60,8 +60,17 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         body: JSON.stringify({ locationId, dates: selected, reason }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error === "LEAVE_ALREADY_REQUESTED"
-        ? "部分日期已申請過，請重新選擇。" : "送出失敗：" + (result.error ?? response.status));
+      if (!response.ok) {
+        const messages: Record<string, string> = {
+          LEAVE_ALREADY_REQUESTED: "這一天已經排休，請重新整理月曆。",
+          LEAVE_ALREADY_EXISTS: "這一天已經排休，請重新整理月曆。",
+          APPOINTMENT_CONFLICT: "這一天已有顧客預約，無法排休。請先處理預約。",
+          LEAVE_CONFLICT: "休假與現有班表或預約衝突，請先確認。",
+          LEAVE_RPC_UNAVAILABLE: "排休服務暫時無法使用，請聯絡管理員。",
+          LEAVE_RPC_PERMISSION_DENIED: "目前沒有儲存休假的權限，請聯絡管理員。",
+        };
+        throw new Error(messages[result.error] ?? "送出失敗：" + (result.error ?? response.status));
+      }
       setRefresh(n => n+1);
       setNotice("休假已儲存，預約時段同步封鎖。");
       setSelected([]); setReason("");
@@ -96,7 +105,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         {Array.from({ length: offset }, (_, i) => <span key={"empty-" + i} />)}
         {days.map(date => {
           const picked = selected.includes(date), request = requestByDate.get(date), already = request?.status === "pending" || request?.status === "approved";
-          const valid = Date.parse(date + "T00:00:00+08:00") >= Date.now() - 86400000;
+          const valid = date >= new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
           return <button key={date} type="button" disabled={!valid || already || loading || submitting || readFailed} aria-pressed={picked}
             onClick={() => setSelected(old => picked ? [] : [date])}
             style={{ minHeight: 42, borderRadius: 9, border: picked ? "2px solid #ad7382" : "1px solid #ddd",
