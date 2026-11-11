@@ -37,21 +37,49 @@ export async function supervisorProvisionStaffLoginAction(input: {
   // Refuse to create another identity when the email belongs to a staff member in any organization.
   const lookup = await lookupAuthUserIdForStaffEmail(email);
   if (!lookup.ok) return fail(lookup.message);
-  if (lookup.authUserId) return fail("此 Email 已存在登入帳號，為保護帳號安全，不會自動接管");
-  const {data: created, error: createError} = await admin.auth.admin.createUser({
-    email, password: input.newPassword, email_confirm: true,
-  });
-  if (createError || !created.user) return fail("建立登入帳號失敗，請確認 Email 是否已使用");
-  const userId = created.user.id;
-  // Record the newly created Auth identity before attempting membership binding.
-  // Do not delete it automatically: deletion could destroy an account whose
-  // binding succeeded but whose response was lost.
+  // Existing unverified, never-used accounts may be reconciled only when they
+  // have no staff or customer ownership. Never take over a verified account.
+  const existingUserId = lookup.authUserId;
+  if (existingUserId) {
+    const {data: existing, error: existingError} = await admin.auth.admin.getUserById(existingUserId);
+    if (existingError || !existing.user || existing.user.email?.toLowerCase() !== email ||
+      existing.user.email_confirmed_at || existing.user.last_sign_in_at) {
+      return fail("此 Email 已有使用中的登入帳號，不能由主管接管");
+    }
+    const {data: links, error: linksError} = await admin.from(STAFF_AUTH_MEMBERSHIPS_TABLE)
+      .select("id").eq("auth_user_id", existingUserId).limit(1);
+    const {data: customerLinks, error: customerError} = await admin.from("member_customer_links")
+      .select("auth_user_id").eq("auth_user_id", existingUserId).limit(1);
+    if (linksError || customerError || links?.length || customerLinks?.length) {
+      return fail("此 Email 已有其他身分綁定，不能由主管接管");
+    }
+  }
+  let userId = existingUserId;
+  if (!userId) {
+    const {data: created, error: createError} = await admin.auth.admin.createUser({
+      email, password: input.newPassword, email_confirm: true,
+    });
+    if (createError || !created.user) return fail("建立登入帳號失敗，請確認 Email 是否已使用");
+    userId = created.user.id;
+  }
+  // Audit must exist before modifying an existing account's credentials.
   const {data: audit, error: auditError} = await admin.from("staff_password_reset_audit").insert({
     organization_id: input.organizationId, actor_auth_user_id: actor.id,
     target_auth_user_id: userId, target_membership_id: target.id,
     status: "attempted",
   }).select("id").single();
-  if (auditError || !audit) return fail("帳號已建立，但無法建立稽核紀錄；請聯絡管理員，勿重複開通");
+  if (auditError || !audit) return fail("帳號已存在，但無法建立稽核紀錄；請聯絡管理員，勿重複開通");
+  if (existingUserId) {
+    const {error: updateError} = await admin.auth.admin.updateUserById(existingUserId, {
+      password: input.newPassword, email_confirm: true,
+    });
+    if (updateError) {
+      await admin.from("staff_password_reset_audit").update({
+        status: "failed", completed_at: new Date().toISOString(),
+      }).eq("id", audit.id).eq("status", "attempted");
+      return fail("舊帳號密碼設定失敗，未綁定員工資料");
+    }
+  }
   try {
     await admin.from(STAFF_AUTH_MEMBERSHIPS_TABLE)
       .update({auth_user_id: userId, email})
