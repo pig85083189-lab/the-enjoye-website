@@ -1,5 +1,5 @@
 /** Employee login IDs are independent of display names and email addresses. */
-export const STAFF_USERNAME_PATTERN = /^[a-z][a-z0-9._-]{2,31}$/;
+export const STAFF_USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 
 export function normalizeStaffUsername(value: string): string | null {
   if (typeof value !== "string") return null;
