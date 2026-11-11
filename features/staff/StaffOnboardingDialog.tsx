@@ -116,6 +116,7 @@ export function StaffOnboardingDialog({
   const formLocked = submitPath === "locked" || submitPath === "forbidden-local";
   const offerCreateInvite = shouldOfferStaffCreateInvite({ actorRole, submitPath });
   const roleOptions = STAFF_REMOTE_CREATABLE_ROLES;
+  const remoteProvisioning = submitPath === "write" || (remoteCreateEnabled && !remoteWriteEnabled);
   const steps = remoteCreateEnabled && !remoteWriteEnabled
     ? STAFF_ONBOARDING_STEPS.filter((entry) => entry.id !== 3)
     : STAFF_ONBOARDING_STEPS;
@@ -219,7 +220,7 @@ export function StaffOnboardingDialog({
     }
     if (submitPath === "write") {
       const locationIds = sanitizeStaffCreateLocationIds(draft.locationIds, createLocationIds);
-      const invalid = validateOnboardingStep(3, { ...draft, locationIds }, createLocations);
+      const invalid = validateOnboardingStep(2, { ...draft, locationIds }, createLocations);
       if (invalid) {
         setError(invalid);
         return;
@@ -261,7 +262,7 @@ export function StaffOnboardingDialog({
           setDiagnostic(ui.diagnostic);
           return;
         }
-        let notice = "員工已建立";
+        let notice = "員工已建立於雲端。請確認登入啟用與班表同步後再開放會員預約。";
         if (offerCreateInvite && sendInvite) {
           const invited = await inviteStaffLoginAction({
             email: result.created.email ?? draft.email,
@@ -269,7 +270,7 @@ export function StaffOnboardingDialog({
             organizationId,
             mode: "invite",
           });
-          notice = formatStaffCreateInviteNotice({ invite: invited });
+          notice = formatStaffCreateInviteNotice({ invite: invited }) + "；請確認登入啟用與班表同步後再開放會員預約。";
         }
         onCreated({
           membership: result.created,
@@ -350,7 +351,7 @@ export function StaffOnboardingDialog({
           },
           scheduleError: null,
           remote: true,
-          notice: "員工帳號已建立",
+          notice: "員工帳號已建立。請驗證登入與雲端班表後再開放會員預約。",
         });
       } catch (err) {
         setPassword("");
@@ -675,6 +676,18 @@ export function StaffOnboardingDialog({
 
           {step === 3 ? (
             <div className="space-y-3">
+              {remoteProvisioning ? (
+                <section className="rounded-2xl border border-[#E9D8DD] bg-[#FCF6F7] px-4 py-3" aria-label="員工啟用說明">
+                  <h3 className="text-[14px] font-semibold text-[#89586A]">建立後的上線步驟</h3>
+                  <ol className="mt-2 list-inside list-decimal space-y-2 text-[12px] leading-relaxed text-secondary-text">
+                    <li>建立雲端員工資料與所屬分店</li>
+                    <li>{offerCreateInvite && sendInvite ? "寄送登入邀請，由員工完成驗證與密碼設定" : "確認登入帳號已啟用，必要時另行邀請"}</li>
+                    <li>在員工詳情的「固定班表」設定並儲存雲端班表</li>
+                    <li>確認會員預約正確排除休假與休息時間後，才開放預約</li>
+                  </ol>
+                  <p className="mt-3 rounded-xl bg-white px-3 py-2 text-[12px] font-medium text-[#89586A]">新增員工不等於立即開放預約。本次建立不會自動寫入初始班表。</p>
+                </section>
+              ) : (
               <fieldset>
                 <legend className="text-[12px] text-secondary-text">初始班表</legend>
                 <div className="mt-2 space-y-1.5">
@@ -806,6 +819,7 @@ export function StaffOnboardingDialog({
                     : "建立後可在員工詳情編輯固定班表、休息時間與休假。"}
                 </p>
               )}
+              )}
               <div
                 data-staff-onboarding-summary
                 className="rounded-2xl bg-[#FAF7F5] px-3 py-3 text-[13px] text-text"
@@ -838,7 +852,7 @@ export function StaffOnboardingDialog({
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-secondary-text">班表</dt>
-                    <dd>{formatOnboardingScheduleSummary(draft)}</dd>
+                    <dd>{remoteProvisioning ? "待建立後設定雲端班表" : formatOnboardingScheduleSummary(draft)}</dd>
                   </div>
                   {offerCreateInvite ? (
                     <div className="flex justify-between gap-3">
@@ -899,7 +913,7 @@ export function StaffOnboardingDialog({
                 disabled={!canManage || busy || formLocked}
                 onClick={() => void submit()}
               >
-                {busy ? "建立中…" : "建立員工"}
+                {busy ? "建立中…" : remoteProvisioning ? "建立員工並開始啟用" : "建立員工"}
               </Button>
             )}
           </div>
