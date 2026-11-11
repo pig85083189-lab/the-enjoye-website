@@ -785,6 +785,7 @@ export function StaffWorkspacePage({
               inviteSendOpen={staffInviteSendOpen}
               actorRole={membership?.role ?? null}
               actorActive={membership?.isActive ?? false}
+              actorAuthUserId={membership?.authUserId ?? null}
               pendingInvite={selectedInvite}
               onInviteChanged={refreshStaffInvites}
             />
@@ -865,6 +866,7 @@ export function StaffWorkspacePage({
             inviteSendOpen={staffInviteSendOpen}
             actorRole={membership?.role ?? null}
             actorActive={membership?.isActive ?? false}
+              actorAuthUserId={membership?.authUserId ?? null}
             pendingInvite={selectedInvite}
             onInviteChanged={refreshStaffInvites}
           />
