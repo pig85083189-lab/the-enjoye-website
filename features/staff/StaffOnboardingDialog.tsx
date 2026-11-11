@@ -688,6 +688,7 @@ export function StaffOnboardingDialog({
                   <p className="mt-3 rounded-xl bg-white px-3 py-2 text-[12px] font-medium text-[#89586A]">新增員工不等於立即開放預約。本次建立不會自動寫入初始班表。</p>
                 </section>
               ) : (
+              <>
               <fieldset>
                 <legend className="text-[12px] text-secondary-text">初始班表</legend>
                 <div className="mt-2 space-y-1.5">
@@ -819,6 +820,7 @@ export function StaffOnboardingDialog({
                     : "建立後可在員工詳情編輯固定班表、休息時間與休假。"}
                 </p>
               )}
+              </>
               )}
               <div
                 data-staff-onboarding-summary
