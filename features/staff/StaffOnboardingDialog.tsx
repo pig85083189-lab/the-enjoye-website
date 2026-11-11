@@ -220,7 +220,7 @@ export function StaffOnboardingDialog({
     }
     if (submitPath === "write") {
       const locationIds = sanitizeStaffCreateLocationIds(draft.locationIds, createLocationIds);
-      const invalid = validateOnboardingStep(2, { ...draft, locationIds }, createLocations);
+      const invalid = validateOnboardingStep(2, { ...draft, locationIds }, createLocations) || validateOnboardingStep(3, draft, createLocations);
       if (invalid) {
         setError(invalid);
         return;
@@ -262,7 +262,40 @@ export function StaffOnboardingDialog({
           setDiagnostic(ui.diagnostic);
           return;
         }
-        let notice = "員工已建立於雲端。請確認登入啟用與班表同步後再開放會員預約。";
+        let scheduleError: string | null = null;
+        let scheduleNotice = "班表尚未設定";
+        if (draft.scheduleMode === "basic") {
+          const rows = draft.hours.map((day) => ({
+            dayOfWeek: day.dayOfWeek,
+            isWorking: day.isWorking,
+            startTime: day.startTime,
+            endTime: day.endTime,
+          }));
+          const failures: string[] = [];
+          for (const locationId of locationIds) {
+            try {
+              const response = await fetch("/api/staff/working-hours", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ locationId, staffId: result.created.userId, rows }),
+              });
+              const data: { error?: string; created?: number } = await response.json();
+              if (!response.ok || data.created !== 7) {
+                failures.push(locationId + ": " + (data.error || "SCHEDULE_INIT_FAILED"));
+              }
+            } catch {
+              failures.push(locationId + ": NETWORK_ERROR");
+            }
+          }
+          if (failures.length) {
+            scheduleError = failures.join("；");
+            scheduleNotice = "部分班表未儲存成功，請至員工詳情確認後再開放預約";
+          } else {
+            scheduleNotice = "七天雲端班表已建立";
+          }
+        }
+        let notice = "員工已建立於雲端，" + scheduleNotice + "。請確認登入啟用與會員預約時段。";
         if (offerCreateInvite && sendInvite) {
           const invited = await inviteStaffLoginAction({
             email: result.created.email ?? draft.email,
@@ -270,13 +303,13 @@ export function StaffOnboardingDialog({
             organizationId,
             mode: "invite",
           });
-          notice = formatStaffCreateInviteNotice({ invite: invited }) + "；請確認登入啟用與班表同步後再開放會員預約。";
+          notice = formatStaffCreateInviteNotice({ invite: invited }) + "；" + scheduleNotice + "。請確認登入啟用與會員預約時段。";
         }
         onCreated({
           membership: result.created,
           membershipFull: result.created,
           roster: result.roster,
-          scheduleError: null,
+          scheduleError,
           remote: true,
           notice,
         });
@@ -682,12 +715,12 @@ export function StaffOnboardingDialog({
                   <ol className="mt-2 list-inside list-decimal space-y-2 text-[12px] leading-relaxed text-secondary-text">
                     <li>建立雲端員工資料與所屬分店</li>
                     <li>{offerCreateInvite && sendInvite ? "寄送登入邀請，由員工完成驗證與密碼設定" : "確認登入帳號已啟用，必要時另行邀請"}</li>
-                    <li>在員工詳情的「固定班表」設定並儲存雲端班表</li>
+                    <li>選擇套用基本班表時，建立員工後會立即儲存七天雲端班表；也可選擇稍後設定</li>
                     <li>確認會員預約正確排除休假與休息時間後，才開放預約</li>
                   </ol>
-                  <p className="mt-3 rounded-xl bg-white px-3 py-2 text-[12px] font-medium text-[#89586A]">新增員工不等於立即開放預約。本次建立不會自動寫入初始班表。</p>
+                  <p className="mt-3 rounded-xl bg-white px-3 py-2 text-[12px] font-medium text-[#89586A]">新增員工不等於立即開放預約。若選擇基本班表，會在建立員工後寫入雲端。</p>
                 </section>
-              ) : (
+              ) : null}
               <>
               <fieldset>
                 <legend className="text-[12px] text-secondary-text">初始班表</legend>
@@ -821,7 +854,6 @@ export function StaffOnboardingDialog({
                 </p>
               )}
               </>
-              )}
               <div
                 data-staff-onboarding-summary
                 className="rounded-2xl bg-[#FAF7F5] px-3 py-3 text-[13px] text-text"
@@ -854,7 +886,7 @@ export function StaffOnboardingDialog({
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-secondary-text">班表</dt>
-                    <dd>{remoteProvisioning ? "待建立後設定雲端班表" : formatOnboardingScheduleSummary(draft)}</dd>
+                    <dd>{draft.scheduleMode === "basic" ? "建立後同步七天雲端班表" : "稍後設定（不建立班表）"}</dd>
                   </div>
                   {offerCreateInvite ? (
                     <div className="flex justify-between gap-3">
