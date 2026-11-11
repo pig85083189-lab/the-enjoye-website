@@ -31,6 +31,18 @@ export function SupervisorPasswordPanel(props: {
     targetActive: props.targetActive,
     targetOrganizationId: props.organizationId,
   });
+  const supervisor = props.actorActive && (props.actorRole === "OWNER" || props.actorRole === "MANAGER");
+  const manageableRole = props.targetRole !== "OWNER" && (props.targetRole !== "MANAGER" || props.actorRole === "OWNER");
+  if (!supervisor || !manageableRole || !props.targetActive ||
+      (props.actorAuthUserId && props.actorAuthUserId === props.targetAuthUserId)) return null;
+  if (!props.targetAuthUserId) {
+    return (
+      <section className="mt-3 rounded-2xl border border-border p-3" data-supervisor-password-panel>
+        <p className="text-sm font-medium">主管設定員工密碼</p>
+        <p className="mt-2 text-xs text-secondary-text">此員工尚未綁定正式登入帳號，請先完成員工帳號綁定，才能設定密碼。</p>
+      </section>
+    );
+  }
   if (!decision.allowed) return null;
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
