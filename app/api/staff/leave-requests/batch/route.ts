@@ -32,12 +32,10 @@ export async function POST(request: Request) {
   })) return NextResponse.json({ error: "DATE_OUT_OF_RANGE" }, { status: 400 });
   const admin = createServiceRoleClient();
   if (!admin) return NextResponse.json({ error: "DATABASE_UNAVAILABLE" }, { status: 503 });
-  // Each RPC is atomic with booking time-off. Multi-day batches are deliberately
-  // rejected until a single-transaction batch RPC is available: no partial days.
-  if (dates.length !== 1) return NextResponse.json({ error: "ONE_DAY_AT_A_TIME" }, { status: 400 });
-  const { data, error } = await admin.rpc("staff_self_leave_set_v1", {
+  // One RPC call means one database transaction: any conflicting day rolls back the entire batch.
+  const { data, error } = await admin.rpc("staff_self_leave_batch_v1", {
     p_membership_id: member.id, p_location_id: locationId,
-    p_date: dates[0], p_cancel: false, p_reason: reason.trim(),
+    p_dates: dates, p_reason: reason.trim(),
   });
   if (error) {
     const message = error.message || "";
@@ -61,5 +59,5 @@ export async function POST(request: Request) {
       headers: { "Cache-Control": "no-store" },
     });
   }
-  return NextResponse.json({ requests: [data], status: "approved" }, { status: 201, headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ requests: data, status: "approved" }, { status: 201, headers: { "Cache-Control": "no-store" } });
 }
