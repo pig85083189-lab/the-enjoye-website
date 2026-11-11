@@ -20,7 +20,7 @@ export function SupervisorPasswordPanel(props: {
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,7 +48,7 @@ export function SupervisorPasswordPanel(props: {
       try {
         const result = await supervisorProvisionStaffLoginAction({
           organizationId: props.organizationId, membershipId: props.membershipId,
-          email, newPassword: password,
+          username, newPassword: password,
         });
         setMessage(result.message);
         if (result.ok) { setPassword(""); setConfirm(""); setOpen(false); router.refresh(); }
@@ -63,11 +63,11 @@ export function SupervisorPasswordPanel(props: {
         </button>
         {open ? (
           <form className="mt-3 space-y-3" onSubmit={provision}>
-            <p className="text-xs text-secondary-text">為 {props.targetName} 建立登入帳號，不寄送驗證信。若 Email 已有未驗證且未使用的帳號，系統會先確認是否可安全綁定。</p>
+            <p className="text-xs text-secondary-text">為 {props.targetName} 建立登入帳號，不寄送驗證信。使用自訂帳號與密碼，不需員工登入帳號 或驗證信。</p>
             <label className="block text-xs">員工 Email
-              <input type="email" autoComplete="off" required value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-border p-2" />
+              <input type="text" autoComplete="off" required minLength={3} maxLength={32} value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="例如 yixin 或 1234" className="mt-1 w-full rounded-xl border border-border p-2" />
             </label>
             <label className="block text-xs">新密碼
               <input type="password" autoComplete="new-password" minLength={12} maxLength={128} required
