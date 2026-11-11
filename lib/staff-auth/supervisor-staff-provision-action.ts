@@ -40,10 +40,24 @@ export async function supervisorProvisionStaffLoginAction(input: {
   // Refuse to create another identity when the email belongs to a staff member in any organization.
   const lookup = await lookupAuthUserIdForStaffEmail(email);
   if (!lookup.ok) return fail(lookup.message);
-  // Never take over an existing Auth identity, even if it has not signed in.
-  // Public signup could have reserved a predictable internal alias.
-  if (lookup.authUserId) return fail("此員工帳號已被使用，請換一個帳號名稱");
-  let userId: string | null = null;
+  // Recover only an unused internal alias. Never reset an account that has
+  // signed in, has any membership, or is linked to a customer.
+  const existingUserId = lookup.authUserId;
+  if (existingUserId) {
+    const {data: existing, error: existingError} = await admin.auth.admin.getUserById(existingUserId);
+    if (existingError || !existing.user ||
+        existing.user.email?.toLowerCase() !== email || existing.user.last_sign_in_at) {
+      return fail("此登入帳號已使用，無法由主管接管");
+    }
+    const {data: staffLinks, error: staffError} = await admin.from(STAFF_AUTH_MEMBERSHIPS_TABLE)
+      .select("id").eq("auth_user_id", existingUserId).limit(1);
+    const {data: customerLinks, error: customerError} = await admin.from("member_customer_links")
+      .select("auth_user_id").eq("auth_user_id", existingUserId).limit(1);
+    if (staffError || customerError || staffLinks?.length || customerLinks?.length) {
+      return fail("此帳號已有其他身分綁定，無法重新開通");
+    }
+  }
+  let userId: string | null = existingUserId;
   if (!userId) {
     const {data: created, error: createError} = await admin.auth.admin.createUser({
       email, password: input.newPassword, email_confirm: true,
@@ -58,6 +72,17 @@ export async function supervisorProvisionStaffLoginAction(input: {
     status: "attempted",
   }).select("id").single();
   if (auditError || !audit) return fail("帳號已存在，但無法建立稽核紀錄；請聯絡管理員，勿重複開通");
+  if (existingUserId) {
+    const {error: resetError} = await admin.auth.admin.updateUserById(existingUserId, {
+      password: input.newPassword, email_confirm: true,
+    });
+    if (resetError) {
+      await admin.from("staff_password_reset_audit").update({
+        status: "failed", completed_at: new Date().toISOString(),
+      }).eq("id", audit.id).eq("status", "attempted");
+      return fail("既有帳號密碼更新失敗，尚未綁定員工");
+    }
+  }
   try {
     await admin.from(STAFF_AUTH_MEMBERSHIPS_TABLE)
       .update({auth_user_id: userId})
