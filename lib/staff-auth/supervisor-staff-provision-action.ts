@@ -52,17 +52,13 @@ export async function supervisorProvisionStaffLoginAction(input: {
     status: "attempted",
   }).select("id").single();
   if (auditError || !audit) return fail("帳號已建立，但無法建立稽核紀錄；請聯絡管理員，勿重複開通");
-  let attached = null;
-  let attachFailed = false;
   try {
-    const result = await admin.from(STAFF_AUTH_MEMBERSHIPS_TABLE)
+    await admin.from(STAFF_AUTH_MEMBERSHIPS_TABLE)
       .update({auth_user_id: userId, email})
       .eq("id", target.id).eq("organization_id", input.organizationId)
       .is("auth_user_id", null).select("id").maybeSingle();
-    attached = result.data;
-    attachFailed = Boolean(result.error || !result.data);
   } catch {
-    attachFailed = true;
+    // Read-back below determines the outcome, including lost responses.
   }
   // A failed response may hide a successful database commit. Read back the
   // membership before deciding whether to retry or report failure.
