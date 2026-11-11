@@ -1,0 +1,22 @@
+name: Staff username isolation tests
+on:
+  push:
+    branches:
+      - chatgpt/staff-password-production-base-20261111
+  workflow_dispatch:
+jobs:
+  staff-username-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Username and binding recovery tests
+        run: npx vitest run lib/staff-auth/staff-username.test.ts lib/staff-auth/staff-provision-recovery.test.ts
+      - name: TypeScript check
+        run: npx tsc --noEmit
