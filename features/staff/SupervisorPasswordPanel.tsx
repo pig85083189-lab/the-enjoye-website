@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { supervisorProvisionStaffLoginAction } from "@/lib/staff-auth/supervisor-staff-provision-action";
 import { supervisorSetStaffPasswordAction } from "@/lib/staff-auth/supervisor-password-reset-action";
 import { authorizeSupervisorPasswordReset } from "@/lib/staff-auth/supervisor-password-reset-policy";
@@ -17,6 +18,7 @@ export function SupervisorPasswordPanel(props: {
   actorActive: boolean;
   actorAuthUserId: string | null;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -49,7 +51,7 @@ export function SupervisorPasswordPanel(props: {
           email, newPassword: password,
         });
         setMessage(result.message);
-        if (result.ok) { setPassword(""); setConfirm(""); setOpen(false); }
+        if (result.ok) { setPassword(""); setConfirm(""); setOpen(false); router.refresh(); }
       } catch { setMessage("開通失敗，請聯絡管理員"); }
       finally { setBusy(false); }
     }
@@ -61,7 +63,7 @@ export function SupervisorPasswordPanel(props: {
         </button>
         {open ? (
           <form className="mt-3 space-y-3" onSubmit={provision}>
-            <p className="text-xs text-secondary-text">為 {props.targetName} 建立登入帳號，不寄送驗證信。Email 若已有帳號將拒絕建立。</p>
+            <p className="text-xs text-secondary-text">為 {props.targetName} 建立登入帳號，不寄送驗證信。若 Email 已有未驗證且未使用的帳號，系統會先確認是否可安全綁定。</p>
             <label className="block text-xs">員工 Email
               <input type="email" autoComplete="off" required value={email}
                 onChange={e => setEmail(e.target.value)}
