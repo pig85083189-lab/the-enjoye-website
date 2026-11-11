@@ -152,6 +152,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
         })}
       </div>
       {loading && <p role="status">正在載入已申請的休假…</p>}
+      {readFailed && <button type="button" onClick={()=>setRefresh(n=>n+1)} style={{marginTop:12,padding:10,border:"1px solid #ddd",borderRadius:8}}>重新讀取月曆</button>}
       {mode==="break" && <div style={{marginTop:18,padding:14,border:"1px solid #e5e1e0",borderRadius:12}}>
         <strong>{breakDate?breakDate+" 休息時段":"請先點選月曆日期"}</strong>
         {breakLoaded && <>
@@ -189,7 +190,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
       </button>
       </>}
       {notice && <p role="status" style={{ color: "#28734d", marginTop: 12 }}>{notice}</p>}
-      {error && <p role="alert" style={{ color: "#b22b3b", marginTop: 12 }}>{error}</p>}
+      {error && <p role="alert" style={{ color: "#b22b3b", marginTop: 12 }}>{error.includes("signal is aborted")?"資料讀取暫時中斷，請按「重新讀取月曆」。":error}</p>}
       <p style={{ fontSize: 12, color: "#81767a", marginTop: 16 }}>若該日已有顧客預約，系統會拒絕排休。舊制待審資料仍保留。</p>
     </section>
   );
