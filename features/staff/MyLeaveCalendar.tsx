@@ -171,7 +171,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
             onClick={() => {setActiveDate(date);if(!already)void loadBreaks(date);else {setBreakDate("");setBreakLoaded(false);}}}
             style={{ minHeight: 42, borderRadius: 9, border: (picked||activeDate===date) ? "2px solid #ad7382" : "1px solid #ddd",
               background: (picked||activeDate===date) ? "#f5e5e9" : request?.status === "rejected" ? "#fff0e8" : already ? "#e8f1e8" : "transparent",
-              opacity: valid ? 1 : 0.4, fontWeight: (mode==="leave"?picked:breakDate===date) ? 700 : 400 }}>
+              opacity: valid ? 1 : 0.4, fontWeight: (picked||activeDate===date) ? 700 : 400 }}>
             {Number(date.slice(-2))}{request && <span style={{display:"block",fontSize:10}}>{request.status==="rejected"?"退回":request.status==="approved"?"已排休":request.status==="pending"?"舊制待審":"取消"}</span>}
           </button>;
         })}
