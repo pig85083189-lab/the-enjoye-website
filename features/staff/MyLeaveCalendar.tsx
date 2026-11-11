@@ -28,6 +28,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   const [readFailed, setReadFailed] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [error, setError] = useState("");
+  const [showLeaveList,setShowLeaveList]=useState(false);
   const [year, m] = month.split("-").map(Number);
   const count = new Date(year, m, 0).getDate();
   const offset = new Date(year, m - 1, 1).getDay();
@@ -102,7 +103,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
   },[locationId]);
   const saveDaily = async () => {
     if(!dailyLoaded||dailySaving||submitting)return;
-    if(dailyEnabled&&(!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(dailyStart)||!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(dailyEnd)||dailyStart>=dailyEnd)){setError("固定休息時間格式不正確");return;}
+    if(dailyEnabled&&(!/^([01]\d|2[0-3]):[0-5]\d$/.test(dailyStart)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(dailyEnd)||dailyStart>=dailyEnd)){setError("固定休息時間格式不正確");return;}
     setDailySaving(true);setError("");setNotice("");
     try {
       const response=await fetch("/api/staff/recurring-break",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({locationId,start:dailyEnabled?dailyStart:null,end:dailyEnabled?dailyEnd:null})});
@@ -153,9 +154,9 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
     finally { setSubmitting(false); }
   };
   return (
-    <section style={{ maxWidth: 1100, margin: "24px auto", padding: 24, border: "1px solid #eadfdd", borderRadius: 22, background: "#fffaf8" }}>
-      <h1 style={{ fontSize: 26, fontWeight: 650, marginBottom: 8 }}>我的休假</h1>
-      <p style={{ color: "#756d70", marginBottom: 24 }}>管理個人排休與休息時間，系統會自動同步至預約時段。</p>
+    <section className="leave-page">
+      <div className="leave-heading"><span className="leave-heading-icon">▦</span><div><h1>我的休假</h1>
+      <p>管理整天排休、特殊休息時間與每日固定休息時間。</p></div></div><div className="leave-intro"><strong>休假與休息設定</strong><span>選擇日期後，在下方設定休假或休息時段</span></div>
       <div className="leave-calendar-wrap"><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <button type="button" disabled={currentMonth <= minMonth} onClick={() => shift(-1)} aria-label="上個月">‹</button>
         <strong>{year} 年 {m} 月</strong>
@@ -176,7 +177,7 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
           </button>;
         })}
       </div>
-      <div className="leave-legend"><span>▣ 整天排休</span><span>▤ 休息時段</span><span>▢ 選取日期</span></div></div><div className="leave-cards"><div className="leave-card">
+      <div className="leave-legend"><span>● 已排休</span><span>▢ 選取日期</span></div></div><div className="leave-cards"><div className="leave-card">
       {loading && <p role="status">正在載入已申請的休假…</p>}
       {readFailed && <button type="button" onClick={()=>setRefresh(n=>n+1)} style={{marginTop:12,padding:10,border:"1px solid #ddd",borderRadius:8}}>重新讀取月曆</button>}
       <h2 style={{fontSize:19,marginTop:4}}>▦　排休日期</h2>
@@ -189,7 +190,8 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
           {r.review_note || "請改選其他日期"}（原日期已解除占用）
         </p>)}
       </div>}
-      {requests.filter(r=>r.status==="approved").map(r => {
+      <button type="button" className="leave-list-toggle" onClick={()=>setShowLeaveList(v=>!v)}>{showLeaveList?"收合已排休日期":"查看已排休日期（"+requests.filter(r=>r.status==="approved").length+" 天）"}</button>
+      {showLeaveList && requests.filter(r=>r.status==="approved").map(r => {
         const date = new Date(new Date(r.starts_at).getTime()+8*3600000).toISOString().slice(0,10);
         return <div key={r.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12}}>
           <span>{date} 已排休</span>
@@ -235,6 +237,24 @@ export function MyLeaveCalendar({ locationId }: { locationId: string }) {
       {notice && <p role="status" style={{ color: "#28734d", marginTop: 12 }}>{notice}</p>}
       {error && <p role="alert" style={{ color: "#b22b3b", marginTop: 12 }}>{error.includes("signal is aborted")?"資料讀取暫時中斷，請按「重新讀取月曆」。":error}</p>}
       <p style={{ fontSize: 12, color: "#81767a", marginTop: 16 }}>若該日已有顧客預約，系統會拒絕排休。舊制待審資料仍保留。</p>
+      <style>{`.leave-page{width:100%;max-width:1320px;margin:12px auto 32px;padding:clamp(12px,2.2vw,28px);background:#fffaf8;border:1px solid #f0e4e3;border-radius:22px;color:#43383a;box-sizing:border-box}
+.leave-page *{box-sizing:border-box}.leave-heading{display:flex;gap:14px;align-items:center;padding:10px 6px 18px}.leave-heading-icon{display:grid;place-items:center;width:48px;height:48px;background:#f6e8eb;color:#975c72;border-radius:14px;font-size:27px}.leave-heading h1{font-size:27px;font-weight:700;margin:0 0 6px}.leave-heading p{font-size:14px;color:#827276;margin:0}
+.leave-intro{display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:1px solid #eadcde;padding:10px 6px 18px;margin-bottom:18px}.leave-intro strong{color:#9b6575;border-bottom:3px solid #a56f80;padding:8px 4px}.leave-intro span{font-size:13px;color:#8a7b7e}
+.leave-calendar-wrap{width:100%;padding:22px;background:#fff;border:1px solid #e9dddc;border-radius:19px;box-shadow:0 5px 22px #65425109;margin-bottom:18px}
+.leave-calendar-wrap>div:first-child button{border:1px solid #eadcde;border-radius:10px;background:#fff7f8;color:#985d73;padding:5px 15px;font-size:20px}
+.leave-calendar-wrap>div:nth-child(2){gap:8px!important}.leave-calendar-wrap>div:nth-child(2)>button{min-height:52px!important;border-radius:11px!important;transition:background .15s ease}
+.leave-calendar-wrap>div:nth-child(2)>button[aria-pressed=true]{outline:2px solid #9b6575;outline-offset:1px}
+.leave-legend{display:flex;justify-content:flex-end;gap:18px;font-size:12px;color:#817478;margin-top:16px}
+.leave-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:16px}
+.leave-card{min-width:0;background:white;border:1px solid #e9dddc;border-radius:18px;padding:20px;box-shadow:0 5px 22px #65425109}
+.leave-card h2{font-size:19px!important;line-height:1.5;color:#6d4554;margin:0 0 12px!important}
+.leave-card button{cursor:pointer;border:1px solid #dfc8d0;background:#fff7f9;color:#855569;border-radius:10px;padding:9px 12px}
+.leave-card button:disabled{cursor:not-allowed;opacity:.48}
+.leave-card input[type=time]{max-width:100%;min-width:0;border:1px solid #e1d3d6;border-radius:9px}
+.leave-card input[type=checkbox]{accent-color:#9b6575}.leave-card label{min-width:0}
+.leave-card textarea{background:#fff}.leave-list-toggle{width:100%;margin-top:12px;text-align:left}
+@media(max-width:1000px){.leave-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.leave-card:last-child{grid-column:1/-1}}
+@media(max-width:700px){.leave-page{padding:12px;margin:0 auto;border:0;border-radius:0}.leave-heading h1{font-size:23px}.leave-heading-icon{width:40px;height:40px}.leave-intro{gap:8px}.leave-calendar-wrap{padding:14px}.leave-calendar-wrap>div:nth-child(2){gap:4px!important}.leave-calendar-wrap>div:nth-child(2)>button{min-height:44px!important;font-size:13px}.leave-cards{grid-template-columns:1fr}.leave-card:last-child{grid-column:auto}.leave-card{padding:16px}.leave-legend{justify-content:flex-start}}`}</style>
     </section>
   );
 }
