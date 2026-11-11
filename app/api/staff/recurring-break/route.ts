@@ -18,10 +18,12 @@ export async function GET(request:Request){
  const locationId=new URL(request.url).searchParams.get("locationId")??"";
  const ctx=await context();if(ctx.error)return ctx.error;
  if(!ctx.member!.locationIds.includes(locationId))return fail(403,"LOCATION_NOT_AUTHORIZED");
+ const effectiveDate=new Date(Date.now()+8*3600000+86400000).toISOString().slice(0,10);
  const {data,error}=await ctx.admin!.from("booking_staff_recurring_breaks").select("start_time,end_time,effective_from")
- .eq("organization_id",ctx.member!.organizationId).eq("location_id",locationId).eq("staff_id",ctx.member!.userId).maybeSingle();
- if(error)return fail(503,"RECURRING_BREAK_READ_FAILED");
- return NextResponse.json({break:data?{start:data.start_time.slice(0,5),end:data.end_time.slice(0,5),effectiveFrom:data.effective_from}:null},{headers});
+ .eq("organization_id",ctx.member!.organizationId).eq("location_id",locationId).eq("staff_id",ctx.member!.userId).lte("effective_from",effectiveDate).or(`effective_to.is.null,effective_to.gte.${effectiveDate}`).limit(2);
+ if(error||!data||data.length>1)return fail(503,"RECURRING_BREAK_READ_FAILED");
+ const current=data[0];
+ return NextResponse.json({break:current?{start:current.start_time.slice(0,5),end:current.end_time.slice(0,5),effectiveFrom:current.effective_from}:null},{headers});
 }
 export async function POST(request:Request){
  const origin=request.headers.get("origin"),host=request.headers.get("host");
