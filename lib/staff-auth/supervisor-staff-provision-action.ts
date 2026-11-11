@@ -41,17 +41,31 @@ export async function supervisorProvisionStaffLoginAction(input: {
   });
   if (createError || !created.user) return fail("建立登入帳號失敗，請確認 Email 是否已使用");
   const userId = created.user.id;
-  // Only attach to the still-unbound target. Do not overwrite another login binding.
-  const {data: attached, error: attachError} = await admin.from(STAFF_AUTH_MEMBERSHIPS_TABLE)
-    .update({auth_user_id: userId, email})
-    .eq("id", target.id).eq("organization_id", input.organizationId)
-    .is("auth_user_id", null).select("id").maybeSingle();
-  if (attachError || !attached) return fail("帳號已建立但綁定失敗，請聯絡管理員處理，勿再次建立");
-  const {error: auditError} = await admin.from("staff_password_reset_audit").insert({
+  // Record the newly created Auth identity before attempting membership binding.
+  // Do not delete it automatically: deletion could destroy an account whose
+  // binding succeeded but whose response was lost.
+  const {data: audit, error: auditError} = await admin.from("staff_password_reset_audit").insert({
     organization_id: input.organizationId, actor_auth_user_id: actor.id,
     target_auth_user_id: userId, target_membership_id: target.id,
-    status: "succeeded", completed_at: new Date().toISOString(),
-  });
-  if (auditError) return fail("帳號已建立並綁定，但稽核紀錄未完成，請聯絡管理員確認");
+    status: "attempted",
+  }).select("id").single();
+  if (auditError || !audit) return fail("帳號已建立，但無法建立稽核紀錄；請聯絡管理員，勿重複開通");
+  let attached = null;
+  let attachFailed = false;
+  try {
+    const result = await admin.from(STAFF_AUTH_MEMBERSHIPS_TABLE)
+      .update({auth_user_id: userId, email})
+      .eq("id", target.id).eq("organization_id", input.organizationId)
+      .is("auth_user_id", null).select("id").maybeSingle();
+    attached = result.data;
+    attachFailed = Boolean(result.error || !result.data);
+  } catch {
+    attachFailed = true;
+  }
+  const {error: finalizeError} = await admin.from("staff_password_reset_audit")
+    .update({status: attachFailed ? "failed" : "succeeded", completed_at: new Date().toISOString()})
+    .eq("id", audit.id).eq("status", "attempted");
+  if (finalizeError) return fail("帳號操作已執行，但稽核結果無法確認，請聯絡管理員，勿重複開通");
+  if (attachFailed || !attached) return fail("帳號已建立但綁定未完成，請聯絡管理員，勿重複開通");
   return {ok: true, message: "員工登入帳號已開通，可使用 Email 和設定的密碼登入"};
 }
