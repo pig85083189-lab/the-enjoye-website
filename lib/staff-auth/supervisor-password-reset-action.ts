@@ -70,10 +70,16 @@ export async function supervisorSetStaffPasswordAction(input: {
   if (auditError || !audit) return fail("稽核紀錄無法建立，密碼未變更");
 
   // Do not log the password or pass it to audit.
-  const { error: updateError } = await admin.auth.admin.updateUserById(
-    target.auth_user_id,
-    { password: input.newPassword },
-  );
+  let updateError: unknown = null;
+  try {
+    const updateResult = await admin.auth.admin.updateUserById(
+      target.auth_user_id,
+      { password: input.newPassword },
+    );
+    updateError = updateResult.error;
+  } catch {
+    updateError = new Error("Auth update failed");
+  }
   const { error: finalizeError } = await admin
     .from("staff_password_reset_audit")
     .update({
