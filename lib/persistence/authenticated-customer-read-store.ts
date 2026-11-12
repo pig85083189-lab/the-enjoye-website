@@ -105,8 +105,6 @@ export class AuthenticatedCustomerReadStore implements CustomerTableStore {
   ): Promise<DbCustomer | undefined> {
     const rows = await this.listCustomers(organizationDbId);
     return rows.find((row) => row.app_id === appId);
-    /*
-    */
   }
 
   async getCustomerByDbId(dbId: string): Promise<DbCustomer | undefined> {
