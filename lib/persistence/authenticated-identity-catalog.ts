@@ -86,6 +86,13 @@ function toScoped(row: { id: string; app_id: string | null; organization_id: str
   return { dbId: row.id, appId: row.app_id, organizationDbId: row.organization_id };
 }
 
+/** LINE member customers may have NULL app_id; use their DB UUID as a scoped identity. */
+function toCustomerScoped(row: { id: string; app_id: string | null; organization_id: string }): MappedOrgScoped | null {
+  if (!row.id || !row.organization_id) return null;
+  const appId = typeof row.app_id === "string" ? row.app_id.trim() : "";
+  return { dbId: row.id, appId: appId || row.id, organizationDbId: row.organization_id };
+}
+
 /**
  * Load identity mappings for the currently authenticated session.
  * Does not hardcode organization / location UUIDs.
@@ -164,7 +171,7 @@ export async function loadAuthenticatedIdentityCatalog(
         .eq("organization_id", organization.id),
     )
   )
-    .map(toScoped)
+    .map(toCustomerScoped)
     .filter((row): row is MappedOrgScoped => Boolean(row));
 
   const services = (
