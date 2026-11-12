@@ -1,0 +1,120 @@
+import { NextResponse } from "next/server";
+import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
+import { createServiceRoleClient } from "@/lib/supabase/admin";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const CLOCK = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const MANAGERS = new Set(["OWNER", "MANAGER", "ADMIN"]);
+const headers = { "Cache-Control": "no-store" };
+function fail(status: number, error: string) {
+  return NextResponse.json({ error }, { status, headers });
+}
+function validDay(date: string): boolean {
+  const ms = Date.parse(date + "T00:00:00Z");
+  if (!Number.isFinite(ms) || new Date(ms).toISOString().slice(0, 10) !== date) return false;
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const delta = (ms - Date.parse(today + "T00:00:00Z")) / 86400000;
+  return delta >= 0 && delta <= 180;
+}
+/**
+ * Manager-only, opt-in endpoint. Does not attest break synchronization.
+ * Staff self-service requires a separately verified membership-to-staff mapping.
+ */
+export async function POST(request: Request) {
+  if (process.env.BEAUTY_OS_BOOKING_BREAKS_WRITE_ENABLED !== "true") return fail(503, "BREAK_WRITE_DISABLED");
+  // Reject cross-origin browser writes before accessing privileged service-role data.
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("host");
+  if (!origin || !host) return fail(403, "ORIGIN_REQUIRED");
+  let originUrl: URL;
+  try { originUrl = new URL(origin); } catch { return fail(403, "INVALID_ORIGIN"); }
+  if (originUrl.host !== host || !["https:", "http:"].includes(originUrl.protocol)) return fail(403, "CROSS_ORIGIN_FORBIDDEN");
+  if (originUrl.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(originUrl.hostname)) return fail(403, "INSECURE_ORIGIN");
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return fail(415, "JSON_REQUIRED");
+  const auth = await getAuthenticatedStaffMembership();
+  if (auth.status !== "ok") return fail(401, "UNAUTHORIZED");
+  const member = auth.membership;
+  if (!MANAGERS.has(member.role)) return fail(403, "MANAGER_REQUIRED");
+  let payload: unknown;
+  try { payload = await request.json(); } catch { return fail(400, "INVALID_JSON"); }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return fail(400, "INVALID_BODY");
+  const body = payload as Record<string, unknown>;
+  if (Object.keys(body).sort().join(",") !== "breaks,date,locationId,staffId") return fail(400, "INVALID_FIELDS");
+  const { locationId, staffId, date, breaks } = body;
+  if (typeof locationId !== "string" || !member.locationIds.includes(locationId)) return fail(403, "LOCATION_NOT_AUTHORIZED");
+  if (typeof staffId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(staffId) ||
+      typeof date !== "string" || !DATE.test(date) || !validDay(date) ||
+      !Array.isArray(breaks) || breaks.length > 12) return fail(400, "INVALID_BREAK_DETAILS");
+  const intervals: Array<{ start: string; end: string }> = [];
+  for (const item of breaks) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return fail(400, "INVALID_BREAK_INTERVAL");
+    const row = item as Record<string, unknown>;
+    if (Object.keys(row).sort().join(",") !== "end,start" ||
+        typeof row.start !== "string" || typeof row.end !== "string" ||
+        !CLOCK.test(row.start) || !CLOCK.test(row.end) || row.start >= row.end) return fail(400, "INVALID_BREAK_INTERVAL");
+    intervals.push({
+      start: date + "T" + row.start + ":00+08:00",
+      end: date + "T" + row.end + ":00+08:00",
+    });
+  }
+  const admin = createServiceRoleClient();
+  if (!admin) return fail(503, "DATABASE_UNAVAILABLE");
+  // Validate staff belongs to this tenant and location before privileged RPC.
+  const { data: schedule, error: scheduleError } = await admin.from("booking_staff_working_hours")
+    .select("staff_id").eq("organization_id", member.organizationId)
+    .eq("location_id", locationId).eq("staff_id", staffId).limit(1);
+  if (scheduleError) return fail(503, "STAFF_SCHEDULE_UNAVAILABLE");
+  if (!schedule || schedule.length !== 1) return fail(404, "STAFF_NOT_IN_LOCATION");
+  const { data, error } = await admin.rpc("booking_staff_breaks_replace_day_v1", {
+    p_organization_id: member.organizationId,
+    p_location_id: locationId,
+    p_staff_id: staffId,
+    p_date: date,
+    p_breaks: intervals,
+  });
+  if (error) {
+    const code = error.message || "";
+    if (code.includes("BREAK_OVERLAP")) return fail(409, "BREAK_OVERLAP");
+    if (code.includes("INVALID_BREAK") || code.includes("STAFF_SCHEDULE_NOT_FOUND")) return fail(400, "INVALID_BREAK_DETAILS");
+    console.error("[booking-breaks] write failed", error.code);
+    return fail(503, "BREAK_SAVE_UNAVAILABLE");
+  }
+  return NextResponse.json({ ok: true, saved: data, syncVerified: false }, { headers });
+}
+
+/** Read one staff member's saved breaks for a Taiwan-local calendar day. */
+export async function GET(request: Request) {
+  if (process.env.BEAUTY_OS_BOOKING_BREAKS_WRITE_ENABLED !== "true") return fail(503, "BREAK_MANAGEMENT_DISABLED");
+  const auth = await getAuthenticatedStaffMembership();
+  if (auth.status !== "ok") return fail(401, "UNAUTHORIZED");
+  const member = auth.membership;
+  if (!MANAGERS.has(member.role)) return fail(403, "MANAGER_REQUIRED");
+  const params = new URL(request.url).searchParams;
+  const locationId = params.get("locationId");
+  const staffId = params.get("staffId");
+  const date = params.get("date");
+  if (!locationId || !member.locationIds.includes(locationId)) return fail(403, "LOCATION_NOT_AUTHORIZED");
+  if (!staffId || !/^[a-zA-Z0-9_-]{1,128}$/.test(staffId) ||
+      !date || !DATE.test(date) || !validDay(date)) return fail(400, "INVALID_BREAK_QUERY");
+  const admin = createServiceRoleClient();
+  if (!admin) return fail(503, "DATABASE_UNAVAILABLE");
+  const { data: schedule, error: scheduleError } = await admin.from("booking_staff_working_hours")
+    .select("staff_id").eq("organization_id", member.organizationId)
+    .eq("location_id", locationId).eq("staff_id", staffId).limit(1);
+  if (scheduleError) return fail(503, "STAFF_SCHEDULE_UNAVAILABLE");
+  if (!schedule || schedule.length !== 1) return fail(404, "STAFF_NOT_IN_LOCATION");
+  const from = date + "T00:00:00+08:00";
+  const until = new Date(Date.parse(from) + 86400000).toISOString();
+  const { data, error } = await admin.from("booking_staff_breaks")
+    .select("starts_at,ends_at").eq("organization_id", member.organizationId)
+    .eq("location_id", locationId).eq("staff_id", staffId)
+    .lt("starts_at", until).gt("ends_at", from).order("starts_at").limit(13);
+  if (error || !data || data.length > 12) return fail(503, "BREAK_READ_UNAVAILABLE");
+  const breaks = data.map(row => ({
+    start: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(row.starts_at)),
+    end: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(row.ends_at)),
+  }));
+  return NextResponse.json({ ok: true, date, staffId, breaks }, { headers });
+}

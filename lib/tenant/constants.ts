@@ -4,12 +4,15 @@ export const PLATFORM_NAME = "Beauty OS";
 
 export const ORG_ENJOYE_ID = "org-the-enjoye";
 export const ORG_LUMIERE_ID = "org-lumiere";
+export const ORG_BEAUTY_OS_TEST_ID = "org-beauty-os-test";
 
 export const LOC_ENJOYE_PRIMARY_ID = "loc-enjoye-main";
 export const LOC_ENJOYE_SECONDARY_ID = "loc-enjoye-gongyi";
 export const LOC_LUMIERE_PRIMARY_ID = "loc-lumiere-main";
+export const LOC_BEAUTY_OS_TEST_PRIMARY_ID = "loc-beauty-os-test-main";
 
 export const MEMBERSHIP_ENJOYE_OWNER_ID = "mem-enjoye-owner";
+export const MEMBERSHIP_BEAUTY_OS_TEST_OWNER_ID = "mem-beauty-os-test-owner";
 export const MEMBERSHIP_ENJOYE_STAFF_XIAOMEI_ID = "mem-enjoye-xiaomei";
 export const MEMBERSHIP_ENJOYE_STAFF_AMY_ID = "mem-enjoye-amy";
 export const MEMBERSHIP_ENJOYE_STAFF_ANAN_ID = "mem-enjoye-anan";

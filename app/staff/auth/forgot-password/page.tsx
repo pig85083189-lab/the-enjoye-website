@@ -4,9 +4,9 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { AuthAlert, AuthBrand, AuthCard, AuthShell } from "@/features/auth/AuthShell";
-import { staffAuthCallbackHref } from "@/lib/staff-auth/staff-auth-callback";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import { tryGetSupabaseEnv } from "@/lib/supabase/env";
+import { resolveStaffRecoveryRedirect } from "@/lib/staff-auth/staff-recovery-redirect";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -35,7 +35,17 @@ export default function ForgotPasswordPage() {
       setDescription("登入服務尚未設定，請聯絡系統管理員。");
       return;
     }
-    const redirectTo = `${window.location.origin}${staffAuthCallbackHref("recovery")}`;
+    const recoveryRedirect = resolveStaffRecoveryRedirect({
+      supabaseUrl: tryGetSupabaseEnv()?.url,
+      browserOrigin: window.location.origin,
+    });
+    if (!recoveryRedirect.ok) {
+      setStatus("error");
+      setTitle("目前無法寄送重設信件");
+      setDescription("網站與登入環境不一致，請從正式 Beauty OS 網站重新開啟此頁。");
+      return;
+    }
+    const redirectTo = recoveryRedirect.redirectTo;
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo,

@@ -292,3 +292,30 @@ export function deleteTimeOff(organizationId: string, timeOffId: string): void {
     listTimeOff(organizationId).filter((item) => item.id !== timeOffId),
   );
 }
+
+/** Replace only one location's weekly hours after authenticated cloud read and validation. */
+export function replaceLocationWorkingHoursFromCloud(
+  organizationId: string,
+  locationId: string,
+  incoming: Array<Pick<StaffWorkingHours, "staffId" | "dayOfWeek" | "startTime" | "endTime" | "isWorking">>,
+): void {
+  assertOrgLocation(organizationId, locationId);
+  if (incoming.length === 0 || incoming.length > 500) throw new Error("Invalid cloud schedule");
+  const seen = new Set<string>();
+  for (const row of incoming) {
+    assertStaffMembership(organizationId, row.staffId, locationId);
+    const key = row.staffId + ":" + row.dayOfWeek;
+    if (seen.has(key) || !Number.isInteger(row.dayOfWeek) || row.dayOfWeek < 0 || row.dayOfWeek > 6 ||
+      !/^\d{2}:\d{2}$/.test(row.startTime) || !/^\d{2}:\d{2}$/.test(row.endTime) ||
+      row.startTime >= row.endTime || typeof row.isWorking !== "boolean") throw new Error("Invalid cloud schedule row");
+    seen.add(key);
+  }
+  const key = getStaffWorkingHoursKey(organizationId);
+  const old = readStoredWorkingHours(organizationId);
+  const previous = new Map(old.filter(row => row.locationId === locationId).map(row => [row.staffId + ":" + row.dayOfWeek, row]));
+  const updated = incoming.map(row => ({
+    ...row, id: previous.get(row.staffId + ":" + row.dayOfWeek)?.id ?? newId("swh"),
+    organizationId, locationId, updatedAt: new Date().toISOString(),
+  }));
+  writeJson(organizationId, key, [...old.filter(row => row.locationId !== locationId), ...updated]);
+}

@@ -7,6 +7,7 @@ import { createElement } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { FUTURE_QA_APPOINTMENT, futureQaAppointmentUtcRange } from "@/lib/appointments/remote-readiness";
+import { addMinutesToIso, taipeiLocalToUtcIso } from "@/lib/persistence/appointment-time";
 import type { ScheduleAppointment } from "@/lib/appointments/domain";
 import { getCustomerStoredValueBalance } from "@/lib/stored-value/store";
 import type { Customer } from "@/types";
@@ -159,10 +160,20 @@ describe("Phase 1C-5C Customer Profile runtime", () => {
 
   it("shows the remote BOOKED appointment on Overview next-appointment summary", () => {
     search.current = "";
+    const startAt = taipeiLocalToUtcIso("2027-10-09", "10:00");
+    remoteAppointments.current = {
+      status: "data",
+      value: [
+        liveMappedAppointment({
+          startAt,
+          endAt: addMinutesToIso(startAt, FUTURE_QA_APPOINTMENT.durationMinutes),
+        }),
+      ],
+    };
     const { host, root } = renderProfile();
     roots.push(root);
     expect(host.textContent).toContain("下次預約");
-    expect(host.textContent).toContain("2026/10/09");
+    expect(host.textContent).toContain("2027/10/09");
     expect(host.textContent).toContain("10:00");
     expect(host.textContent).toContain("Remote QA Bust Care");
     expect(host.textContent).toContain("測試帳號");
