@@ -39,7 +39,13 @@ import {
   type AppointmentWriteSnapshotCatalog,
 } from "./appointment-write-snapshots";
 import { emitAppointmentRemoteWriteRefresh } from "./appointment-write-refresh";
+import { BOOKING_ORIGIN_WALK_IN_ONCE } from "./one-time-booking";
+import { isOneTimeWalkinBookingEnabled } from "./one-time-walkin-flag";
 import { isAppointmentRemoteWritePilotEnabled } from "./appointment-remote-write-flag";
+import {
+  assertNoApprovedStaffLeaveConflict,
+  loadApprovedStaffLeaveRows,
+} from "./appointment-write-leave-guard";
 
 export {
   APPOINTMENT_REMOTE_WRITE_PILOT_ENV,
@@ -185,6 +191,12 @@ export async function runAuthenticatedAppointmentWriteCreate(
   if (!isAppointmentRemoteWritePilotEnabled(env)) {
     throw new Error("Appointment remote write pilot is off");
   }
+  if (
+    input.bookingOrigin === BOOKING_ORIGIN_WALK_IN_ONCE &&
+    !isOneTimeWalkinBookingEnabled(env)
+  ) {
+    throw new Error("One-time walk-in booking is off");
+  }
   const persistence = await createAuthenticatedAppointmentWritePersistence(client);
   const staff = persistence.identity.catalog.findStaffByAppId(
     persistence.identity.organizationDbId,
@@ -192,10 +204,17 @@ export async function runAuthenticatedAppointmentWriteCreate(
   );
   assertAppointmentWriteOperationalRole(staff?.role);
   const command = persistence.prepare(input);
+  const leaveRows = await loadApprovedStaffLeaveRows(client);
+  assertNoApprovedStaffLeaveConflict({
+    staffId: command.staffId,
+    startAt: command.startAt,
+    endAt: command.endAt,
+    leaveRows,
+  });
   const created = await persistence.create(command);
   emitAppointmentRemoteWriteRefresh({
     organizationId: command.organizationId,
-    customerId: command.customerId,
+    customerId: command.customerId ?? undefined,
     locationId: command.locationId,
     startAt: command.startAt,
   });

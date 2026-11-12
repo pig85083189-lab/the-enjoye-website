@@ -167,4 +167,49 @@ describe("Phase 1C-6B.1 appointment write command", () => {
       ),
     ).toThrow(/createdBy/);
   });
+
+  it("prepares WALK_IN_ONCE without resolving a customer and keeps guest snapshots", () => {
+    const { db, remote } = createMemoryRemotePersistence();
+    seedTwoOrgs(db);
+    const command = prepareAppointmentCreateCommand(
+      {
+        organizationId: ORG_A,
+        locationId: LOC_A1,
+        serviceId: SVC_SHARED,
+        staffId: STAFF_A,
+        createdBy: STAFF_A,
+        dateYmd: "2026-10-09",
+        startHm: "10:00",
+        durationMinutes: 100,
+        bookingOrigin: "WALK_IN_ONCE",
+        guestName: "臨櫃客人",
+        guestPhone: "0912345678",
+      },
+      { mapper: remote.mapper, snapshots: snapshots() },
+    );
+    expect(command.customerId).toBeNull();
+    expect(command.bookingOrigin).toBe("WALK_IN_ONCE");
+    expect(command.customerName).toBe("臨櫃客人");
+    expect(command.guestContactPhone).toBe("0912345678");
+    expect(command.serviceName).toBe("Canonical Service");
+    expect(() =>
+      prepareAppointmentCreateCommand(
+        {
+          organizationId: ORG_A,
+          locationId: LOC_A1,
+          customerId: CUST_SHARED,
+          serviceId: SVC_SHARED,
+          staffId: STAFF_A,
+          createdBy: STAFF_A,
+          dateYmd: "2026-10-09",
+          startHm: "10:00",
+          durationMinutes: 100,
+          bookingOrigin: "WALK_IN_ONCE",
+          guestName: "臨櫃客人",
+          guestPhone: "0912345678",
+        },
+        { mapper: remote.mapper, snapshots: snapshots() },
+      ),
+    ).toThrow(/must not include a customer id/);
+  });
 });

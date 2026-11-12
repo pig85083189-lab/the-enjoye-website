@@ -296,4 +296,35 @@ describe("Phase 1C-6B.1 appointment write create / submit", () => {
     expect(created.id).toBe("apt-bound1-abcdef");
     expect(db.appointments[0]?.app_id).toBe("apt-bound1-abcdef");
   });
+
+  it("creates a WALK_IN_ONCE appointment with null customer_id and guest snapshots", async () => {
+    const { db, remote } = createMemoryRemotePersistence();
+    seedTwoOrgs(db);
+    const prepared = prepareAppointmentCreateCommand(
+      {
+        organizationId: ORG_A,
+        locationId: LOC_A1,
+        serviceId: SVC_SHARED,
+        staffId: STAFF_A,
+        createdBy: STAFF_A,
+        appointmentId: "apt-walkin-abcdef",
+        dateYmd: "2026-10-09",
+        startHm: "10:00",
+        durationMinutes: 100,
+        bookingOrigin: "WALK_IN_ONCE",
+        guestName: "臨櫃客人",
+        guestPhone: "0912345678",
+      },
+      { mapper: remote.mapper, snapshots: snapshots() },
+    );
+    const created = await createAppointmentSafely(prepared, remote);
+    expect(created.outcome).toBe("created");
+    expect(created.appointment.customerId).toBe("");
+    expect(created.appointment.customerName).toBe("臨櫃客人");
+    expect(created.appointment.bookingOrigin).toBe("WALK_IN_ONCE");
+    expect(created.appointment.guestContactPhone).toBe("0912345678");
+    expect(db.appointments[0]?.customer_id).toBeNull();
+    expect(db.appointments[0]?.booking_origin).toBe("WALK_IN_ONCE");
+    expect(db.appointments[0]?.guest_contact_phone).toBe("0912345678");
+  });
 });
