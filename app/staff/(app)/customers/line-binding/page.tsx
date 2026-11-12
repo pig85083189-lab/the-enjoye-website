@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getServerStaffAuthUser } from "@/lib/staff-auth/server";
+import { getServerStaffAuthUser, getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 export default async function CustomerLineBindingPage() {
   const staff = await getServerStaffAuthUser();
   if (!staff) redirect("/staff/login");
+  const access = await getAuthenticatedStaffMembership();
+  const canApprove = access.status === "ok" && ["OWNER", "MANAGER"].includes(access.membership.role);
   return (
     <main className="mx-auto max-w-2xl space-y-6 p-6">
       <Link href="/staff/customers" className="text-sm underline">返回顧客列表</Link>
@@ -27,7 +29,7 @@ export default async function CustomerLineBindingPage() {
           <li>系統檢查是否已被其他 LINE 會員認領，才允許核准。</li>
           <li>綁定完成後，會員中心顯示經驗證的店內預約紀錄。</li>
         </ol>
-        <p role="status" className="text-sm">目前為安全預覽。核准操作尚未開放，任何顧客資料都不會被變更。</p>
+        <p role="status" className="text-sm">{canApprove ? "您具備店長核准權限。會員本人確認與核准交易尚未完成驗收，因此目前不開放提交。" : "只有店長或管理者可核准。此頁不會修改任何顧客資料。"}</p>
       </section>
     </main>
   );
