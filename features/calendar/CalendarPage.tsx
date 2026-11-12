@@ -190,12 +190,14 @@ export function CalendarPage({
   calendarRemoteReadPilot = false,
   appointmentRemoteWritePilot = false,
   appointmentRemoteMutatePilot = false,
+  oneTimeWalkinBooking = false,
   treatmentRemoteReadPilot = false,
   commerceRemoteReadPilot = false,
 }: {
   calendarRemoteReadPilot?: boolean;
   appointmentRemoteWritePilot?: boolean;
   appointmentRemoteMutatePilot?: boolean;
+  oneTimeWalkinBooking?: boolean;
   treatmentRemoteReadPilot?: boolean;
   commerceRemoteReadPilot?: boolean;
 }) {
@@ -778,6 +780,7 @@ export function CalendarPage({
           initial={createSurface.localCreate && editing ? selected : null}
           prefill={creating ? prefill : null}
           actorId={membership?.userId}
+          oneTimeWalkinEnabled={Boolean(oneTimeWalkinBooking && createSurface.remoteCreate)}
           remoteCreate={
             createSurface.remoteCreate && remoteWrite.status === "ready"
               ? {
@@ -853,7 +856,7 @@ export function CalendarPage({
                 organizationId: organization.id,
                 appointmentId: cancelItem.id,
                 expectedUpdatedAt: cancelItem.updatedAt,
-                customerId: cancelItem.customerId,
+                customerId: cancelItem.customerId ?? undefined,
                 locationId: cancelItem.locationId,
                 startAt: cancelItem.startAt,
               });
@@ -981,6 +984,7 @@ function AppointmentEditor({
   initial,
   prefill,
   actorId,
+  oneTimeWalkinEnabled = false,
   remoteCreate,
   onClose,
   onSaved,
@@ -991,6 +995,7 @@ function AppointmentEditor({
   initial: ScheduleAppointment | null;
   prefill: CreatePrefill | null;
   actorId?: string;
+  oneTimeWalkinEnabled?: boolean;
   remoteCreate?: {
     customers: Array<{ id: string; name: string; phone: string }>;
     services: Array<{ id: string; name: string; durationMinutes: number; priceMinor?: number }>;
@@ -1036,9 +1041,15 @@ function AppointmentEditor({
         loc,
       ).map((s) => ({ userId: s.id, displayName: s.name }))
     : staffOptionsForLocation(organizationId, loc);
+  const [bookingMode, setBookingMode] = useState<"customer" | "walkin">(
+    oneTimeWalkinEnabled ? "customer" : "customer",
+  );
+  const walkInMode = oneTimeWalkinEnabled && bookingMode === "walkin";
   const [customerId, setCustomerId] = useState(
     initial?.customerId ?? prefill?.customerId ?? "",
   );
+  const [guestName, setGuestName] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
   const [serviceId, setServiceId] = useState(
     initial?.serviceId ?? prefill?.serviceId ?? services[0]?.id ?? "",
   );
@@ -1161,8 +1172,20 @@ function AppointmentEditor({
 
   async function save(force = false) {
     setError("");
-    if (!customerId || !serviceId || !staffId || !loc || !date || !start || !end) {
+    if (!serviceId || !staffId || !loc || !date || !start || !end) {
+      setError(
+        walkInMode
+          ? "請完整填寫客人、服務、美容師、分店與時間"
+          : "請完整填寫顧客、服務、美容師、分店與時間",
+      );
+      return;
+    }
+    if (!walkInMode && !customerId) {
       setError("請完整填寫顧客、服務、美容師、分店與時間");
+      return;
+    }
+    if (walkInMode && (!guestName.trim() || !guestPhone.trim())) {
+      setError("請填寫一次性預約的客人姓名與電話");
       return;
     }
     if (remoteCreate) {
@@ -1180,7 +1203,7 @@ function AppointmentEditor({
         return submitCalendarRemoteAppointmentCreate({
           organizationId,
           locationId: loc,
-          customerId,
+          customerId: walkInMode ? undefined : customerId,
           serviceId,
           staffId,
           appointmentId,
@@ -1189,6 +1212,9 @@ function AppointmentEditor({
           durationMinutes,
           customerNote: customerNote || undefined,
           internalNote: internalNote || undefined,
+          bookingOrigin: walkInMode ? "WALK_IN_ONCE" : "CUSTOMER",
+          guestName: walkInMode ? guestName : undefined,
+          guestPhone: walkInMode ? guestPhone : undefined,
         });
       });
       setRemoteTick((n) => n + 1);
@@ -1199,6 +1225,10 @@ function AppointmentEditor({
       if (result === "error") {
         setError(appointmentWriteUserMessage(remoteSubmission.error));
       }
+      return;
+    }
+    if (walkInMode) {
+      setError("一次性預約僅支援遠端寫入試點");
       return;
     }
     if (!(new Date(endAtIso) > new Date(startAtIso))) {
@@ -1271,38 +1301,101 @@ function AppointmentEditor({
               ))}
             </select>
           </label>
-          <label className="block text-sm text-secondary-text">
-            搜尋顧客
-            <input
-              className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="姓名或電話"
-            />
-          </label>
-          <label className="block text-sm text-secondary-text">
-            顧客
-            <select
-              aria-invalid={Boolean(error) && !customerId}
-              className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-            >
-              <option value="">選擇顧客</option>
-              {filteredCustomers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} · {c.phone}
-                </option>
-              ))}
-            </select>
-          </label>
-          {remoteCreate ? null : (
-            <Link
-              href="/staff/customers/new"
-              className="inline-flex min-h-11 items-center text-sm text-primary"
-            >
-              建立新客戶
-            </Link>
+          {oneTimeWalkinEnabled ? (
+            <fieldset className="space-y-2">
+              <legend className="text-sm text-secondary-text">預約類型</legend>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  aria-pressed={!walkInMode}
+                  className={`min-h-11 flex-1 rounded-2xl border px-3 text-sm ${
+                    !walkInMode
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-secondary-text"
+                  }`}
+                  onClick={() => setBookingMode("customer")}
+                >
+                  既有顧客
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={walkInMode}
+                  className={`min-h-11 flex-1 rounded-2xl border px-3 text-sm ${
+                    walkInMode
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-secondary-text"
+                  }`}
+                  onClick={() => setBookingMode("walkin")}
+                >
+                  一次性預約
+                </button>
+              </div>
+              {walkInMode ? (
+                <p className="text-xs text-secondary-text">
+                  不會建立顧客資料，也不會綁定 LINE。僅記錄本次姓名與電話。
+                </p>
+              ) : null}
+            </fieldset>
+          ) : null}
+          {walkInMode ? (
+            <>
+              <label className="block text-sm text-secondary-text">
+                客人姓名
+                <input
+                  className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  placeholder="現場客人姓名"
+                  maxLength={80}
+                />
+              </label>
+              <label className="block text-sm text-secondary-text">
+                聯絡電話
+                <input
+                  className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
+                  value={guestPhone}
+                  onChange={(e) => setGuestPhone(e.target.value)}
+                  placeholder="09xxxxxxxx"
+                  inputMode="tel"
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <label className="block text-sm text-secondary-text">
+                搜尋顧客
+                <input
+                  className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="姓名或電話"
+                />
+              </label>
+              <label className="block text-sm text-secondary-text">
+                顧客
+                <select
+                  aria-invalid={Boolean(error) && !customerId}
+                  className="mt-1 min-h-11 w-full rounded-2xl border border-border px-3"
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                >
+                  <option value="">選擇顧客</option>
+                  {filteredCustomers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} · {c.phone}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {remoteCreate ? null : (
+                <Link
+                  href="/staff/customers/new"
+                  className="inline-flex min-h-11 items-center text-sm text-primary"
+                >
+                  建立新客戶
+                </Link>
+              )}
+            </>
           )}
           <label className="block text-sm text-secondary-text">
             服務

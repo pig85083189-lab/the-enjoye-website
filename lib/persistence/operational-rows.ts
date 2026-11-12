@@ -156,7 +156,8 @@ export interface DbAppointment {
   id: string;
   organization_id: string;
   location_id: string | null;
-  customer_id: string;
+  /** Null only for booking_origin = WALK_IN_ONCE. */
+  customer_id: string | null;
   service_id: string;
   staff_id: string | null;
   app_id: string;
@@ -176,6 +177,8 @@ export interface DbAppointment {
   updated_by: string | null;
   created_at: string;
   updated_at: string;
+  booking_origin?: string | null;
+  guest_contact_phone?: string | null;
 }
 
 export type MaybePromise<T> = T | Promise<T>;

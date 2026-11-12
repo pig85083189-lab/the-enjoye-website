@@ -25,9 +25,15 @@ import {
 import { UnmappedIdentityError } from "./identity-errors";
 import type { CanonicalIdMapper } from "./identity-map";
 import {
+  BOOKING_ORIGIN_CUSTOMER,
+  BOOKING_ORIGIN_WALK_IN_ONCE,
+  isWalkInOnceOrigin,
+} from "@/lib/appointments/one-time-booking";
+import {
   appointmentFromRemoteRow,
   assertAppointmentTimeRange,
   assertMappedAppointmentDependencies,
+  assertMappedWalkInAppointmentDependencies,
   mergeInternalNote,
   remoteAppointmentPayload,
   sanitizeAppointmentMutatePatch,
@@ -40,6 +46,7 @@ export type AppointmentRemoteUpdateInput = {
   expectedUpdatedAt: string;
   updatedBy: string;
   locationId: string;
+  /** Empty string for WALK_IN_ONCE rows. */
   customerId: string;
   serviceId: string;
   staffId: string;
@@ -173,20 +180,39 @@ export class AppointmentRemoteAdapter {
           | "updatedBy"
           | "cancelledBy"
           | "statusReason"
+          | "bookingOrigin"
+          | "guestContactPhone"
         >
-      >,
+      > & {
+        customerId?: string | null;
+      },
   ): Promise<ScheduleAppointment> {
     assertNotDemoResiduePayload(input);
     const appointmentId = input.id ?? newId("apt");
+    const walkInOnce = isWalkInOnceOrigin(input.bookingOrigin);
     assertRemoteAppointmentAllowed({
       id: appointmentId,
-      customerId: input.customerId,
+      customerId: walkInOnce ? null : input.customerId,
       customerName: input.customerName,
     });
     assertAppointmentTimeRange(input.startAt, input.endAt);
 
-    const { organizationDbId: orgDbId, locationDbId, customerDbId, serviceDbId } =
-      assertMappedAppointmentDependencies(this.mapper, organizationId, input);
+    const mapped = walkInOnce
+      ? assertMappedWalkInAppointmentDependencies(this.mapper, organizationId, input)
+      : assertMappedAppointmentDependencies(this.mapper, organizationId, {
+          locationId: input.locationId,
+          customerId: input.customerId!,
+          serviceId: input.serviceId,
+        });
+    const { organizationDbId: orgDbId, locationDbId, customerDbId, serviceDbId } = mapped;
+    if (walkInOnce) {
+      if (input.customerId?.trim()) {
+        throw new Error("Walk-in once appointments must not resolve a customer id");
+      }
+      if (!input.customerName?.trim() || !input.guestContactPhone?.trim()) {
+        throw new Error("Walk-in once appointments require guest name and phone");
+      }
+    }
     const staffId = this.mapper.requireOperationalStaffId(organizationId, input.staffId);
     const createdBy = input.createdBy
       ? this.mapper.requireOperationalStaffId(organizationId, input.createdBy)
@@ -226,6 +252,8 @@ export class AppointmentRemoteAdapter {
       updated_by: updatedBy ?? null,
       created_at: stamp,
       updated_at: stamp,
+      booking_origin: walkInOnce ? BOOKING_ORIGIN_WALK_IN_ONCE : BOOKING_ORIGIN_CUSTOMER,
+      guest_contact_phone: walkInOnce ? input.guestContactPhone!.trim() : null,
     };
     remoteAppointmentPayload(row);
     await this.store.insertAppointment(row);
@@ -265,16 +293,23 @@ export class AppointmentRemoteAdapter {
     const nextLocationAppId = input.locationId;
     this.mapper.resolveLocationDbId(organizationId, nextLocationAppId);
 
-    const currentCustomerAppId = this.mapper.toCustomerAppId(current.customer_id);
-    if (input.customerId !== currentCustomerAppId) {
+    const currentCustomerAppId = current.customer_id
+      ? this.mapper.toCustomerAppId(current.customer_id)
+      : "";
+    if ((input.customerId || "") !== currentCustomerAppId) {
       throw new AppointmentCustomerImmutableError();
     }
 
-    const mapped = assertMappedAppointmentDependencies(this.mapper, organizationId, {
-      locationId: nextLocationAppId,
-      customerId: currentCustomerAppId,
-      serviceId: input.serviceId,
-    });
+    const mapped = currentCustomerAppId
+      ? assertMappedAppointmentDependencies(this.mapper, organizationId, {
+          locationId: nextLocationAppId,
+          customerId: currentCustomerAppId,
+          serviceId: input.serviceId,
+        })
+      : assertMappedWalkInAppointmentDependencies(this.mapper, organizationId, {
+          locationId: nextLocationAppId,
+          serviceId: input.serviceId,
+        });
     if (mapped.customerDbId !== current.customer_id) {
       throw new AppointmentCustomerImmutableError();
     }
@@ -363,7 +398,9 @@ export class AppointmentRemoteAdapter {
     const locationAppId = row.location_id
       ? this.mapper.toLocationAppId(row.location_id)
       : "";
-    const customerAppId = this.mapper.toCustomerAppId(row.customer_id);
+    const customerAppId = row.customer_id
+      ? this.mapper.toCustomerAppId(row.customer_id)
+      : null;
     const serviceAppId = this.mapper.toServiceAppId(row.service_id);
     const domain = appointmentFromRemoteRow(
       organizationAppId,

@@ -67,10 +67,11 @@ export function appointmentMatchesPreparedCreate(
     row.id === command.appointmentId &&
     row.organizationId === command.organizationId &&
     row.locationId === command.locationId &&
-    row.customerId === command.customerId &&
+    (row.customerId || null) === (command.customerId || null) &&
     row.serviceId === command.serviceId &&
     row.staffId === command.staffId &&
     row.status === "BOOKED" &&
+    (row.bookingOrigin ?? "CUSTOMER") === command.bookingOrigin &&
     sameInstant(row.startAt, command.startAt) &&
     sameInstant(row.endAt, command.endAt)
   );
@@ -149,7 +150,7 @@ export async function createAppointmentSafely(
     const created = await persistence.appointments.create(command.organizationId, {
       id: command.appointmentId,
       locationId: command.locationId,
-      customerId: command.customerId,
+      customerId: command.customerId ?? "",
       serviceId: command.serviceId,
       staffId: command.staffId,
       startAt: command.startAt,
@@ -161,6 +162,8 @@ export async function createAppointmentSafely(
       serviceName: command.serviceName,
       staffName: command.staffName,
       status: "BOOKED",
+      bookingOrigin: command.bookingOrigin,
+      guestContactPhone: command.guestContactPhone ?? undefined,
     });
     if (created.id !== command.appointmentId) {
       throw new AppointmentWriteIntegrityError(

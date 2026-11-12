@@ -39,21 +39,25 @@ export function dbAppointmentFromUnknown(row: Record<string, unknown>): DbAppoin
   const id = asString(row.id);
   const organization_id = asString(row.organization_id);
   const location_id = asString(row.location_id);
-  const customer_id = asString(row.customer_id);
+  const customer_id = asNullableString(row.customer_id);
   const service_id = asString(row.service_id);
   // Member bookings created by the atomic RPC may have no legacy app_id.
   // Use the immutable DB UUID as a deterministic read-only calendar identity.
-  const app_id = asString(row.app_id) || `member-booking-${id}`;
+  const app_id = asString(row.app_id) || id;
   const starts_at = asString(row.starts_at);
   const ends_at = asString(row.ends_at);
   const status = asString(row.status);
   const created_at = asString(row.created_at);
   const updated_at = asString(row.updated_at);
+  const booking_origin =
+    asNullableString(row.booking_origin) ??
+    (customer_id ? "CUSTOMER" : "WALK_IN_ONCE");
+  const guest_contact_phone = asNullableString(row.guest_contact_phone);
+  const customer_name_snapshot = asNullableString(row.customer_name_snapshot);
   if (
     !id ||
     !organization_id ||
     !location_id ||
-    !customer_id ||
     !service_id ||
     !app_id ||
     !starts_at ||
@@ -63,6 +67,11 @@ export function dbAppointmentFromUnknown(row: Record<string, unknown>): DbAppoin
     !updated_at
   ) {
     throw new Error("Remote appointment row is missing required identity columns");
+  }
+  if (!customer_id) {
+    if (booking_origin !== "WALK_IN_ONCE" || !customer_name_snapshot?.trim()) {
+      throw new Error("Remote walk-in appointment requires guest name snapshot");
+    }
   }
   return {
     id,
@@ -78,7 +87,7 @@ export function dbAppointmentFromUnknown(row: Record<string, unknown>): DbAppoin
     status,
     customer_note: asNullableString(row.customer_note),
     internal_note: asNullableString(row.internal_note),
-    customer_name_snapshot: asNullableString(row.customer_name_snapshot),
+    customer_name_snapshot,
     service_name_snapshot: asNullableString(row.service_name_snapshot),
     staff_name_snapshot: asNullableString(row.staff_name_snapshot),
     status_reason: asNullableString(row.status_reason),
@@ -88,6 +97,8 @@ export function dbAppointmentFromUnknown(row: Record<string, unknown>): DbAppoin
     updated_by: asNullableString(row.updated_by),
     created_at,
     updated_at,
+    booking_origin,
+    guest_contact_phone,
   };
 }
 
