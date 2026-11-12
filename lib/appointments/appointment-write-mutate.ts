@@ -108,8 +108,10 @@ export async function mutateAppointmentSafely(
   if (!command.expectedUpdatedAt?.trim()) {
     throw new Error(APPOINTMENT_EXPECTED_UPDATED_AT_REQUIRED_MESSAGE);
   }
-  if (command.customerId == null || command.customerId === "") {
-    throw new AppointmentWriteIntegrityError("Appointment mutate is missing customer_id");
+  // One-time walk-in appointments intentionally have no customer_id.
+  // The adapter verifies the persisted customer identity remains unchanged.
+  if (command.customerId == null) {
+    throw new AppointmentWriteIntegrityError("Appointment mutate customer_id is undefined");
   }
 
   try {
