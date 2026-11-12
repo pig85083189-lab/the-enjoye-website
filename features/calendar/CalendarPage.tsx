@@ -112,6 +112,7 @@ import { getServicesForOrganization } from "@/data/mock-services";
 import { selectableServicesForBooking } from "@/lib/services/service-catalog-derived";
 import { calendarViewRangeUtc } from "@/lib/calendar/calendar-appointment-time";
 import { utcIsoToTaipeiLocal } from "@/lib/persistence/appointment-time";
+import { calendarAppointmentYmd } from "@/lib/calendar/calendar-appointment-time";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { useClientNow } from "@/lib/use-client-now";
 import { cn } from "@/lib/utils";
@@ -224,6 +225,7 @@ export function CalendarPage({
     return prefs.desktopView;
   });
   const [mobileDay, setMobileDay] = useState(() => new Date());
+  const [mobileMonthMode, setMobileMonthMode] = useState(true);
   const [mobileStaffId, setMobileStaffId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -274,6 +276,16 @@ export function CalendarPage({
     locationAppId: locationId,
     startsAt: remoteRange.startsAt,
     endsAt: remoteRange.endsAt,
+    enabled: calendarRemoteReadPilot,
+  });
+  // Separate monthly read keeps the desktop day/week queries unchanged.
+  const monthStart = new Date(mobileDay.getFullYear(), mobileDay.getMonth(), 1);
+  const nextMonthStart = new Date(mobileDay.getFullYear(), mobileDay.getMonth() + 1, 1);
+  const monthRemoteState = useCalendarRemoteAppointments({
+    organizationId: organization.id,
+    locationAppId: locationId,
+    startsAt: new Date(`${formatYmd(monthStart)}T00:00:00+08:00`).toISOString(),
+    endsAt: new Date(`${formatYmd(nextMonthStart)}T00:00:00+08:00`).toISOString(),
     enabled: calendarRemoteReadPilot,
   });
   const remoteTransactions = useCommerceRemoteTransactions({
@@ -617,21 +629,49 @@ export function CalendarPage({
 
       {/* Mobile */}
       <div className="space-y-3 min-[720px]:hidden">
+        <div className="flex items-center justify-between gap-2 rounded-2xl bg-surface px-3 py-3">
+          <div className="flex items-center gap-2">
+            <button type="button" className="min-h-11 min-w-11 rounded-xl border border-border" aria-label="上個月" onClick={() => goToDay(new Date(mobileDay.getFullYear(), mobileDay.getMonth()-1, 1))}><ChevronLeft className="mx-auto h-5 w-5" /></button>
+            <span className="text-lg font-semibold text-text">{mobileDay.getFullYear()}年{mobileDay.getMonth()+1}月</span>
+            <button type="button" className="min-h-11 min-w-11 rounded-xl border border-border" aria-label="下個月" onClick={() => goToDay(new Date(mobileDay.getFullYear(), mobileDay.getMonth()+1, 1))}><ChevronRight className="mx-auto h-5 w-5" /></button>
+          </div>
+          <button type="button" className="min-h-11 rounded-xl border border-border px-3 text-sm" onClick={() => setMobileMonthMode(!mobileMonthMode)}>{mobileMonthMode ? "日檢視" : "月檢視"}</button>
+        </div>
+        <div className="flex items-center justify-between gap-2 px-1 text-sm">
+          <span className="text-secondary-text">點日期查看當日預約</span>
+          <Link href="/staff/leave-management" className="rounded-xl border border-border px-3 py-2 font-medium text-primary">排休管理</Link>
+        </div>
+        {mobileMonthMode ? (
+          <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+            <div className="grid grid-cols-7 border-b border-border">
+              {["日","一","二","三","四","五","六"].map((name) => <span key={name} className="py-2 text-center text-xs text-secondary-text">{name}</span>)}
+            </div>
+            <div className="grid grid-cols-7">
+              {Array.from({length: Math.ceil((monthStart.getDay() + new Date(mobileDay.getFullYear(), mobileDay.getMonth()+1,0).getDate())/7)*7},(_,index) => {
+                const date = new Date(mobileDay.getFullYear(),mobileDay.getMonth(),index-monthStart.getDay()+1);
+                const inMonth = date.getMonth()===mobileDay.getMonth();
+                const dateKey = formatYmd(date);
+                const rows = (calendarRemoteReadPilot && monthRemoteState.status==="data" ? monthRemoteState.value : localAppointments)
+                  .filter(item => calendarAppointmentYmd(item.startAt, calendarRemoteReadPilot)===dateKey && item.status!=="CANCELLED" && item.status!=="NO_SHOW")
+                  .filter(item => staffFilter.length===0 || staffFilter.includes(item.staffId));
+                return <button key={dateKey} type="button" disabled={!inMonth} onClick={() => goToDay(date)}
+                  className={cn("min-h-[82px] min-w-0 border-b border-r border-border p-1 text-left align-top",!inMonth&&"bg-background/50 opacity-40",dateKey===formatYmd(mobileDay)&&"bg-primary/10")}
+                  aria-label={`${dateKey}，${rows.length}筆預約`}>
+                  <span className="block text-center text-xs font-semibold text-text">{date.getDate()}</span>
+                  {rows.slice(0,2).map(item=><span key={item.id} className="mt-1 block truncate rounded bg-[#F5E4E7] px-0.5 text-[10px] leading-4 text-[#8E4359]">{item.customerName}</span>)}
+                  {rows.length>2?<span className="block text-center text-[10px] text-secondary-text">+${rows.length-2}筆</span>:null}
+                </button>;
+              })}
+            </div>
+            {calendarRemoteReadPilot && monthRemoteState.status!=="data" ? <p className="p-3 text-center text-xs text-secondary-text">正在同步月曆預約資料…</p>:null}
+          </div>
+        ) : null}
         <div className="flex gap-2 overflow-x-auto pb-1">
           {weekDays.map((day) => {
             const active = formatYmd(day) === formatYmd(mobileDay);
             return (
-              <button
-                key={formatYmd(day)}
-                type="button"
-                onClick={() => goToDay(day)}
-                className={cn(
-                  "min-h-11 min-w-14 shrink-0 rounded-2xl px-3 text-sm",
-                  active
-                    ? "bg-primary text-white"
-                    : "bg-surface text-text",
-                )}
-              >
+              <button key={formatYmd(day)} type="button" onClick={() => goToDay(day)}
+                className={cn("min-h-11 min-w-14 shrink-0 rounded-2xl px-3 text-sm",active?"bg-primary text-white":"bg-surface text-text")}>
                 {WEEKDAY[day.getDay()]} {day.getDate()}
               </button>
             );
