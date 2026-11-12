@@ -635,7 +635,7 @@ export function CalendarPage({
             <span className="text-lg font-semibold text-text">{mobileDay.getFullYear()}年{mobileDay.getMonth()+1}月</span>
             <button type="button" className="min-h-11 min-w-11 rounded-xl border border-border" aria-label="下個月" onClick={() => goToDay(new Date(mobileDay.getFullYear(), mobileDay.getMonth()+1, 1))}><ChevronRight className="mx-auto h-5 w-5" /></button>
           </div>
-          <button type="button" className="min-h-11 rounded-xl border border-border px-3 text-sm" onClick={() => setMobileMonthMode(!mobileMonthMode)}>{mobileMonthMode ? "日檢視" : "月檢視"}</button>
+          <button type="button" className="min-h-11 rounded-xl border border-border px-3 text-sm" onClick={() => { setMobileMonthMode(!mobileMonthMode); setSelectedId(null); }}>{mobileMonthMode ? "查看今天" : "返回月曆"}</button>
         </div>
         <div className="flex items-center justify-between gap-2 px-1 text-sm">
           <span className="text-secondary-text">點日期查看當日預約</span>
@@ -654,7 +654,7 @@ export function CalendarPage({
                 const rows = (calendarRemoteReadPilot && monthRemoteState.status==="data" ? monthRemoteState.value : localAppointments)
                   .filter(item => calendarAppointmentYmd(item.startAt, calendarRemoteReadPilot)===dateKey && item.status!=="CANCELLED" && item.status!=="NO_SHOW")
                   .filter(item => staffFilter.length===0 || staffFilter.includes(item.staffId));
-                return <button key={dateKey} type="button" disabled={!inMonth} onClick={() => goToDay(date)}
+                return <button key={dateKey} type="button" disabled={!inMonth} onClick={() => { goToDay(date); setMobileMonthMode(false); }}
                   className={cn("min-h-[82px] min-w-0 border-b border-r border-border p-1 text-left align-top",!inMonth&&"bg-background/50 opacity-40",dateKey===formatYmd(mobileDay)&&"bg-primary/10")}
                   aria-label={`${dateKey}，${rows.length}筆預約`}>
                   <span className="block text-center text-xs font-semibold text-text">{date.getDate()}</span>
@@ -666,7 +666,7 @@ export function CalendarPage({
             {calendarRemoteReadPilot && monthRemoteState.status!=="data" ? <p className="p-3 text-center text-xs text-secondary-text">正在同步月曆預約資料…</p>:null}
           </div>
         ) : null}
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        {!mobileMonthMode ? (\n          <>\n            <button type="button" onClick={() => { setMobileMonthMode(true); setSelectedId(null); }} className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-text"><ChevronLeft className="h-4 w-4" />返回月曆</button>\n            <h2 className="text-lg font-semibold text-text">{formatDayTitle(mobileDay)}</h2>\n        <div className="flex gap-2 overflow-x-auto pb-1">
           {weekDays.map((day) => {
             const active = formatYmd(day) === formatYmd(mobileDay);
             return (
@@ -734,7 +734,7 @@ export function CalendarPage({
         >
           ＋ 新增預約
         </Button>
-      </div>
+          </>\n        ) : null}\n      </div>
 
       {/* Desktop / tablet workspace — calendar + inline Quick View, tops aligned */}
       <div
