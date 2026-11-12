@@ -666,7 +666,11 @@ export function CalendarPage({
             {calendarRemoteReadPilot && monthRemoteState.status!=="data" ? <p className="p-3 text-center text-xs text-secondary-text">正在同步月曆預約資料…</p>:null}
           </div>
         ) : null}
-        {!mobileMonthMode ? (\n          <>\n            <button type="button" onClick={() => { setMobileMonthMode(true); setSelectedId(null); }} className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-text"><ChevronLeft className="h-4 w-4" />返回月曆</button>\n            <h2 className="text-lg font-semibold text-text">{formatDayTitle(mobileDay)}</h2>\n        <div className="flex gap-2 overflow-x-auto pb-1">
+        {!mobileMonthMode ? (
+          <>
+            <button type="button" onClick={() => { setMobileMonthMode(true); setSelectedId(null); }} className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface px-3 text-sm font-medium text-text"><ChevronLeft className="h-4 w-4" />返回月曆</button>
+            <h2 className="text-lg font-semibold text-text">{formatDayTitle(mobileDay)}</h2>
+        <div className="flex gap-2 overflow-x-auto pb-1">
           {weekDays.map((day) => {
             const active = formatYmd(day) === formatYmd(mobileDay);
             return (
@@ -734,7 +738,9 @@ export function CalendarPage({
         >
           ＋ 新增預約
         </Button>
-          </>\n        ) : null}\n      </div>
+          </>
+        ) : null}
+      </div>
 
       {/* Desktop / tablet workspace — calendar + inline Quick View, tops aligned */}
       <div
