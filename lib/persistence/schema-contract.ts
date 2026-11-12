@@ -71,6 +71,96 @@ export const STAFF_OPERATIONAL_CREATE_MIGRATION_FILE =
 export const STAFF_OPERATIONAL_CREATE_FIX_MIGRATION_FILE =
   "supabase/migrations/20261007150000_staff_operational_create_fix.sql";
 
+/** LINE Official Account foundation. Additive. Secrets have no authenticated grants. */
+export const LINE_OFFICIAL_ACCOUNT_MIGRATION_FILE =
+  "supabase/migrations/20261010120000_line_official_account_foundation.sql";
+
+/** LINE real-send claim / complete. Additive. Does not rewrite 120000. */
+export const LINE_BROADCAST_REAL_SEND_MIGRATION_FILE =
+  "supabase/migrations/20261010140000_line_broadcast_real_send.sql";
+
+/** LINE Owner test-push bind. Additive. Does not rewrite 120000 / 140000. */
+export const LINE_OWNER_TEST_PUSH_MIGRATION_FILE =
+  "supabase/migrations/20261010160000_line_owner_test_push.sql";
+
+/** LINE webhook least privilege. Additive. Does not rewrite 120000 / 140000 / 160000. */
+export const LINE_WEBHOOK_LEAST_PRIVILEGE_MIGRATION_FILE =
+  "supabase/migrations/20261010180000_line_webhook_least_privilege.sql";
+
+/** LINE test-push claim daily quota. Additive. Does not rewrite 160000 / 180000. */
+export const LINE_TEST_PUSH_CLAIM_QUOTA_MIGRATION_FILE =
+  "supabase/migrations/20261010190000_line_test_push_claim_daily_quota.sql";
+
+/** LINE test-push HTTP status / error-class diagnostics. Additive. Does not rewrite 190000. */
+export const LINE_TEST_PUSH_ERROR_DIAGNOSTICS_MIGRATION_FILE =
+  "supabase/migrations/20261010200000_line_test_push_error_diagnostics.sql";
+
+/** LINE test-push requestId anti-reuse + runtime kill switch. Additive. Default closed. */
+export const LINE_TEST_PUSH_RUNTIME_KILL_SWITCH_MIGRATION_FILE =
+  "supabase/migrations/20261011010000_line_test_push_runtime_kill_switch.sql";
+
+/** LINE Broadcast immutable Taipei claim quota, diagnostics, stale sending. Additive. Default closed. */
+export const LINE_BROADCAST_CLAIM_SAFETY_MIGRATION_FILE =
+  "supabase/migrations/20261011020000_line_broadcast_claim_safety.sql";
+
+/** LINE one-shot Broadcast permit schema. Additive. Production must not insert permits. */
+export const LINE_BROADCAST_ONESHOT_PERMIT_MIGRATION_FILE =
+  "supabase/migrations/20261011140000_line_broadcast_oneshot_permit.sql";
+
+/** LINE Channel lock + cross-org daily count. Additive. Default closed. */
+export const LINE_BROADCAST_CHANNEL_LOCK_MIGRATION_FILE =
+  "supabase/migrations/20261012120000_line_broadcast_channel_lock.sql";
+
+/** LINE automation rule settings. Additive upgrade of Preview Phase 2B table. Default closed. Do not apply on Production until Owner confirms. */
+export const LINE_AUTOMATION_RULES_MIGRATION_FILE =
+  "supabase/migrations/20261017120000_line_automation_rules.sql";
+
+/** LINE automation schedule engine. Additive upgrade of Phase 2B jobs. Default closed. Do not apply on Production until Owner confirms. */
+export const LINE_AUTOMATION_SCHEDULE_MIGRATION_FILE =
+  "supabase/migrations/20261017140000_line_automation_schedule_engine.sql";
+
+/** LINE customer bindings for trusted recipient verification. Additive. Default closed. Do not apply on Production until Owner confirms. */
+export const LINE_CUSTOMER_BINDINGS_MIGRATION_FILE =
+  "supabase/migrations/20261017160000_line_customer_bindings.sql";
+
+/** Preview leftover bind-table upgrade. Re-applies the compatible 160000 body. Additive. Do not apply on Production until Owner confirms. */
+export const LINE_CUSTOMER_BINDINGS_PREVIEW_UPGRADE_MIGRATION_FILE =
+  "supabase/migrations/20261017161000_line_customer_bindings_preview_upgrade.sql";
+
+/** Shared LINE delivery task ledger. Additive. Default closed. Do not apply on Production until Owner confirms. */
+export const LINE_DELIVERY_TASKS_MIGRATION_FILE =
+  "supabase/migrations/20261021120000_line_delivery_tasks.sql";
+
+/** LINE delivery mock worker, owner-safe records, and broadcast quota lock. Additive. Does not rewrite 2120000 or Broadcast. */
+export const LINE_DELIVERY_WORKER_MIGRATION_FILE =
+  "supabase/migrations/20261021130000_line_delivery_worker.sql";
+
+/** Shared official + delivery Broadcast Taipei quota. Additive. Does not rewrite 2130000 or official HTTP send. */
+export const LINE_DELIVERY_BROADCAST_QUOTA_UNIFY_MIGRATION_FILE =
+  "supabase/migrations/20261021140000_line_delivery_broadcast_quota_unify.sql";
+
+export const LINE_TABLES = [
+  "line_official_accounts",
+  "line_official_account_secrets",
+  "line_broadcasts",
+  "line_broadcast_events",
+  "line_owner_recipients",
+  "line_owner_recipient_secrets",
+  "line_owner_bind_challenges",
+  "line_test_sends",
+  "line_webhook_public_tokens",
+  "line_webhook_events",
+  "line_broadcast_oneshot_permits",
+  "line_automation_rules",
+  "line_automation_jobs",
+  "line_customer_bindings",
+  "line_customer_binding_secrets",
+  "line_customer_binding_rebinds",
+  "line_customer_bind_challenges",
+  "line_customer_bind_challenge_secrets",
+  "line_delivery_tasks",
+] as const;
+
 /** Must never appear as stored columns (second books). */
 export const FORBIDDEN_STORED_COLUMNS = [
   "remaining_sessions",

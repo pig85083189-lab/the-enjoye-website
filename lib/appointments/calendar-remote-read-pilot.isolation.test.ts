@@ -593,4 +593,79 @@ describe("Phase 1C-5D calendar remote read pilot", () => {
       ),
     ).rejects.toBeInstanceOf(UnmappedIdentityError);
   });
+  it("LINE new customer with NULL app_id maps by customer UUID and shows the booking", async () => {
+    const lineCustomerDbId = "e06709d5-893f-4be1-8d83-b3d666a9257c";
+    const lineAppointmentId = "1cb71a12-43fb-4d90-b5ba-dec93b3e9427";
+    const day = await listRemoteCalendarAppointmentsByLocationAndRange(
+      ORG_ENJOYE_ID,
+      LOC_ENJOYE_PRIMARY_ID,
+      "2026-11-12T16:00:00.000Z",
+      "2026-11-13T16:00:00.000Z",
+      ownerClient({
+        customers: [
+          {
+            id: FUTURE_QA_APPOINTMENT.customerDbId,
+            app_id: FUTURE_QA_APPOINTMENT.customerAppId,
+            organization_id: FUTURE_QA_APPOINTMENT.organizationDbId,
+          },
+          {
+            id: lineCustomerDbId,
+            app_id: null,
+            organization_id: FUTURE_QA_APPOINTMENT.organizationDbId,
+          },
+        ],
+        appointments: [
+          qaAppointmentRow({
+            id: lineAppointmentId,
+            app_id: null,
+            customer_id: lineCustomerDbId,
+            staff_id: "staff-001",
+            starts_at: "2026-11-13T04:00:00.000Z",
+            ends_at: "2026-11-13T05:00:00.000Z",
+            duration_minutes: 60,
+            customer_name_snapshot: "LINE 新客",
+            service_name_snapshot: "美波澎潤 upupSPA",
+            staff_name_snapshot: "測試帳號",
+          }),
+        ],
+      }),
+    );
+    expect(day).toHaveLength(1);
+    expect(day[0]?.id).toBe(lineAppointmentId);
+    expect(day[0]?.customerId).toBe(lineCustomerDbId);
+    expect(day[0]?.customerName).toBe("LINE 新客");
+    expect(day[0]?.serviceName).toBe("美波澎潤 upupSPA");
+    expect(day[0]?.staffId).toBe("staff-001");
+    expect(formatTaipeiAppointmentDisplay(day[0]!.startAt, day[0]!.endAt)).toEqual({
+      date: "2026/11/13",
+      time: "12:00–13:00",
+    });
+  });
+
+  it("existing cust-* customers still resolve through app_id", async () => {
+    const day = await listQaDay();
+    expect(day).toHaveLength(1);
+    expect(day[0]?.customerId).toBe(FUTURE_QA_APPOINTMENT.customerAppId);
+    expect(day[0]?.customerId).not.toBe(FUTURE_QA_APPOINTMENT.customerDbId);
+  });
+
+  it("one unmapped customer does not blank the whole calendar day", async () => {
+    const orphanCustomerId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const day = await listQaDay(
+      ownerClient({
+        appointments: [
+          qaAppointmentRow(),
+          qaAppointmentRow({
+            id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            app_id: "apt-orphan-customer",
+            customer_id: orphanCustomerId,
+            starts_at: "2026-10-09T03:00:00.000Z",
+            ends_at: "2026-10-09T04:00:00.000Z",
+          }),
+        ],
+      }),
+    );
+    expect(day.map((row) => row.id)).toEqual([APT_APP_ID]);
+    expect(day.some((row) => row.customerId === orphanCustomerId)).toBe(false);
+  });
 });

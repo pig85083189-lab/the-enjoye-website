@@ -12,6 +12,7 @@ import {
   type AvailabilityResult,
 } from "./domain";
 import { canReceiveAppointments, staffCanPerformService } from "./capability";
+import { blocksMemberBookingForLeave } from "./leave-booking-policy";
 import {
   getWorkingHoursForDay,
   listBookableStaff,
@@ -133,7 +134,7 @@ export function getStaffAvailability(query: AvailabilityQuery): AvailabilityResu
     staffId,
     from: dayStart,
     to: dayEnd,
-  }).filter((item) => item.status === "APPROVED");
+  }).filter((item) => blocksMemberBookingForLeave(item.status));
   for (const off of offs) {
     if (rangesOverlap(startAt, endAt, off.startAt, off.endAt)) {
       reasons.push("TIME_OFF");

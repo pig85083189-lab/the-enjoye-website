@@ -90,11 +90,11 @@ export async function loadAppointmentWriteSnapshots(
     await readNamedRows(
       client
         .from("customers")
-        .select("app_id, organization_id, full_name")
+        .select("id, app_id, organization_id, full_name")
         .eq("organization_id", identity.organizationDbId),
     )
   ).flatMap((row) => {
-    const appId = typeof row.app_id === "string" ? row.app_id : "";
+    const appId = typeof row.app_id === "string" && row.app_id.trim() ? row.app_id.trim() : typeof row.id === "string" ? row.id : "";
     const name = asName(row.full_name);
     if (!appId || !name) return [];
     return [{ organizationId: identity.organizationAppId, appId, name }];

@@ -41,6 +41,8 @@ export interface NavigationItem {
   /** Order in mobile bottom nav; undefined = not a primary mobile tab */
   mobilePriority?: number;
   status?: NavItemStatus;
+  /** Optional sidebar/more-hub chip, e.g. NEW */
+  badge?: string;
   description?: string;
   /** Match nested paths under href (default true) */
   matchPrefix?: boolean;

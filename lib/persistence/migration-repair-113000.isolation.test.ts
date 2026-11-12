@@ -32,6 +32,8 @@ describe("Phase 1C-6H.2P2B published 113000 replay repair", () => {
   });
   const policy = policyBlock(operational);
   const mainPolicy = policyBlock(main);
+  const mainHash = createHash("sha256").update(main).digest("hex");
+  const repairPublishedOnMain = mainHash === OPERATIONAL_MIGRATION_REPAIRED_SHA256;
 
   it("documents the defective hash, corrected hash, and reason", () => {
     expect(existsSync(path.join(process.cwd(), OPERATIONAL_MIGRATION_REPAIR_DOC))).toBe(
@@ -48,19 +50,27 @@ describe("Phase 1C-6H.2P2B published 113000 replay repair", () => {
     expect(sha256(OPERATIONAL_MIGRATION_FILE)).toBe(
       OPERATIONAL_MIGRATION_REPAIRED_SHA256,
     );
-    expect(createHash("sha256").update(main).digest("hex")).toBe(
+    expect([
       OPERATIONAL_MIGRATION_DEFECTIVE_SHA256,
-    );
+      OPERATIONAL_MIGRATION_REPAIRED_SHA256,
+    ]).toContain(mainHash);
   });
 
   it("only qualifies the replay-blocking audit_logs insert policy", () => {
-    expect(operational).not.toBe(main);
     expect(policy).toMatch(/user_has_org_membership\(audit_logs\.organization_id\)/);
     expect(policy).toMatch(/audit_logs\.actor_id is null/);
     expect(policy).toMatch(/o\.id = audit_logs\.organization_id/);
     expect(policy).toMatch(/m\.user_id = audit_logs\.actor_id/);
     expect(policy).not.toMatch(/o\.id\s*=\s*organization_id\b/);
     expect(policy).not.toMatch(/m\.user_id\s*=\s*actor_id\b/);
+    if (repairPublishedOnMain) {
+      expect(operational).toBe(main);
+      expect(mainPolicy).toMatch(/user_has_org_membership\(audit_logs\.organization_id\)/);
+      expect(mainPolicy).toMatch(/o\.id = audit_logs\.organization_id/);
+      expect(mainPolicy).toMatch(/m\.user_id = audit_logs\.actor_id/);
+      return;
+    }
+    expect(operational).not.toBe(main);
     expect(mainPolicy).toMatch(/o\.id = organization_id/);
     expect(mainPolicy).toMatch(/m\.user_id = actor_id/);
     const stripped = operational

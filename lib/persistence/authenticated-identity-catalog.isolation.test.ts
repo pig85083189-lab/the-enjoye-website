@@ -254,4 +254,32 @@ describe("Phase 1B authenticated IdentityCatalog", () => {
     expect(() => loaded.mapper.requireOperationalStaffId(ORG_APP, "staff-foreign")).toThrow();
     expect(loaded.mapper.resolveOperationalStaffFromAuth(ORG_APP, AUTH_UUID)).toBe(STAFF_APP);
   });
+  it("LINE members with NULL customer app_id remain reverse-mappable by DB UUID", async () => {
+    const lineCustomerId = "e06709d5-893f-4be1-8d83-b3d666a9257c";
+    const loaded = await loadAuthenticatedIdentityCatalog(
+      fakeClient({
+        userId: AUTH_UUID,
+        tables: validTables({
+          customers: [
+            {
+              id: lineCustomerId,
+              app_id: null,
+              organization_id: ORG_UUID,
+            },
+            {
+              id: "f4be267b-8159-4b7b-920c-44ac996b3d8e",
+              app_id: "cust-muqh2jn6-xpjssl",
+              organization_id: ORG_UUID,
+            },
+          ],
+        }),
+      }),
+    );
+    expect(loaded.mapper.toCustomerAppId(lineCustomerId)).toBe(lineCustomerId);
+    expect(loaded.mapper.resolveCustomerDbId(ORG_APP, lineCustomerId)).toBe(lineCustomerId);
+    expect(loaded.mapper.toCustomerAppId("f4be267b-8159-4b7b-920c-44ac996b3d8e")).toBe(
+      "cust-muqh2jn6-xpjssl",
+    );
+  });
+
 });

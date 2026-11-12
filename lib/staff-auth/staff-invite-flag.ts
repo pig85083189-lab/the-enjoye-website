@@ -10,7 +10,8 @@ import { isExplicitRemotePilotEnabled } from "@/lib/flags/remote-pilot-flag";
 
 export const STAFF_INVITE_PILOT_ENV = "BEAUTY_OS_STAFF_INVITE_PILOT";
 
-/** 2B-2: send/bind code exists but this flag stays false. No live email or Auth create. */
+/** Explicit server-side opt-in. Defaults off; never exposed as NEXT_PUBLIC. */
+export const STAFF_INVITE_SEND_ENV = "BEAUTY_OS_STAFF_INVITE_SEND_ENABLED";
 export const STAFF_INVITE_SEND_OPEN = false;
 
 export function isStaffInvitePilotEnabled(
@@ -31,5 +32,5 @@ export function isStaffInvitePilotEnabled(
 export function isStaffInviteSendOpen(
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
 ): boolean {
-  return isStaffInvitePilotEnabled(env) && STAFF_INVITE_SEND_OPEN;
+  return isStaffInvitePilotEnabled(env) && isExplicitRemotePilotEnabled(STAFF_INVITE_SEND_ENV, env);
 }

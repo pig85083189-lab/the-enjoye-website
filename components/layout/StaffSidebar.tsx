@@ -74,6 +74,11 @@ export function StaffSidebar({
                       >
                         <Icon className="h-5 w-5" aria-hidden />
                         <span className="flex-1">{item.label}</span>
+                        {item.badge ? (
+                          <span className="rounded-full bg-primary-light px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-primary">
+                            {item.badge}
+                          </span>
+                        ) : null}
                         {item.status === "placeholder" || item.status === "future" ? (
                           <span className="text-[10px] font-medium uppercase tracking-wide text-secondary-text/80">
                             {item.status === "future" ? "Soon" : "預留"}
@@ -120,6 +125,11 @@ export function StaffSidebar({
                           >
                             <Icon className="h-4 w-4" aria-hidden />
                             <span className="flex-1">{item.label}</span>
+                            {item.badge ? (
+                              <span className="rounded-full bg-primary-light px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-primary">
+                                {item.badge}
+                              </span>
+                            ) : null}
                           </StaffNavLink>
                         </li>
                       );

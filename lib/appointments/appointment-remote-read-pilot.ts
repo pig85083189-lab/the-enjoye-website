@@ -34,8 +34,9 @@ export {
 
 export async function createAuthenticatedAppointmentReadPersistence(
   client: IdentitySupabaseClient,
+  organizationAppId?: string,
 ) {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationAppId);
   return {
     identity,
     appointments: new AppointmentRemoteAdapter(
