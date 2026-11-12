@@ -22,6 +22,7 @@ import {
   assertNotDemoResiduePayload,
   assertRemoteAppointmentAllowed,
 } from "./demo-firewall";
+import { UnmappedIdentityError } from "./identity-errors";
 import type { CanonicalIdMapper } from "./identity-map";
 import {
   appointmentFromRemoteRow,
@@ -69,7 +70,7 @@ export class AppointmentRemoteAdapter {
   async list(query: AppointmentListQuery): Promise<ScheduleAppointment[]> {
     const orgDbId = this.mapper.resolveOrganizationDbId(query.organizationId);
     const rows = await this.store.listAppointments(orgDbId);
-    const mapped = rows.map((row) => this.toDomain(query.organizationId, row));
+    const mapped = this.mapRowsSoft(query.organizationId, rows);
     return mapped.filter((item) => {
       if (query.locationId && item.locationId !== query.locationId) return false;
       if (query.staffId && item.staffId !== query.staffId) return false;
@@ -130,7 +131,7 @@ export class AppointmentRemoteAdapter {
           const to = new Date(input.endsAt).getTime();
           return start < to && end > from;
         });
-    return rows.map((row) => this.toDomain(input.organizationId, row));
+    return this.mapRowsSoft(input.organizationId, rows);
   }
 
   /**
@@ -154,7 +155,7 @@ export class AppointmentRemoteAdapter {
       : (await this.store.listAppointments(orgDbId)).filter(
           (row) => row.customer_id === customerDbId,
         );
-    return rows.map((row) => this.toDomain(organizationId, row));
+    return this.mapRowsSoft(organizationId, rows);
   }
 
   async create(
@@ -344,6 +345,19 @@ export class AppointmentRemoteAdapter {
     }
     const locationAppId = this.mapper.toLocationAppId(locationDbId);
     this.mapper.resolveLocationDbId(organizationId, locationAppId);
+  }
+
+  /** Ignore only unmapped rows in list views; preserve all other failures. */
+  private mapRowsSoft(organizationAppId: string, rows: DbAppointment[]): ScheduleAppointment[] {
+    const mapped: ScheduleAppointment[] = [];
+    for (const row of rows) {
+      try { mapped.push(this.toDomain(organizationAppId, row)); }
+      catch (error) {
+        if (error instanceof UnmappedIdentityError) continue;
+        throw error;
+      }
+    }
+    return mapped;
   }
 
   private toDomain(organizationAppId: string, row: DbAppointment): ScheduleAppointment {
