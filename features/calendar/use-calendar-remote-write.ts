@@ -8,6 +8,7 @@ import {
   type AppointmentWriteClient,
 } from "@/lib/appointments/appointment-remote-write-pilot";
 import { CALENDAR_REMOTE_READ_PILOT_ENV } from "@/lib/appointments/calendar-remote-read-flag";
+import { ONE_TIME_WALKIN_BOOKING_ENV } from "@/lib/appointments/one-time-walkin-flag";
 import {
   loadAppointmentWriteFormCatalog,
   type AppointmentWriteFormCatalog,
@@ -86,7 +87,7 @@ export function useCalendarRemoteWrite(enabled: boolean): CalendarRemoteWriteSta
 export async function submitCalendarRemoteAppointmentCreate(input: {
   organizationId: string;
   locationId: string;
-  customerId: string;
+  customerId?: string;
   serviceId: string;
   staffId: string;
   appointmentId: string;
@@ -95,6 +96,9 @@ export async function submitCalendarRemoteAppointmentCreate(input: {
   durationMinutes: number;
   customerNote?: string;
   internalNote?: string;
+  bookingOrigin?: "CUSTOMER" | "WALK_IN_ONCE";
+  guestName?: string;
+  guestPhone?: string;
 }) {
   const client = writeClient();
   if (!client) {
@@ -104,5 +108,8 @@ export async function submitCalendarRemoteAppointmentCreate(input: {
     ...process.env,
     [APPOINTMENT_REMOTE_WRITE_PILOT_ENV]: "1",
     [CALENDAR_REMOTE_READ_PILOT_ENV]: "1",
+    ...(input.bookingOrigin === "WALK_IN_ONCE"
+      ? { [ONE_TIME_WALKIN_BOOKING_ENV]: "1" }
+      : {}),
   });
 }

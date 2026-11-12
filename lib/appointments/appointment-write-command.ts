@@ -5,9 +5,18 @@
 
 import { newId } from "@/lib/repositories/storage";
 import { isGeneratedAppointmentAppId } from "@/lib/persistence/demo-firewall";
-import { assertMappedAppointmentDependencies } from "@/lib/persistence/appointment-mapping";
+import {
+  assertMappedAppointmentDependencies,
+  assertMappedWalkInAppointmentDependencies,
+} from "@/lib/persistence/appointment-mapping";
 import type { CanonicalIdMapper } from "@/lib/persistence/identity-map";
 import { appointmentWriteRangeFromTaipei } from "./appointment-write-time";
+import {
+  BOOKING_ORIGIN_CUSTOMER,
+  BOOKING_ORIGIN_WALK_IN_ONCE,
+  type BookingOrigin,
+  validateOneTimeBooking,
+} from "./one-time-booking";
 import {
   deriveAppointmentWriteSnapshots,
   type AppointmentWriteSnapshotCatalog,
@@ -16,7 +25,8 @@ import {
 export interface AppointmentWriteDraftInput {
   organizationId: string;
   locationId: string;
-  customerId: string;
+  /** Required for CUSTOMER bookings. Must be omitted for WALK_IN_ONCE. */
+  customerId?: string;
   serviceId: string;
   staffId: string;
   createdBy?: string;
@@ -25,7 +35,12 @@ export interface AppointmentWriteDraftInput {
   durationMinutes: number;
   customerNote?: string;
   internalNote?: string;
-  /** Ignored. Snapshots come from the authenticated catalog. */
+  bookingOrigin?: BookingOrigin;
+  /** Authoritative guest display name for WALK_IN_ONCE only. */
+  guestName?: string;
+  /** Guest phone for WALK_IN_ONCE only. Never written to customers.phone. */
+  guestPhone?: string;
+  /** Ignored for CUSTOMER. Snapshots come from the authenticated catalog. */
   customerName?: string;
   /** Ignored. Snapshots come from the authenticated catalog. */
   serviceName?: string;
@@ -41,7 +56,7 @@ export interface PreparedAppointmentCreate {
   organizationId: string;
   appointmentId: string;
   locationId: string;
-  customerId: string;
+  customerId: string | null;
   serviceId: string;
   staffId: string;
   createdBy: string;
@@ -54,6 +69,8 @@ export interface PreparedAppointmentCreate {
   staffName: string;
   customerNote?: string;
   internalNote?: string;
+  bookingOrigin: BookingOrigin;
+  guestContactPhone: string | null;
 }
 
 export function allocateAppointmentWriteAppId(
@@ -77,12 +94,25 @@ export function prepareAppointmentCreateCommand(
   const appointmentId = input.appointmentId
     ? allocateAppointmentWriteAppId(() => input.appointmentId!)
     : allocateAppointmentWriteAppId(deps.generateId);
-  const mapped = assertMappedAppointmentDependencies(
-    deps.mapper,
-    input.organizationId,
-    input,
-  );
-  void mapped;
+  const bookingOrigin = input.bookingOrigin ?? BOOKING_ORIGIN_CUSTOMER;
+  const walkInOnce = bookingOrigin === BOOKING_ORIGIN_WALK_IN_ONCE;
+
+  if (walkInOnce) {
+    if (input.customerId) {
+      throw new Error("Walk-in once appointments must not include a customer id");
+    }
+    assertMappedWalkInAppointmentDependencies(deps.mapper, input.organizationId, input);
+  } else {
+    if (!input.customerId?.trim()) {
+      throw new Error("Appointment create requires a mapped customer");
+    }
+    assertMappedAppointmentDependencies(deps.mapper, input.organizationId, {
+      locationId: input.locationId,
+      customerId: input.customerId,
+      serviceId: input.serviceId,
+    });
+  }
+
   const staffId = deps.mapper.requireOperationalStaffId(
     input.organizationId,
     input.staffId,
@@ -99,16 +129,47 @@ export function prepareAppointmentCreateCommand(
     input.startHm,
     input.durationMinutes,
   );
-  const snapshots = deriveAppointmentWriteSnapshots(
-    deps.snapshots,
-    input.organizationId,
-    input,
-  );
+
+  let customerName: string;
+  let guestContactPhone: string | null = null;
+  let serviceName: string;
+  let staffName: string;
+
+  if (walkInOnce) {
+    const guestError = validateOneTimeBooking({
+      guestName: input.guestName ?? "",
+      guestPhone: input.guestPhone ?? "",
+      serviceId: input.serviceId,
+      staffId: input.staffId,
+      locationId: input.locationId,
+      startsAt: range.startsAt,
+      endsAt: range.endsAt,
+    });
+    if (guestError) throw new Error(guestError);
+    customerName = input.guestName!.trim();
+    guestContactPhone = input.guestPhone!.trim();
+    serviceName = deps.snapshots.serviceName(input.organizationId, input.serviceId);
+    staffName = deps.snapshots.staffName(input.organizationId, input.staffId);
+  } else {
+    const snapshots = deriveAppointmentWriteSnapshots(
+      deps.snapshots,
+      input.organizationId,
+      {
+        customerId: input.customerId!,
+        serviceId: input.serviceId,
+        staffId: input.staffId,
+      },
+    );
+    customerName = snapshots.customerName;
+    serviceName = snapshots.serviceName;
+    staffName = snapshots.staffName;
+  }
+
   return {
     organizationId: input.organizationId,
     appointmentId,
     locationId: input.locationId,
-    customerId: input.customerId,
+    customerId: walkInOnce ? null : input.customerId!,
     serviceId: input.serviceId,
     staffId,
     createdBy,
@@ -116,10 +177,12 @@ export function prepareAppointmentCreateCommand(
     endAt: range.endsAt,
     durationMinutes: range.durationMinutes,
     status: "BOOKED",
-    customerName: snapshots.customerName,
-    serviceName: snapshots.serviceName,
-    staffName: snapshots.staffName,
+    customerName,
+    serviceName,
+    staffName,
     customerNote: input.customerNote,
     internalNote: input.internalNote,
+    bookingOrigin: walkInOnce ? BOOKING_ORIGIN_WALK_IN_ONCE : BOOKING_ORIGIN_CUSTOMER,
+    guestContactPhone,
   };
 }
