@@ -27,8 +27,8 @@ export function assertAppointmentTimeRange(startAt: string, endAt: string): void
 }
 
 /**
- * Appointment remote writes are impossible without all four mapped UUIDs.
- * Never auto-create customer / service / org / location.
+ * Appointment remote writes are impossible without mapped org / location / service.
+ * CUSTOMER bookings also require a mapped customer. Never auto-create identities.
  */
 export function assertMappedAppointmentDependencies(
   mapper: CanonicalIdMapper,
@@ -48,19 +48,42 @@ export function assertMappedAppointmentDependencies(
   };
 }
 
+/** Walk-in once: map org/location/service only — never resolve or create a customer. */
+export function assertMappedWalkInAppointmentDependencies(
+  mapper: CanonicalIdMapper,
+  organizationId: string,
+  input: { locationId: string; serviceId: string },
+): {
+  organizationDbId: string;
+  locationDbId: string;
+  customerDbId: null;
+  serviceDbId: string;
+} {
+  return {
+    organizationDbId: mapper.resolveOrganizationDbId(organizationId),
+    locationDbId: mapper.resolveLocationDbId(organizationId, input.locationId),
+    customerDbId: null,
+    serviceDbId: mapper.resolveServiceDbId(organizationId, input.serviceId),
+  };
+}
+
 export function appointmentFromRemoteRow(
   organizationAppId: string,
   locationAppId: string,
-  customerAppId: string,
+  customerAppId: string | null,
   serviceAppId: string,
   row: DbAppointment,
 ): ScheduleAppointment {
   const status = normalizeAppointmentStatus(row.status);
+  const origin =
+    row.booking_origin === "WALK_IN_ONCE"
+      ? ("WALK_IN_ONCE" as const)
+      : ("CUSTOMER" as const);
   return {
     id: row.app_id,
     organizationId: organizationAppId,
     locationId: locationAppId,
-    customerId: customerAppId,
+    customerId: customerAppId ?? "",
     customerName: row.customer_name_snapshot ?? "",
     serviceId: serviceAppId,
     serviceName: row.service_name_snapshot ?? "",
@@ -80,9 +103,12 @@ export function appointmentFromRemoteRow(
     createdAt: row.created_at,
     updatedBy: row.updated_by ?? undefined,
     updatedAt: row.updated_at,
+    bookingOrigin: origin,
+    guestContactPhone: row.guest_contact_phone ?? undefined,
   };
 }
 
+/** Columns safe to SELECT on every environment (before and after walk-in schema). */
 export const REMOTE_APPOINTMENT_COLUMNS = [
   "id",
   "organization_id",
@@ -109,10 +135,22 @@ export const REMOTE_APPOINTMENT_COLUMNS = [
   "updated_at",
 ] as const;
 
+/** Extra insert columns used only when the walk-in staging schema is present. */
+export const REMOTE_APPOINTMENT_WALKIN_COLUMNS = [
+  "booking_origin",
+  "guest_contact_phone",
+] as const;
+
 export function remoteAppointmentPayload(row: DbAppointment): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
   for (const column of REMOTE_APPOINTMENT_COLUMNS) {
     payload[column] = row[column];
+  }
+  for (const column of REMOTE_APPOINTMENT_WALKIN_COLUMNS) {
+    const value = row[column];
+    if (value !== undefined) {
+      payload[column] = value;
+    }
   }
   if ("remainingSessions" in payload || "notes" in payload) {
     throw new Error("appointment remote payload leaked domain-only fields");

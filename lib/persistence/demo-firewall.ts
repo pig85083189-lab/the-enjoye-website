@@ -144,13 +144,16 @@ export function assertRemoteCustomerAllowed(customer: {
 
 export function assertRemoteAppointmentAllowed(appointment: {
   id: string;
-  customerId: string;
+  customerId?: string | null;
   customerName?: string;
 }): void {
   if (isDemoAppointmentId(appointment.id)) {
     throw new Error(REMOTE_DEMO_APPOINTMENT_MESSAGE);
   }
-  if (isDemoCustomerId(appointment.customerId) || isDemoCustomerName(appointment.customerName)) {
+  if (
+    (appointment.customerId && isDemoCustomerId(appointment.customerId)) ||
+    isDemoCustomerName(appointment.customerName)
+  ) {
     throw new Error(REMOTE_DEMO_APPOINTMENT_MESSAGE);
   }
 }

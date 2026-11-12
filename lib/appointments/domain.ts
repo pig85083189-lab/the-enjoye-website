@@ -18,10 +18,13 @@ export type LegacyAppointmentStatus = "pending" | "in_progress" | "completed";
 
 export type AnyAppointmentStatus = CanonicalAppointmentStatus | LegacyAppointmentStatus;
 
+export type AppointmentBookingOrigin = "CUSTOMER" | "WALK_IN_ONCE";
+
 export interface ScheduleAppointment {
   id: string;
   organizationId: string;
   locationId: string;
+  /** Empty for one-time walk-in bookings that never create a customer row. */
   customerId: string;
   customerName: string;
   serviceId: string;
@@ -45,6 +48,8 @@ export interface ScheduleAppointment {
   createdAt: string;
   updatedBy?: string;
   updatedAt: string;
+  bookingOrigin?: AppointmentBookingOrigin;
+  guestContactPhone?: string;
 }
 
 export const STATUS_LABEL: Record<CanonicalAppointmentStatus, string> = {
