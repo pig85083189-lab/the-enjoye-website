@@ -545,7 +545,7 @@ export function CalendarPage({
                 : appointmentRemoteWritePilot && remoteWrite.status === "denied"
                   ? "新增預約（沒有權限建立遠端預約）"
                   : calendarRemoteReadPilot
-                    ? "新增預約（行事曆遠端讀取試點為唯讀）"
+                    ? "新增預約（目前無法建立預約）"
                     : "新增預約"
             }
             title={
@@ -554,7 +554,7 @@ export function CalendarPage({
                 : appointmentRemoteWritePilot && remoteWrite.status === "denied"
                   ? "沒有權限建立遠端預約"
                   : calendarRemoteReadPilot
-                    ? "行事曆遠端讀取試點為唯讀"
+                    ? "目前無法建立預約"
                     : undefined
             }
           >
@@ -682,7 +682,7 @@ export function CalendarPage({
               : appointmentRemoteWritePilot && remoteWrite.status === "denied"
                 ? "沒有權限建立遠端預約"
                 : calendarRemoteReadPilot
-                  ? "行事曆遠端讀取試點為唯讀"
+                  ? "目前無法建立預約"
                   : undefined
           }
           onClick={() =>
