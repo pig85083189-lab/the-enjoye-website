@@ -40,7 +40,8 @@ function toRemoteStatus(value: unknown): RemoteCustomerStatus {
 export function dbCustomerFromUnknown(row: Record<string, unknown>): DbCustomer {
   const id = asString(row.id);
   const organization_id = asString(row.organization_id);
-  const app_id = asString(row.app_id);
+  // LINE member customers may not have a legacy app_id; use the scoped DB UUID as their stable read identity.
+  const app_id = asString(row.app_id).trim() || id;
   const full_name = asString(row.full_name);
   const created_at = asString(row.created_at);
   const updated_at = asString(row.updated_at);
@@ -102,10 +103,10 @@ export class AuthenticatedCustomerReadStore implements CustomerTableStore {
     organizationDbId: string,
     appId: string,
   ): Promise<DbCustomer | undefined> {
-    const rows = await readCustomerRows(this.client, (builder) =>
-      builder.eq("organization_id", organizationDbId).eq("app_id", appId),
-    );
-    return rows[0];
+    const rows = await this.listCustomers(organizationDbId);
+    return rows.find((row) => row.app_id === appId);
+    /*
+    */
   }
 
   async getCustomerByDbId(dbId: string): Promise<DbCustomer | undefined> {
