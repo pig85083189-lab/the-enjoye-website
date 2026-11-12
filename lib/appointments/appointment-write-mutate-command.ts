@@ -9,9 +9,13 @@ import {
   type CanonicalAppointmentStatus,
   type ScheduleAppointment,
 } from "@/lib/appointments/domain";
-import { assertMappedAppointmentDependencies } from "@/lib/persistence/appointment-mapping";
+import {
+  assertMappedAppointmentDependencies,
+  assertMappedWalkInAppointmentDependencies,
+} from "@/lib/persistence/appointment-mapping";
 import type { CanonicalIdMapper } from "@/lib/persistence/identity-map";
 import { appointmentWriteRangeFromTaipei } from "./appointment-write-time";
+import { isWalkInOnceOrigin } from "./one-time-booking";
 import {
   deriveAppointmentWriteSnapshots,
   type AppointmentWriteSnapshotCatalog,
@@ -190,19 +194,36 @@ export function prepareAppointmentMutateCommand(
     if (input.internalNote !== undefined) internalNote = input.internalNote;
   }
 
-  const mapped = assertMappedAppointmentDependencies(deps.mapper, deps.organizationId, {
-    locationId,
-    customerId: current.customerId,
-    serviceId,
-  });
-  void mapped;
+  const walkInOnce =
+    isWalkInOnceOrigin(current.bookingOrigin) || !current.customerId.trim();
+  if (walkInOnce) {
+    assertMappedWalkInAppointmentDependencies(deps.mapper, deps.organizationId, {
+      locationId,
+      serviceId,
+    });
+  } else {
+    assertMappedAppointmentDependencies(deps.mapper, deps.organizationId, {
+      locationId,
+      customerId: current.customerId,
+      serviceId,
+    });
+  }
   staffId = deps.mapper.requireOperationalStaffId(deps.organizationId, staffId);
 
-  const snapshots = deriveAppointmentWriteSnapshots(deps.snapshots, deps.organizationId, {
-    customerId: current.customerId,
-    serviceId,
-    staffId,
-  });
+  const snapshots = walkInOnce
+    ? {
+        customerName: current.customerName,
+        serviceName: deps.snapshots.serviceName(deps.organizationId, serviceId),
+        staffName: deps.snapshots.staffName(deps.organizationId, staffId),
+      }
+    : deriveAppointmentWriteSnapshots(deps.snapshots, deps.organizationId, {
+        customerId: current.customerId,
+        serviceId,
+        staffId,
+      });
+  if (walkInOnce && !snapshots.customerName.trim()) {
+    throw new Error("Walk-in once mutate requires guest name snapshot");
+  }
   const cancelled = cancelledMetadata(current, status, updatedBy, now);
   const durationMinutes = durationBetween(startAt, endAt);
 
@@ -213,7 +234,7 @@ export function prepareAppointmentMutateCommand(
     expectedUpdatedAt,
     dbId: input.dbId,
     locationId,
-    customerId: current.customerId,
+    customerId: walkInOnce ? "" : current.customerId,
     serviceId,
     staffId,
     updatedBy,

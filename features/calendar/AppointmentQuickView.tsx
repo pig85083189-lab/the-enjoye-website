@@ -97,7 +97,9 @@ export function AppointmentQuickView({
     () => "",
   );
 
-  const customer = getCustomerById(item.customerId, item.organizationId);
+  const customer = item.customerId
+    ? getCustomerById(item.customerId, item.organizationId)
+    : undefined;
   const legacy = scheduleAppointmentToLegacyView(item);
   const remoteTreatmentState = useTreatmentRemoteByAppointment(
     item.organizationId,
@@ -400,13 +402,21 @@ export function AppointmentQuickView({
               </Button>
             ) : null}
           </div>
-          <Link
-            href={`/staff/customers/${item.customerId}`}
-            className="inline-flex h-9 w-full items-center justify-center gap-1 text-[13px] font-medium text-secondary-text transition-colors hover:text-primary"
-          >
-            <UserRound className="h-3.5 w-3.5 opacity-70" aria-hidden />
-            查看完整客戶資料 →
-          </Link>
+          {item.customerId ? (
+            <Link
+              href={`/staff/customers/${item.customerId}`}
+              className="inline-flex h-9 w-full items-center justify-center gap-1 text-[13px] font-medium text-secondary-text transition-colors hover:text-primary"
+            >
+              <UserRound className="h-3.5 w-3.5 opacity-70" aria-hidden />
+              查看完整客戶資料 →
+            </Link>
+          ) : (
+            <p className="inline-flex h-9 w-full items-center justify-center gap-1 text-[13px] font-medium text-secondary-text">
+              <UserRound className="h-3.5 w-3.5 opacity-70" aria-hidden />
+              一次性預約（無顧客資料）
+              {item.guestContactPhone ? ` · ${item.guestContactPhone}` : ""}
+            </p>
+          )}
         </div>
       </aside>
     </>
