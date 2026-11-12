@@ -472,7 +472,7 @@ export function CalendarPage({
     <div className="flex min-h-0 flex-1 flex-col gap-3 min-[720px]:gap-5">
       <div
         data-calendar-chrome
-        className="flex shrink-0 flex-col gap-3 min-[720px]:flex-row min-[720px]:items-start min-[720px]:justify-between min-[720px]:gap-4"
+        className="hidden shrink-0 flex-col gap-3 min-[720px]:flex min-[720px]:flex-row min-[720px]:items-start min-[720px]:justify-between min-[720px]:gap-4"
       >
         <header data-calendar-header className="shrink-0 space-y-0.5">
           <h1 className="text-[1.75rem] font-semibold leading-none tracking-tight text-text">
@@ -576,6 +576,7 @@ export function CalendarPage({
         </div>
       </div>
 
+      <div className="hidden min-[720px]:block">
       <StaffWorkloadFilter
         staff={staffRoster}
         workloads={workloadRows}
@@ -585,6 +586,7 @@ export function CalendarPage({
         onToggle={toggleStaffFilter}
         onClear={() => setStaffFilter([])}
       />
+      </div>
 
       {blockedMsg ? (
         <p
@@ -629,17 +631,17 @@ export function CalendarPage({
 
       {/* Mobile */}
       <div className="space-y-3 min-[720px]:hidden">
-        <div className="flex items-center justify-between gap-2 rounded-2xl bg-surface px-3 py-3">
+        <div className="flex items-center justify-between gap-1 border-b border-border bg-surface px-1 py-1">
           <div className="flex items-center gap-2">
-            <button type="button" className="min-h-11 min-w-11 rounded-xl border border-border" aria-label="上個月" onClick={() => goToDay(new Date(mobileDay.getFullYear(), mobileDay.getMonth()-1, 1))}><ChevronLeft className="mx-auto h-5 w-5" /></button>
-            <span className="text-lg font-semibold text-text">{mobileDay.getFullYear()}年{mobileDay.getMonth()+1}月</span>
+            <button type="button" className="min-h-9 min-w-9 rounded-lg" aria-label="上個月" onClick={() => goToDay(new Date(mobileDay.getFullYear(), mobileDay.getMonth()-1, 1))}><ChevronLeft className="mx-auto h-5 w-5" /></button>
+            <span className="text-base font-semibold text-primary">{mobileDay.getFullYear()}.{String(mobileDay.getMonth()+1).padStart(2,"0")}</span>
             <button type="button" className="min-h-11 min-w-11 rounded-xl border border-border" aria-label="下個月" onClick={() => goToDay(new Date(mobileDay.getFullYear(), mobileDay.getMonth()+1, 1))}><ChevronRight className="mx-auto h-5 w-5" /></button>
           </div>
-          <button type="button" className="min-h-11 rounded-xl border border-border px-3 text-sm" onClick={() => { setMobileMonthMode(!mobileMonthMode); setSelectedId(null); }}>{mobileMonthMode ? "查看今天" : "返回月曆"}</button>
+          <button type="button" className="min-h-9 rounded-lg border border-border px-2 text-xs" onClick={() => { setMobileMonthMode(!mobileMonthMode); setSelectedId(null); }}>{mobileMonthMode ? "查看今天" : "返回月曆"}</button>
         </div>
-        <div className="flex items-center justify-between gap-2 px-1 text-sm">
+        <div className="flex items-center justify-between gap-2 px-1 text-xs">
           <span className="text-secondary-text">點日期查看當日預約</span>
-          <Link href="/staff/leave-management" className="rounded-xl border border-border px-3 py-2 font-medium text-primary">排休管理</Link>
+          <Link href="/staff/leave-management" className="rounded-lg border border-border px-2 py-1.5 font-medium text-primary">排休管理</Link>
         </div>
         {mobileMonthMode ? (
           <div className="overflow-hidden rounded-2xl border border-border bg-surface">
