@@ -86,17 +86,17 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
           {section==="head" ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" aria-label="頭部正面與背面症狀點選圖" role="group">
             <image href="/ead-bodymap.png" x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
             {[
-              "M365 365 Q515 290 670 360 Q720 440 655 525 Q515 580 370 520Z",
-              "M225 495 Q265 465 305 510 L320 640 Q270 685 230 630Z",
-              "M705 495 Q755 465 790 520 L800 635 Q750 685 700 630Z",
-              "M305 585 Q385 560 450 620 Q460 705 365 710 Q295 675 305 585Z",
-              "M580 585 Q655 560 725 615 Q735 705 635 710 Q570 680 580 585Z",
-              "M285 735 Q365 700 435 755 Q455 850 375 900 Q290 870 285 735Z",
-              "M590 735 Q675 700 740 755 Q755 850 670 900 Q585 870 590 735Z",
-              "M440 925 Q510 895 580 925 Q590 1000 510 1020 Q440 1010 440 925Z",
-              "M1235 80 Q1420 20 1610 90 Q1640 280 1420 365 Q1230 310 1235 80Z",
-              "M1190 400 Q1420 340 1650 400 Q1710 740 1560 855 Q1420 925 1270 850 Q1130 710 1190 400Z",
-              "M1290 870 Q1420 845 1550 875 L1550 1070 Q1420 1110 1290 1070Z",
+              "M 391 438 C 418 398 476 380 525 382 C 587 382 649 405 674 451 C 693 490 685 535 649 554 C 609 574 553 578 516 578 C 469 578 412 568 388 542 C 364 516 367 475 391 438 Z",
+              "M 725 520 C 750 499 778 515 796 548 C 813 580 817 622 805 643 C 793 666 768 661 746 638 C 729 618 709 576 713 550 C 715 535 719 526 725 520 Z",
+              "M 255 530 C 275 506 305 500 322 525 C 336 547 322 598 307 632 C 294 661 271 665 255 647 C 240 629 241 564 255 530 Z",
+              "M 611 647 C 634 617 674 604 711 616 C 749 629 766 659 761 694 C 755 733 718 755 682 758 C 639 758 609 733 606 693 C 603 676 604 661 611 647 Z",
+              "M 326 645 C 351 617 391 607 428 617 C 465 627 480 662 478 692 C 474 731 446 752 407 759 C 367 761 327 737 313 706 C 305 685 311 661 326 645 Z",
+              "M 628 773 C 656 756 701 756 740 765 C 753 792 749 834 733 857 C 714 883 682 888 651 878 C 622 869 609 839 611 807 C 611 791 618 779 628 773 Z",
+              "M 313 773 C 345 754 394 758 425 774 C 445 798 443 838 429 859 C 414 883 382 887 352 876 C 323 865 304 831 305 803 C 304 790 308 781 313 773 Z",
+              "M 474 992 C 496 979 533 977 563 985 C 591 994 610 1012 598 1027 C 574 1043 529 1046 500 1041 C 473 1038 452 1025 458 1009 C 460 1001 466 997 474 992 Z",
+              "M 1311 180 C 1347 149 1401 137 1455 137 C 1524 137 1592 154 1629 197 C 1661 238 1663 303 1646 353 C 1633 401 1595 444 1542 463 C 1494 481 1420 480 1366 462 C 1318 443 1292 407 1282 361 C 1267 308 1279 223 1311 180 Z",
+              "M 1320 516 C 1360 490 1422 484 1482 487 C 1553 488 1627 501 1662 546 C 1691 586 1690 664 1674 727 C 1656 803 1607 851 1556 875 C 1511 898 1446 906 1390 892 C 1329 878 1279 838 1255 784 C 1227 727 1225 644 1242 587 C 1256 553 1282 530 1320 516 Z",
+              "M 1342 898 C 1394 887 1497 888 1564 898 C 1580 925 1582 984 1579 1022 L 1576 1070 C 1532 1087 1383 1087 1336 1069 C 1329 1018 1329 942 1342 898 Z",
             ].map((d,i)=>{const a=current.areas[i];const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.22:recorded?0.14:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="8" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
           </svg> : <><Anatomy section={section}/>{current.areas.map((a,i)=>{const p=spots[section][i];const recorded=markers.some(m=>m.area===a);return <button key={a} type="button" title={a} aria-label={`選擇${a}`} onClick={()=>choose(a)} style={{left:`${p[0]/300*100}%`,top:`${p[1]/420*100}%`}} className={`absolute flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-xs font-bold shadow-sm ${area===a?"border-[#8F4E60] bg-[#B87981] text-white":recorded?"border-[#AD6577] bg-[#E8B2BA] text-[#6F3444]":"border-white bg-[#F6D9DC]/90 text-[#85555F]"}`}>{i+1}</button>})}</>}
         </div>
