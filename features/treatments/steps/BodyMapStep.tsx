@@ -154,48 +154,22 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
               {name:"左下背",d:"M 774 421 L 878 418 Q 869 448 879 483 Q 890 520 907 550 Q 843 564 774 556 Z"},
             ].map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.34:recorded?0.15:0} stroke={active?"#74364B":recorded?"#B96D80":"transparent"} strokeWidth={active?5:recorded?3:2.5} strokeLinejoin="round" className="cursor-pointer transition-colors duration-150 hover:fill-[#B87981] hover:fill-opacity-40 hover:stroke-[#813D52] focus:fill-[#B87981] focus:fill-opacity-40 focus:stroke-[#813D52] outline-none" />;})}
             </g>
-          </svg> : section==="legs" ? <svg viewBox="0 0 1200 848.4375" className="block h-auto w-full" role="group" aria-label="身體正面與背面可選取部位圖">
-            <image href="/body-bodymap.png" x="0" y="0" width="1200" height="848.4375" preserveAspectRatio="xMidYMid meet" />
+          </svg> : section==="legs" ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" role="group" aria-label="大小腿背面與正面可選取部位圖">
+            <image href="/legs-bodymap.png" x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
             {[
-              "M 365 191 Q385 206 405 191 L419 210 Q398 223 385 231 Q367 224 347 211 Z",
-              "M 315 215 Q336 207 347 211 L369 224 Q341 233 333 267 L305 260 Q299 232 315 215 Z",
-              "M 419 210 Q439 207 457 217 Q475 235 472 262 L451 270 Q444 235 405 226 Z",
-              "M 337 266 Q359 269 385 282 Q411 269 448 267 L446 311 Q415 301 385 300 Q355 301 334 312 Z",
-              "M 305 261 Q319 268 334 265 L332 346 Q314 356 296 349 L296 292 Z",
-              "M 451 268 Q466 270 476 263 L479 345 Q462 353 446 346 L447 294 Z",
-              "M 296 350 Q315 356 332 346 L318 405 Q307 432 283 431 Q275 424 282 402 Z",
-              "M 479 346 Q462 353 446 346 L465 405 Q476 433 496 431 Q503 424 495 402 Z",
-              "M 334 315 Q361 305 385 310 Q414 306 446 315 L444 350 Q438 374 453 389 Q421 402 385 401 Q349 401 319 389 Q337 370 334 350 Z",
-              "M 319 315 L334 315 L334 351 Q328 372 319 389 L305 389 Q316 353 319 315 Z",
-              "M 446 315 L456 316 Q454 350 465 388 L453 389 Q441 372 444 351 Z",
-              "M 317 402 Q338 406 352 426 Q370 447 384 463 Q359 475 317 478 Q311 443 317 402 Z",
-              "M 453 402 Q433 407 416 426 Q398 447 389 463 Q412 475 459 478 Q466 439 453 402 Z",
-              "M 317 479 Q355 472 385 466 L383 570 Q367 576 349 571 Q330 537 317 479 Z",
-              "M 389 466 Q424 475 459 479 Q445 540 425 571 Q405 576 390 570 Z",
-              "M 349 572 Q367 577 383 572 L383 618 Q366 627 351 617 Z",
-              "M 390 572 Q408 577 425 572 L422 618 Q407 627 391 617 Z",
-              "M 351 620 Q366 629 383 620 L383 739 Q365 755 351 733 Q339 689 351 620 Z",
-              "M 391 620 Q407 628 422 620 Q435 689 420 733 Q404 753 391 739 Z",
-              "M 746 192 Q767 208 790 193 L808 211 Q795 223 784 238 Q774 223 758 214 Z",
-              "M 712 217 Q731 207 758 214 Q766 229 765 260 Q753 277 735 272 Q727 246 701 259 Q699 233 712 217 Z",
-              "M 808 211 Q834 208 857 218 Q874 234 871 261 Q846 246 838 272 Q819 278 803 260 Q801 229 808 211 Z",
-              "M 735 273 Q753 281 765 260 L783 238 L784 301 L739 301 Z",
-              "M 803 260 Q819 280 838 273 L835 301 L785 301 L784 238 Z",
-              "M 701 260 Q717 268 735 273 L727 347 Q711 354 696 347 L691 293 Z",
-              "M 838 273 Q855 268 871 260 L878 345 Q861 353 846 347 Z",
-              "M 696 348 Q710 356 727 348 L713 408 Q704 433 681 433 Q672 425 679 404 Z",
-              "M 846 348 Q861 355 878 347 L898 405 Q904 431 887 432 Q868 431 860 406 Z",
-              "M 739 315 L783 315 L783 362 Q760 378 725 370 Q739 347 739 315 Z",
-              "M 785 315 L835 315 Q834 348 845 370 Q807 378 785 362 Z",
-              "M 725 399 Q753 399 783 427 Q785 462 752 474 Q718 479 709 449 Q708 417 725 399 Z",
-              "M 785 427 Q813 399 844 399 Q862 419 858 449 Q849 479 815 474 Q785 462 785 427 Z",
-              "M 709 481 Q744 487 782 485 L781 581 Q763 588 741 580 Q721 545 709 481 Z",
-              "M 786 485 Q823 487 858 481 Q846 546 827 580 Q807 588 788 581 Z",
-              "M 741 582 Q761 590 781 583 L781 620 Q763 628 742 620 Z",
-              "M 788 583 Q808 590 827 582 L826 620 Q807 628 788 620 Z",
-              "M 742 622 Q761 631 781 622 L781 738 Q761 752 744 737 Q731 686 742 622 Z",
-              "M 788 622 Q807 631 826 622 Q837 687 822 737 Q807 752 788 738 Z",
-            ].map((d,i)=>{const a=bodyImageAreas[i];if(!current.areas.some(x=>x===a))return null;const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.22:recorded?0.13:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="1.8" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
+              {name:"背面右大腿",d:"M 390 0 L 586 0 Q 612 97 591 205 Q 585 329 569 460 Q 560 539 520 571 L 448 566 Q 422 515 409 444 Q 375 315 351 178 Q 334 61 390 0 Z"},
+              {name:"背面左大腿",d:"M 606 0 L 801 0 Q 861 62 842 178 Q 820 308 794 444 Q 775 517 751 566 L 674 571 Q 644 536 629 460 Q 608 320 601 207 Q 584 94 606 0 Z"},
+              {name:"背面右膝",d:"M 447 566 Q 483 554 520 571 L 538 636 Q 519 675 480 687 Q 445 669 431 636 Z"},
+              {name:"背面左膝",d:"M 674 571 Q 711 554 751 566 L 766 636 Q 751 673 712 687 Q 676 669 659 635 Z"},
+              {name:"背面右小腿",d:"M 431 636 Q 463 672 480 687 Q 519 675 538 636 Q 573 705 570 811 Q 554 932 543 1032 Q 534 1163 546 1262 L 492 1300 Q 470 1214 463 1110 Q 432 1004 408 891 Q 389 750 431 636 Z"},
+              {name:"背面左小腿",d:"M 659 635 Q 677 669 712 687 Q 752 673 766 636 Q 809 754 790 891 Q 768 1004 738 1110 Q 730 1215 707 1300 L 653 1262 Q 666 1163 654 1032 Q 642 930 629 812 Q 623 708 659 635 Z"},
+              {name:"正面右大腿",d:"M 1534 0 L 1750 0 Q 1773 87 1756 190 Q 1742 315 1719 460 Q 1706 524 1682 573 L 1599 575 Q 1572 526 1555 462 Q 1537 340 1522 214 Q 1510 94 1534 0 Z"},
+              {name:"正面左大腿",d:"M 1291 0 L 1507 0 Q 1533 91 1519 214 Q 1504 340 1486 462 Q 1469 525 1442 575 L 1359 573 Q 1335 523 1322 460 Q 1298 315 1283 190 Q 1268 86 1291 0 Z"},
+              {name:"正面右膝",d:"M 1599 575 Q 1641 565 1682 573 L 1695 636 Q 1680 674 1641 691 Q 1605 674 1587 636 Z"},
+              {name:"正面左膝",d:"M 1359 573 Q 1400 564 1442 575 L 1454 636 Q 1437 674 1401 691 Q 1362 674 1347 636 Z"},
+              {name:"正面右小腿",d:"M 1587 636 Q 1604 673 1641 691 Q 1680 673 1695 636 Q 1733 748 1714 873 Q 1701 1005 1679 1118 Q 1675 1212 1701 1314 L 1620 1320 Q 1599 1214 1604 1118 Q 1578 1003 1559 875 Q 1540 751 1587 636 Z"},
+              {name:"正面左小腿",d:"M 1347 636 Q 1362 673 1401 691 Q 1437 674 1454 636 Q 1501 751 1482 875 Q 1463 1003 1437 1118 Q 1442 1214 1421 1320 L 1340 1314 Q 1366 1212 1362 1118 Q 1340 1005 1327 873 Q 1308 748 1347 636 Z"},
+            ].map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.34:recorded?0.16:0} stroke={active?"#74364B":recorded?"#C97786":"transparent"} strokeWidth={active?8:recorded?5:4} strokeLinejoin="round" className="cursor-pointer transition-colors duration-150 hover:fill-[#B87981] hover:fill-opacity-30 hover:stroke-[#A35B6A] focus:stroke-[#A35B6A] outline-none" />;})}
           </svg> : <><Anatomy section={section}/>{current.areas.map((a,i)=>{const p=spots[section][i];const recorded=markers.some(m=>m.area===a);return <button key={a} type="button" title={a} aria-label={`選擇${a}`} onClick={()=>choose(a)} style={{left:`${p[0]/300*100}%`,top:`${p[1]/420*100}%`}} className={`absolute flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-xs font-bold shadow-sm ${area===a?"border-[#8F4E60] bg-[#B87981] text-white":recorded?"border-[#AD6577] bg-[#E8B2BA] text-[#6F3444]":"border-white bg-[#F6D9DC]/90 text-[#85555F]"}`}>{i+1}</button>})}</>}
         </div>
         <div className="space-y-3">
