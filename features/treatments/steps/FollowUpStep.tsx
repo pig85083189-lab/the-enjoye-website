@@ -46,18 +46,18 @@ export function FollowUpStep({
     <div>
       <header className="mb-5">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-semibold text-text">下次追蹤</h1>
+          <h1 className="text-2xl font-semibold text-text">下次服務建議</h1>
           <span className="rounded-full bg-[#F3EEEC] px-2.5 py-1 text-xs text-secondary-text">
             選填
           </span>
         </div>
-        <p className="mt-2 text-[15px] text-secondary-text">標記下次服務需要特別留意的重點</p>
+        <p className="mt-2 text-[15px] text-secondary-text">僅補充下次需要追蹤或調整的事項；沒有額外建議可略過</p>
       </header>
 
       <Card padding="md" className="mb-4">
         <h2 className="text-base font-semibold text-text">快速設定</h2>
         <p className="mt-1 text-sm text-secondary-text">
-          從本次評估與部位標記產生建議，確認後再套用
+          參考本次已記錄的部位與狀況，確認後才套用
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button variant="secondary" onClick={proposeFromSession}>
@@ -108,7 +108,7 @@ export function FollowUpStep({
 
       <Card padding="md" className="mt-4">
         <label htmlFor="follow-up-note" className="text-base font-semibold text-text">
-          追蹤備註
+          下次服務注意事項
         </label>
         <textarea
           id="follow-up-note"
@@ -116,7 +116,7 @@ export function FollowUpStep({
           onChange={(event) => onChange({ ...value, note: event.target.value })}
           rows={3}
           className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-[15px] outline-none focus:border-primary"
-          placeholder="例如：下次確認右側腋下與胸上緣狀況。"
+          placeholder="例如：下次觀察右側腋下緊繃是否改善，視狀況調整操作重點。"
         />
       </Card>
 
