@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 :root {
+  --font-body: "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-serif: "Noto Serif TC", "PMingLiU", serif;
   --background: #faf7f5;
   --surface: #ffffff;
   --primary: #c9797d;
