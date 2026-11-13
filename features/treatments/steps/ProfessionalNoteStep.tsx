@@ -63,10 +63,10 @@ export function ProfessionalNoteStep({
   return (
     <div>
       <header className="mb-5">
-        <h1 className="text-2xl font-semibold text-text">美容師專業紀錄</h1>
+        <h1 className="text-2xl font-semibold text-text">本次服務摘要</h1>
         {isQuickMode ? (
           <p className="mt-2 rounded-2xl bg-primary-light/50 px-4 py-3 text-sm text-text">
-            已沿用基本紀錄，請確認今天實際服務狀況。
+            已帶入參考內容，請依本次實際服務結果確認或調整。
           </p>
         ) : null}
       </header>
@@ -74,7 +74,7 @@ export function ProfessionalNoteStep({
       <Card padding="md">
         <p className="text-base font-semibold text-text">快速片語</p>
         <p className="mt-1 text-sm text-secondary-text">
-          點選後自動組成草稿文字，仍可自由修改
+          可快速帶入常用敘述；請依本次實際操作調整
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {template.quickPhrases.map((phrase) => {
@@ -99,7 +99,7 @@ export function ProfessionalNoteStep({
         </div>
 
         <label htmlFor="professional-note" className="mt-5 block text-base font-semibold text-text">
-          服務紀錄
+          本次處理與整體觀察
         </label>
         <textarea
           id="professional-note"
@@ -112,7 +112,7 @@ export function ProfessionalNoteStep({
           }
           rows={6}
           className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-[15px] outline-none focus:border-primary"
-          placeholder="今天右側腋下較緊，胸上緣循環較差，操作後柔軟度改善，下次建議持續加強右側腋下與胸上緣。"
+          placeholder="例如：本次以放鬆與舒緩為主，服務後顧客回饋較為舒適。各部位症狀已於部位紀錄填寫，此處只需補充整體處理與觀察。"
         />
       </Card>
 
