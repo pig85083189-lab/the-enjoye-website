@@ -124,16 +124,16 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
           </svg> : (section==="right-arm"||section==="left-arm") ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" role="group" aria-label={section==="left-arm"?"左手臂正面與背面選取圖":"右手臂正面與背面選取圖"}>
             <image href={section==="left-arm"?"/left-arm-bodymap.png":"/right-arm-bodymap.png"} x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
             {(section==="left-arm" ? [
-              {name:"正面左上臂",d:"M 1110 317 C 1240 268 1380 160 1540 100 C 1690 40 1830 34 1850 113 C 1830 210 1680 310 1540 382 C 1370 451 1180 520 1030 528 C 990 474 1040 380 1110 317 Z"},
-              {name:"正面左前臂",d:"M 470 610 C 640 540 850 452 1040 355 C 1140 322 1200 360 1210 427 C 1110 505 930 591 750 655 C 615 709 505 732 405 744 C 390 686 421 633 470 610 Z"},
-              {name:"背面左上臂",d:"M 1260 800 C 1400 748 1540 660 1690 628 C 1820 604 1950 615 2000 674 C 1995 760 1870 858 1700 928 C 1540 991 1390 1031 1260 1033 C 1190 985 1200 868 1260 800 Z"},
-              {name:"背面左前臂",d:"M 490 1170 C 640 1092 840 1005 1030 919 C 1140 868 1260 875 1300 936 C 1280 1020 1130 1105 960 1164 C 770 1240 590 1270 430 1290 C 415 1240 439 1195 490 1170 Z"}
+              {name:"正面左上臂",d:"M 1865 113 L 1772 79 L 1620 108 L 1473 203 L 1328 268 L 1192 359 L 1080 393 L 1080 642 L 1257 555 L 1544 472 L 1822 239 L 1853 187 Z"},
+              {name:"正面左前臂",d:"M 1079 393 L 916 440 L 623 596 L 453 652 L 400 652 L 400 883 L 543 773 L 949 685 L 1079 642 Z"},
+              {name:"背面左上臂",d:"M 2017 655 L 1919 616 L 1783 638 L 1692 679 L 1574 769 L 1456 811 L 1307 887 L 1200 907 L 1200 1122 L 1380 1053 L 1641 994 L 1959 767 L 1997 719 Z"},
+              {name:"背面左前臂",d:"M 1199 907 L 1059 930 L 825 1039 L 557 1111 L 430 1114 L 430 1356 L 533 1312 L 612 1243 L 655 1225 L 1022 1168 L 1199 1122 Z"}
             ] : [
-              {name:"正面右上臂",d:"M 100 292 C 240 230 380 268 520 339 C 660 407 820 448 975 463 C 1000 528 965 620 896 665 C 720 646 540 602 385 549 C 250 497 125 414 100 292 Z"},
-              {name:"正面右前臂",d:"M 920 465 C 1080 490 1220 514 1370 523 C 1490 534 1600 546 1640 605 C 1600 686 1490 711 1370 709 C 1210 695 1050 687 896 665 C 860 602 875 520 920 465 Z"},
-              {name:"背面右上臂",d:"M 50 924 C 150 855 320 874 450 944 C 600 1025 750 1035 920 1042 C 956 1103 929 1191 858 1222 C 670 1209 490 1182 327 1132 C 170 1086 66 1012 50 924 Z"},
-              {name:"背面右前臂",d:"M 910 1044 C 1050 1063 1220 1083 1380 1091 C 1480 1100 1570 1115 1630 1156 C 1610 1234 1500 1264 1370 1255 C 1190 1243 1020 1230 858 1222 C 827 1154 855 1078 910 1044 Z"}
-            ]).map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.22:recorded?0.13:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="5" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
+              {name:"正面右上臂",d:"M 82 315 L 106 382 L 156 435 L 469 601 L 767 624 L 909 665 L 909 429 L 798 421 L 625 353 L 491 326 L 389 278 L 314 260 L 172 262 Z"},
+              {name:"正面右前臂",d:"M 910 429 L 912 666 L 1083 688 L 1500 690 L 1659 766 L 1659 540 L 1580 555 L 1392 534 L 1096 446 Z"},
+              {name:"背面右上臂",d:"M 32 950 L 64 1005 L 119 1048 L 476 1192 L 736 1189 L 889 1213 L 889 1005 L 776 1011 L 632 975 L 488 958 L 357 899 L 252 879 L 126 887 Z"},
+              {name:"背面右前臂",d:"M 890 1005 L 893 1214 L 1125 1218 L 1497 1189 L 1639 1248 L 1639 1035 L 1558 1055 L 1357 1054 L 1025 995 Z"}
+            ]).map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.36:recorded?0.18:0} stroke={active?"#813D52":recorded?"#C97786":"transparent"} strokeWidth={active?9:recorded?6:5} strokeLinejoin="round" className="cursor-pointer transition-colors duration-150 hover:fill-[#B87981] hover:fill-opacity-30 hover:stroke-[#A35B6A] focus:fill-[#B87981] focus:fill-opacity-30 focus:stroke-[#A35B6A] outline-none" />;})}
           </svg> : (section==="body"||section==="right-arm"||section==="left-arm"||section==="legs") ? <svg viewBox="0 0 1200 848.4375" className="block h-auto w-full" role="group" aria-label="身體正面與背面可選取部位圖">
             <image href="/body-bodymap.png" x="0" y="0" width="1200" height="848.4375" preserveAspectRatio="xMidYMid meet" />
             {[
