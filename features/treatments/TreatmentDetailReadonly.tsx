@@ -6,6 +6,7 @@ import { ArrowLeft, CalendarDays, ClipboardList, HeartPulse, Image as ImageIcon,
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { getServiceById } from "@/data/mock-services";
+import { BREAST_TEMPLATE, GENERIC_TEMPLATE, getTreatmentTemplateForService } from "@/data/treatment-templates";
 import { useTreatmentCustomerIdentity } from "@/features/treatments/use-treatment-customer-identity";
 import { useTreatmentRemoteDetail } from "@/features/treatments/use-treatment-remote-read";
 import { localTreatmentRepository } from "@/lib/repositories/local-treatment-repository";
@@ -109,6 +110,12 @@ export function TreatmentDetailReadonly({
     );
   }
 
+  const operationLabels = new Map(
+    [GENERIC_TEMPLATE, BREAST_TEMPLATE, getTreatmentTemplateForService(treatment.serviceId, organization.id)]
+      .flatMap((template) => template.operationGroups.flatMap((group) => group.items))
+      .map((item) => [item.id, item.label]),
+  );
+  const displayOperations = treatment.operations.map((item) => operationLabels.get(item) ?? (item.startsWith("op-") ? "未識別的舊操作項目" : item)).join("、");
   const markers = treatment.bodyMarkers ?? [];
   const focusAreas = treatment.suggestedTrackingAreas?.length
     ? treatment.suggestedTrackingAreas
@@ -172,7 +179,7 @@ export function TreatmentDetailReadonly({
           <div className="space-y-3 rounded-xl bg-[#FBF5F5] p-4">
             <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#B77781]"/><div><p className="text-xs font-semibold text-[#94666F]">客戶關注</p><p className="mt-1 text-sm leading-6 text-text">{treatment.assessment.concerns.join("、") || "未紀錄"}</p></div></div>
             <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#B77781]"/><div><p className="text-xs font-semibold text-[#94666F]">本次目標</p><p className="mt-1 text-sm leading-6 text-text">{treatment.assessment.clientFocus || "未紀錄"}</p></div></div>
-            <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#B77781]"/><div><p className="text-xs font-semibold text-[#94666F]">實際操作</p><p className="mt-1 text-sm leading-6 text-text">{treatment.operations.join("、") || "未紀錄"}</p></div></div>
+            <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#B77781]"/><div><p className="text-xs font-semibold text-[#94666F]">實際操作</p><p className="mt-1 text-sm leading-6 text-text">{displayOperations || "未紀錄"}</p></div></div>
             <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#B77781]"/><div><p className="text-xs font-semibold text-[#94666F]">客戶感受</p><p className="mt-1 text-sm leading-6 text-text">{treatment.clientFeeling || "未紀錄"}</p></div></div>
           </div>
         </Card>
@@ -221,7 +228,7 @@ export function TreatmentDetailReadonly({
           <dl>{detailRow("客戶主訴",treatment.assessment.concerns.join("、"))}
           {detailRow("評估重點",treatment.assessment.clientFocus)}
           {detailRow("敏感程度",String(treatment.assessment.sensitivityLevel ?? "未紀錄"))}
-          {detailRow("操作內容",treatment.operations.join("、"))}
+          {detailRow("操作內容",displayOperations)}
           {detailRow("本次回饋",treatment.clientFeeling)}
           {detailRow("專業備註",treatment.professionalNote)}</dl>
         </Card>
