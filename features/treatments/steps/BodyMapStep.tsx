@@ -136,22 +136,24 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
             ]).map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.36:recorded?0.18:0} stroke={active?"#813D52":recorded?"#C97786":"transparent"} strokeWidth={active?9:recorded?6:5} strokeLinejoin="round" className="cursor-pointer transition-colors duration-150 hover:fill-[#B87981] hover:fill-opacity-30 hover:stroke-[#A35B6A] focus:fill-[#B87981] focus:fill-opacity-30 focus:stroke-[#A35B6A] outline-none" />;})}
           </svg> : section==="body" ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" role="group" aria-label="上半身正面與背面症狀點選圖">
             <image href="/body-upper-bodymap.png" x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
+            <g transform="scale(2)">
             {[
-              {name:"正面肩頸",d:"M 425 275 Q 500 290 545 273 L 590 325 Q 531 354 476 349 Q 419 352 360 326 Z"},
-              {name:"正面右肩",d:"M 337 301 Q 268 296 194 345 Q 134 399 121 496 L 134 620 Q 160 573 193 525 Q 240 455 304 424 L 363 347 Z"},
-              {name:"正面左肩",d:"M 609 303 Q 688 292 757 347 Q 820 407 835 505 L 827 618 Q 797 569 760 512 Q 704 436 646 423 L 586 347 Z"},
-              {name:"正面胸口",d:"M 367 347 Q 429 374 482 366 Q 540 374 586 347 L 649 424 Q 701 482 724 548 L 695 577 Q 607 601 482 607 Q 356 602 274 578 L 246 545 Q 267 476 316 422 Z"},
-              {name:"腹部",d:"M 284 748 Q 383 765 481 756 Q 587 765 680 748 L 704 904 Q 680 1003 734 1083 Q 613 1138 484 1137 Q 354 1137 234 1083 Q 289 1002 266 907 Z"},
-              {name:"右腰",d:"M 244 745 L 286 748 L 265 905 Q 275 1005 234 1083 L 204 1107 Q 236 1000 221 898 Z"},
-              {name:"左腰",d:"M 680 748 L 723 743 L 744 897 Q 729 1002 762 1107 L 734 1083 Q 689 1005 705 905 Z"},
-              {name:"背面肩頸",d:"M 1483 268 Q 1553 293 1604 270 L 1667 340 Q 1612 379 1545 379 Q 1481 379 1427 340 Z"},
-              {name:"背面右肩",d:"M 1427 321 Q 1353 294 1285 346 Q 1225 392 1201 501 L 1212 624 Q 1261 543 1311 471 L 1435 399 Z"},
-              {name:"背面左肩",d:"M 1667 320 Q 1742 297 1812 347 Q 1876 400 1895 502 L 1885 624 Q 1836 540 1787 472 L 1659 398 Z"},
-              {name:"右上背",d:"M 1434 386 Q 1481 409 1545 408 L 1545 712 Q 1453 717 1350 697 L 1328 562 Q 1374 458 1434 386 Z"},
-              {name:"左上背",d:"M 1545 408 Q 1612 409 1659 386 Q 1721 461 1761 560 L 1740 697 Q 1642 716 1545 712 Z"},
-              {name:"右下背",d:"M 1361 743 Q 1455 753 1545 751 L 1545 1123 Q 1418 1117 1324 1094 Q 1387 1007 1361 743 Z"},
-              {name:"左下背",d:"M 1545 751 Q 1640 753 1735 742 Q 1704 1004 1770 1094 Q 1673 1117 1545 1123 Z"},
-            ].map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.40:recorded?0.20:0} stroke={active?"#74364B":recorded?"#B96D80":"transparent"} strokeWidth={active?11:recorded?7:6} strokeLinejoin="round" className="cursor-pointer transition-colors duration-150 hover:fill-[#B87981] hover:fill-opacity-40 hover:stroke-[#813D52] focus:fill-[#B87981] focus:fill-opacity-40 focus:stroke-[#813D52] outline-none" />;})}
+              {name:"正面肩頸",d:"M 207 134 L 313 134 Q 325 150 352 160 L 353 178 Q 304 166 267 181 Q 213 168 168 180 L 168 161 Q 195 151 207 134 Z"},
+              {name:"正面右肩",d:"M 167 161 Q 118 159 90 180 Q 57 207 60 260 L 67 317 Q 82 282 109 256 Q 127 230 157 220 L 167 178 Z"},
+              {name:"正面左肩",d:"M 353 161 Q 402 157 431 181 Q 457 209 457 263 L 449 316 Q 433 277 410 254 Q 393 228 362 220 L 353 178 Z"},
+              {name:"正面胸口",d:"M 168 179 Q 204 177 222 187 Q 265 204 309 187 Q 327 177 353 179 L 361 224 Q 385 261 384 291 L 363 377 Q 267 400 157 376 L 137 290 Q 137 263 160 225 Z"},
+              {name:"腹部",d:"M 157 407 Q 262 415 364 408 Q 349 462 357 486 Q 365 517 390 550 Q 266 588 131 550 Q 156 518 164 482 Q 173 458 157 407 Z"},
+              {name:"右腰",d:"M 155 410 L 180 413 Q 175 447 170 476 Q 168 516 131 550 L 112 562 Q 152 509 162 472 Z"},
+              {name:"左腰",d:"M 343 413 L 365 409 Q 356 459 361 480 Q 370 514 391 550 L 410 563 Q 372 523 356 478 Z"},
+              {name:"背面肩頸",d:"M 725 134 L 822 134 Q 842 150 865 158 L 866 179 Q 815 165 773 194 Q 730 165 686 179 L 686 159 Q 711 150 725 134 Z"},
+              {name:"背面右肩",d:"M 686 159 Q 631 159 602 188 Q 573 220 577 273 L 585 323 Q 605 275 627 258 Q 650 228 688 218 L 698 183 Z"},
+              {name:"背面左肩",d:"M 866 159 Q 917 159 946 186 Q 975 220 971 271 L 963 322 Q 942 275 922 256 Q 901 228 862 218 L 853 183 Z"},
+              {name:"右上背",d:"M 698 183 Q 735 176 774 194 L 774 343 Q 747 353 715 332 Q 687 310 672 276 L 690 218 Z"},
+              {name:"左上背",d:"M 774 194 Q 814 176 852 183 L 860 218 L 878 276 Q 860 314 835 332 Q 805 353 774 343 Z"},
+              {name:"右下背",d:"M 670 418 L 774 421 L 774 556 Q 710 563 647 550 Q 666 517 675 479 Q 680 446 670 418 Z"},
+              {name:"左下背",d:"M 774 421 L 878 418 Q 869 448 879 483 Q 890 520 907 550 Q 843 564 774 556 Z"},
+            ].map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.34:recorded?0.15:0} stroke={active?"#74364B":recorded?"#B96D80":"transparent"} strokeWidth={active?5:recorded?3:2.5} strokeLinejoin="round" className="cursor-pointer transition-colors duration-150 hover:fill-[#B87981] hover:fill-opacity-40 hover:stroke-[#813D52] focus:fill-[#B87981] focus:fill-opacity-40 focus:stroke-[#813D52] outline-none" />;})}
+            </g>
           </svg> : section==="legs" ? <svg viewBox="0 0 1200 848.4375" className="block h-auto w-full" role="group" aria-label="身體正面與背面可選取部位圖">
             <image href="/body-bodymap.png" x="0" y="0" width="1200" height="848.4375" preserveAspectRatio="xMidYMid meet" />
             {[
