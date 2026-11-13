@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, CalendarDays, ClipboardList, HeartPulse, Image as ImageIcon, MapPinned, Sparkles, UserRound, CheckCircle2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { getServiceById } from "@/data/mock-services";
@@ -109,107 +109,133 @@ export function TreatmentDetailReadonly({
     );
   }
 
+  const markers = treatment.bodyMarkers ?? [];
+  const focusAreas = treatment.suggestedTrackingAreas?.length
+    ? treatment.suggestedTrackingAreas
+    : markers.map((marker) => marker.area);
+  const detailRow = (label: string, value: string) => (
+    <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-3 border-b border-[#F1E6E4] py-3 last:border-0 sm:grid-cols-[140px_minmax(0,1fr)]">
+      <dt className="text-sm font-medium text-[#94666F]">{label}</dt>
+      <dd className="min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-text">{value || "未紀錄"}</dd>
+    </div>
+  );
+  const cardTitle = (Icon: typeof ClipboardList, title: string) => (
+    <h2 className="flex items-center gap-2 text-base font-semibold text-[#552F3D]">
+      <Icon className="h-5 w-5 text-[#B77781]" aria-hidden="true" />{title}
+    </h2>
+  );
+
   return (
     <div
-      className="mx-auto max-w-3xl space-y-5"
-      data-customer-identity-source={
-        customerRemoteReadPilot ? "remote-pilot" : "local"
-      }
+      className="mx-auto max-w-4xl space-y-4 pb-6"
+      data-customer-identity-source={customerRemoteReadPilot ? "remote-pilot" : "local"}
       data-treatment-record-source={treatmentRemoteReadPilot ? "remote-pilot" : "local"}
     >
-      <Link
-        href={customer ? `/staff/customers/${customer.id}` : "/staff/customers"}
-        className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-secondary-text"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        {customer ? `返回 ${customer.name}` : "返回客戶管理"}
+      <Link href={customer ? `/staff/customers/${customer.id}` : "/staff/customers"}
+        className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-secondary-text">
+        <ArrowLeft className="h-4 w-4" />{customer ? `返回 ${customer.name}` : "返回客戶管理"}
       </Link>
 
-      <Card padding="lg">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-sm text-secondary-text">療程紀錄</p>
-            <h1 className="mt-1 text-2xl font-semibold text-text">
-              {serviceName}
-            </h1>
-            <p className="mt-2 text-[15px] text-secondary-text">
-              {formatDateTime(treatment.updatedAt)}
-            </p>
+      <header className="text-center">
+        <h1 className="text-xl font-semibold text-[#552F3D] sm:text-2xl">查看完整療程紀錄</h1>
+        <p className="mt-1 text-sm text-secondary-text">回顧上次評估、實際操作與下次追蹤重點</p>
+      </header>
+
+      <Card padding="lg" className="border-[#F0DFDF]">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F8E9EB] text-[#B77781]"><UserRound className="h-6 w-6" /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-lg font-semibold text-[#552F3D]">{customer?.name ?? "顧客紀錄"}</p>
+            <p className="text-xs text-secondary-text">{serviceName}</p>
           </div>
           <Badge tone="success">已完成</Badge>
         </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#F1E6E4] pt-4 text-sm text-secondary-text">
+          <CalendarDays className="h-4 w-4 text-[#B77781]" />
+          <span>{formatDateTime(treatment.updatedAt)}</span>
+          <span className="rounded-full bg-[#F8E9EB] px-2 py-1 text-xs text-[#94666F]">{treatment.mode === "QUICK" ? "快速紀錄" : "標準流程"}</span>
+        </div>
+      </Card>
 
-        <dl className="mt-6 grid gap-4 sm:grid-cols-2">
-          <div>
-            <dt className="text-sm text-secondary-text">客戶</dt>
-            <dd className="mt-1 font-medium text-text">{customer?.name ?? treatment.customerId}</dd>
+      <nav aria-label="療程紀錄快速導覽" className="flex gap-2 overflow-x-auto rounded-2xl border border-[#F0DFDF] bg-white p-2">
+        {[
+          {id:"record-summary", label:"重點摘要"},
+          {id:"record-body", label:"身體紀錄"},
+          {id:"record-details", label:"詳細紀錄"},
+          {id:"record-followup", label:"後續追蹤"}
+        ].map(item => <a key={item.id} href={`#${item.id}`} className="shrink-0 rounded-xl bg-[#F9F0F0] px-3 py-2 text-sm font-medium text-[#94666F]">{item.label}</a>)}
+      </nav>
+
+      <section id="record-summary" className="scroll-mt-5">
+        <Card padding="lg" className="space-y-4 border-[#F0DFDF]">
+          {cardTitle(Sparkles,"本次療程重點摘要")}
+          <div className="space-y-3 rounded-xl bg-[#FBF5F5] p-4">
+            <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#B77781]"/><div><p className="text-xs font-semibold text-[#94666F]">客戶關注</p><p className="mt-1 text-sm leading-6 text-text">{treatment.assessment.concerns.join("、") || "未紀錄"}</p></div></div>
+            <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#B77781]"/><div><p className="text-xs font-semibold text-[#94666F]">本次目標</p><p className="mt-1 text-sm leading-6 text-text">{treatment.assessment.clientFocus || "未紀錄"}</p></div></div>
+            <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#B77781]"/><div><p className="text-xs font-semibold text-[#94666F]">實際操作</p><p className="mt-1 text-sm leading-6 text-text">{treatment.operations.join("、") || "未紀錄"}</p></div></div>
+            <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#B77781]"/><div><p className="text-xs font-semibold text-[#94666F]">客戶感受</p><p className="mt-1 text-sm leading-6 text-text">{treatment.clientFeeling || "未紀錄"}</p></div></div>
           </div>
-          <div>
-            <dt className="text-sm text-secondary-text">美容師</dt>
-            <dd className="mt-1 font-medium text-text">
-              {staffName}
-            </dd>
+        </Card>
+      </section>
+
+      <section id="record-body" className="scroll-mt-5">
+        <Card padding="lg" className="space-y-4 border-[#F0DFDF]">
+          {cardTitle(MapPinned,"身體紀錄（Body Map）")}
+          <p className="text-xs text-secondary-text">以下為本次實際標記的部位與狀況，不以示意圖取代原始紀錄。</p>
+          {markers.length ? <div className="grid gap-3 sm:grid-cols-2">{markers.map(marker =>
+            <div key={marker.id} className="rounded-xl border border-[#F0DFDF] bg-[#FCF8F8] p-3">
+              <p className="font-semibold text-[#704351]">{marker.area}</p>
+              <p className="mt-1 text-sm text-text">{marker.conditions.join("、") || "未標記狀況"}</p>
+              {marker.note && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-secondary-text">{marker.note}</p>}
+            </div>
+          )}</div> : <p className="rounded-xl bg-[#FBF5F5] p-4 text-sm text-secondary-text">本次沒有標記身體部位。</p>}
+          <dl>{detailRow("部位備註",treatment.bodyMapNote)}{detailRow("不適紀錄",treatment.discomfortNote)}{detailRow("下次留意",focusAreas.join("、"))}</dl>
+        </Card>
+      </section>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card padding="lg" className="space-y-3 border-[#F0DFDF]">
+          {cardTitle(HeartPulse,"療程資訊")}
+          <dl>{detailRow("療程項目",serviceName)}{detailRow("美容師",staffName)}{detailRow("使用產品",treatment.products.join("、"))}</dl>
+        </Card>
+        <Card padding="lg" className="space-y-3 border-[#F0DFDF]">
+          {cardTitle(ImageIcon,"療程照片")}
+          <p className="text-xs text-secondary-text">照片依照原始療程紀錄顯示。</p>
+          <div className="grid grid-cols-2 gap-3">
+            {(["BEFORE","AFTER"] as const).map(type => {
+              const count=treatment.photos.filter(photo=>photo.type===type).length;
+              return <div key={type} className="rounded-xl bg-[#FBF5F5] p-4 text-center">
+                <ImageIcon className="mx-auto h-7 w-7 text-[#C49BA3]" />
+                <p className="mt-2 text-sm font-medium text-[#704351]">{type==="BEFORE"?"操作前":"操作後"}</p>
+                <p className="mt-1 text-xs text-secondary-text">{count ? `已紀錄 ${count} 張` : "未紀錄"}</p>
+              </div>;
+            })}
           </div>
-          <div>
-            <dt className="text-sm text-secondary-text">模式</dt>
-            <dd className="mt-1 font-medium text-text">
-              {treatment.mode === "QUICK" ? "快速紀錄" : "標準流程"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-secondary-text">操作時間</dt>
-            <dd className="mt-1 font-medium text-text">{formatDateTime(treatment.updatedAt)}</dd>
-          </div>
-        </dl>
-      </Card>
+          <p className="text-xs text-secondary-text">此頁僅顯示照片數量，避免在未取得有效照片網址時顯示錯誤圖片。</p>
+        </Card>
+      </div>
 
-      <Card padding="lg" className="space-y-3">
-        <h2 className="text-base font-semibold text-text">評估摘要</h2>
-        <p className="text-[15px] text-text">
-          關注：{treatment.assessment.concerns.join("、") || "—"}
-        </p>
-        {treatment.assessment.clientFocus ? (
-          <p className="text-[15px] text-secondary-text">{treatment.assessment.clientFocus}</p>
-        ) : null}
-      </Card>
+      <section id="record-details" className="scroll-mt-5">
+        <Card padding="lg" className="space-y-3 border-[#F0DFDF]">
+          {cardTitle(ClipboardList,"詳細紀錄")}
+          <dl>{detailRow("客戶主訴",treatment.assessment.concerns.join("、"))}
+          {detailRow("評估重點",treatment.assessment.clientFocus)}
+          {detailRow("敏感程度",String(treatment.assessment.sensitivityLevel ?? "未紀錄"))}
+          {detailRow("操作內容",treatment.operations.join("、"))}
+          {detailRow("本次回饋",treatment.clientFeeling)}
+          {detailRow("專業備註",treatment.professionalNote)}</dl>
+        </Card>
+      </section>
 
-      <Card padding="lg" className="space-y-3">
-        <h2 className="text-base font-semibold text-text">操作與產品</h2>
-        <p className="text-[15px] text-text">操作：{treatment.operations.join("、") || "—"}</p>
-        <p className="text-[15px] text-text">產品：{treatment.products.join("、") || "—"}</p>
-        <p className="text-[15px] text-text">
-          重點部位：
-          {treatment.suggestedTrackingAreas.join("、") ||
-            treatment.bodyMarkers.map((m) => m.area).join("、") ||
-            "—"}
-        </p>
-      </Card>
-
-      <Card padding="lg" className="space-y-3">
-        <h2 className="text-base font-semibold text-text">專業摘要</h2>
-        <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-text">
-          {treatment.professionalNote || "—"}
-        </p>
-        <p className="text-[15px] text-secondary-text">
-          客戶感受：{treatment.clientFeeling || "—"}
-        </p>
-      </Card>
-
-      <Card padding="lg" className="space-y-3">
-        <h2 className="text-base font-semibold text-text">Follow Up</h2>
-        <p className="text-[15px] text-text">
-          {treatment.followUp.tags.join("、") || "—"}
-        </p>
-        {treatment.followUp.note ? (
-          <p className="text-[15px] text-secondary-text">{treatment.followUp.note}</p>
-        ) : null}
-        {treatment.followUp.suggestedDate ? (
-          <p className="text-sm text-secondary-text">
-            建議回訪：{treatment.followUp.suggestedDate}
-          </p>
-        ) : null}
-      </Card>
-
+      <section id="record-followup" className="scroll-mt-5">
+        <Card padding="lg" className="space-y-3 border-[#F0DFDF]">
+          {cardTitle(CalendarDays,"後續追蹤與建議")}
+          <dl>{detailRow("追蹤標籤",treatment.followUp.tags.join("、"))}
+          {detailRow("追蹤備註",treatment.followUp.note)}
+          {detailRow("建議回訪",treatment.followUp.suggestedDate)}
+          {detailRow("建議再預約",treatment.followUp.suggestNextBooking ? "是" : "否")}</dl>
+        </Card>
+      </section>
     </div>
   );
 }
