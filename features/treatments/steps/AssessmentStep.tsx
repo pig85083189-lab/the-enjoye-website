@@ -55,7 +55,7 @@ export function AssessmentStep({
       <header className="mb-5">
         <h1 className="text-2xl font-semibold text-text">今日評估</h1>
         <p className="mt-2 text-[15px] leading-relaxed text-secondary-text">
-          快速記錄客人今天的狀況，完成後可隨時返回修改。
+          療程結束後確認本次整體狀況與注意事項；各部位症狀請在「部位紀錄」標記，避免重複填寫。
         </p>
       </header>
 
@@ -105,7 +105,7 @@ export function AssessmentStep({
 
       <Card padding="md" className="mt-4">
         <h2 className="text-base font-semibold text-text">{template.name}</h2>
-        <p className="mt-1 text-sm text-secondary-text">可複選今日觀察到的狀況</p>
+        <p className="mt-1 text-sm text-secondary-text">只選本次整體需要注意的狀況，具體部位請至下一步紀錄</p>
         <QuickSelect
           className="mt-4"
           options={template.assessmentOptions}
@@ -116,7 +116,7 @@ export function AssessmentStep({
 
       <Card padding="md" className="mt-4">
         <label htmlFor="client-focus" className="text-base font-semibold text-text">
-          客人今天最在意什麼？
+          本次主要需求或特殊注意事項
         </label>
         <textarea
           id="client-focus"
@@ -124,7 +124,7 @@ export function AssessmentStep({
           onChange={(event) => onChange({ ...value, clientFocus: event.target.value })}
           rows={4}
           className="mt-3 w-full rounded-2xl border border-border bg-background px-4 py-3 text-[15px] outline-none focus:border-primary"
-          placeholder="例如：最近覺得右側比較緊，希望今天加強腋下與胸上緣。"
+          placeholder="例如：本次希望加強放鬆；如有特殊禁忌或服務注意事項，請記錄於此。"
         />
       </Card>
 
