@@ -98,19 +98,19 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
               "M 1320 516 C 1360 490 1422 484 1482 487 C 1553 488 1627 501 1662 546 C 1691 586 1690 664 1674 727 C 1656 803 1607 851 1556 875 C 1511 898 1446 906 1390 892 C 1329 878 1279 838 1255 784 C 1227 727 1225 644 1242 587 C 1256 553 1282 530 1320 516 Z",
               "M 1342 898 C 1394 887 1497 888 1564 898 C 1580 925 1582 984 1579 1022 L 1576 1070 C 1532 1087 1383 1087 1336 1069 C 1329 1018 1329 942 1342 898 Z",
             ].map((d,i)=>{const a=current.areas[i];const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.22:recorded?0.14:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="8" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
-          </svg> : section==="breast" ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" aria-label="胸部及腋下症狀點選圖" role="group">
-            <image href="/breast-bodymap.png" x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
+          </svg> : section==="breast" ? <svg viewBox="0 0 1456 1024" className="block h-auto w-full" aria-label="胸部及腋下症狀點選圖" role="group">
+            <image href="/breast-bodymap.png" x="0" y="0" width="1456" height="1024" preserveAspectRatio="xMidYMid meet" />
             {[
-              "M 325 583 C 353 620 398 635 444 662 C 493 694 511 728 514 765 C 480 730 433 718 396 720 C 353 720 311 740 281 764 C 280 710 294 639 325 583 Z",
-              "M 281 764 C 316 730 359 714 402 720 C 458 724 498 744 514 778 C 513 824 480 851 429 858 C 376 865 324 851 292 816 C 280 799 279 779 281 764 Z",
-              "M 296 833 C 349 861 419 866 478 845 C 463 879 433 894 393 898 C 345 896 310 881 296 833 Z",
-              "M 258 705 C 245 704 236 729 238 765 C 236 806 253 843 291 855 C 275 827 268 781 273 741 C 277 718 272 704 258 705 Z",
-              "M 715 582 C 685 621 637 639 588 667 C 542 693 522 730 521 765 C 552 728 599 717 636 719 C 682 720 724 741 750 763 C 750 706 744 634 715 582 Z",
-              "M 750 763 C 713 729 674 713 632 720 C 575 722 538 744 520 777 C 519 823 550 850 601 857 C 653 864 704 850 738 815 C 748 798 752 779 750 763 Z",
-              "M 736 834 C 686 860 618 866 558 845 C 570 876 604 896 645 898 C 692 896 721 880 736 834 Z",
-              "M 769 705 C 783 702 793 731 792 765 C 794 806 774 842 738 855 C 753 824 763 780 758 742 C 755 721 758 705 769 705 Z",
-              "M 1740 455 C 1785 402 1810 389 1840 397 C 1883 433 1858 523 1829 604 C 1804 673 1769 725 1742 760 C 1711 738 1688 694 1697 640 C 1701 571 1716 503 1740 455 Z",
-            ].map((d,i)=>{const a=current.areas[i];const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.2:recorded?0.12:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="7" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
+              "M 240 415 C 252 447 272 463 306 477 C 339 490 354 510 361 543 C 363 553 362 562 357 570 C 342 541 312 526 281 516 C 245 505 219 509 198 526 C 200 510 200 501 189 497 C 202 461 223 438 240 415 Z",
+              "M 198 526 C 225 512 246 508 270 514 C 309 523 341 540 357 568 C 355 583 349 592 340 600 C 320 592 304 593 283 602 C 253 619 224 615 202 601 C 192 581 192 551 198 526 Z",
+              "M 202 603 C 223 616 253 618 281 604 C 301 594 321 591 341 600 C 328 622 304 634 280 637 C 246 640 219 627 202 603 Z",
+              "M 189 496 C 198 496 203 507 203 523 C 193 547 193 574 202 602 C 192 595 183 585 177 571 C 168 549 168 522 178 505 C 182 498 185 496 189 496 Z",
+              "M 510 415 C 497 447 478 463 445 477 C 411 490 396 510 390 543 C 387 554 388 563 392 570 C 409 540 437 526 469 516 C 504 505 531 509 553 526 C 550 509 551 501 562 497 C 549 460 529 438 510 415 Z",
+              "M 553 526 C 526 512 505 508 481 514 C 442 523 410 540 392 568 C 395 583 400 592 410 600 C 431 592 446 593 468 602 C 497 619 526 615 549 601 C 559 581 559 551 553 526 Z",
+              "M 549 603 C 527 616 497 618 469 604 C 449 594 430 591 410 600 C 422 622 447 634 471 637 C 505 640 533 627 549 603 Z",
+              "M 562 496 C 552 496 548 507 548 523 C 558 547 558 574 549 602 C 559 595 568 585 574 571 C 583 549 583 522 572 505 C 568 498 566 496 562 496 Z",
+              "M 1306 321 C 1287 315 1272 325 1254 346 C 1230 375 1212 405 1194 435 C 1180 456 1194 495 1205 528 C 1216 562 1232 590 1244 587 C 1264 578 1280 540 C 1297 502 1309 458 1321 415 C 1333 370 1342 338 1329 324 C 1323 319 1314 319 1306 321 Z",
+            ].map((d,i)=>{const a=current.areas[i];const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.24:recorded?0.13:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="2" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
           </svg> : <><Anatomy section={section}/>{current.areas.map((a,i)=>{const p=spots[section][i];const recorded=markers.some(m=>m.area===a);return <button key={a} type="button" title={a} aria-label={`選擇${a}`} onClick={()=>choose(a)} style={{left:`${p[0]/300*100}%`,top:`${p[1]/420*100}%`}} className={`absolute flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-xs font-bold shadow-sm ${area===a?"border-[#8F4E60] bg-[#B87981] text-white":recorded?"border-[#AD6577] bg-[#E8B2BA] text-[#6F3444]":"border-white bg-[#F6D9DC]/90 text-[#85555F]"}`}>{i+1}</button>})}</>}
         </div>
         <div className="space-y-3">
