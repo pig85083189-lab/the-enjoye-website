@@ -86,7 +86,7 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
     <Card padding="md" className="mb-4">
       <h2 className="text-base font-semibold text-text">{current.label}症狀標記</h2>
       <p className="mt-1 text-sm text-secondary-text">點選圖片中的症狀區域，再選擇症狀（可複選）。左右以顧客本人方向為準。</p>
-      <div className={`mt-4 grid gap-4 ${section==="head"||section==="breast"||section==="axilla"||section==="body"||section==="right-arm"||section==="left-arm"||section==="legs"?"xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]":"lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"}`}>
+      <div className={`mt-4 grid gap-4 ${section==="head"||section==="breast"||section==="axilla"||section==="legs"?"xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]":"lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"}`}>
         <div className={`relative mx-auto w-full ${section==="head"||section==="breast"||section==="axilla"||section==="body"||section==="right-arm"||section==="left-arm"||section==="legs"?"max-w-[800px]":"max-w-[310px]"}`}>
           {section==="head" ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" aria-label="頭部正面與背面症狀點選圖" role="group">
             <image href="/ead-bodymap.png" x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
@@ -134,6 +134,24 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
               {name:"背面右上臂",d:"M 32 950 L 64 1005 L 119 1048 L 476 1192 L 736 1189 L 889 1213 L 889 1005 L 776 1011 L 632 975 L 488 958 L 357 899 L 252 879 L 126 887 Z"},
               {name:"背面右前臂",d:"M 890 1005 L 893 1214 L 1125 1218 L 1497 1189 L 1639 1248 L 1639 1035 L 1558 1055 L 1357 1054 L 1025 995 Z"}
             ]).map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.36:recorded?0.18:0} stroke={active?"#813D52":recorded?"#C97786":"transparent"} strokeWidth={active?9:recorded?6:5} strokeLinejoin="round" className="cursor-pointer transition-colors duration-150 hover:fill-[#B87981] hover:fill-opacity-30 hover:stroke-[#A35B6A] focus:fill-[#B87981] focus:fill-opacity-30 focus:stroke-[#A35B6A] outline-none" />;})}
+          </svg> : section==="body" ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" role="group" aria-label="上半身正面與背面症狀點選圖">
+            <image href="/body-upper-bodymap.png" x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
+            {[
+              {name:"正面肩頸",d:"M 425 275 Q 500 290 545 273 L 590 325 Q 531 354 476 349 Q 419 352 360 326 Z"},
+              {name:"正面右肩",d:"M 337 301 Q 268 296 194 345 Q 134 399 121 496 L 134 620 Q 160 573 193 525 Q 240 455 304 424 L 363 347 Z"},
+              {name:"正面左肩",d:"M 609 303 Q 688 292 757 347 Q 820 407 835 505 L 827 618 Q 797 569 760 512 Q 704 436 646 423 L 586 347 Z"},
+              {name:"正面胸口",d:"M 367 347 Q 429 374 482 366 Q 540 374 586 347 L 649 424 Q 701 482 724 548 L 695 577 Q 607 601 482 607 Q 356 602 274 578 L 246 545 Q 267 476 316 422 Z"},
+              {name:"腹部",d:"M 284 748 Q 383 765 481 756 Q 587 765 680 748 L 704 904 Q 680 1003 734 1083 Q 613 1138 484 1137 Q 354 1137 234 1083 Q 289 1002 266 907 Z"},
+              {name:"右腰",d:"M 244 745 L 286 748 L 265 905 Q 275 1005 234 1083 L 204 1107 Q 236 1000 221 898 Z"},
+              {name:"左腰",d:"M 680 748 L 723 743 L 744 897 Q 729 1002 762 1107 L 734 1083 Q 689 1005 705 905 Z"},
+              {name:"背面肩頸",d:"M 1483 268 Q 1553 293 1604 270 L 1667 340 Q 1612 379 1545 379 Q 1481 379 1427 340 Z"},
+              {name:"背面右肩",d:"M 1427 321 Q 1353 294 1285 346 Q 1225 392 1201 501 L 1212 624 Q 1261 543 1311 471 L 1435 399 Z"},
+              {name:"背面左肩",d:"M 1667 320 Q 1742 297 1812 347 Q 1876 400 1895 502 L 1885 624 Q 1836 540 1787 472 L 1659 398 Z"},
+              {name:"右上背",d:"M 1434 386 Q 1481 409 1545 408 L 1545 712 Q 1453 717 1350 697 L 1328 562 Q 1374 458 1434 386 Z"},
+              {name:"左上背",d:"M 1545 408 Q 1612 409 1659 386 Q 1721 461 1761 560 L 1740 697 Q 1642 716 1545 712 Z"},
+              {name:"右下背",d:"M 1361 743 Q 1455 753 1545 751 L 1545 1123 Q 1418 1117 1324 1094 Q 1387 1007 1361 743 Z"},
+              {name:"左下背",d:"M 1545 751 Q 1640 753 1735 742 Q 1704 1004 1770 1094 Q 1673 1117 1545 1123 Z"},
+            ].map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.32:recorded?0.16:0} stroke={active?"#813D52":recorded?"#C97786":"transparent"} strokeWidth={active?7:recorded?5:4} strokeLinejoin="round" className="cursor-pointer transition-colors duration-150 hover:fill-[#B87981] hover:fill-opacity-30 hover:stroke-[#A35B6A] focus:stroke-[#A35B6A] outline-none" />;})}
           </svg> : (section==="body"||section==="right-arm"||section==="left-arm"||section==="legs") ? <svg viewBox="0 0 1200 848.4375" className="block h-auto w-full" role="group" aria-label="身體正面與背面可選取部位圖">
             <image href="/body-bodymap.png" x="0" y="0" width="1200" height="848.4375" preserveAspectRatio="xMidYMid meet" />
             {[
