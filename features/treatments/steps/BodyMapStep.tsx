@@ -28,26 +28,15 @@ const sections = [
 ] as const;
 const symptoms = ["緊繃", "敏感", "水腫", "循環較差", "痠痛", "硬塊／結節", "需加強", "其他"];
 const spots: Record<string, Array<[number, number]>> = {
-  head: [[116,99],[58,139],[172,139],[82,169],[149,169],[83,216],[149,216],[116,267],[344,72],[344,181],[344,282]],
+  head: [[515,470],[278,550],[745,550],[380,645],[650,645],[366,770],[660,770],[510,960],[1420,215],[1420,655],[1420,1000]],
   breast: [[89,152],[211,152],[105,120],[195,120],[73,181],[227,181],[107,210],[193,210],[150,171]],
   body: [[150,70],[92,124],[208,124],[150,195],[110,225],[190,225],[115,300],[185,300],[115,370],[185,370]],
   womb: [[150,200],[105,195],[195,195],[150,245],[150,290]],
   back: [[150,66],[99,133],[201,133],[150,169],[150,257],[109,283],[191,283]],
 };
 function Anatomy({section}:{section:string}) {
-  if (section==="head") return <svg viewBox="0 0 460 350" className="mx-auto h-auto w-full max-w-[500px]" aria-hidden="true">
-    <defs><linearGradient id="headSkin" x1="0" x2="1" y1="0" y2="1"><stop stopColor="#FFE9DB"/><stop offset="1" stopColor="#E9B2A4"/></linearGradient></defs>
-    {[116,344].map((cx,i)=><g key={cx} transform={`translate(${cx-116},0)`}>
-      <path d="M49 122 Q40 23 113 17 Q195 12 184 124 L177 229 Q157 285 116 297 Q72 283 57 230Z" fill="#A86648" stroke="#A56D59" strokeWidth="2"/>
-      <path d="M70 122 Q65 70 116 64 Q167 70 162 122 L164 221 Q151 263 116 271 Q80 260 67 222Z" fill="url(#headSkin)" stroke="#BD897D" strokeWidth="1.5"/>
-      <path d="M78 66 Q70 12 115 12 Q161 12 155 66" fill="#A76648" stroke="#93553F" strokeWidth="3"/>
-      <ellipse cx="116" cy="17" rx="37" ry="17" fill="#C78A68" stroke="#9B5B42" strokeWidth="2"/>
-      {i===0?<g fill="none" stroke="#A96F65" strokeWidth="2"><path d="M78 157 Q94 148 108 156 M124 156 Q140 147 154 157 M103 209 Q116 215 129 209 M101 237 Q116 244 131 237"/></g>:<path d="M116 65 Q91 98 92 165 Q98 225 116 241 Q135 225 141 165 Q143 99 116 65Z" fill="#E9B0B5" opacity=".65"/>}
-      <g fill="#F3B7BC" fillOpacity=".58" stroke="#FFF" strokeWidth="2" strokeDasharray="5 4">
-        {i===0?<><ellipse cx="116" cy="101" rx="36" ry="30"/><ellipse cx="68" cy="140" rx="13" ry="29"/><ellipse cx="164" cy="140" rx="13" ry="29"/><ellipse cx="89" cy="170" rx="25" ry="20"/><ellipse cx="143" cy="170" rx="25" ry="20"/><ellipse cx="87" cy="215" rx="27" ry="25"/><ellipse cx="145" cy="215" rx="27" ry="25"/><ellipse cx="116" cy="266" rx="29" ry="17"/></>:<><ellipse cx="116" cy="73" rx="38" ry="38"/><ellipse cx="116" cy="181" rx="57" ry="77"/><rect x="83" y="256" width="66" height="57" rx="13"/></>}
-      </g>
-    </g>)}
-    <text x="116" y="340" textAnchor="middle" fontSize="13" fill="#87525B">正面</text><text x="344" y="340" textAnchor="middle" fontSize="13" fill="#87525B">背面</text>
+  if (section==="head") return <svg viewBox="0 0 2048 1448" className="mx-auto h-auto w-full" aria-label="頭部正面與背面示意圖">
+    <image href="/ead-bodymap.png" x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
   </svg>;
   const back=section==="back",head=section==="head",breast=section==="breast",womb=section==="womb";
   return <svg viewBox="0 0 300 420" className="mx-auto h-[350px] w-full max-w-[310px]" aria-hidden="true">
@@ -95,10 +84,24 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
     <Card padding="md" className="mb-4">
       <h2 className="text-base font-semibold text-text">{current.label}症狀標記</h2>
       <p className="mt-1 text-sm text-secondary-text">點選圖上的圓點，再選擇症狀（可複選）。左右以顧客本人方向為準。</p>
-      <div className={`mt-4 grid gap-4 ${section==="head"?"xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]":"lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"}`}>
-        <div className={`relative mx-auto w-full ${section==="head"?"max-w-[500px]":"max-w-[310px]"}`}>
+      <div className={`mt-4 grid gap-4 ${section==="head"?"xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]":"lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"}`}>
+        <div className={`relative mx-auto w-full ${section==="head"?"max-w-[800px]":"max-w-[310px]"}`}>
           <Anatomy section={section}/>
-          {current.areas.map((a,i)=>{const p=spots[section][i];const recorded=markers.some(m=>m.area===a);return <button key={a} type="button" title={a} aria-label={`選擇${a}`} onClick={()=>choose(a)} style={{left:`${p[0]/(section==="head"?460:300)*100}%`,top:`${p[1]/(section==="head"?350:420)*100}%`}} className={`absolute flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-xs font-bold shadow-sm ${area===a?"border-[#8F4E60] bg-[#B87981] text-white":recorded?"border-[#AD6577] bg-[#E8B2BA] text-[#6F3444]":"border-white bg-[#F6D9DC]/90 text-[#85555F]"}`}>{i+1}</button>})}
+          {section==="head" ? <svg viewBox="0 0 2048 1448" className="absolute inset-0 h-full w-full" aria-label="點選頭部症狀位置">
+            {[
+              "M365 365 Q515 290 670 360 Q720 440 655 525 Q515 580 370 520Z",
+              "M225 495 Q265 465 305 510 L320 640 Q270 685 230 630Z",
+              "M705 495 Q755 465 790 520 L800 635 Q750 685 700 630Z",
+              "M305 585 Q385 560 450 620 Q460 705 365 710 Q295 675 305 585Z",
+              "M580 585 Q655 560 725 615 Q735 705 635 710 Q570 680 580 585Z",
+              "M285 735 Q365 700 435 755 Q455 850 375 900 Q290 870 285 735Z",
+              "M590 735 Q675 700 740 755 Q755 850 670 900 Q585 870 590 735Z",
+              "M440 925 Q510 895 580 925 Q590 1000 510 1020 Q440 1010 440 925Z",
+              "M1235 80 Q1420 20 1610 90 Q1640 280 1420 365 Q1230 310 1235 80Z",
+              "M1190 400 Q1420 340 1650 400 Q1710 740 1560 855 Q1420 925 1270 850 Q1130 710 1190 400Z",
+              "M1290 870 Q1420 845 1550 875 L1550 1070 Q1420 1110 1290 1070Z",
+            ].map((d,i)=>{const a=current.areas[i];const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?.22:recorded?.14:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="10" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
+          </svg> : current.areas.map((a,i)=>{const p=spots[section][i];const recorded=markers.some(m=>m.area===a);return <button key={a} type="button" title={a} aria-label={`選擇${a}`} onClick={()=>choose(a)} style={{left:`${p[0]/300*100}%`,top:`${p[1]/420*100}%`}} className={`absolute flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-xs font-bold shadow-sm ${area===a?"border-[#8F4E60] bg-[#B87981] text-white":recorded?"border-[#AD6577] bg-[#E8B2BA] text-[#6F3444]":"border-white bg-[#F6D9DC]/90 text-[#85555F]"}`}>{i+1}</button>})}
         </div>
         <div className="space-y-3">
           <p className="text-sm font-semibold text-[#754852]">部位位置</p>
