@@ -22,7 +22,7 @@ interface BodyMapStepProps {
 const sections = [
   { id: "head", label: "頭", symbol: "◯", areas: ["額頭", "左太陽穴", "右太陽穴", "左眼周", "右眼周", "左臉頰", "右臉頰", "下巴", "頭頂", "後腦", "後頸"] },
   { id: "breast", label: "胸部", symbol: "♡", areas: ["右胸上緣", "右胸中央", "右胸下緣", "右胸外側", "左胸上緣", "左胸中央", "左胸下緣", "左胸外側"] },
-  { id: "axilla", label: "腋下", symbol: "✧", areas: ["腋下"] },
+  { id: "axilla", label: "腋下", symbol: "✧", areas: ["右腋下", "左腋下", "腋下"] },
   { id: "arms", label: "手臂", symbol: "⌁", areas: ["正面右上臂","正面左上臂","正面右前臂","正面左前臂","背面右上臂","背面左上臂","背面右前臂","背面左前臂"] },
   { id: "body", label: "身體", symbol: "♧", areas: ["正面肩頸","正面右肩","正面左肩","正面胸口","腹部","右腰","左腰","正面右臀髖","正面左臀髖","背面肩頸","背面右肩","背面左肩","右上背","左上背","右下背","左下背","右臀","左臀","後頸","左肩胛","右肩胛","上背","下背","左腰背","右腰背"] },
   { id: "legs", label: "大小腿", symbol: "♧", areas: ["正面右大腿","正面左大腿","正面右膝","正面左膝","正面右小腿","正面左小腿","背面右大腿","背面左大腿","背面右膝","背面左膝","背面右小腿","背面左小腿"] },
@@ -102,7 +102,7 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
               "M 1320 516 C 1360 490 1422 484 1482 487 C 1553 488 1627 501 1662 546 C 1691 586 1690 664 1674 727 C 1656 803 1607 851 1556 875 C 1511 898 1446 906 1390 892 C 1329 878 1279 838 1255 784 C 1227 727 1225 644 1242 587 C 1256 553 1282 530 1320 516 Z",
               "M 1342 898 C 1394 887 1497 888 1564 898 C 1580 925 1582 984 1579 1022 L 1576 1070 C 1532 1087 1383 1087 1336 1069 C 1329 1018 1329 942 1342 898 Z",
             ].map((d,i)=>{const a=current.areas[i];const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.22:recorded?0.14:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="8" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
-          </svg> : (section==="breast"||section==="axilla") ? <svg viewBox="0 0 1456 1024" className="block h-auto w-full" aria-label="胸部及腋下症狀點選圖" role="group">
+          </svg> : section==="breast" ? <svg viewBox="0 0 1456 1024" className="block h-auto w-full" aria-label="胸部及腋下症狀點選圖" role="group">
             <image href="/breast-bodymap.png" x="0" y="0" width="1456" height="1024" preserveAspectRatio="xMidYMid meet" />
             {[
               "M 286 519 C 317 456 374 374 416 339 C 431 400 481 444 557 476 C 632 509 680 564 693 675 C 651 626 598 578 535 565 C 459 546 393 558 330 592 C 339 548 317 522 286 519 Z",
@@ -114,6 +114,12 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
               "M 790 774 C 836 752 874 752 919 777 C 972 803 1024 796 1118 767 C 1087 819 1040 842 983 844 C 930 844 837 821 790 774 Z",
               "M 1158 520 C 1180 550 1190 610 1184 662 C 1178 712 1156 750 1118 768 C 1133 718 1135 654 1118 593 C 1108 551 1122 524 1158 520 Z",
             ].map((d,i)=>{const a=breastImageAreas[i];if(!current.areas.some(x=>x===a))return null;const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.24:recorded?0.13:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="2" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
+          </svg> : section==="axilla" ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" aria-label="左右腋下症狀點選圖" role="group">
+            <image href="/axilla-bodymap.png" x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
+            {[
+              { name: "右腋下", d: "M 705 677 C 741 716 783 765 811 819 C 797 867 772 911 738 958 C 712 918 684 866 671 816 C 670 774 686 716 705 677 Z" },
+              { name: "左腋下", d: "M 1342 677 C 1307 716 1265 765 1236 819 C 1250 867 1275 911 1309 958 C 1335 918 1363 866 1376 816 C 1377 774 1361 716 1342 677 Z" },
+            ].map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.24:recorded?0.13:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="5" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
           </svg> : (section==="body"||section==="arms"||section==="legs") ? <svg viewBox="0 0 1200 848.4375" className="block h-auto w-full" role="group" aria-label="身體正面與背面可選取部位圖">
             <image href="/body-bodymap.png" x="0" y="0" width="1200" height="848.4375" preserveAspectRatio="xMidYMid meet" />
             {[
