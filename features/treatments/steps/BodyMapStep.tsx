@@ -121,6 +121,19 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
               { name: "右腋下", d: "M 705 677 C 741 716 783 765 811 819 C 797 867 772 911 738 958 C 712 918 684 866 671 816 C 670 774 686 716 705 677 Z" },
               { name: "左腋下", d: "M 1342 677 C 1307 716 1265 765 1236 819 C 1250 867 1275 911 1309 958 C 1335 918 1363 866 1376 816 C 1377 774 1361 716 1342 677 Z" },
             ].map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.24:recorded?0.13:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="5" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
+          </svg> : (section==="right-arm"||section==="left-arm") ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" role="group" aria-label={section==="left-arm"?"左手臂正面與背面選取圖":"右手臂正面與背面選取圖"}>
+            <image href={section==="left-arm"?"/left-arm-bodymap.png":"/right-arm-bodymap.png"} x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
+            {(section==="left-arm" ? [
+              {name:"正面左上臂",d:"M 1110 317 C 1240 268 1380 160 1540 100 C 1690 40 1830 34 1850 113 C 1830 210 1680 310 1540 382 C 1370 451 1180 520 1030 528 C 990 474 1040 380 1110 317 Z"},
+              {name:"正面左前臂",d:"M 470 610 C 640 540 850 452 1040 355 C 1140 322 1200 360 1210 427 C 1110 505 930 591 750 655 C 615 709 505 732 405 744 C 390 686 421 633 470 610 Z"},
+              {name:"背面左上臂",d:"M 1260 800 C 1400 748 1540 660 1690 628 C 1820 604 1950 615 2000 674 C 1995 760 1870 858 1700 928 C 1540 991 1390 1031 1260 1033 C 1190 985 1200 868 1260 800 Z"},
+              {name:"背面左前臂",d:"M 490 1170 C 640 1092 840 1005 1030 919 C 1140 868 1260 875 1300 936 C 1280 1020 1130 1105 960 1164 C 770 1240 590 1270 430 1290 C 415 1240 439 1195 490 1170 Z"}
+            ] : [
+              {name:"正面右上臂",d:"M 100 292 C 240 230 380 268 520 339 C 660 407 820 448 975 463 C 1000 528 965 620 896 665 C 720 646 540 602 385 549 C 250 497 125 414 100 292 Z"},
+              {name:"正面右前臂",d:"M 920 465 C 1080 490 1220 514 1370 523 C 1490 534 1600 546 1640 605 C 1600 686 1490 711 1370 709 C 1210 695 1050 687 896 665 C 860 602 875 520 920 465 Z"},
+              {name:"背面右上臂",d:"M 50 924 C 150 855 320 874 450 944 C 600 1025 750 1035 920 1042 C 956 1103 929 1191 858 1222 C 670 1209 490 1182 327 1132 C 170 1086 66 1012 50 924 Z"},
+              {name:"背面右前臂",d:"M 910 1044 C 1050 1063 1220 1083 1380 1091 C 1480 1100 1570 1115 1630 1156 C 1610 1234 1500 1264 1370 1255 C 1190 1243 1020 1230 858 1222 C 827 1154 855 1078 910 1044 Z"}
+            ]).map(({name,d})=>{const active=area===name;const recorded=markers.some(m=>m.area===name);return <path key={name} d={d} role="button" tabIndex={0} aria-label={`選擇${name}`} onClick={()=>choose(name)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(name);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.22:recorded?0.13:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="5" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
           </svg> : (section==="body"||section==="right-arm"||section==="left-arm"||section==="legs") ? <svg viewBox="0 0 1200 848.4375" className="block h-auto w-full" role="group" aria-label="身體正面與背面可選取部位圖">
             <image href="/body-bodymap.png" x="0" y="0" width="1200" height="848.4375" preserveAspectRatio="xMidYMid meet" />
             {[
