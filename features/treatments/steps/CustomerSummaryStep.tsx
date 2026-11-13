@@ -69,7 +69,7 @@ export function CustomerSummaryStep({
         <Card padding="md" className="mt-4 border-primary/25 bg-primary-light/25">
           <h2 className="text-base font-semibold text-text">快速紀錄</h2>
           <p className="mt-2 text-[15px] leading-relaxed text-secondary-text">
-            如果今天狀況與上次差不多，可以沿用上次紀錄與標準流程，快速完成本次服務紀錄。
+            服務結束後可參考上次紀錄快速填寫；請逐項確認本次實際狀況，避免直接把上次資料當作今天的結果。
           </p>
           <Button className="mt-4" onClick={() => setQuickOpen(true)}>
             開始快速紀錄
