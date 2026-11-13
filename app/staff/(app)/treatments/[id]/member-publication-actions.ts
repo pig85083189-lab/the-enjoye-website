@@ -28,7 +28,7 @@ async function context(organizationId:string,treatmentId:string){
 }
 function makeSnapshot(t:Record<string,unknown>):PublicFields {
  const a=obj(t.assessment),f=obj(t.follow_up),fields:PublicFields={};
- add(fields,"staff_name",str(t.staff_id)); // Operational ID fallback, reviewed by manager
+ // Staff display name is omitted until the canonical staff roster has been resolved.
  add(fields,"concerns",arr(a.concerns));add(fields,"client_focus",str(a.clientFocus));
  add(fields,"comparison_to_last",str(a.comparisonToLast));
  add(fields,"sensitivity_level",typeof a.sensitivityLevel==="number"&&Number.isFinite(a.sensitivityLevel)?a.sensitivityLevel:null);
