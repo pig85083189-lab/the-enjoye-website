@@ -21,7 +21,7 @@ interface BodyMapStepProps {
 
 const sections = [
   { id: "head", label: "頭", symbol: "◯", areas: ["額頭", "左太陽穴", "右太陽穴", "左眼周", "右眼周", "左臉頰", "右臉頰", "下巴", "頭頂", "後腦", "後頸"] },
-  { id: "breast", label: "胸部", symbol: "♡", areas: ["右腋下", "左腋下", "右胸上緣", "左胸上緣", "右胸外側", "左胸外側", "右胸下緣", "左胸下緣", "胸骨中央"] },
+  { id: "breast", label: "胸部", symbol: "♡", areas: ["右胸上緣", "右胸中央", "右胸下緣", "右胸外側", "左胸上緣", "左胸中央", "左胸下緣", "左胸外側", "腋下"] },
   { id: "body", label: "身體", symbol: "♧", areas: ["肩頸", "左上臂", "右上臂", "腹部", "左腰", "右腰", "左大腿", "右大腿", "左小腿", "右小腿"] },
   { id: "womb", label: "子宮", symbol: "◇", areas: ["下腹中央", "左下腹", "右下腹", "骨盆區", "腰骶部"] },
   { id: "back", label: "後背", symbol: "♧", areas: ["後頸", "左肩胛", "右肩胛", "上背", "下背", "左腰背", "右腰背"] },
@@ -81,8 +81,8 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
     <Card padding="md" className="mb-4">
       <h2 className="text-base font-semibold text-text">{current.label}症狀標記</h2>
       <p className="mt-1 text-sm text-secondary-text">點選圖片中的症狀區域，再選擇症狀（可複選）。左右以顧客本人方向為準。</p>
-      <div className={`mt-4 grid gap-4 ${section==="head"?"xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]":"lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"}`}>
-        <div className={`relative mx-auto w-full ${section==="head"?"max-w-[800px]":"max-w-[310px]"}`}>
+      <div className={`mt-4 grid gap-4 ${section==="head"||section==="breast"?"xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]":"lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"}`}>
+        <div className={`relative mx-auto w-full ${section==="head"||section==="breast"?"max-w-[800px]":"max-w-[310px]"}`}>
           {section==="head" ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" aria-label="頭部正面與背面症狀點選圖" role="group">
             <image href="/ead-bodymap.png" x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
             {[
@@ -98,6 +98,19 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
               "M 1320 516 C 1360 490 1422 484 1482 487 C 1553 488 1627 501 1662 546 C 1691 586 1690 664 1674 727 C 1656 803 1607 851 1556 875 C 1511 898 1446 906 1390 892 C 1329 878 1279 838 1255 784 C 1227 727 1225 644 1242 587 C 1256 553 1282 530 1320 516 Z",
               "M 1342 898 C 1394 887 1497 888 1564 898 C 1580 925 1582 984 1579 1022 L 1576 1070 C 1532 1087 1383 1087 1336 1069 C 1329 1018 1329 942 1342 898 Z",
             ].map((d,i)=>{const a=current.areas[i];const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.22:recorded?0.14:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="8" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
+          </svg> : section==="breast" ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" aria-label="胸部及腋下症狀點選圖" role="group">
+            <image href="/breast-bodymap.png" x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
+            {[
+              "M 325 583 C 353 620 398 635 444 662 C 493 694 511 728 514 765 C 480 730 433 718 396 720 C 353 720 311 740 281 764 C 280 710 294 639 325 583 Z",
+              "M 281 764 C 316 730 359 714 402 720 C 458 724 498 744 514 778 C 513 824 480 851 429 858 C 376 865 324 851 292 816 C 280 799 279 779 281 764 Z",
+              "M 296 833 C 349 861 419 866 478 845 C 463 879 433 894 393 898 C 345 896 310 881 296 833 Z",
+              "M 258 705 C 245 704 236 729 238 765 C 236 806 253 843 291 855 C 275 827 268 781 273 741 C 277 718 272 704 258 705 Z",
+              "M 715 582 C 685 621 637 639 588 667 C 542 693 522 730 521 765 C 552 728 599 717 636 719 C 682 720 724 741 750 763 C 750 706 744 634 715 582 Z",
+              "M 750 763 C 713 729 674 713 632 720 C 575 722 538 744 520 777 C 519 823 550 850 601 857 C 653 864 704 850 738 815 C 748 798 752 779 750 763 Z",
+              "M 736 834 C 686 860 618 866 558 845 C 570 876 604 896 645 898 C 692 896 721 880 736 834 Z",
+              "M 769 705 C 783 702 793 731 792 765 C 794 806 774 842 738 855 C 753 824 763 780 758 742 C 755 721 758 705 769 705 Z",
+              "M 1740 455 C 1785 402 1810 389 1840 397 C 1883 433 1858 523 1829 604 C 1804 673 1769 725 1742 760 C 1711 738 1688 694 1697 640 C 1701 571 1716 503 1740 455 Z",
+            ].map((d,i)=>{const a=current.areas[i];const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.2:recorded?0.12:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="7" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
           </svg> : <><Anatomy section={section}/>{current.areas.map((a,i)=>{const p=spots[section][i];const recorded=markers.some(m=>m.area===a);return <button key={a} type="button" title={a} aria-label={`選擇${a}`} onClick={()=>choose(a)} style={{left:`${p[0]/300*100}%`,top:`${p[1]/420*100}%`}} className={`absolute flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-xs font-bold shadow-sm ${area===a?"border-[#8F4E60] bg-[#B87981] text-white":recorded?"border-[#AD6577] bg-[#E8B2BA] text-[#6F3444]":"border-white bg-[#F6D9DC]/90 text-[#85555F]"}`}>{i+1}</button>})}</>}
         </div>
         <div className="space-y-3">
