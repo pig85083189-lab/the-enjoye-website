@@ -400,6 +400,19 @@ export function CompleteStep({
             </p>
           ) : null}
 
+          <section className="mt-6 rounded-2xl border border-[#E9D7D4] bg-[#FBF6F5] p-4 text-left">
+            <h2 className="text-[15px] font-semibold text-text">公開至會員身體紀錄</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-secondary-text">
+              需由店長或主管在正式療程紀錄中逐項審核後公開，內部專業備註與照片不會公開。
+            </p>
+            <Link
+              href={`/staff/treatments/${encodeURIComponent(draft.id)}#member-publication`}
+              className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-[#C9797D] px-4 text-sm font-medium text-white"
+            >
+              前往審核公開
+            </Link>
+          </section>
+
           <div className="mt-8 flex min-w-0 flex-col gap-3 sm:flex-row-reverse sm:flex-wrap sm:justify-start">
             {eligible.status === "ok" && packages.length > 0 ? (
               <Button
