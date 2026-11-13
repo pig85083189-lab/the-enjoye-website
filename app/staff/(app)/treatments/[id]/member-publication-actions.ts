@@ -14,13 +14,14 @@ function add(target:PublicFields,key:string,value:string|string[]|number|boolean
  if(value!==null&&(!Array.isArray(value)||value.length>0))target[key]=value;
 }
 async function context(organizationId:string,treatmentId:string){
- if(!/^[0-9a-f-]{36}$/i.test(organizationId)||!/^[0-9a-f-]{36}$/i.test(treatmentId))throw Error("無效的療程資料");
+ if(!/^[0-9a-f-]{36}$/i.test(organizationId)||!treatmentId||treatmentId.length>160)throw Error("無效的療程資料");
  const auth=await getAuthenticatedStaffMembership({organizationId});
  if(auth.status!=="ok"||!allowedRoles.has(auth.membership.role))throw Error("僅店長或主管可以審核公開");
  const db=createServiceRoleClient();
  if(!db)throw Error("資料庫尚未設定");
- const {data:t,error}=await db.from("treatments").select("id,organization_id,customer_id,completed_at,status,staff_id,assessment,body_markers,body_map_note,discomfort_note,client_feeling,products,follow_up,suggested_tracking_areas")
-  .eq("id",treatmentId).eq("organization_id",organizationId).eq("status","COMPLETED").not("completed_at","is",null).maybeSingle();
+ const {data:matches,error}=await db.from("treatments").select("id,organization_id,customer_id,completed_at,status,staff_id,assessment,body_markers,body_map_note,discomfort_note,client_feeling,products,follow_up,suggested_tracking_areas")
+  .eq("app_id",treatmentId).eq("organization_id",organizationId).eq("status","COMPLETED").not("completed_at","is",null).limit(2);
+ const t=matches?.length===1?matches[0]:null;
  if(error||!t)throw Error("只有正式資料庫中已完成的療程可以公開");
  const {data:customer}=await db.from("customers").select("id").eq("id",t.customer_id).eq("organization_id",organizationId).eq("status","ACTIVE").maybeSingle();
  if(!customer)throw Error("顧客資料無效");
@@ -43,7 +44,7 @@ function makeSnapshot(t:Record<string,unknown>):PublicFields {
 }
 export async function previewMemberTreatmentPublication(organizationId:string,treatmentId:string):Promise<Preview>{
  const {db,t}=await context(organizationId,treatmentId);
- const {data:existing,error}=await db.from("member_treatment_publications").select("approved_fields,revoked_at").eq("treatment_id",treatmentId).eq("organization_id",organizationId).maybeSingle();
+ const {data:existing,error}=await db.from("member_treatment_publications").select("approved_fields,revoked_at").eq("treatment_id",t.id).eq("organization_id",organizationId).maybeSingle();
  if(error)throw Error("無法讀取公開狀態");
  return {status:existing&&!existing.revoked_at?"published":"draft",fields:existing&&!existing.revoked_at?obj(existing.approved_fields) as PublicFields:makeSnapshot(t),completedAt:t.completed_at};
 }
@@ -64,9 +65,9 @@ export async function publishMemberTreatment(organizationId:string,treatmentId:s
  return {ok:true};
 }
 export async function revokeMemberTreatment(organizationId:string,treatmentId:string){
- const {db}=await context(organizationId,treatmentId);
+ const {db,t}=await context(organizationId,treatmentId);
  const {error}=await db.from("member_treatment_publications").update({revoked_at:new Date().toISOString(),updated_at:new Date().toISOString()})
- .eq("treatment_id",treatmentId).eq("organization_id",organizationId).is("revoked_at",null);
+ .eq("treatment_id",t.id).eq("organization_id",organizationId).is("revoked_at",null);
  if(error)throw Error("撤銷失敗");
  return {ok:true};
 }
