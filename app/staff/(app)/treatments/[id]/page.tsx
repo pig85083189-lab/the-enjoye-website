@@ -21,7 +21,7 @@ export default async function TreatmentDetailPage({
       customerRemoteReadPilot={isCustomerRemoteReadPilotEnabled()}
       treatmentRemoteReadPilot={isTreatmentRemoteReadPilotEnabled()}
     />
-    {canPublish && <div className="mx-auto max-w-3xl"><MemberPublicationPanel organizationId={auth.membership.organizationId} treatmentId={id}/></div>}
+    {canPublish && <div id="member-publication" className="mx-auto max-w-3xl"><MemberPublicationPanel organizationId={auth.membership.organizationId} treatmentId={id}/></div>}
     </div>
   );
 }
