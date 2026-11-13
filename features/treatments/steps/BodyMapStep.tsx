@@ -22,10 +22,12 @@ interface BodyMapStepProps {
 const sections = [
   { id: "head", label: "頭", symbol: "◯", areas: ["額頭", "左太陽穴", "右太陽穴", "左眼周", "右眼周", "左臉頰", "右臉頰", "下巴", "頭頂", "後腦", "後頸"] },
   { id: "breast", label: "胸部", symbol: "♡", areas: ["右胸上緣", "右胸中央", "右胸下緣", "右胸外側", "左胸上緣", "左胸中央", "左胸下緣", "左胸外側", "腋下"] },
-  { id: "body", label: "身體", symbol: "♧", areas: ["正面肩頸","正面右肩","正面左肩","正面胸口","正面右上臂","正面左上臂","正面右前臂","正面左前臂","腹部","右腰","左腰","正面右臀髖","正面左臀髖","正面右大腿","正面左大腿","正面右膝","正面左膝","正面右小腿","正面左小腿","背面肩頸","背面右肩","背面左肩","右上背","左上背","背面右上臂","背面左上臂","背面右前臂","背面左前臂","右下背","左下背","右臀","左臀","背面右大腿","背面左大腿","背面右膝","背面左膝","背面右小腿","背面左小腿"] },
+  { id: "arms", label: "手臂", symbol: "⌁", areas: ["正面右上臂","正面左上臂","正面右前臂","正面左前臂","背面右上臂","背面左上臂","背面右前臂","背面左前臂"] },
+  { id: "body", label: "身體", symbol: "♧", areas: ["正面肩頸","正面右肩","正面左肩","正面胸口","腹部","右腰","左腰","正面右臀髖","正面左臀髖","背面肩頸","背面右肩","背面左肩","右上背","左上背","右下背","左下背","右臀","左臀","後頸","左肩胛","右肩胛","上背","下背","左腰背","右腰背"] },
+  { id: "legs", label: "大小腿", symbol: "♧", areas: ["正面右大腿","正面左大腿","正面右膝","正面左膝","正面右小腿","正面左小腿","背面右大腿","背面左大腿","背面右膝","背面左膝","背面右小腿","背面左小腿"] },
   { id: "womb", label: "子宮", symbol: "◇", areas: ["下腹中央", "左下腹", "右下腹", "骨盆區", "腰骶部"] },
-  { id: "back", label: "後背", symbol: "♧", areas: ["後頸", "左肩胛", "右肩胛", "上背", "下背", "左腰背", "右腰背"] },
 ] as const;
+const bodyImageAreas = ["正面肩頸","正面右肩","正面左肩","正面胸口","正面右上臂","正面左上臂","正面右前臂","正面左前臂","腹部","右腰","左腰","正面右臀髖","正面左臀髖","正面右大腿","正面左大腿","正面右膝","正面左膝","正面右小腿","正面左小腿","背面肩頸","背面右肩","背面左肩","右上背","左上背","背面右上臂","背面左上臂","背面右前臂","背面左前臂","右下背","左下背","右臀","左臀","背面右大腿","背面左大腿","背面右膝","背面左膝","背面右小腿","背面左小腿"];
 const symptoms = ["緊繃", "敏感", "水腫", "循環較差", "痠痛", "硬塊／結節", "需加強", "其他"];
 const spots: Record<string, Array<[number, number]>> = {
   head: [[515,470],[278,550],[745,550],[380,645],[650,645],[366,770],[660,770],[510,960],[1420,215],[1420,655],[1420,1000]],
@@ -76,13 +78,13 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
     <p className="mt-2 text-[15px] text-secondary-text">選擇部位圖片，點選今天需要關注的位置並標記症狀。</p></header>
     <Card padding="md" className="mb-4">
       <h2 className="mb-3 text-base font-semibold text-text">選擇紀錄部位</h2>
-      <div className="grid grid-cols-5 gap-2">{sections.map(s=><button key={s.id} type="button" onClick={()=>{setSection(s.id);setArea(null);}} aria-pressed={section===s.id} className={`min-h-20 rounded-xl border px-1 py-2 text-center text-sm font-medium transition-colors ${section===s.id?"border-[#B87981] bg-[#B87981] text-white":"border-[#F0DFDF] bg-[#FBF5F5] text-[#85555F]"}`}><span className="mb-1 block text-xl" aria-hidden="true">{s.symbol}</span>{s.label}</button>)}</div>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">{sections.map(s=><button key={s.id} type="button" onClick={()=>{setSection(s.id);setArea(null);}} aria-pressed={section===s.id} className={`min-h-20 rounded-xl border px-1 py-2 text-center text-sm font-medium transition-colors ${section===s.id?"border-[#B87981] bg-[#B87981] text-white":"border-[#F0DFDF] bg-[#FBF5F5] text-[#85555F]"}`}><span className="mb-1 block text-xl" aria-hidden="true">{s.symbol}</span>{s.label}</button>)}</div>
     </Card>
     <Card padding="md" className="mb-4">
       <h2 className="text-base font-semibold text-text">{current.label}症狀標記</h2>
       <p className="mt-1 text-sm text-secondary-text">點選圖片中的症狀區域，再選擇症狀（可複選）。左右以顧客本人方向為準。</p>
-      <div className={`mt-4 grid gap-4 ${section==="head"||section==="breast"||section==="body"?"xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]":"lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"}`}>
-        <div className={`relative mx-auto w-full ${section==="head"||section==="breast"||section==="body"?"max-w-[800px]":"max-w-[310px]"}`}>
+      <div className={`mt-4 grid gap-4 ${section==="head"||section==="breast"||section==="body"||section==="arms"||section==="legs"?"xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]":"lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]"}`}>
+        <div className={`relative mx-auto w-full ${section==="head"||section==="breast"||section==="body"||section==="arms"||section==="legs"?"max-w-[800px]":"max-w-[310px]"}`}>
           {section==="head" ? <svg viewBox="0 0 2048 1448" className="block h-auto w-full" aria-label="頭部正面與背面症狀點選圖" role="group">
             <image href="/ead-bodymap.png" x="0" y="0" width="2048" height="1448" preserveAspectRatio="xMidYMid meet" />
             {[
@@ -111,7 +113,7 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
               "M 562 496 C 552 496 548 507 548 523 C 558 547 558 574 549 602 C 559 595 568 585 574 571 C 583 549 583 522 572 505 C 568 498 566 496 562 496 Z",
               "M 1306 321 C 1287 315 1272 325 1254 346 C 1230 375 1212 405 1194 435 C 1180 456 1194 495 1205 528 C 1216 562 1232 590 1244 587 C 1264 578 1280 540 C 1297 502 1309 458 1321 415 C 1333 370 1342 338 1329 324 C 1323 319 1314 319 1306 321 Z",
             ].map((d,i)=>{const a=current.areas[i];const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.24:recorded?0.13:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="2" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
-          </svg> : section==="body" ? <svg viewBox="0 0 1200 848.4375" className="block h-auto w-full" role="group" aria-label="身體正面與背面可選取部位圖">
+          </svg> : (section==="body"||section==="arms"||section==="legs") ? <svg viewBox="0 0 1200 848.4375" className="block h-auto w-full" role="group" aria-label="身體正面與背面可選取部位圖">
             <image href="/body-bodymap.png" x="0" y="0" width="1200" height="848.4375" preserveAspectRatio="xMidYMid meet" />
             {[
               "M 365 191 Q385 206 405 191 L419 210 Q398 223 385 231 Q367 224 347 211 Z",
@@ -152,7 +154,7 @@ export function BodyMapStep({template,markers,bodyMapNote,suggestedTrackingAreas
               "M 788 583 Q808 590 827 582 L826 620 Q807 628 788 620 Z",
               "M 742 622 Q761 631 781 622 L781 738 Q761 752 744 737 Q731 686 742 622 Z",
               "M 788 622 Q807 631 826 622 Q837 687 822 737 Q807 752 788 738 Z",
-            ].map((d,i)=>{const a=current.areas[i];const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.22:recorded?0.13:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="1.8" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
+            ].map((d,i)=>{const a=bodyImageAreas[i];if(!current.areas.some(x=>x===a))return null;const active=area===a;const recorded=markers.some(m=>m.area===a);return <path key={a} d={d} role="button" tabIndex={0} aria-label={`選擇${a}`} onClick={()=>choose(a)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();choose(a);}}} fill={active?"#B87981":recorded?"#C97786":"transparent"} fillOpacity={active?0.22:recorded?0.13:0} stroke={active?"#A35B6A":recorded?"#C97786":"transparent"} strokeWidth="1.8" className="cursor-pointer outline-none focus:stroke-[#A35B6A]" />;})}
           </svg> : <><Anatomy section={section}/>{current.areas.map((a,i)=>{const p=spots[section][i];const recorded=markers.some(m=>m.area===a);return <button key={a} type="button" title={a} aria-label={`選擇${a}`} onClick={()=>choose(a)} style={{left:`${p[0]/300*100}%`,top:`${p[1]/420*100}%`}} className={`absolute flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-xs font-bold shadow-sm ${area===a?"border-[#8F4E60] bg-[#B87981] text-white":recorded?"border-[#AD6577] bg-[#E8B2BA] text-[#6F3444]":"border-white bg-[#F6D9DC]/90 text-[#85555F]"}`}>{i+1}</button>})}</>}
         </div>
         <div className="space-y-3">
