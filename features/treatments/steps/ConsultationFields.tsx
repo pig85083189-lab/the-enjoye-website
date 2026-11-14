@@ -23,7 +23,7 @@ export function ConsultationFields({ fields, values, onChange }: Props) {
               {option}
             </button>;
           })}
-          {field.options.length === 0 ? <p className="text-sm text-secondary-text">店長尚未設定選項</p> : null}
+          {field.options.length === 0 ? <div className="w-full"><p className="mb-2 text-sm text-secondary-text">尚未設定選項，可先輸入內容。</p><input aria-label={field.label} className="min-h-11 w-full rounded-xl border border-border bg-background px-3 text-text" value={Array.isArray(value) ? value.join("、") : typeof value === "string" ? value : ""} onChange={(event) => onChange(field.id, field.type === "multi" ? event.target.value.split("、").map((item) => item.trim()).filter(Boolean) : event.target.value)} placeholder={`輸入${field.label}`} /></div> : null}
         </div> : field.type === "rating" ? <div className="flex gap-2" role="radiogroup" aria-label={field.label}>
           {[1,2,3,4,5].map((star) => <button key={star} type="button" role="radio" aria-checked={Number(value) === star}
             aria-label={`${star} 顆星`} className="min-h-11 min-w-11 text-2xl text-primary"
