@@ -22,7 +22,7 @@ export function MemberPublicationPanel({organizationId,treatmentId}:{organizatio
  async function load(){
   setBusy(true);setError("");
   try{const r=await previewMemberTreatmentPublication(organizationId,treatmentId);
-   setPreview(r.fields);setSelected(r.status==="published"?r.publishedKeys.filter(key=>key in r.fields):Object.keys(r.fields).filter(key=>["consultation_answers","body_marker_details","body_markers","body_map_note","follow_up_note","suggested_date"].includes(key)));setPublished(r.status==="published");setLoaded(true);
+   setPreview(r.fields);setSelected(r.status==="published"?r.publishedKeys.filter(key=>key in r.fields):Object.keys(r.fields).filter(key=>["body_marker_details","body_markers","body_map_note","follow_up_note","suggested_date"].includes(key)));setPublished(r.status==="published");setLoaded(true);
   }catch(e){setError(e instanceof Error?e.message:"無法預覽");}finally{setBusy(false);}
  }
  async function submit(revoke:boolean){
@@ -37,7 +37,7 @@ export function MemberPublicationPanel({organizationId,treatmentId}:{organizatio
  }
  return <section className="rounded-2xl border border-[#E9D7D4] bg-white p-5">
   <h2 className="text-base font-semibold text-text">公開至會員身體紀錄</h2>
-  <p className="mt-2 text-sm text-secondary-text">僅主管或店長可操作。預設只勾選新版保養與部位資料；舊欄位須由主管自行選擇。公開前請逐項確認，未勾選的項目不會顯示。</p>
+  <p className="mt-2 text-sm text-secondary-text">僅主管或店長可操作。預設勾選部位與追蹤資訊；新版諮詢與專業紀錄可能含內部資訊，必須由主管主動勾選。公開前請逐項確認，未勾選的項目不會顯示。</p>
   {!loaded?<button type="button" disabled={busy} onClick={load} className="mt-4 rounded-xl bg-[#B77C7E] px-4 py-3 text-sm text-white disabled:opacity-50">{busy?"讀取中…":"檢查公開狀態與預覽"}</button>:<>
    <p className="mt-3 text-sm font-medium">{published?"已公開，可修改或撤銷":"尚未公開"}</p>
    <div className="mt-4 space-y-3">{Object.entries(preview??{}).map(([key,value])=><label key={key} className="flex items-start gap-3 rounded-xl border border-[#F0E5E3] p-3 text-sm">
