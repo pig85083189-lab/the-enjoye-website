@@ -12,6 +12,11 @@ const labels:Record<string,string>={
  suggest_next_booking:"是否建議下次預約",suggested_date:"建議下次保養日期",
  suggested_tracking_areas:"建議追蹤部位"
 };
+const groups=[
+ {title:"01 今日評估與專業紀錄",keys:["consultation_answers","concerns","client_focus","comparison_to_last","sensitivity_level","discomfort_note","client_feeling","products"]},
+ {title:"02 身體部位紀錄",keys:["body_marker_details","body_markers","body_map_note"]},
+ {title:"03 保養後建議與追蹤",keys:["follow_up_note","follow_up_tags","suggest_next_booking","suggested_date","suggested_tracking_areas"]}
+];
 export function MemberPublicationPanel({organizationId,treatmentId}:{organizationId:string;treatmentId:string}){
  const [preview,setPreview]=useState<PublicFields|null>(null);
  const [selected,setSelected]=useState<string[]>([]);
@@ -40,10 +45,7 @@ export function MemberPublicationPanel({organizationId,treatmentId}:{organizatio
   <p className="mt-2 text-sm text-secondary-text">僅主管或店長可操作。預設勾選部位與追蹤資訊；新版諮詢與專業紀錄可能含內部資訊，必須由主管主動勾選。公開前請逐項確認，未勾選的項目不會顯示。</p>
   {!loaded?<button type="button" disabled={busy} onClick={load} className="mt-4 rounded-xl bg-[#B77C7E] px-4 py-3 text-sm text-white disabled:opacity-50">{busy?"讀取中…":"檢查公開狀態與預覽"}</button>:<>
    <p className="mt-3 text-sm font-medium">{published?"已公開，可修改或撤銷":"尚未公開"}</p>
-   <div className="mt-4 space-y-3">{Object.entries(preview??{}).map(([key,value])=><label key={key} className="flex items-start gap-3 rounded-xl border border-[#F0E5E3] p-3 text-sm">
-    <input type="checkbox" className="mt-1" checked={selected.includes(key)} onChange={e=>setSelected(prev=>e.target.checked?[...prev,key]:prev.filter(v=>v!==key))}/>
-    <span className="min-w-0"><strong>{labels[key]??key}</strong><span className="mt-1 block whitespace-pre-wrap break-words text-secondary-text">{Array.isArray(value)?value.map(item=>typeof item==="string"?item:("label" in item?`${item.label}：${item.value}`:`${item.area}：${item.conditions.join("、")}${item.note?`（${item.note}）`:""}`)).join("、"):typeof value==="boolean"?(value?"是":"否"):String(value)}</span></span>
-   </label>)}</div>
+   <div className="mt-4 space-y-5">{groups.map(group=>{const entries=group.keys.filter(key=>key in (preview??{})).map(key=>[key,(preview??{})[key]] as const);return entries.length?<section key={group.title} className="rounded-xl border border-[#F0E5E3] p-3"><h3 className="mb-3 text-sm font-semibold text-text">{group.title}</h3><div className="space-y-3">{entries.map(([key,value])=><label key={key} className="flex items-start gap-3 rounded-xl border border-[#F0E5E3] p-3 text-sm"><input type="checkbox" className="mt-1" checked={selected.includes(key)} onChange={e=>setSelected(prev=>e.target.checked?[...prev,key]:prev.filter(v=>v!==key))}/><span className="min-w-0"><strong>{labels[key]??key}</strong><span className="mt-1 block whitespace-pre-wrap break-words text-secondary-text">{Array.isArray(value)?value.map(item=>typeof item==="string"?item:("label" in item?`${item.label}：${item.value}`:`${item.area}：${item.conditions.join("、")}${item.note?`（${item.note}）`:""}`)).join("、"):typeof value==="boolean"?(value?"是":"否"):String(value)}</span></span></label>)}</div></section>:null})}</div>
    <div className="mt-4 flex flex-wrap gap-3">
     <button type="button" disabled={busy||selected.length===0} onClick={()=>submit(false)} className="rounded-xl bg-[#B77C7E] px-4 py-3 text-sm text-white disabled:opacity-50">{busy?"處理中…":published?"更新公開內容":"確認公開至會員"}</button>
     {published&&<button type="button" disabled={busy} onClick={()=>submit(true)} className="rounded-xl border border-[#B77C7E] px-4 py-3 text-sm text-[#9A5D61] disabled:opacity-50">撤銷公開</button>}
