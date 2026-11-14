@@ -23,7 +23,7 @@ async function context(organizationId:string,treatmentId:string){
  if(!db)throw Error("資料庫尚未設定");
  const {data:org,error:orgError}=await db.from("organizations").select("id").eq("app_id",organizationId).maybeSingle();
  if(orgError||!org)throw Error("找不到此店家的正式資料，無法公開");
- const {data:matches,error}=await db.from("treatments").select("id,organization_id,customer_id,completed_at,status,staff_id,assessment,body_markers,body_map_note,discomfort_note,client_feeling,products,follow_up,suggested_tracking_areas")
+ const {data:matches,error}=await db.from("treatments").select("id,organization_id,customer_id,completed_at,status,staff_id,professional_note,assessment,body_markers,body_map_note,discomfort_note,client_feeling,products,follow_up,suggested_tracking_areas")
   .eq("app_id",treatmentId).eq("organization_id",org.id).eq("status","COMPLETED").not("completed_at","is",null).limit(2);
  const t=matches?.length===1?matches[0]:null;
  if(error||!t)throw Error("只有正式資料庫中已完成的療程可以公開");
@@ -47,6 +47,8 @@ function makeSnapshot(t:Record<string,unknown>,consultationFields:unknown):Publi
   return value?[{label,value}]:[];
  });
  if(approvedAnswers.length)fields.consultation_answers=approvedAnswers;
+ // Internal professional notes are opt-in only and must be explicitly approved by a manager.
+ add(fields,"professional_note",str(t.professional_note));
  const markerDetails=Array.isArray(t.body_markers)?t.body_markers.slice(0,40).flatMap((raw:unknown)=>{
   const marker=obj(raw),area=str(marker.area);
   return area?[{area,conditions:arr(marker.conditions),note:str(marker.note)}]:[];
