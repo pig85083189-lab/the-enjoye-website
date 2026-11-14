@@ -15,7 +15,6 @@ import { BodyMapStep } from "@/features/treatments/steps/BodyMapStep";
 import { CompleteStep } from "@/features/treatments/steps/CompleteStep";
 import { CustomerSummaryStep } from "@/features/treatments/steps/CustomerSummaryStep";
 import { FollowUpStep } from "@/features/treatments/steps/FollowUpStep";
-import { OperationsStep } from "@/features/treatments/steps/OperationsStep";
 import { PhotosStep } from "@/features/treatments/steps/PhotosStep";
 import { useTreatmentDraft } from "@/hooks/useTreatmentDraft";
 import { getTreatmentTemplateForService } from "@/data/treatment-templates";
@@ -358,21 +357,8 @@ export function TreatmentWorkspace({
         );
         break;
       case "operations":
-        stepContent = (
-          <OperationsStep
-            template={template}
-            operations={draft.operations}
-            products={draft.products}
-            onOperationsChange={(operations) =>
-              updateDraft((prev) => ({ ...prev, operations }))
-            }
-            onProductsChange={(products) =>
-              updateDraft((prev) => ({ ...prev, products }))
-            }
-            onBack={goBack}
-            onNext={goNext}
-          />
-        );
+        // Legacy drafts remain readable; editing continues at the next visible step.
+        stepContent = <div className="text-sm text-secondary-text">此步驟已整合至療程紀錄，請選擇「照片紀錄」繼續。</div>;
         break;
       case "photos":
         stepContent = (
