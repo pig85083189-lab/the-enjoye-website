@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { StepFooter } from "@/features/treatments/StepFooter";
 import { QuickRecordDialog } from "@/features/treatments/QuickRecordDialog";
 import { MEMBERSHIP_LABEL } from "@/lib/utils";
+import { getServiceById } from "@/data/mock-services";
 
 interface CustomerSummaryStepProps {
   customer: Customer;
@@ -32,6 +33,7 @@ export function CustomerSummaryStep({
 }: CustomerSummaryStepProps) {
   const [quickOpen, setQuickOpen] = useState(false);
   const isReturning = customer.membership !== "new" && customer.totalVisits > 1;
+  const servicePrice = getServiceById(appointment.serviceId, appointment.organizationId)?.priceMinor;
 
   return (
     <div>
@@ -56,7 +58,7 @@ export function CustomerSummaryStep({
         <dl className="mt-5 grid gap-3 sm:grid-cols-2">
           <div>
             <dt className="text-sm text-secondary-text">金額</dt>
-            <dd className="mt-1 text-[15px] font-medium text-text">依本次結帳金額為準</dd>
+            <dd className="mt-1 text-[15px] font-medium text-text">{typeof servicePrice === "number" ? `NT$ ${servicePrice.toLocaleString("zh-TW")}（課程定價）` : "未設定課程金額"}</dd>
           </div>
           <div>
             <dt className="text-sm text-secondary-text">美容師</dt>
