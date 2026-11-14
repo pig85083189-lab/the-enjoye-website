@@ -66,13 +66,13 @@ export async function PUT(request: NextRequest) {
     const { error } = await auth.admin.from("staff_consultation_settings").insert({
       organization_id: organizationId, fields: body.fields, updated_by: auth.user.id, revision: 1,
     });
-    if (error) return NextResponse.json({ error: error.code === "23505" ? "設定已被其他裝置修改，請重新整理" : "儲存失敗" }, { status: error.code === "23505" ? 409 : 500 });
+    if (error) { console.error("consultation-settings insert failed", { code: error.code, message: error.message, details: error.details }); return NextResponse.json({ error: error.code === "23505" ? "設定已被其他裝置修改，請重新整理" : `儲存失敗（資料庫代碼 ${error.code ?? "unknown"}）` }, { status: error.code === "23505" ? 409 : 500 }); }
     return NextResponse.json({ revision: 1 });
   }
   const { data, error } = await auth.admin.from("staff_consultation_settings")
     .update({ fields: body.fields, revision: revision + 1, updated_at: new Date().toISOString(), updated_by: auth.user.id })
     .eq("organization_id", organizationId).eq("revision", revision).select("revision").maybeSingle();
-  if (error) return NextResponse.json({ error: "儲存失敗" }, { status: 500 });
+  if (error) { console.error("consultation-settings update failed", { code: error.code, message: error.message, details: error.details }); return NextResponse.json({ error: `儲存失敗（資料庫代碼 ${error.code ?? "unknown"}）` }, { status: 500 }); }
   if (!data) return NextResponse.json({ error: "設定已被其他裝置修改，請重新整理" }, { status: 409 });
   return NextResponse.json({ revision: data.revision });
 }
