@@ -9,14 +9,14 @@ import {
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useLeaveGuard } from "@/features/treatments/LeaveGuard";
 import { TreatmentNavigation } from "@/features/treatments/TreatmentNavigation";
-import { AssessmentStep } from "@/features/treatments/steps/AssessmentStep";
+import { ConsultationFields } from "@/features/treatments/steps/ConsultationFields";
+import { DEFAULT_CONSULTATION_FIELDS, type ConsultationField } from "@/lib/consultation-settings";
 import { BodyMapStep } from "@/features/treatments/steps/BodyMapStep";
 import { CompleteStep } from "@/features/treatments/steps/CompleteStep";
 import { CustomerSummaryStep } from "@/features/treatments/steps/CustomerSummaryStep";
 import { FollowUpStep } from "@/features/treatments/steps/FollowUpStep";
 import { OperationsStep } from "@/features/treatments/steps/OperationsStep";
 import { PhotosStep } from "@/features/treatments/steps/PhotosStep";
-import { ProfessionalNoteStep } from "@/features/treatments/steps/ProfessionalNoteStep";
 import { useTreatmentDraft } from "@/hooks/useTreatmentDraft";
 import { getTreatmentTemplateForService } from "@/data/treatment-templates";
 import { resolveTreatmentTemplateLabel } from "@/lib/treatments/treatment-display";
@@ -61,7 +61,20 @@ export function TreatmentWorkspace({
   const [completeError, setCompleteError] = useState("");
   const [quickBanner, setQuickBanner] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
+  const [consultationFields, setConsultationFields] = useState<ConsultationField[]>(DEFAULT_CONSULTATION_FIELDS);
+  const [consultationError, setConsultationError] = useState("");
+  const [consultationLoading, setConsultationLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setConsultationError("");
+    setConsultationLoading(true);
+    fetch(`/api/staff/consultation-settings?organizationId=${encodeURIComponent(appointment.organizationId)}`, { cache: "no-store" })
+      .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法讀取諮詢設定"); return data; })
+      .then((data) => { if (!cancelled) setConsultationFields(data.fields); })
+      .catch(() => { if (!cancelled) setConsultationError("無法讀取最新諮詢設定，請重新整理後再填寫。"); })
+      .finally(() => { if (!cancelled) setConsultationLoading(false); });
+    return () => { cancelled = true; };
+  }, [appointment.organizationId]);
   const template = useMemo(
     () =>
       getTreatmentTemplateForService(appointment.serviceId, appointment.organizationId),
@@ -96,6 +109,11 @@ export function TreatmentWorkspace({
     remoteWritePilot: treatmentRemoteWritePilot,
     appointmentStatus: canonicalStatus,
   });
+
+  const consultationValues = draft.assessment.consultationAnswers ?? {};
+  const changeConsultation = (id: string, value: string | string[]) => updateDraft((prev) => ({
+    ...prev, assessment: { ...prev.assessment, consultationAnswers: { ...prev.assessment.consultationAnswers, [id]: value } },
+  }));
 
   useEffect(() => {
     if (treatmentRemoteReadPilot) return;
@@ -214,6 +232,7 @@ export function TreatmentWorkspace({
         clientFocus: previousHints.assessment?.clientFocus ?? "",
         sensitivityLevel: previousHints.assessment?.sensitivityLevel ?? 0,
         comparisonToLast: "same_as_last",
+        consultationAnswers: prev.assessment.consultationAnswers ?? {},
       },
       operations,
       products,
@@ -276,10 +295,10 @@ export function TreatmentWorkspace({
 
   let stepContent = null;
 
-  if (!hydrated) {
+  if (!hydrated || ((draft.currentStep === "assessment" || draft.currentStep === "professionalNote") && (consultationLoading || Boolean(consultationError)))) {
     stepContent = (
       <div className="flex min-h-[40vh] items-center justify-center text-secondary-text">
-        載入療程草稿…
+        {consultationError || "載入療程草稿及諮詢設定…"}
       </div>
     );
   } else if (finished) {
@@ -312,14 +331,13 @@ export function TreatmentWorkspace({
         break;
       case "assessment":
         stepContent = (
-          <AssessmentStep
-            template={template}
-            value={draft.assessment}
-            previousHints={previousHints}
-            onChange={(assessment) => updateDraft((prev) => ({ ...prev, assessment }))}
-            onBack={goBack}
-            onNext={goNext}
-          />
+          <div>
+            {consultationError ? <p role="alert" className="mb-3 text-sm text-warning">{consultationError}</p> : null}
+            <h1 className="mb-5 text-2xl font-semibold text-text">今日評估</h1>
+            <ConsultationFields fields={consultationFields.filter((field) => field.section === "assessment")} values={consultationValues} onChange={changeConsultation} />
+            <div className="mt-5 flex justify-between gap-3"><button className="min-h-11 rounded-xl border border-border px-4" onClick={goBack}>上一步</button><button className="min-h-11 rounded-xl bg-primary px-4 text-white" onClick={goNext}>下一步：部位紀錄</button></div>
+          </div>
+
         );
         break;
       case "bodyMap":
@@ -375,19 +393,13 @@ export function TreatmentWorkspace({
         break;
       case "professionalNote":
         stepContent = (
-          <ProfessionalNoteStep
-            template={template}
-            isQuickMode={draft.mode === "QUICK"}
-            professionalNote={draft.professionalNote}
-            selectedQuickPhrases={draft.selectedQuickPhrases}
-            noteManuallyEdited={draft.noteManuallyEdited}
-            clientFeeling={draft.clientFeeling}
-            discomfortNote={draft.discomfortNote}
-            onUpdate={(patch) => updateDraft((prev) => ({ ...prev, ...patch }))}
-            onBack={goBack}
-            onNext={goNext}
-            onJumpToComplete={() => goTo("complete")}
-          />
+          <div>
+            {consultationError ? <p role="alert" className="mb-3 text-sm text-warning">{consultationError}</p> : null}
+            <h1 className="mb-5 text-2xl font-semibold text-text">美容師專業紀錄</h1>
+            <ConsultationFields fields={consultationFields.filter((field) => field.section === "professionalNote")} values={consultationValues} onChange={changeConsultation} />
+            <div className="mt-5 flex justify-between gap-3"><button className="min-h-11 rounded-xl border border-border px-4" onClick={goBack}>上一步</button><button className="min-h-11 rounded-xl bg-primary px-4 text-white" onClick={goNext}>下一步：下次追蹤</button></div>
+          </div>
+
         );
         break;
       case "followUp":

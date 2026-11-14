@@ -100,6 +100,10 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
   const [saveError, setSaveError] = useState<string | null>(null);
   const skipNextSave = useRef(true);
   const draftRef = useRef(draft);
+  // Keep remote writes serialized so the final completion cannot race autosave.
+  const autosaveInFlight = useRef<Promise<TreatmentDraft> | null>(null);
+  const completing = useRef(false);
+  const latestRemoteUpdatedAt = useRef<string | null>(null);
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
@@ -174,6 +178,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
               staffId: args.staffId,
               serviceId: args.serviceId,
             });
+          latestRemoteUpdatedAt.current = existing?.updatedAt ?? null;
           setDraft(next);
           setPhotos([]);
           setHydrated(true);
@@ -224,32 +229,46 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
       return () => window.clearTimeout(timer);
     }
 
+    if (completing.current || autosaveInFlight.current) return;
     if (draft.status !== "draft") return;
     if (!draft.id.startsWith("trt-")) return;
     const expectedUpdatedAt = draft.updatedAt;
     if (!expectedUpdatedAt) return;
 
     const timer = window.setTimeout(() => {
+      if (completing.current || autosaveInFlight.current) return;
+      setSaving(true);
+      const request = submitTreatmentRemoteAutosave({
+        treatmentId: draft.id,
+        expectedUpdatedAt: latestRemoteUpdatedAt.current ?? expectedUpdatedAt,
+        locationId: draft.locationId ?? args.locationId ?? "",
+        customerId: draft.customerId,
+        serviceId: draft.serviceId,
+        staffId: draft.staffId,
+        appointmentId: draft.appointmentId,
+        draft: photoMetaOnly(draft),
+      });
+      autosaveInFlight.current = request;
       void (async () => {
-        setSaving(true);
         try {
-          const saved = await submitTreatmentRemoteAutosave({
-            treatmentId: draft.id,
-            expectedUpdatedAt,
-            locationId: draft.locationId ?? args.locationId ?? "",
-            customerId: draft.customerId,
-            serviceId: draft.serviceId,
-            staffId: draft.staffId,
-            appointmentId: draft.appointmentId,
-            draft: photoMetaOnly(draft),
+          const saved = await request;
+          latestRemoteUpdatedAt.current = saved.updatedAt;
+          setDraft((current) => {
+            if (current === draft) {
+              skipNextSave.current = true;
+              return saved;
+            }
+            // Edits made during autosave must survive an older server response.
+            return current.id === saved.id && current.status === "draft"
+              ? { ...current, updatedAt: saved.updatedAt }
+              : current;
           });
-          skipNextSave.current = true;
-          setDraft(saved);
           setSavedAt(new Date(saved.updatedAt));
           setSaveError(null);
         } catch (error: unknown) {
           setSaveError(error instanceof Error ? error.message : "Remote autosave failed");
         } finally {
+          autosaveInFlight.current = null;
           setSaving(false);
         }
       })();
@@ -276,21 +295,29 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
       if (next.status === "completed" && draftRef.current.status === "completed") {
         return draftRef.current;
       }
-      const completed = await submitTreatmentRemoteComplete({
-        treatmentId: next.id,
-        expectedUpdatedAt: next.updatedAt,
-        locationId: next.locationId ?? args.locationId ?? "",
-        customerId: next.customerId,
-        serviceId: next.serviceId,
-        staffId: next.staffId,
-        appointmentId: next.appointmentId,
-        draft: photoMetaOnly(next),
-      });
-      skipNextSave.current = true;
-      setDraft(completed);
-      setSavedAt(new Date(completed.updatedAt));
-      setSaveError(null);
-      return completed;
+      completing.current = true;
+      try {
+        // Wait for any prior draft write before completing the final snapshot.
+        if (autosaveInFlight.current) await autosaveInFlight.current;
+        const completed = await submitTreatmentRemoteComplete({
+          treatmentId: next.id,
+          expectedUpdatedAt: latestRemoteUpdatedAt.current ?? next.updatedAt,
+          locationId: next.locationId ?? args.locationId ?? "",
+          customerId: next.customerId,
+          serviceId: next.serviceId,
+          staffId: next.staffId,
+          appointmentId: next.appointmentId,
+          draft: photoMetaOnly(next),
+        });
+        latestRemoteUpdatedAt.current = completed.updatedAt;
+        skipNextSave.current = true;
+        setDraft(completed);
+        setSavedAt(new Date(completed.updatedAt));
+        setSaveError(null);
+        return completed;
+      } finally {
+        completing.current = false;
+      }
     },
     [args.locationId, remoteWrite],
   );

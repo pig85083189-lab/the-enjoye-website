@@ -1,3 +1,14 @@
+function normalizeConsultationAnswers(value: unknown): Record<string, string | string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const answers: Record<string, string | string[]> = {};
+  for (const [key, answer] of Object.entries(value)) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
+    if (typeof answer === "string") answers[key] = answer;
+    else if (Array.isArray(answer) && answer.every((item) => typeof item === "string")) answers[key] = answer;
+  }
+  return answers;
+}
+
 import type { TreatmentDraft, TreatmentStepId } from "@/types/treatment";
 import { isOptionalStep } from "@/types/treatment";
 import { migrateLegacyTenantStorage } from "@/lib/tenant/migration";
@@ -45,6 +56,7 @@ export function createEmptyDraft(input: {
       clientFocus: "",
       sensitivityLevel: 0,
       comparisonToLast: "",
+      consultationAnswers: {},
     },
     bodyMarkers: [],
     bodyMapNote: "",
@@ -175,6 +187,7 @@ export function normalizeTreatmentDraft(
         typeof assessmentRaw.sensitivityLevel === "number"
           ? assessmentRaw.sensitivityLevel
           : 0,
+      consultationAnswers: normalizeConsultationAnswers(assessmentRaw.consultationAnswers),
       comparisonToLast:
         typeof assessmentRaw.comparisonToLast === "string"
           ? (assessmentRaw.comparisonToLast as TreatmentDraft["assessment"]["comparisonToLast"])
@@ -409,6 +422,7 @@ export function defaultSeedOrganizationId(): string {
 
 export function draftHasContent(draft: TreatmentDraft): boolean {
   return (
+    Object.values(draft.assessment.consultationAnswers ?? {}).some((value) => Array.isArray(value) ? value.length > 0 : Boolean(value)) ||
     draft.assessment.concerns.length > 0 ||
     draft.assessment.clientFocus.trim().length > 0 ||
     draft.assessment.sensitivityLevel > 0 ||
