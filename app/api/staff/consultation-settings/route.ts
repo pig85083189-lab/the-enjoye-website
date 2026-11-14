@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
   if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { data, error } = await auth.admin.from("staff_consultation_settings")
     .select("fields,revision,updated_at").eq("organization_id", organizationId).maybeSingle();
-  if (error) return NextResponse.json({ error: "無法讀取雲端諮詢設定" }, { status: 500 });
+  if (error) { console.error("consultation-settings read failed", { code: error.code, message: error.message }); return NextResponse.json({ error: `無法讀取雲端諮詢設定（資料庫代碼 ${error.code ?? "unknown"}）` }, { status: 500 }); }
   return NextResponse.json({ fields: data?.fields ?? DEFAULT_CONSULTATION_FIELDS, revision: data?.revision ?? 0, updatedAt: data?.updated_at ?? null }, { headers: { "Cache-Control": "no-store" } });
 }
 
