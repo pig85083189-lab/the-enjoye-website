@@ -1,3 +1,14 @@
+function normalizeConsultationAnswers(value: unknown): Record<string, string | string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const answers: Record<string, string | string[]> = {};
+  for (const [key, answer] of Object.entries(value)) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
+    if (typeof answer === "string") answers[key] = answer;
+    else if (Array.isArray(answer) && answer.every((item) => typeof item === "string")) answers[key] = answer;
+  }
+  return answers;
+}
+
 import type { TreatmentDraft, TreatmentStepId } from "@/types/treatment";
 import { isOptionalStep } from "@/types/treatment";
 import { migrateLegacyTenantStorage } from "@/lib/tenant/migration";
@@ -176,9 +187,7 @@ export function normalizeTreatmentDraft(
         typeof assessmentRaw.sensitivityLevel === "number"
           ? assessmentRaw.sensitivityLevel
           : 0,
-      consultationAnswers: assessmentRaw.consultationAnswers && typeof assessmentRaw.consultationAnswers === "object" && !Array.isArray(assessmentRaw.consultationAnswers)
-        ? (Object.fromEntries(Object.entries(assessmentRaw.consultationAnswers as Record<string, unknown>).filter(([key, value]) => key !== "__proto__" && (typeof value === "string" || (Array.isArray(value) && value.every((item) => typeof item === "string")))) as Record<string, string | string[]>)
-        : {},
+      consultationAnswers: normalizeConsultationAnswers(assessmentRaw.consultationAnswers),
       comparisonToLast:
         typeof assessmentRaw.comparisonToLast === "string"
           ? (assessmentRaw.comparisonToLast as TreatmentDraft["assessment"]["comparisonToLast"])
