@@ -12,7 +12,7 @@ type Preview = { status:"draft"|"published"; fields:PublicFields; completedAt:st
 function str(v:unknown):string|null {return typeof v==="string"&&v.trim()?v.trim().slice(0,500):null;}
 function arr(v:unknown):string[]{return Array.isArray(v)?v.map(str).filter((x):x is string=>!!x).slice(0,20):[];}
 function obj(v:unknown):Record<string,unknown>{return v&&typeof v==="object"&&!Array.isArray(v)?v as Record<string,unknown>:{};}
-function add(target:PublicFields,key:string,value:string|string[]|number|boolean|null) {
+function add(target:PublicFields,key:string,value:PublicValue|null) {
  if(value!==null&&(!Array.isArray(value)||value.length>0))target[key]=value;
 }
 async function context(organizationId:string,treatmentId:string){
