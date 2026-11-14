@@ -130,7 +130,6 @@ export const TREATMENT_STEPS: Array<{ id: TreatmentStepId; label: string; short:
   { id: "summary", label: "客戶摘要", short: "摘要" },
   { id: "assessment", label: "今日評估", short: "評估" },
   { id: "bodyMap", label: "部位紀錄", short: "部位" },
-  { id: "operations", label: "操作項目", short: "操作" },
   { id: "photos", label: "照片紀錄", short: "照片" },
   { id: "professionalNote", label: "專業紀錄", short: "紀錄" },
   { id: "followUp", label: "下次追蹤", short: "追蹤" },
