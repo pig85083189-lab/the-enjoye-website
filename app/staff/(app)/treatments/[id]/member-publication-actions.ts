@@ -27,7 +27,8 @@ async function context(organizationId:string,treatmentId:string){
   .eq("app_id",treatmentId).eq("organization_id",org.id).eq("status","COMPLETED").not("completed_at","is",null).limit(2);
  const t=matches?.length===1?matches[0]:null;
  if(error||!t)throw Error("只有正式資料庫中已完成的療程可以公開");
- const {data:settings}=await db.from("staff_consultation_settings").select("fields").eq("organization_id",organizationId).maybeSingle();
+ const {data:settings,error:settingsError}=await db.from("staff_consultation_settings").select("fields").eq("organization_id",organizationId).maybeSingle();
+ if(settingsError)throw Error("無法讀取諮詢欄位設定，請稍後重試");
  const consultationFields=Array.isArray(settings?.fields)?settings.fields:DEFAULT_CONSULTATION_FIELDS;
  const {data:customer}=await db.from("customers").select("id").eq("id",t.customer_id).eq("organization_id",org.id).eq("status","ACTIVE").maybeSingle();
  if(!customer)throw Error("顧客資料無效");
@@ -68,7 +69,7 @@ export async function previewMemberTreatmentPublication(organizationId:string,tr
  const {db,t,org,consultationFields}=await context(organizationId,treatmentId);
  const {data:existing,error}=await db.from("member_treatment_publications").select("approved_fields,revoked_at").eq("treatment_id",t.id).eq("organization_id",org.id).maybeSingle();
  if(error)throw Error("無法讀取公開狀態");
- return {status:existing&&!existing.revoked_at?"published":"draft",fields:existing&&!existing.revoked_at?obj(existing.approved_fields) as PublicFields:makeSnapshot(t,consultationFields),completedAt:t.completed_at};
+ return {status:existing&&!existing.revoked_at?"published":"draft",fields:makeSnapshot(t,consultationFields),completedAt:t.completed_at};
 }
 export async function publishMemberTreatment(organizationId:string,treatmentId:string,approvedFields:PublicFields){
  const {db,t,auth,consultationFields}=await context(organizationId,treatmentId);
@@ -89,7 +90,7 @@ export async function publishMemberTreatment(organizationId:string,treatmentId:s
 export async function revokeMemberTreatment(organizationId:string,treatmentId:string){
  const {db,t}=await context(organizationId,treatmentId);
  const {error}=await db.from("member_treatment_publications").update({revoked_at:new Date().toISOString(),updated_at:new Date().toISOString()})
- .eq("treatment_id",t.id).eq("organization_id",organizationId).is("revoked_at",null);
+ .eq("treatment_id",t.id).eq("organization_id",t.organization_id).is("revoked_at",null);
  if(error)throw Error("撤銷失敗");
  return {ok:true};
 }
