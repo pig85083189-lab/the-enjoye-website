@@ -63,20 +63,18 @@ export function TreatmentWorkspace({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [consultationFields, setConsultationFields] = useState<ConsultationField[]>(DEFAULT_CONSULTATION_FIELDS);
   const [consultationError, setConsultationError] = useState("");
+  const [consultationLoading, setConsultationLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
     setConsultationError("");
+    setConsultationLoading(true);
     fetch(`/api/staff/consultation-settings?organizationId=${encodeURIComponent(appointment.organizationId)}`, { cache: "no-store" })
       .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法讀取諮詢設定"); return data; })
       .then((data) => { if (!cancelled) setConsultationFields(data.fields); })
-      .catch(() => { if (!cancelled) setConsultationError("無法讀取最新諮詢設定，請重新整理後再填寫。"); });
+      .catch(() => { if (!cancelled) setConsultationError("無法讀取最新諮詢設定，請重新整理後再填寫。"); })
+      .finally(() => { if (!cancelled) setConsultationLoading(false); });
     return () => { cancelled = true; };
   }, [appointment.organizationId]);
-  const consultationValues = draft.assessment.consultationAnswers ?? {};
-  const changeConsultation = (id: string, value: string | string[]) => updateDraft((prev) => ({
-    ...prev, assessment: { ...prev.assessment, consultationAnswers: { ...prev.assessment.consultationAnswers, [id]: value } },
-  }));
-
   const template = useMemo(
     () =>
       getTreatmentTemplateForService(appointment.serviceId, appointment.organizationId),
@@ -111,6 +109,11 @@ export function TreatmentWorkspace({
     remoteWritePilot: treatmentRemoteWritePilot,
     appointmentStatus: canonicalStatus,
   });
+
+  const consultationValues = draft.assessment.consultationAnswers ?? {};
+  const changeConsultation = (id: string, value: string | string[]) => updateDraft((prev) => ({
+    ...prev, assessment: { ...prev.assessment, consultationAnswers: { ...prev.assessment.consultationAnswers, [id]: value } },
+  }));
 
   useEffect(() => {
     if (treatmentRemoteReadPilot) return;
@@ -291,10 +294,10 @@ export function TreatmentWorkspace({
 
   let stepContent = null;
 
-  if (!hydrated) {
+  if (!hydrated || consultationLoading || Boolean(consultationError)) {
     stepContent = (
       <div className="flex min-h-[40vh] items-center justify-center text-secondary-text">
-        載入療程草稿…
+        {consultationError || "載入療程草稿及諮詢設定…"}
       </div>
     );
   } else if (finished) {
