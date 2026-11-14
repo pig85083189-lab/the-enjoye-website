@@ -45,6 +45,7 @@ export function createEmptyDraft(input: {
       clientFocus: "",
       sensitivityLevel: 0,
       comparisonToLast: "",
+      consultationAnswers: {},
     },
     bodyMarkers: [],
     bodyMapNote: "",
@@ -175,6 +176,9 @@ export function normalizeTreatmentDraft(
         typeof assessmentRaw.sensitivityLevel === "number"
           ? assessmentRaw.sensitivityLevel
           : 0,
+      consultationAnswers: assessmentRaw.consultationAnswers && typeof assessmentRaw.consultationAnswers === "object" && !Array.isArray(assessmentRaw.consultationAnswers)
+        ? Object.fromEntries(Object.entries(assessmentRaw.consultationAnswers as Record<string, unknown>).filter(([key, value]) => key !== "__proto__" && (typeof value === "string" || (Array.isArray(value) && value.every((item) => typeof item === "string")))) as Record<string, string | string[]>
+        : {},
       comparisonToLast:
         typeof assessmentRaw.comparisonToLast === "string"
           ? (assessmentRaw.comparisonToLast as TreatmentDraft["assessment"]["comparisonToLast"])
@@ -409,6 +413,7 @@ export function defaultSeedOrganizationId(): string {
 
 export function draftHasContent(draft: TreatmentDraft): boolean {
   return (
+    Object.values(draft.assessment.consultationAnswers ?? {}).some((value) => Array.isArray(value) ? value.length > 0 : Boolean(value)) ||
     draft.assessment.concerns.length > 0 ||
     draft.assessment.clientFocus.trim().length > 0 ||
     draft.assessment.sensitivityLevel > 0 ||
