@@ -71,7 +71,7 @@ export function TreatmentWorkspace({
     fetch(`/api/staff/consultation-settings?organizationId=${encodeURIComponent(appointment.organizationId)}`, { cache: "no-store" })
       .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "讀取諮詢設定失敗"); return data; })
       .then((data) => { if (!cancelled) setConsultationFields(data.fields); })
-      .catch(() => { if (!cancelled) setConsultationError("無法讀取諮詢設定，請重新整理後再填寫。"); })
+      .catch((error) => { if (!cancelled) { setConsultationFields(DEFAULT_CONSULTATION_FIELDS); setConsultationError(`目前無法同步店家自訂設定，已暫時顯示預設欄位。${error instanceof Error ? `（${error.message}）` : ""}填寫內容會依目前療程儲存模式保存。`); } })
       .finally(() => { if (!cancelled) setConsultationLoading(false); });
     return () => { cancelled = true; };
   }, [appointment.organizationId]);
@@ -290,10 +290,10 @@ export function TreatmentWorkspace({
 
   let stepContent = null;
 
-  if (!hydrated || ((draft.currentStep === "assessment" || draft.currentStep === "professionalNote") && (consultationLoading || Boolean(consultationError)))) {
+  if (!hydrated || ((draft.currentStep === "assessment" || draft.currentStep === "professionalNote") && consultationLoading)) {
     stepContent = (
       <div className="flex min-h-[40vh] items-center justify-center text-secondary-text">
-        {consultationError || "載入療程草稿及諮詢設定…"}
+        {"載入療程草稿及諮詢設定…"}
       </div>
     );
   } else if (finished) {
@@ -328,6 +328,7 @@ export function TreatmentWorkspace({
         stepContent = (
           <div>
             <h1 className="mb-5 text-2xl font-semibold text-text">今日評估</h1>
+            {consultationError ? <p role="alert" className="mb-4 rounded-xl border border-warning/30 bg-background p-3 text-sm text-secondary-text">{consultationError}</p> : null}
             <ConsultationFields fields={consultationFields.filter((field) => field.section === "assessment")} values={consultationValues} onChange={changeConsultation} />
             <div className="mt-5 flex justify-between gap-3"><button className="min-h-11 rounded-xl border border-border px-4" onClick={goBack}>上一步</button><button className="min-h-11 rounded-xl bg-primary px-4 text-white" onClick={goNext}>下一步：部位紀錄</button></div>
           </div>
@@ -387,6 +388,7 @@ export function TreatmentWorkspace({
         stepContent = (
           <div>
             <h1 className="mb-5 text-2xl font-semibold text-text">美容師專業紀錄</h1>
+            {consultationError ? <p role="alert" className="mb-4 rounded-xl border border-warning/30 bg-background p-3 text-sm text-secondary-text">{consultationError}</p> : null}
             <ConsultationFields fields={consultationFields.filter((field) => field.section === "professionalNote")} values={consultationValues} onChange={changeConsultation} />
             <div className="mt-5 flex justify-between gap-3"><button className="min-h-11 rounded-xl border border-border px-4" onClick={goBack}>上一步</button><button className="min-h-11 rounded-xl bg-primary px-4 text-white" onClick={goNext}>下一步：下次追蹤</button></div>
           </div>
