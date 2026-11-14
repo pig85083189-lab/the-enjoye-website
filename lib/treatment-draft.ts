@@ -177,7 +177,7 @@ export function normalizeTreatmentDraft(
           ? assessmentRaw.sensitivityLevel
           : 0,
       consultationAnswers: assessmentRaw.consultationAnswers && typeof assessmentRaw.consultationAnswers === "object" && !Array.isArray(assessmentRaw.consultationAnswers)
-        ? Object.fromEntries(Object.entries(assessmentRaw.consultationAnswers as Record<string, unknown>).filter(([key, value]) => key !== "__proto__" && (typeof value === "string" || (Array.isArray(value) && value.every((item) => typeof item === "string")))) as Record<string, string | string[]>
+        ? (Object.fromEntries(Object.entries(assessmentRaw.consultationAnswers as Record<string, unknown>).filter(([key, value]) => key !== "__proto__" && (typeof value === "string" || (Array.isArray(value) && value.every((item) => typeof item === "string")))) as Record<string, string | string[]>)
         : {},
       comparisonToLast:
         typeof assessmentRaw.comparisonToLast === "string"
