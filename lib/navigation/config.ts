@@ -1,6 +1,7 @@
 import {
   CalendarDays,
   ClipboardList,
+  ListChecks,
   Flower2,
   Landmark,
   LayoutDashboard,
@@ -231,6 +232,17 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     status: "ready",
     description: "員工與排班",
     requiredPermissions: ["staff.manage"],
+    roles: ["OWNER", "MANAGER"],
+  },
+  {
+    id: "consultation-settings",
+    label: "諮詢設定",
+    href: "/staff/consultation-settings",
+    icon: ListChecks,
+    group: "system",
+    status: "ready",
+    description: "自訂諮詢欄位與選項",
+    requiredPermissions: ["settings.manage"],
     roles: ["OWNER", "MANAGER"],
   },
   {
