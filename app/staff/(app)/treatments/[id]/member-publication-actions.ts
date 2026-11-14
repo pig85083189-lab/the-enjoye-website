@@ -48,7 +48,7 @@ function makeSnapshot(t:Record<string,unknown>,consultationFields:unknown):Publi
  });
  if(approvedAnswers.length)fields.consultation_answers=approvedAnswers;
  // Internal professional notes are opt-in only and must be explicitly approved by a manager.
- add(fields,"professional_note",str(t.professional_note));
+ add(fields,"professional_note",typeof t.professional_note==="string"&&t.professional_note.trim()?t.professional_note.trim().slice(0,4000):null);
  const markerDetails=Array.isArray(t.body_markers)?t.body_markers.slice(0,40).flatMap((raw:unknown)=>{
   const marker=obj(raw),area=str(marker.area);
   return area?[{area,conditions:arr(marker.conditions),note:str(marker.note)}]:[];
