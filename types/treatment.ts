@@ -38,6 +38,7 @@ export interface TreatmentAssessment {
   sensitivityLevel: number;
   /** Phase 2.5: comparison to last visit */
   comparisonToLast?: AssessmentComparison;
+  consultationAnswers?: Record<string, string | string[]>;
 }
 
 export interface BodyMarker {
