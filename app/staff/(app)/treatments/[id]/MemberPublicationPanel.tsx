@@ -22,7 +22,7 @@ export function MemberPublicationPanel({organizationId,treatmentId}:{organizatio
  async function load(){
   setBusy(true);setError("");
   try{const r=await previewMemberTreatmentPublication(organizationId,treatmentId);
-   setPreview(r.fields);setSelected(Object.keys(r.fields).filter(key=>["consultation_answers","body_marker_details","body_markers","body_map_note","follow_up_note","suggested_date"].includes(key)));setPublished(r.status==="published");setLoaded(true);
+   setPreview(r.fields);setSelected(r.status==="published"?r.publishedKeys.filter(key=>key in r.fields):Object.keys(r.fields).filter(key=>["consultation_answers","body_marker_details","body_markers","body_map_note","follow_up_note","suggested_date"].includes(key)));setPublished(r.status==="published");setLoaded(true);
   }catch(e){setError(e instanceof Error?e.message:"無法預覽");}finally{setBusy(false);}
  }
  async function submit(revoke:boolean){
