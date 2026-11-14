@@ -2,9 +2,11 @@
 
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
+import { DEFAULT_CONSULTATION_FIELDS } from "@/lib/consultation-settings";
 
 const allowedRoles = new Set(["OWNER","MANAGER"]);
-type PublicFields = Record<string, string | string[] | number | boolean>;
+type PublicValue = string | string[] | number | boolean | Array<{label:string;value:string}> | Array<{area:string;conditions:string[];note:string|null}>;
+type PublicFields = Record<string, PublicValue>;
 type Preview = { status:"draft"|"published"; fields:PublicFields; completedAt:string };
 
 function str(v:unknown):string|null {return typeof v==="string"&&v.trim()?v.trim().slice(0,500):null;}
@@ -25,12 +27,30 @@ async function context(organizationId:string,treatmentId:string){
   .eq("app_id",treatmentId).eq("organization_id",org.id).eq("status","COMPLETED").not("completed_at","is",null).limit(2);
  const t=matches?.length===1?matches[0]:null;
  if(error||!t)throw Error("只有正式資料庫中已完成的療程可以公開");
+ const {data:settings}=await db.from("staff_consultation_settings").select("fields").eq("organization_id",organizationId).maybeSingle();
+ const consultationFields=Array.isArray(settings?.fields)?settings.fields:DEFAULT_CONSULTATION_FIELDS;
  const {data:customer}=await db.from("customers").select("id").eq("id",t.customer_id).eq("organization_id",org.id).eq("status","ACTIVE").maybeSingle();
  if(!customer)throw Error("顧客資料無效");
- return {db,t,auth,org};
+ return {db,t,auth,org,consultationFields};
 }
-function makeSnapshot(t:Record<string,unknown>):PublicFields {
+function makeSnapshot(t:Record<string,unknown>,consultationFields:unknown):PublicFields {
  const a=obj(t.assessment),f=obj(t.follow_up),fields:PublicFields={};
+ // Publish only explicitly reviewed data. Labels come from the organization's configured field definitions.
+ const answers=obj(a.consultationAnswers);
+ const definitions=Array.isArray(consultationFields)?consultationFields:DEFAULT_CONSULTATION_FIELDS;
+ const approvedAnswers=definitions.slice(0,30).flatMap((raw:unknown)=>{
+  const definition=obj(raw),id=str(definition.id),label=str(definition.label);
+  if(!id||!label||definition.enabled!==true)return [];
+  const rawAnswer=answers[id];
+  const value=Array.isArray(rawAnswer)?arr(rawAnswer).join("、"):str(rawAnswer);
+  return value?[{label,value}]:[];
+ });
+ if(approvedAnswers.length)fields.consultation_answers=approvedAnswers;
+ const markerDetails=Array.isArray(t.body_markers)?t.body_markers.slice(0,40).flatMap((raw:unknown)=>{
+  const marker=obj(raw),area=str(marker.area);
+  return area?[{area,conditions:arr(marker.conditions),note:str(marker.note)}]:[];
+ }):[];
+ if(markerDetails.length)fields.body_marker_details=markerDetails;
  // Staff display name is omitted until the canonical staff roster has been resolved.
  add(fields,"concerns",arr(a.concerns));add(fields,"client_focus",str(a.clientFocus));
  add(fields,"comparison_to_last",str(a.comparisonToLast));
@@ -45,14 +65,14 @@ function makeSnapshot(t:Record<string,unknown>):PublicFields {
  return fields;
 }
 export async function previewMemberTreatmentPublication(organizationId:string,treatmentId:string):Promise<Preview>{
- const {db,t,org}=await context(organizationId,treatmentId);
+ const {db,t,org,consultationFields}=await context(organizationId,treatmentId);
  const {data:existing,error}=await db.from("member_treatment_publications").select("approved_fields,revoked_at").eq("treatment_id",t.id).eq("organization_id",org.id).maybeSingle();
  if(error)throw Error("無法讀取公開狀態");
- return {status:existing&&!existing.revoked_at?"published":"draft",fields:existing&&!existing.revoked_at?obj(existing.approved_fields) as PublicFields:makeSnapshot(t),completedAt:t.completed_at};
+ return {status:existing&&!existing.revoked_at?"published":"draft",fields:existing&&!existing.revoked_at?obj(existing.approved_fields) as PublicFields:makeSnapshot(t,consultationFields),completedAt:t.completed_at};
 }
 export async function publishMemberTreatment(organizationId:string,treatmentId:string,approvedFields:PublicFields){
- const {db,t,auth}=await context(organizationId,treatmentId);
- const candidate=makeSnapshot(t);
+ const {db,t,auth,consultationFields}=await context(organizationId,treatmentId);
+ const candidate=makeSnapshot(t,consultationFields);
  const clean:PublicFields={};
  for(const [key,value] of Object.entries(approvedFields)){
   if(!(key in candidate)||JSON.stringify(candidate[key])!==JSON.stringify(value))throw Error("公開資料已變更，請重新預覽");
