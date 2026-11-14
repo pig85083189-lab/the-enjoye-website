@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { DEFAULT_CONSULTATION_FIELDS, type ConsultationField } from "@/lib/consultation-settings";
 
@@ -27,17 +28,16 @@ async function authorize(organizationId: string, write: boolean) {
   if (error || !user) return { error: "請先登入", status: 401 } as const;
   const admin = createServiceRoleClient();
   if (!admin) return { error: "伺服器尚未設定 Supabase 管理連線", status: 503 } as const;
-  const { data: membership, error: membershipError } = await admin
-    .from("staff_auth_memberships")
-    .select("role")
-    .eq("auth_user_id", user.id)
-    .eq("organization_id", organizationId)
-    .eq("is_active", true)
-    .in("role", write ? ["OWNER", "MANAGER"] : ["OWNER", "MANAGER", "STAFF", "RECEPTIONIST"])
-    .limit(1)
-    .maybeSingle();
-  if (membershipError) return { error: "權限驗證失敗", status: 500 } as const;
-  if (!membership) return { error: "沒有此店家的存取權限", status: 403 } as const;
+  // Use the same membership resolver as the authenticated Staff layout.
+  // Direct table-only lookup misses supported owner bootstrap identities.
+  const resolved = await getAuthenticatedStaffMembership({ organizationId });
+  if (resolved.status !== "ok") {
+    return { error: "沒有此店家的有效登入權限", status: 403 } as const;
+  }
+  const allowedRoles = write ? ["OWNER", "MANAGER"] : ["OWNER", "MANAGER", "STAFF", "RECEPTIONIST"];
+  if (!allowedRoles.includes(resolved.membership.role)) {
+    return { error: "沒有此操作的權限", status: 403 } as const;
+  }
   return { admin, user } as const;
 }
 
