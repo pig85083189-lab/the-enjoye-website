@@ -41,9 +41,9 @@ function makeSnapshot(t:Record<string,unknown>,consultationFields:unknown):Publi
  const definitions=Array.isArray(consultationFields)?consultationFields:DEFAULT_CONSULTATION_FIELDS;
  const approvedAnswers=definitions.slice(0,30).flatMap((raw:unknown)=>{
   const definition=obj(raw),id=str(definition.id),label=str(definition.label);
-  if(!id||!label||definition.enabled!==true)return [];
+  if(!id||!label)return [];
   const rawAnswer=answers[id];
-  const value=Array.isArray(rawAnswer)?arr(rawAnswer).join("、"):str(rawAnswer);
+  const value=Array.isArray(rawAnswer)?arr(rawAnswer).join("、"):typeof rawAnswer==="number"||typeof rawAnswer==="boolean"?String(rawAnswer):str(rawAnswer);
   return value?[{label,value}]:[];
  });
  if(approvedAnswers.length)fields.consultation_answers=approvedAnswers;
@@ -78,7 +78,11 @@ export async function publishMemberTreatment(organizationId:string,treatmentId:s
  const candidate=makeSnapshot(t,consultationFields);
  const clean:PublicFields={};
  for(const [key,value] of Object.entries(approvedFields)){
-  if(!(key in candidate)||JSON.stringify(candidate[key])!==JSON.stringify(value))throw Error("公開資料已變更，請重新預覽");
+  if(key==="consultation_answers"&&Array.isArray(value)&&Array.isArray(candidate[key])){
+   const available=candidate[key] as Array<{label:string;value:string}>;
+   const chosen=value as Array<{label:string;value:string}>;
+   if(chosen.length>available.length||chosen.some(item=>!available.some(row=>row.label===item.label&&row.value===item.value))||new Set(chosen.map(item=>item.label)).size!==chosen.length)throw Error("公開資料已變更，請重新預覽");
+  }else if(!(key in candidate)||JSON.stringify(candidate[key])!==JSON.stringify(value))throw Error("公開資料已變更，請重新預覽");
   clean[key]=value;
  }
  const {error}=await db.from("member_treatment_publications").upsert({
