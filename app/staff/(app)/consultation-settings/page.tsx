@@ -27,14 +27,16 @@ export default function ConsultationSettingsPage() {
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadFailed(false);
     setStatus("");
     fetch(`/api/staff/consultation-settings?organizationId=${encodeURIComponent(organization.id)}`, { cache: "no-store" })
       .then(async (response) => { const result = await response.json(); if (!response.ok) throw new Error(result.error ?? "讀取失敗"); return result; })
       .then((result) => { if (!cancelled) { setFields(result.fields); setRevision(result.revision); setSelectedId(result.fields[0]?.id ?? ""); } })
-      .catch((error) => { if (!cancelled) setStatus(error instanceof Error ? error.message : "讀取失敗"); })
+      .catch((error) => { if (!cancelled) { setLoadFailed(true); setStatus(`無法載入雲端設定：${error instanceof Error ? error.message : "讀取失敗"}。請先重新整理，不要儲存預設值。`); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [organization.id]);
@@ -119,7 +121,7 @@ export default function ConsultationSettingsPage() {
         </section> : null}
       </div>}
       <div className="flex items-center gap-3">
-        <button disabled={loading || saving} type="button" className="min-h-11 rounded-xl bg-primary px-5 py-2 text-sm font-medium text-white" onClick={async () => {
+        <button disabled={loading || saving || loadFailed} type="button" className="min-h-11 rounded-xl bg-primary px-5 py-2 text-sm font-medium text-white" onClick={async () => {
           if (fields.some((field) => !field.label.trim() || ((field.type === "multi" || field.type === "single") && new Set(field.options.map((o) => o.trim())).size !== field.options.length))) {
             setStatus("請確認欄位名稱與選項內容，不能空白或重複。"); return;
           }
@@ -127,7 +129,7 @@ export default function ConsultationSettingsPage() {
           try {
             const response = await fetch("/api/staff/consultation-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ organizationId: organization.id, fields, revision }) });
             const result = await response.json();
-            if (!response.ok) throw new Error(result.error ?? "儲存失敗");
+            if (!response.ok) throw new Error(`${result.error ?? "儲存失敗"}（HTTP ${response.status}）`);
             setRevision(result.revision);
             setStatus("已同步至 Supabase");
           } catch (error) { setStatus(error instanceof Error ? error.message : "儲存失敗"); }
