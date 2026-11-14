@@ -449,12 +449,13 @@ export function stepIndex(step: TreatmentStepId): number {
     "summary",
     "assessment",
     "bodyMap",
-    "operations",
     "photos",
     "professionalNote",
     "followUp",
     "complete",
   ];
+  // Historical drafts can still point to the removed operations step.
+  if (step === "operations") return order.indexOf("photos");
   return order.indexOf(step);
 }
 
@@ -488,7 +489,8 @@ export function getStepCompletionState(
     case "assessment":
       return draft.assessment.concerns.length > 0 ||
         Boolean(draft.assessment.comparisonToLast) ||
-        draft.assessment.clientFocus.trim().length > 0
+        draft.assessment.clientFocus.trim().length > 0 ||
+        Object.values(draft.assessment.consultationAnswers ?? {}).some((value) => Array.isArray(value) ? value.length > 0 : value.trim().length > 0)
         ? "complete"
         : "pending";
     case "bodyMap":
