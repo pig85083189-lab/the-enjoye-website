@@ -252,10 +252,6 @@ export function TreatmentWorkspace({
   }
 
   async function handleComplete() {
-    if (draft.clientFeeling === "不舒服" && !draft.discomfortNote.trim()) {
-      setCompleteError("請記錄客人不舒服的部位或情況後再完成服務。");
-      return;
-    }
     setCompleteError("");
 
     const mergedPhotos = [...draft.photos];
@@ -357,8 +353,20 @@ export function TreatmentWorkspace({
         );
         break;
       case "operations":
-        // Legacy drafts remain readable; editing continues at the next visible step.
-        stepContent = <div className="text-sm text-secondary-text">此步驟已整合至療程紀錄，請選擇「照片紀錄」繼續。</div>;
+        // Historical drafts may still point here; show the next visible step without erasing legacy data.
+        stepContent = (
+          <PhotosStep
+            template={template}
+            treatmentId={draft.id}
+            photoMetas={draft.photos}
+            photos={photos}
+            onMetasChange={(next) => updateDraft((prev) => ({ ...prev, photos: next }))}
+            onPhotosChange={setPhotos}
+            onBack={goBack}
+            onNext={goNext}
+            onSkip={() => skipStep("photos")}
+          />
+        );
         break;
       case "photos":
         stepContent = (
