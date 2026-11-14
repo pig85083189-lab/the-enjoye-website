@@ -30,6 +30,7 @@ import {
   type PostTreatmentPackageCard,
 } from "@/lib/core-ops/post-treatment-derived";
 import { cn } from "@/lib/utils";
+import { loadConsultationFields } from "@/lib/consultation-settings";
 
 interface CompleteStepProps {
   customer: Customer;
@@ -246,70 +247,50 @@ export function CompleteStep({
     }
   }
 
+  const consultationFields = useMemo(() => loadConsultationFields(appointment.organizationId), [appointment.organizationId]);
+  const answerLines = consultationFields.flatMap((field) => {
+    const answer = draft.assessment.consultationAnswers?.[field.id];
+    const value = Array.isArray(answer) ? answer.filter(Boolean).join("、") : answer;
+    return value ? [{ label: field.label, value }] : [];
+  });
+  const detailLine = (label: string, value: string) => (
+    <p key={label} className="mt-1 text-sm font-normal leading-relaxed text-secondary-text"><span className="font-medium text-text">{label}：</span>{value || "未填寫"}</p>
+  );
   const summaryGrid = (
     <div className="mt-5 grid min-w-0 gap-3 sm:grid-cols-2">
-      <SummaryCard title="今日狀況">
-        {draft.assessment.concerns.length > 0
-          ? draft.assessment.concerns.join("、")
-          : "未填寫"}
+      <SummaryCard title="01 今日評估">
+        {detailLine("今日狀況", draft.assessment.concerns.join("、"))}
+        {detailLine("本次保養重點", draft.assessment.clientFocus)}
+        {answerLines.filter(item => consultationFields.find(f => f.label === item.label)?.section === "assessment").map(item => detailLine(item.label, item.value))}
+        {detailLine("敏感程度", String(draft.assessment.sensitivityLevel))}
       </SummaryCard>
-      {showBody ? (
-        <SummaryCard title="部位紀錄">
-          {markerLabels.length > 0 ? markerLabels.join("、") : "有備註"}
-          {markerLabels.length > 0 ? (
-            <span className="mt-1 block text-sm font-normal text-secondary-text">
-              {draft.bodyMarkers.length} 個標記
-            </span>
-          ) : null}
-        </SummaryCard>
-      ) : null}
-      <SummaryCard title="操作項目">
-        {operationLabels.length} 項
-        {operationLabels.length > 0 ? (
-          <span className="mt-1 block text-sm font-normal text-secondary-text">
-            {operationLabels.slice(0, 4).join("、")}
-            {operationLabels.length > 4 ? "…" : ""}
-          </span>
-        ) : null}
+      <SummaryCard title="02 身體部位紀錄">
+        {showBody ? <>
+          {draft.bodyMarkers.map(marker => (
+            <div key={marker.id} className="mt-2 border-b border-border/50 pb-2 last:border-0">
+              {detailLine(getBodyAreaLabel(marker.area, template.bodyAreas), marker.conditions.join("、"))}
+              {marker.note ? detailLine("部位備註", marker.note) : null}
+            </div>
+          ))}
+          {draft.bodyMapNote ? detailLine("部位補充說明", draft.bodyMapNote) : null}
+        </> : "未填寫"}
       </SummaryCard>
-      <SummaryCard title="使用產品">
-        {productLabels.length} 項
-        {productLabels.length > 0 ? (
-          <span className="mt-1 block text-sm font-normal text-secondary-text">
-            {productLabels.join("、")}
-          </span>
-        ) : null}
+      <SummaryCard title="03 本次操作與產品">
+        {detailLine("操作項目", operationLabels.join("、"))}
+        {detailLine("實際使用產品", productLabels.join("、"))}
       </SummaryCard>
-      {showPhotos ? (
-        <SummaryCard title="照片">
-          Before {beforeCount}
-          <span className="mx-2 text-border">·</span>
-          After {afterCount}
-        </SummaryCard>
-      ) : null}
-      <SummaryCard title="療程後感受">
-        {draft.clientFeeling || "未填寫"}
-        {draft.clientFeeling === "不舒服" && draft.discomfortNote ? (
-          <span className="mt-1 block text-sm font-normal text-secondary-text">
-            {draft.discomfortNote}
-          </span>
-        ) : null}
+      <SummaryCard title="04 專業紀錄">
+        {detailLine("美容師服務紀錄", draft.professionalNote)}
+        {detailLine("客人療程後感受", draft.clientFeeling)}
+        {draft.discomfortNote ? detailLine("不適情況", draft.discomfortNote) : null}
       </SummaryCard>
-      {draft.professionalNote.trim() ? (
-        <SummaryCard title="專業紀錄">
-          <span className="line-clamp-3 font-normal">{draft.professionalNote}</span>
-        </SummaryCard>
-      ) : null}
-      {showFollowUp ? (
-        <SummaryCard title="下次追蹤">
-          {draft.followUp.tags.length > 0 ? draft.followUp.tags.join("、") : "有備註"}
-        </SummaryCard>
-      ) : null}
-      {showFollowUp && draft.followUp.suggestedDate ? (
-        <SummaryCard title="建議日期">
-          {formatDateInput(draft.followUp.suggestedDate)}
-        </SummaryCard>
-      ) : null}
+      <SummaryCard title="05 下次保養與追蹤">
+        {detailLine("追蹤狀況", draft.followUp.tags.join("、"))}
+        {detailLine("保養建議", draft.followUp.note)}
+        {detailLine("建議下次保養日期", draft.followUp.suggestedDate ? formatDateInput(draft.followUp.suggestedDate) : "")}
+        {answerLines.filter(item => consultationFields.find(f => f.label === item.label)?.section === "professionalNote").map(item => detailLine(item.label, item.value))}
+      </SummaryCard>
+      {showPhotos ? <SummaryCard title="照片紀錄（僅內部）">Before {beforeCount} · After {afterCount}</SummaryCard> : null}
     </div>
   );
 
@@ -401,16 +382,8 @@ export function CompleteStep({
           ) : null}
 
           <section className="mt-6 rounded-2xl border border-[#E9D7D4] bg-[#FBF6F5] p-4 text-left">
-            <h2 className="text-[15px] font-semibold text-text">公開至會員身體紀錄</h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-secondary-text">
-              需由店長或主管在正式療程紀錄中逐項審核後公開，內部專業備註與照片不會公開。
-            </p>
-            <Link
-              href={`/staff/treatments/${encodeURIComponent(draft.id)}#member-publication`}
-              className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-[#C9797D] px-4 text-sm font-medium text-white"
-            >
-              前往審核公開
-            </Link>
+            <h2 className="text-[15px] font-semibold text-text">會員歷史保養紀錄</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-secondary-text">已完成的療程會依指定欄位自動提供給對應會員查看，不需店長逐筆審核；照片與內部操作紀錄不會同步。</p>
           </section>
 
           <div className="mt-8 flex min-w-0 flex-col gap-3 sm:flex-row-reverse sm:flex-wrap sm:justify-start">
@@ -463,7 +436,7 @@ export function CompleteStep({
             </span>
           ) : null}
         </div>
-        <p className="mt-2 text-[15px] text-secondary-text">確認摘要後即可儲存完成</p>
+        <p className="mt-2 text-[15px] text-secondary-text">請逐項確認實際填寫內容，儲存完成後指定欄位將自動顯示於會員歷史保養紀錄</p>
       </header>
 
       <Card padding="lg">
