@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import {
   DEFAULT_CONSULTATION_FIELDS,
-  loadConsultationFields,
-  saveConsultationFields,
   type ConsultationField,
   type ConsultationFieldType,
   type ConsultationSection,
@@ -26,10 +24,19 @@ export default function ConsultationSettingsPage() {
   const [selectedId, setSelectedId] = useState("suitable-products");
   const [newOption, setNewOption] = useState("");
   const [status, setStatus] = useState("");
+  const [revision, setRevision] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
-    setFields(loadConsultationFields(organization.id));
-    setSelectedId("suitable-products");
+    let cancelled = false;
+    setLoading(true);
     setStatus("");
+    fetch(`/api/staff/consultation-settings?organizationId=${encodeURIComponent(organization.id)}`, { cache: "no-store" })
+      .then(async (response) => { const result = await response.json(); if (!response.ok) throw new Error(result.error ?? "讀取失敗"); return result; })
+      .then((result) => { if (!cancelled) { setFields(result.fields); setRevision(result.revision); setSelectedId(result.fields[0]?.id ?? ""); } })
+      .catch((error) => { if (!cancelled) setStatus(error instanceof Error ? error.message : "讀取失敗"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [organization.id]);
   const canManage = membership?.role === "OWNER" || membership?.role === "MANAGER";
   const selected = fields.find((field) => field.id === selectedId);
@@ -43,9 +50,9 @@ export default function ConsultationSettingsPage() {
       <header>
         <h1 className="text-2xl font-semibold text-text">諮詢設定</h1>
         <p className="mt-2 text-sm text-secondary-text">自訂今日評估與專業紀錄的欄位、選項與填寫方式。</p>
-        <p className="mt-1 text-xs text-secondary-text">目前為開發階段：設定僅保存在這台裝置，尚未同步 Supabase 或套用到療程紀錄。</p>
+        <p className="mt-1 text-xs text-secondary-text">設定儲存於 Supabase，同一家店的其他裝置重新開啟即可讀取。療程紀錄動態套用仍在開發中。</p>
       </header>
-      <div className="grid gap-5 md:grid-cols-[minmax(220px,1fr)_minmax(0,2fr)]">
+      {loading ? <p className="text-secondary-text">正在讀取雲端設定…</p> : <div className="grid gap-5 md:grid-cols-[minmax(220px,1fr)_minmax(0,2fr)]">
         <section className="space-y-2 rounded-2xl border border-border bg-surface p-4">
           <h2 className="font-semibold text-text">諮詢欄位</h2>
           {fields.map((field) => (
@@ -110,14 +117,21 @@ export default function ConsultationSettingsPage() {
             }}>移除欄位</button>
           </div>
         </section> : null}
-      </div>
+      </div>}
       <div className="flex items-center gap-3">
-        <button type="button" className="min-h-11 rounded-xl bg-primary px-5 py-2 text-sm font-medium text-white" onClick={() => {
+        <button disabled={loading || saving} type="button" className="min-h-11 rounded-xl bg-primary px-5 py-2 text-sm font-medium text-white" onClick={async () => {
           if (fields.some((field) => !field.label.trim() || ((field.type === "multi" || field.type === "single") && new Set(field.options.map((o) => o.trim())).size !== field.options.length))) {
             setStatus("請確認欄位名稱與選項內容，不能空白或重複。"); return;
           }
-          try { saveConsultationFields(organization.id, fields); setStatus("已儲存於此裝置（尚未同步雲端）"); }
-          catch { setStatus("儲存失敗，請檢查瀏覽器儲存空間。"); }
+          setSaving(true);
+          try {
+            const response = await fetch("/api/staff/consultation-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ organizationId: organization.id, fields, revision }) });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error ?? "儲存失敗");
+            setRevision(result.revision);
+            setStatus("已同步至 Supabase");
+          } catch (error) { setStatus(error instanceof Error ? error.message : "儲存失敗"); }
+          finally { setSaving(false); }
         }}>儲存設定</button>
         <span role="status" className="text-sm text-secondary-text">{status}</span>
       </div>
