@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { previewMemberTreatmentPublication,publishMemberTreatment,revokeMemberTreatment } from "./member-publication-actions";
 
-type PublicFields=Record<string,string|string[]|number|boolean>;
+type PublicFields=Record<string,string|string[]|number|boolean|Array<{label:string;value:string}>|Array<{area:string;conditions:string[];note:string|null}>>;
 const labels:Record<string,string>={
- staff_name:"服務美容師",concerns:"身體狀況／症狀",client_focus:"本次保養重點",
+ consultation_answers:"新版諮詢評估／專業紀錄",body_marker_details:"身體部位標記詳情",staff_name:"服務美容師",concerns:"身體狀況／症狀",client_focus:"本次保養重點",
  comparison_to_last:"與上次保養比較",sensitivity_level:"敏感程度",body_markers:"身體部位標記",
  body_map_note:"身體部位補充說明",discomfort_note:"不適狀況備註",client_feeling:"顧客療程感受",
  products:"使用產品紀錄",follow_up_note:"保養後建議",follow_up_tags:"追蹤標籤",
@@ -42,7 +42,7 @@ export function MemberPublicationPanel({organizationId,treatmentId}:{organizatio
    <p className="mt-3 text-sm font-medium">{published?"已公開，可修改或撤銷":"尚未公開"}</p>
    <div className="mt-4 space-y-3">{Object.entries(preview??{}).map(([key,value])=><label key={key} className="flex items-start gap-3 rounded-xl border border-[#F0E5E3] p-3 text-sm">
     <input type="checkbox" className="mt-1" checked={selected.includes(key)} onChange={e=>setSelected(prev=>e.target.checked?[...prev,key]:prev.filter(v=>v!==key))}/>
-    <span className="min-w-0"><strong>{labels[key]??key}</strong><span className="mt-1 block whitespace-pre-wrap break-words text-secondary-text">{Array.isArray(value)?value.join("、"):typeof value==="boolean"?(value?"是":"否"):String(value)}</span></span>
+    <span className="min-w-0"><strong>{labels[key]??key}</strong><span className="mt-1 block whitespace-pre-wrap break-words text-secondary-text">{Array.isArray(value)?value.map(item=>typeof item==="string"?item:("label" in item?`${item.label}：${item.value}`:`${item.area}：${item.conditions.join("、")}${item.note?`（${item.note}）`:""}`)).join("、"):typeof value==="boolean"?(value?"是":"否"):String(value)}</span></span>
    </label>)}</div>
    <div className="mt-4 flex flex-wrap gap-3">
     <button type="button" disabled={busy||selected.length===0} onClick={()=>submit(false)} className="rounded-xl bg-[#B77C7E] px-4 py-3 text-sm text-white disabled:opacity-50">{busy?"處理中…":published?"更新公開內容":"確認公開至會員"}</button>
