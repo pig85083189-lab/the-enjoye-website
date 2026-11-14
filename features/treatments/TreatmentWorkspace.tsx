@@ -232,6 +232,7 @@ export function TreatmentWorkspace({
         clientFocus: previousHints.assessment?.clientFocus ?? "",
         sensitivityLevel: previousHints.assessment?.sensitivityLevel ?? 0,
         comparisonToLast: "same_as_last",
+        consultationAnswers: prev.assessment.consultationAnswers ?? {},
       },
       operations,
       products,
@@ -294,7 +295,7 @@ export function TreatmentWorkspace({
 
   let stepContent = null;
 
-  if (!hydrated || consultationLoading || Boolean(consultationError)) {
+  if (!hydrated || ((draft.currentStep === "assessment" || draft.currentStep === "professionalNote") && (consultationLoading || Boolean(consultationError)))) {
     stepContent = (
       <div className="flex min-h-[40vh] items-center justify-center text-secondary-text">
         {consultationError || "載入療程草稿及諮詢設定…"}
