@@ -7,7 +7,7 @@ import { DEFAULT_CONSULTATION_FIELDS } from "@/lib/consultation-settings";
 const allowedRoles = new Set(["OWNER","MANAGER"]);
 type PublicValue = string | string[] | number | boolean | Array<{label:string;value:string}> | Array<{area:string;conditions:string[];note:string|null}>;
 type PublicFields = Record<string, PublicValue>;
-type Preview = { status:"draft"|"published"; fields:PublicFields; publishedKeys:string[]; completedAt:string };
+type Preview = { status:"draft"|"published"; fields:PublicFields; publishedKeys:string[]; approvedConsultationLabels:string[]; completedAt:string };
 
 function str(v:unknown):string|null {return typeof v==="string"&&v.trim()?v.trim().slice(0,500):null;}
 function arr(v:unknown):string[]{return Array.isArray(v)?v.map(str).filter((x):x is string=>!!x).slice(0,20):[];}
@@ -71,7 +71,7 @@ export async function previewMemberTreatmentPublication(organizationId:string,tr
  const {db,t,org,consultationFields}=await context(organizationId,treatmentId);
  const {data:existing,error}=await db.from("member_treatment_publications").select("approved_fields,revoked_at").eq("treatment_id",t.id).eq("organization_id",org.id).maybeSingle();
  if(error)throw Error("無法讀取公開狀態");
- return {status:existing&&!existing.revoked_at?"published":"draft",fields:makeSnapshot(t,consultationFields),publishedKeys:existing&&!existing.revoked_at?Object.keys(obj(existing.approved_fields)):[],completedAt:t.completed_at};
+ return {status:existing&&!existing.revoked_at?"published":"draft",fields:makeSnapshot(t,consultationFields),publishedKeys:existing&&!existing.revoked_at?Object.keys(obj(existing.approved_fields)):[],approvedConsultationLabels:existing&&!existing.revoked_at&&Array.isArray(obj(existing.approved_fields).consultation_answers)?(obj(existing.approved_fields).consultation_answers as unknown[]).map(v=>str(obj(v).label)).filter((v):v is string=>!!v):[],completedAt:t.completed_at};
 }
 export async function publishMemberTreatment(organizationId:string,treatmentId:string,approvedFields:PublicFields){
  const {db,t,auth,consultationFields}=await context(organizationId,treatmentId);
