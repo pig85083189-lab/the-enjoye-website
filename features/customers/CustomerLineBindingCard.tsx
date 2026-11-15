@@ -84,27 +84,27 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
         <span className="rounded-full bg-[#F5F0EE] px-3 py-1 text-xs font-medium text-secondary-text">{label}</span>
       </div>
       <p className="text-sm text-secondary-text">
-        此處顯示顧客與會員帳號的連結狀態。未完成安全身分驗證前，會員中心不會讀取店內顧客資料。
+        LINE 登入即可使用會員中心，不需要額外輸入身分驗證碼。套票、儲值與療程紀錄僅會在 LINE 帳號已正確對應這筆店內顧客資料後顯示。
       </p>
       {trusted ? (
         <p className="text-sm text-text">已完成驗證{binding?.hint ? ` · LINE 識別提示 ${binding.hint}` : ""}。此處不顯示 LINE User ID。</p>
       ) : (
         <div className="rounded-xl border border-border/70 bg-[#FBF8F7] px-4 py-3">
-          <p className="text-sm font-medium text-text">{status === "unavailable" ? "無法確認綁定狀態" : "連結需經安全身分驗證"}</p>
+          <p className="text-sm font-medium text-text">{status === "unavailable" ? "無法確認綁定狀態" : "尚未對應店內顧客資料"}</p>
           <p className="mt-1 text-xs leading-relaxed text-secondary-text">
             {status === "unavailable"
               ? "目前無法安全讀取綁定資料，請確認登入身分及測試環境設定。"
-              : "人工驗證僅用於例外處理，需由已授權店長確認顧客同意，並透過官方 LINE 驗證。若店家尚未完成 LINE 設定，系統會拒絕操作。"}
+              : "LINE 登入本身不需要再驗證。若要讀取既有顧客的套票與儲值，仍需先確認 LINE 帳號與該顧客紀錄的對應關係，避免將帳務資料提供給其他人。"}
           </p>
         </div>
       )}
       {!trusted && status === "ready" && (
         <div className="space-y-3">
           <div className="rounded-xl border border-border/70 p-4 text-sm">
-            <p className="font-medium text-text">{manualPending ? "人工驗證待完成" : "會員自行驗證，系統管理連結"}</p>
-            <p className="mt-1 text-secondary-text">{manualPending ? "目前有尚未完成的人工驗證流程。請由授權店長核對顧客身分與 LINE 驗證狀態；未確認前不得開放會員資料。" : "未來將由顧客在會員中心完成身分驗證，再由後台依店家範圍安全建立連結。目前自動連結尚未開放，無法確認的資料不會自動配對。"}</p>
+            <p className="font-medium text-text">{manualPending ? "人工驗證待完成" : "LINE 會員與店內顧客資料尚未連結"}</p>
+            <p className="mt-1 text-secondary-text">{manualPending ? "目前有尚未完成的人工驗證流程。請由授權店長核對顧客身分與 LINE 驗證狀態；未確認前不得開放會員資料。" : "LINE 登入已可使用會員中心；尚未有可信連結時，不會依姓名或電話自動認領既有顧客的套票、儲值及療程資料。特殊情況可由店長使用下方工具處理。"}</p>
           </div>
-          <button type="button" aria-expanded={showManualTools} onClick={() => setShowManualTools(value => !value)} className="text-sm font-medium text-primary underline-offset-4 hover:underline">{showManualTools ? "收起人工驗證工具" : "特殊情況：開啟人工驗證工具"}</button>
+          <button type="button" aria-expanded={showManualTools} onClick={() => setShowManualTools(value => !value)} className="text-sm font-medium text-primary underline-offset-4 hover:underline">{showManualTools ? "收起店長協助連結工具" : "特殊情況：開啟店長協助連結工具"}</button>
           {showManualTools && (
         <div className="space-y-3 rounded-xl border border-border/70 p-4">
           <label className="flex items-start gap-2 text-sm text-text">
