@@ -327,7 +327,7 @@ export function TreatmentWorkspace({
       case "assessment":
         stepContent = (
           <div>
-            <h1 className="mb-5 text-2xl font-semibold text-text">今日評估</h1>
+            <div className="mb-5 rounded-2xl border border-[#C9DDD1] bg-[#F2F8F3] p-4"><p className="text-xs font-semibold text-[#426A52]">01 會員可見紀錄</p><h1 className="mt-1 text-2xl font-semibold text-text">今日評估</h1><p className="mt-2 text-sm text-secondary-text">這裡填寫的自訂評估內容，會在完成療程後提供會員查看。</p></div>
             {consultationError ? <p role="alert" className="mb-4 rounded-xl border border-warning/30 bg-background p-3 text-sm text-secondary-text">{consultationError}</p> : null}
             <ConsultationFields fields={consultationFields.filter((field) => field.section === "assessment")} values={consultationValues} onChange={changeConsultation} />
             <div className="mt-5 flex justify-between gap-3"><button className="min-h-11 rounded-xl border border-border px-4" onClick={goBack}>上一步</button><button className="min-h-11 rounded-xl bg-primary px-4 text-white" onClick={goNext}>下一步：部位紀錄</button></div>
@@ -387,7 +387,7 @@ export function TreatmentWorkspace({
       case "professionalNote":
         stepContent = (
           <div>
-            <h1 className="mb-5 text-2xl font-semibold text-text">美容師專業紀錄</h1>
+            <div className="mb-5 rounded-2xl border border-[#C9DDD1] bg-[#F2F8F3] p-4"><p className="text-xs font-semibold text-[#426A52]">01 會員可見紀錄</p><h1 className="mt-1 text-2xl font-semibold text-text">專業紀錄與保養推薦</h1><p className="mt-2 text-sm text-secondary-text">這裡的自訂欄位會同步會員。請填寫適合顧客閱讀的內容，不要輸入內部交班資訊。</p></div>
             {consultationError ? <p role="alert" className="mb-4 rounded-xl border border-warning/30 bg-background p-3 text-sm text-secondary-text">{consultationError}</p> : null}
             <ConsultationFields fields={consultationFields.filter((field) => field.section === "professionalNote")} values={consultationValues} onChange={changeConsultation} />
             <div className="mt-5 flex justify-between gap-3"><button className="min-h-11 rounded-xl border border-border px-4" onClick={goBack}>上一步</button><button className="min-h-11 rounded-xl bg-primary px-4 text-white" onClick={goNext}>下一步：下次追蹤</button></div>
@@ -466,6 +466,14 @@ export function TreatmentWorkspace({
       {quickBanner && !finished ? (
         <div className="mb-4 rounded-2xl bg-primary-light/50 px-4 py-3 text-sm text-text">
           {quickBanner}
+        </div>
+      ) : null}
+
+      {!finished ? (
+        <div className="mb-5 rounded-2xl border border-[#E9D7D4] bg-white p-3 text-sm">
+          <p className="font-semibold text-[#552F3D]">療程紀錄分類</p>
+          <div className="mt-2 flex flex-wrap gap-2"><span className="rounded-full bg-[#EDF6EF] px-3 py-1.5 text-xs font-medium text-[#426A52]">會員可見：今日評估、部位紀錄、專業紀錄、保養建議</span><span className="rounded-full bg-[#F3EEEC] px-3 py-1.5 text-xs font-medium text-[#704351]">店內專用：照片、操作及內部資料</span></div>
+          <p className="mt-2 text-xs text-secondary-text">依原有步驟填寫並自動儲存；完成前可在確認頁檢查資料。</p>
         </div>
       ) : null}
 
