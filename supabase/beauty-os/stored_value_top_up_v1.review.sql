@@ -9,7 +9,8 @@ create or replace function public.post_stored_value_top_up_v1(
   p_location_id uuid,
   p_staff_id text,
   p_amount_minor bigint,
-  p_effect_key text
+  p_effect_key text,
+  p_method text
 ) returns table(entry_id uuid, account_id uuid, balance_minor bigint, was_duplicate boolean)
 language plpgsql
 security invoker
@@ -30,6 +31,9 @@ begin
     raise exception 'Invalid top-up request';
   end if;
   -- Format check only: authenticated membership/checkout authority must be checked by API.
+  if p_method not in ('CASH','CREDIT_CARD','BANK_TRANSFER','OTHER') then
+    raise exception 'Invalid manual payment method';
+  end if;
   if not public.is_operational_staff_id(p_staff_id) then
     raise exception 'Invalid operational staff';
   end if;
@@ -47,7 +51,7 @@ begin
 
   -- A reused effect key with different parameters must never silently succeed.
   select e.id,e.account_id,e.customer_id,e.location_id,e.created_by_staff_id,
-         e.amount_delta_minor,e.type
+         e.amount_delta_minor,e.type,e.reason
     into v_entry
     from public.stored_value_ledger_entries e
    where e.organization_id = p_organization_id and e.effect_key = p_effect_key;
@@ -56,7 +60,8 @@ begin
        v_entry.location_id is distinct from p_location_id or
        v_entry.created_by_staff_id <> p_staff_id or
        v_entry.amount_delta_minor <> p_amount_minor or
-       v_entry.type <> 'TOP_UP'::public.stored_value_ledger_type then
+       v_entry.type <> 'TOP_UP'::public.stored_value_ledger_type or
+       v_entry.reason is distinct from ('MANUAL_RECEIPT:' || p_method) then
       raise exception 'Idempotency key conflict';
     end if;
     select coalesce(sum(e.amount_delta_minor),0) into v_balance
@@ -87,10 +92,10 @@ begin
 
   insert into public.stored_value_ledger_entries (
     organization_id,account_id,customer_id,type,amount_delta_minor,
-    location_id,created_by_staff_id,effect_key
+    location_id,created_by_staff_id,effect_key,reason
   ) values (
     p_organization_id,v_account,p_customer_id,'TOP_UP',p_amount_minor,
-    p_location_id,p_staff_id,p_effect_key
+    p_location_id,p_staff_id,p_effect_key,'MANUAL_RECEIPT:' || p_method
   ) returning id into v_entry_id;
 
   select coalesce(sum(e.amount_delta_minor),0) into v_balance
@@ -101,8 +106,8 @@ $$;
 
 -- Explicitly deny all non-server roles. API must authenticate the actual
 -- staff membership and confirmed external payment BEFORE calling this RPC.
-revoke all on function public.post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text)
+revoke all on function public.post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text,text)
   from public, anon, authenticated;
-grant execute on function public.post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text)
+grant execute on function public.post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text,text)
   to service_role;
 commit;
