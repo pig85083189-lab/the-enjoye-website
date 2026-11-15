@@ -13,6 +13,7 @@ export function ConsultationFields({ fields, values, onChange }: Props) {
       const value = values[field.id];
       const choices = Array.isArray(value) ? value : typeof value === "string" && value ? [value] : [];
       return <div key={field.id} className="rounded-2xl border border-border bg-surface p-4">
+        <p className="mb-2 text-xs font-semibold text-[#426A52]">會員可見紀錄 · 完成療程後自動同步</p>
         <label className="mb-3 block text-base font-semibold text-text">{field.label}</label>
         {field.type === "single" || field.type === "multi" ? <div className="flex flex-wrap gap-2">
           {field.options.map((option) => {
