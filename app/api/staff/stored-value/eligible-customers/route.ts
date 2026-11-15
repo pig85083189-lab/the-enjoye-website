@@ -22,7 +22,11 @@ export async function GET(request: Request) {
     .select("id").eq("app_id", organizationId).maybeSingle();
   if (orgError || !org?.id) return NextResponse.json({ error: "無法確認組織" }, { status: 409, headers });
 
-  // Never return LINE IDs, binding secrets, or unbound customers.
+  // Accept the canonical, server-verified LINE member link, plus legacy confirmed bindings.
+  // Never infer membership from a matching name or phone.
+  const { data: memberLinks, error: memberError } = await db.from("member_line_customer_links")
+    .select("customer_id").eq("organization_id", org.id);
+  if (memberError) return NextResponse.json({ error: "無法查詢 LINE 會員資格" }, { status: 503, headers });
   const { data: bindings, error: bindingError } = await db.from("line_customer_bindings")
     .select("customer_uuid")
     .eq("organization_id", organizationId)
@@ -34,7 +38,7 @@ export async function GET(request: Request) {
     .is("blocked_at", null)
     .not("line_user_id_hash", "is", null);
   if (bindingError) return NextResponse.json({ error: "無法查詢 LINE 會員資格" }, { status: 503, headers });
-  const ids = Array.from(new Set((bindings ?? []).map(b => b.customer_uuid).filter((id): id is string => typeof id === "string")));
+  const ids = Array.from(new Set([...(memberLinks ?? []).map(b => b.customer_id), ...(bindings ?? []).map(b => b.customer_uuid)].filter((id): id is string => typeof id === "string")));
   if (ids.length === 0) return NextResponse.json({ customerIds: [] }, { headers });
   const { data: customers, error: customerError } = await db.from("customers")
     .select("app_id").eq("organization_id", org.id).eq("status", "ACTIVE").in("id", ids);
