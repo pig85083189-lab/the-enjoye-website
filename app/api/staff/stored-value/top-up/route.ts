@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   if (identity.status === "unauthenticated") {
     return NextResponse.json({ error: "請先登入員工帳號" }, { status: 401 });
   }
-  if (identity.status !== "resolved" || !identity.membership ||
+  if (identity.status !== "ok" || !identity.membership ||
       !canCheckout(identity.membership)) {
     return NextResponse.json({ error: "沒有儲值結帳權限" }, { status: 403 });
   }
