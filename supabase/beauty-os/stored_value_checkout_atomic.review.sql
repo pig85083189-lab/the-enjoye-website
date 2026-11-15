@@ -387,7 +387,7 @@ begin
 
   if v_wallet_charge>0 then
     insert into public.stored_value_ledger_entries (organization_id,account_id,customer_id,type,amount_delta_minor,transaction_id,appointment_id,location_id,reason,effect_key,created_by_staff_id)
-    values (v_draft.organization_id,v_wallet.id,v_draft.customer_id,'REDEMPTION',-v_wallet_charge,v_tx.id,v_draft.appointment_id,v_draft.location_id,'CHECKOUT','checkout:'||v_draft.id::text,v_staff_id);
+    values (v_draft.organization_id,v_wallet.id,v_draft.customer_id,'PAYMENT',-v_wallet_charge,v_tx.id,v_draft.appointment_id,v_draft.location_id,'CHECKOUT','checkout:'||v_draft.id::text,v_staff_id);
   end if;
 
   for v_payment in
