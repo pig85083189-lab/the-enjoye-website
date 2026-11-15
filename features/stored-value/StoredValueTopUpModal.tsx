@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { getCustomerById } from "@/data/mock-customers";
+import { useCustomerRemoteList } from "@/features/customers/use-customer-remote-read";
 import { Button } from "@/components/ui/Button";
 import {
   addCheckoutItem,
@@ -51,7 +52,20 @@ export function StoredValueTopUpModal({
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [error, setError] = useState("");
 
-  const selected = customers.find((row) => row.id === customerId) ?? null;
+  // Remote lookup is read-only; only rows authorized by the authenticated customer adapter are returned.
+  const remote = useCustomerRemoteList(organizationId, open);
+  const searchableCustomers = useMemo(() => {
+    const byId = new Map(customers.map((customer) => [customer.id, customer]));
+    if (remote.status === "data") {
+      for (const customer of remote.value) {
+        if (customer.organizationId === organizationId && !byId.has(customer.id)) {
+          byId.set(customer.id, customer);
+        }
+      }
+    }
+    return Array.from(byId.values());
+  }, [customers, remote, organizationId]);
+  const selected = searchableCustomers.find((row) => row.id === customerId) ?? null;
   // A remotely read customer is not yet supported by the local-only ledger. Never charge it locally.
   const isRemoteOnlyCustomer = Boolean(selected && !getCustomerById(selected.id, organizationId));
   const currentBalance = selected && !isRemoteOnlyCustomer
@@ -67,8 +81,8 @@ export function StoredValueTopUpModal({
     amountMinor,
   });
   const hits = useMemo(
-    () => filterCustomersForStoredValuePicker(customers, query).slice(0, 8),
-    [customers, query],
+    () => filterCustomersForStoredValuePicker(searchableCustomers, query).slice(0, 8),
+    [searchableCustomers, query],
   );
 
   if (!open) return null;
@@ -187,6 +201,8 @@ export function StoredValueTopUpModal({
                     aria-label="搜尋客戶姓名或電話"
                   />
                 </div>
+                {remote.status === "loading" ? <p className="mt-2 text-xs text-secondary-text">正在查詢正式顧客資料…</p> : null}
+                {remote.status === "error" ? <p className="mt-2 text-xs text-[#986B58]" role="status">正式顧客資料暫時無法讀取，目前僅顯示本機清單。</p> : null}
                 <ul className="mt-2 max-h-48 overflow-y-auto">
                   {hits.length === 0 ? (
                     <li className="px-1 py-3 text-sm text-secondary-text">尚無符合的客戶</li>
