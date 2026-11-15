@@ -6,9 +6,12 @@ import {
   remoteStoredValueBlockReason,
   remoteStoredValueWalletFromBalanceResponse,
 } from "@/lib/commerce/checkout-stored-value";
+import { formatTwd } from "@/lib/commerce/money";
 import {
+  chooseCheckoutCustomer,
   identityRelationIsMissing,
   resolveStoredValueWalletCustomer,
+  type CheckoutCustomerRow,
 } from "@/lib/commerce/stored-value-wallet-identity";
 import {
   hydrateCheckoutFromTreatment,
@@ -159,6 +162,68 @@ describe("checkout stored-value balance response", () => {
     expect(identityRelationIsMissing("PGRST205")).toBe(true);
     expect(identityRelationIsMissing("42501")).toBe(false);
   });
+
+  it("resolves a blank app_id checkout key by customer id and keeps other customers separate", () => {
+    const bookingKey = "e06709d5-893f-4be1-8d83-b3d666a9257c";
+    const booking: CheckoutCustomerRow = { id: bookingKey, appId: null, status: "ACTIVE" };
+    const other: CheckoutCustomerRow = {
+      id: "11111111-1111-4111-8111-111111111111",
+      appId: "cust-booking-other",
+      status: "ACTIVE",
+    };
+    const wallet: CheckoutCustomerRow = {
+      id: "22222222-2222-4222-8222-222222222222",
+      appId: "cust-wallet-other",
+      status: "ACTIVE",
+    };
+    const chosen = chooseCheckoutCustomer({
+      checkoutCustomerKey: bookingKey,
+      appIdMatches: [],
+      idMatches: [booking, other],
+    });
+    expect(chosen).toEqual(booking);
+    const decision = resolveStoredValueWalletCustomer({
+      bookingCustomerId: chosen!.id,
+      bookingLineBound: false,
+      link: { walletCustomerId: wallet.id, walletActive: true, walletLineBound: true },
+    });
+    expect(decision).toEqual({ ok: true, walletCustomerId: wallet.id, via: "confirmed_link" });
+    const walletResponse = remoteStoredValueWalletFromBalanceResponse(200, {
+      status: "active",
+      balanceMinor: 2100,
+    });
+    expect(walletResponse).toEqual({ status: "active", balanceMinor: 2100 });
+    expect(walletResponse.status === "active" ? formatTwd(walletResponse.balanceMinor) : "").toBe("NT$2,100");
+    expect(remoteStoredValueBlockReason(walletResponse, 800)).toBeNull();
+    expect(
+      chooseCheckoutCustomer({
+        checkoutCustomerKey: other.id,
+        appIdMatches: [],
+        idMatches: [booking],
+      }),
+    ).toBeNull();
+    expect(
+      chooseCheckoutCustomer({
+        checkoutCustomerKey: bookingKey,
+        appIdMatches: [{ ...other, appId: bookingKey }],
+        idMatches: [booking],
+      })?.id,
+    ).toBe(other.id);
+    expect(
+      chooseCheckoutCustomer({
+        checkoutCustomerKey: "cust-wallet-other",
+        appIdMatches: [wallet, { ...booking, appId: "cust-wallet-other" }],
+        idMatches: [],
+      }),
+    ).toBeNull();
+    expect(
+      chooseCheckoutCustomer({
+        checkoutCustomerKey: bookingKey,
+        appIdMatches: [{ ...booking, status: "INACTIVE" }],
+        idMatches: [booking],
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("stored-value checkout debit", () => {
@@ -249,6 +314,12 @@ describe("stored-value checkout debit", () => {
     expect(settled.transaction?.customerId).toBe(FUTURE_QA_APPOINTMENT.customerAppId);
     expect(settled.draft.customerId).toBe(FUTURE_QA_APPOINTMENT.customerAppId);
     expect(memberBalance(source)).toBe(1300);
+    const replay = settleCheckoutDraft(source, {
+      draftId: paid.draft.id,
+      expectedUpdatedAt: paid.draft.updatedAt,
+    });
+    expect(replay.transaction?.id).toBe(settled.transaction?.id);
+    expect(memberBalance(source)).toBe(1300);
     expect(source.storedValue?.entries.filter((entry) => entry.type === "TOP_UP")).toHaveLength(1);
     expect(source.storedValue?.entries.filter((entry) => entry.type === "PAYMENT")).toEqual([
       { effectKey: `checkout:${paid.draft.id}`, amountDeltaMinor: -800, type: "PAYMENT" },
@@ -307,6 +378,10 @@ describe("stored-value checkout SQL review", () => {
     "utf8",
   );
   const panel = readFileSync(path.join(ROOT, "features/checkout/CheckoutPanel.tsx"), "utf8");
+  const balanceRoute = readFileSync(
+    path.join(ROOT, "app/api/staff/stored-value/balance/route.ts"),
+    "utf8",
+  );
 
   it("keeps package closed and posts one atomic stored-value debit", () => {
     expect(sql).toMatch(/method='PACKAGE'/);
@@ -330,5 +405,9 @@ describe("stored-value checkout SQL review", () => {
     expect(panel).toMatch(/\/api\/staff\/stored-value\/balance/);
     expect(panel).toMatch(/尚未開放儲值金付款/);
     expect(panel).toMatch(/remoteStoredValueBlockReason/);
+    expect(balanceRoute).toMatch(/chooseCheckoutCustomer/);
+    expect(balanceRoute).toMatch(/checkoutCustomerKeyIsDbId/);
+    expect(balanceRoute).not.toMatch(/cust-musfocyt-3x0fpe|cust-line-a6cd6d968c4747c39229bc1deb985559/);
+    expect(panel).not.toMatch(/cust-musfocyt-3x0fpe|cust-line-a6cd6d968c4747c39229bc1deb985559/);
   });
 });
