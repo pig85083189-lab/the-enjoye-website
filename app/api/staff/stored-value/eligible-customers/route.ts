@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   // Accept the canonical, server-verified LINE member link, plus legacy confirmed bindings.
   // Never infer membership from a matching name or phone.
   const { data: memberLinks, error: memberError } = await db.from("member_line_customer_links")
-    .select("customer_id").eq("organization_id", org.id);
+    .select("customer_id").eq("organization_id", org.id).not("verified_at", "is", null);
   if (memberError) { console.error("[stored-value/eligible-customers] canonical_links_failed", { code: memberError.code }); return NextResponse.json({ error: "無法查詢 LINE 會員資格", code: "CANONICAL_LINKS_FAILED" }, { status: 503, headers }); }
   const { data: bindings, error: bindingError } = await db.from("line_customer_bindings")
     .select("customer_uuid")
