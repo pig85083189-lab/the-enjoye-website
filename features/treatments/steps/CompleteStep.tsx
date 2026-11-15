@@ -30,9 +30,10 @@ import {
   type PostTreatmentPackageCard,
 } from "@/lib/core-ops/post-treatment-derived";
 import { cn } from "@/lib/utils";
-import { loadConsultationFields } from "@/lib/consultation-settings";
+import { DEFAULT_CONSULTATION_FIELDS, type ConsultationField } from "@/lib/consultation-settings";
 
 interface CompleteStepProps {
+  consultationFields?: ConsultationField[];
   customer: Customer;
   appointment: Appointment;
   draft: TreatmentDraft;
@@ -141,6 +142,7 @@ function PackageSelectCard({
 export function CompleteStep({
   customer,
   appointment,
+  consultationFields = DEFAULT_CONSULTATION_FIELDS,
   draft,
   photos,
   template,
@@ -247,7 +249,6 @@ export function CompleteStep({
     }
   }
 
-  const consultationFields = useMemo(() => loadConsultationFields(appointment.organizationId), [appointment.organizationId]);
   const answerLines = consultationFields.flatMap((field) => {
     const answer = draft.assessment.consultationAnswers?.[field.id];
     const value = Array.isArray(answer) ? answer.filter(Boolean).join("、") : answer;
