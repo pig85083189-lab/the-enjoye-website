@@ -55,11 +55,12 @@ export function AssessmentStep({
       <header className="mb-5">
         <h1 className="text-2xl font-semibold text-text">今日評估</h1>
         <p className="mt-2 text-[15px] leading-relaxed text-secondary-text">
-          快速記錄客人今天的狀況，完成後可隨時返回修改。
+          這裡包含會員可見的今日評估與店內評估參考，完成療程後僅指定欄位會同步會員。
         </p>
       </header>
 
       <Card padding="md">
+        <p className="mb-3 text-xs font-semibold text-secondary-text">店內專用 · 評估參考</p>
         <h2 className="text-base font-semibold text-text">今天的狀況和上次相比？</h2>
         <div
           className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4"
@@ -104,6 +105,7 @@ export function AssessmentStep({
       </Card>
 
       <Card padding="md" className="mt-4">
+        <p className="mb-3 text-xs font-semibold text-secondary-text">店內專用 · 評估參考</p>
         <h2 className="text-base font-semibold text-text">{template.name}</h2>
         <p className="mt-1 text-sm text-secondary-text">可複選今日觀察到的狀況</p>
         <QuickSelect
@@ -115,6 +117,7 @@ export function AssessmentStep({
       </Card>
 
       <Card padding="md" className="mt-4">
+        <p className="mb-3 text-xs font-semibold text-secondary-text">店內專用 · 評估參考</p>
         <label htmlFor="client-focus" className="text-base font-semibold text-text">
           客人今天最在意什麼？
         </label>
@@ -129,6 +132,7 @@ export function AssessmentStep({
       </Card>
 
       <Card padding="md" className="mt-4">
+        <p className="mb-3 text-xs font-semibold text-secondary-text">店內專用 · 評估參考</p>
         <h2 className="text-base font-semibold text-text">疼痛 / 敏感程度</h2>
         <p className="mt-1 text-sm text-secondary-text">僅供服務參考，非醫療診斷</p>
         <div
