@@ -236,11 +236,11 @@ export function StoredValueTopUpModal({
           </section>
 
           <p className="mt-3 text-[12px] leading-relaxed text-[#986B58]" role="note">
-            儲值將在員工確認實際收款後寫入正式帳務。會員中心餘額顯示仍需完成 LINE 顧客綁定。
+            僅限已透過 LINE 登入會員中心、完成顧客綁定且驗證成功的會員儲值。未綁定者即使員工確認收款，系統也會拒絕入帳。
           </p>
 
           {isRemoteOnlyCustomer ? (
-            <p role="alert" className="mt-2 text-[12px] text-[#986B58]">正式顧客的餘額須由伺服器查詢，不能使用本機餘額作為依據。</p>
+            <p role="alert" className="mt-2 text-[12px] text-[#986B58]">正式顧客的餘額須由伺服器查詢；儲值時會再由資料庫確認 LINE 會員綁定，未綁定一律拒絕入帳。</p>
           ) : null}
 
           <section className="mt-4">
