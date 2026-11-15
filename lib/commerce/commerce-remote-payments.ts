@@ -6,16 +6,16 @@ import { COMMERCE_PAYMENT_UNAVAILABLE_MESSAGE } from "./commerce-remote-write-er
 
 export const REMOTE_CHECKOUT_PAYMENT_METHODS: PaymentMethod[] = [
   ...EXTERNAL_PAYMENT_METHODS,
+  "STORED_VALUE",
 ];
 
 export const REMOTE_DISABLED_PAYMENT_METHODS: PaymentMethod[] = [
-  "STORED_VALUE",
   "PACKAGE",
 ];
 
 export function isRemoteCheckoutPaymentMethod(
   method: PaymentMethod,
-): method is Exclude<PaymentMethod, "STORED_VALUE" | "PACKAGE"> {
+): method is Exclude<PaymentMethod, "PACKAGE"> {
   return (REMOTE_CHECKOUT_PAYMENT_METHODS as readonly string[]).includes(method);
 }
 
