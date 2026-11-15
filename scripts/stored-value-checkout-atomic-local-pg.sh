@@ -26,6 +26,7 @@ dropdb --if-exists "$DB"
 createdb "$DB"
 
 "${PSQL[@]}" -f "$ROOT/supabase/tests/stored-value-checkout-atomic.local-stub.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115140000_customer_wallet_identity.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/beauty-os/stored_value_checkout_atomic.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/stored-value-checkout-atomic.local-cases.sql"
 
@@ -68,6 +69,39 @@ select tests.open_sale(
 );
 select tests.pay('sale-dup', 'STORED_VALUE', 400);
 insert into tests.gate (id, open) values (2, false);
+
+insert into public.customers (id, organization_id, status) values
+  ('12121212-1212-4121-8121-121212121212', '11111111-1111-4111-8111-111111111111', 'ACTIVE'),
+  ('13131313-1313-4131-8131-131313131313', '11111111-1111-4111-8111-111111111111', 'ACTIVE');
+insert into public.member_line_customer_links (organization_id, customer_id, verified_at)
+values ('11111111-1111-4111-8111-111111111111', '13131313-1313-4131-8131-131313131313', now());
+select tests.wallet('13131313-1313-4131-8131-131313131313', 2100);
+insert into public.customer_wallet_identities (
+  organization_id, booking_customer_id, wallet_customer_id, reason, confirmed_by_staff_id
+) values (
+  '11111111-1111-4111-8111-111111111111',
+  '12121212-1212-4121-8121-121212121212',
+  '13131313-1313-4131-8131-131313131313',
+  '隔離測試同時扣款',
+  'staff-test-1'
+);
+select tests.open_sale(
+  'sale-link-a',
+  '12121212-1212-4121-8121-121212121212',
+  'a1000000-0000-4000-8000-00000000001a',
+  'b1000000-0000-4000-8000-00000000001a',
+  1500
+);
+select tests.open_sale(
+  'sale-link-b',
+  '12121212-1212-4121-8121-121212121212',
+  'a1000000-0000-4000-8000-00000000001b',
+  'b1000000-0000-4000-8000-00000000001b',
+  1500
+);
+select tests.pay('sale-link-a', 'STORED_VALUE', 1500);
+select tests.pay('sale-link-b', 'STORED_VALUE', 1500);
+insert into tests.gate (id, open) values (3, false);
 SQL
 
 run_pair() {
@@ -98,6 +132,13 @@ echo "--- race A ---"
 cat /tmp/sv-race-a.txt
 echo "--- race B ---"
 cat /tmp/sv-race-b.txt
+
+LINK_STATUS="$(run_pair 3 sale-link-a sale-link-b /tmp/sv-link-a.txt /tmp/sv-link-b.txt)"
+echo "concurrent linked checkouts exit: $LINK_STATUS"
+echo "--- link A ---"
+cat /tmp/sv-link-a.txt
+echo "--- link B ---"
+cat /tmp/sv-link-b.txt
 
 DUP_STATUS="$(run_pair 2 sale-dup sale-dup /tmp/sv-dup-a.txt /tmp/sv-dup-b.txt)"
 echo "concurrent same checkout exit: $DUP_STATUS"
@@ -138,6 +179,17 @@ begin
     where d.app_id = 'sale-dup'
   ) <> 1 then
     raise exception 'duplicate concurrent settle created more than one transaction';
+  end if;
+
+  if tests.balance('13131313-1313-4131-8131-131313131313'::uuid) <> 600
+     or tests.member_payments('13131313-1313-4131-8131-131313131313'::uuid) <> 1 then
+    raise exception 'linked concurrent checkouts overdrew the shared wallet';
+  end if;
+  if (
+    select count(*) from public.checkout_drafts
+    where app_id in ('sale-link-a', 'sale-link-b') and status = 'OPEN'
+  ) <> 1 then
+    raise exception 'linked concurrent checkouts did not leave one draft open';
   end if;
 end $$;
 SQL

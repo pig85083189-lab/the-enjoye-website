@@ -2,7 +2,9 @@
 -- Reviewed from stored_value_checkout_atomic.review.sql. Do not apply that review file.
 -- PACKAGE stays closed. STORED_VALUE debits stored_value_ledger_entries in the same
 -- transaction as the checkout. effect_key checkout:<draft uuid> is unique per organization.
--- Lock order matches top-up: customer row, LINE binding, then the wallet row.
+-- Lock order matches top-up: booking customer, confirmed wallet customer, LINE binding, then the wallet row.
+-- The checkout transaction stays on the booking customer. The PAYMENT row stays on the wallet owner.
+-- A confirmed customer_wallet_identities row is the only way to cross those two ids.
 -- A completed checkout without its PAYMENT row fails closed instead of reporting success.
 -- Run supabase/tests/stored-value-checkout-atomic.local-cases.sql on an empty local database
 -- before applying this file. Never point that test at a customer database.
@@ -156,6 +158,7 @@ declare
   v_discount_total bigint;
   v_amount bigint;
   v_wallet public.stored_value_accounts;
+  v_wallet_customer uuid;
   v_wallet_balance bigint;
   v_wallet_charge bigint := 0;
 begin
@@ -194,8 +197,24 @@ begin
         and e.effect_key = 'checkout:' || v_draft.id::text
         and e.type = 'PAYMENT'
         and e.amount_delta_minor = -v_wallet_charge
-        and e.customer_id = v_draft.customer_id
         and e.transaction_id = v_tx.id
+        and exists (
+          select 1
+          from public.stored_value_accounts a
+          where a.id = e.account_id
+            and a.organization_id = e.organization_id
+            and a.customer_id = e.customer_id
+            and (
+              a.customer_id = v_draft.customer_id
+              or exists (
+                select 1
+                from public.customer_wallet_identities i
+                where i.organization_id = v_draft.organization_id
+                  and i.booking_customer_id = v_draft.customer_id
+                  and i.wallet_customer_id = a.customer_id
+              )
+            )
+        )
     ) then
       raise exception '儲值金扣款未入帳，請勿重複結帳';
     end if;
@@ -255,8 +274,24 @@ begin
         and e.effect_key = 'checkout:' || v_draft.id::text
         and e.type = 'PAYMENT'
         and e.amount_delta_minor = -v_wallet_charge
-        and e.customer_id = v_draft.customer_id
         and e.transaction_id = v_tx.id
+        and exists (
+          select 1
+          from public.stored_value_accounts a
+          where a.id = e.account_id
+            and a.organization_id = e.organization_id
+            and a.customer_id = e.customer_id
+            and (
+              a.customer_id = v_draft.customer_id
+              or exists (
+                select 1
+                from public.customer_wallet_identities i
+                where i.organization_id = v_draft.organization_id
+                  and i.booking_customer_id = v_draft.customer_id
+                  and i.wallet_customer_id = a.customer_id
+              )
+            )
+        )
     ) then
       raise exception '儲值金扣款未入帳，請勿重複結帳';
     end if;
@@ -323,17 +358,35 @@ begin
     end if;
     perform 1 from public.customers where id=v_draft.customer_id and organization_id=v_draft.organization_id and status='ACTIVE' for update;
     if not found then raise exception '顧客帳號無效'; end if;
+    -- An authorized identity row may point this booking customer at another
+    -- customer's wallet. Checkout never matches people by name or phone.
+    select i.wallet_customer_id into v_wallet_customer
+      from public.customer_wallet_identities i
+     where i.organization_id = v_draft.organization_id
+       and i.booking_customer_id = v_draft.customer_id
+       and i.status = 'ACTIVE'
+     for update;
+    if v_wallet_customer is not null and v_wallet_customer is distinct from v_draft.customer_id then
+      perform 1 from public.customers
+        where id = v_wallet_customer
+          and organization_id = v_draft.organization_id
+          and status = 'ACTIVE'
+        for update;
+      if not found then raise exception '顧客帳號無效'; end if;
+    else
+      v_wallet_customer := v_draft.customer_id;
+    end if;
     -- Same lock order as top-up: customer row, then binding, then wallet.
     perform 1 from public.member_line_customer_links ml
       where ml.organization_id = v_draft.organization_id
-        and ml.customer_id = v_draft.customer_id
+        and ml.customer_id = v_wallet_customer
         and ml.verified_at is not null
       for share;
     if not found then
       perform 1 from public.line_customer_bindings b
         join public.organizations o on o.app_id = b.organization_id
        where o.id = v_draft.organization_id
-         and b.customer_uuid = v_draft.customer_id
+         and b.customer_uuid = v_wallet_customer
          and b.status = 'active'
          and b.verified is true
          and b.confirmed_at is not null
@@ -346,7 +399,7 @@ begin
         raise exception '必須先完成 LINE 會員綁定';
       end if;
     end if;
-    select * into v_wallet from public.stored_value_accounts where organization_id=v_draft.organization_id and customer_id=v_draft.customer_id and status='ACTIVE' and currency='TWD' for update;
+    select * into v_wallet from public.stored_value_accounts where organization_id=v_draft.organization_id and customer_id=v_wallet_customer and status='ACTIVE' and currency='TWD' for update;
     if v_wallet.id is null then raise exception '找不到有效儲值帳戶'; end if;
     select coalesce(sum(amount_delta_minor),0) into v_wallet_balance from public.stored_value_ledger_entries where account_id=v_wallet.id;
     if v_wallet_balance<v_wallet_charge then raise exception '儲值金餘額不足'; end if;
@@ -459,7 +512,7 @@ begin
   if v_wallet_charge>0 then
     -- Unique effect_key is stable per checkout draft; transaction and debit commit atomically.
     insert into public.stored_value_ledger_entries (organization_id,account_id,customer_id,type,amount_delta_minor,transaction_id,appointment_id,location_id,reason,effect_key,created_by_staff_id)
-    values (v_draft.organization_id,v_wallet.id,v_draft.customer_id,'PAYMENT',-v_wallet_charge,v_tx.id,v_draft.appointment_id,v_draft.location_id,'CHECKOUT','checkout:'||v_draft.id::text,v_staff_id);
+    values (v_draft.organization_id,v_wallet.id,v_wallet.customer_id,'PAYMENT',-v_wallet_charge,v_tx.id,v_draft.appointment_id,v_draft.location_id,'CHECKOUT','checkout:'||v_draft.id::text,v_staff_id);
     select coalesce(sum(amount_delta_minor), 0) into v_wallet_balance
       from public.stored_value_ledger_entries
      where account_id = v_wallet.id;
