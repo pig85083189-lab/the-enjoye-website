@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import {
+  useEffect,
   useMemo,
   useState,
-  useSyncExternalStore,
   type KeyboardEvent,
   type SyntheticEvent,
 } from "react";
@@ -15,23 +15,13 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { StoredValueQuickView } from "@/features/stored-value/StoredValueQuickView";
 import { StoredValueTopUpModal } from "@/features/stored-value/StoredValueTopUpModal";
-import {
-  getCommerceRevision,
-  subscribeCommerce,
-} from "@/lib/commerce/checkout-store";
 import { formatTwd } from "@/lib/commerce/money";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
-import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
-import {
-  getCustomerStoredValueBalance,
-  listStoredValueAccounts,
-  listStoredValueLedger,
-} from "@/lib/stored-value/store";
+import { useCrmJson } from "@/lib/repositories/use-crm-store";
 import {
   STORED_VALUE_FILTER_OPTIONS,
   STORED_VALUE_SORT_OPTIONS,
   STORED_VALUE_WORKSPACE_GAP_PX,
-  buildStoredValueWorkspaceRows,
   countStoredValueSummary,
   filterStoredValueRows,
   formatStoredValueTimestamp,
@@ -50,6 +40,7 @@ import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { PLATFORM_NAME } from "@/lib/tenant/constants";
 import { cn } from "@/lib/utils";
 import type { Customer } from "@/types";
+import type { StoredValueAccount, StoredValueLedgerEntry } from "@/lib/stored-value/domain";
 
 const STATUS_PILL: Record<StoredValueWorkspaceRow["status"]["kind"], string> = {
   positive: "bg-[#E7F0EA] text-[#5C7F66]",
@@ -79,12 +70,6 @@ function selectFromPointer(event: SyntheticEvent<HTMLElement>) {
 
 export function StoredValuePageClient() {
   const { organization, currentLocation, locations, membership } = useOrganization();
-  const isClient = useIsClient();
-  const commerceRev = useSyncExternalStore(
-    subscribeCommerce,
-    getCommerceRevision,
-    () => "",
-  );
 
   const locationId = currentLocation?.id ?? locations[0]?.id ?? "";
   const staffId = membership?.userId ?? "staff-001";
@@ -97,28 +82,50 @@ export function StoredValuePageClient() {
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [topUpCustomerId, setTopUpCustomerId] = useState<string | null>(null);
   const [now] = useState(() => new Date());
+  const [remote, setRemote] = useState<{ accounts: StoredValueAccount[]; ledger: StoredValueLedgerEntry[]; customers: Array<{ id: string; name: string; phone: string }> } | null>(null);
+  const [remoteError, setRemoteError] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setRemote(null);
+    setRemoteError(false);
+    void (async () => {
+      try {
+        const response = await fetch("/api/staff/stored-value/overview?organizationId=" + encodeURIComponent(organization.id), { credentials: "same-origin", cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error("overview unavailable");
+        const data = await response.json();
+        if (!data || !Array.isArray(data.accounts) || !Array.isArray(data.ledger) || !Array.isArray(data.customers)) throw new Error("invalid overview");
+        if (!controller.signal.aborted) setRemote(data);
+      } catch {
+        if (!controller.signal.aborted) setRemoteError(true);
+      }
+    })();
+    return () => controller.abort();
+  }, [organization.id, refresh]);
 
   const customers = useCrmJson(
     () => localCustomerRepository.list({ organizationId: organization.id }),
     [] as Customer[],
   );
 
-  const ledger = useMemo(() => {
-    void commerceRev;
-    if (!isClient) return [];
-    return listStoredValueLedger(organization.id);
-  }, [commerceRev, isClient, organization.id]);
+  const ledger = remote?.ledger ?? [];
 
   const rows = useMemo(() => {
-    void commerceRev;
-    if (!isClient) return [];
-    return buildStoredValueWorkspaceRows({
-      organizationId: organization.id,
-      accounts: listStoredValueAccounts(organization.id),
-      ledger,
-      customers,
+    if (!remote) return [];
+    const byId = new Map(remote.customers.map(c => [c.id, c]));
+    return remote.accounts.filter(a => a.status === "ACTIVE" && a.currency === "TWD" && byId.has(a.customerId)).map(a => {
+      const c = byId.get(a.customerId)!;
+      const entries = ledger.filter(e => e.accountId === a.id);
+      const balanceMinor = entries.reduce((sum, e) => sum + e.amountDelta, 0);
+      return {
+        customerId: c.id, accountId: a.id, customerName: c.name, customerPhone: c.phone,
+        customerInitials: c.name.slice(0, 1), membership: null, totalVisits: 0,
+        balanceMinor, lifetimeTopUpMinor: entries.filter(e => e.type === "TOP_UP").reduce((sum, e) => sum + e.amountDelta, 0),
+        lastActivityAt: entries.at(-1)?.createdAt ?? a.createdAt,
+        status: balanceMinor > 0 ? { kind: "positive" as const, title: "有餘額" } : { kind: "zero" as const, title: "餘額為 0" },
+      };
     });
-  }, [commerceRev, customers, isClient, ledger, organization.id]);
+  }, [remote, ledger]);
 
   const visible = useMemo(
     () => sortStoredValueRows(filterStoredValueRows(rows, filter, query), sort),
@@ -140,9 +147,7 @@ export function StoredValuePageClient() {
   const selectedCustomer = selectedRow
     ? customers.find((row) => row.id === selectedRow.customerId) ?? null
     : null;
-  const liveBalanceMinor = selectedRow
-    ? getCustomerStoredValueBalance(organization.id, selectedRow.customerId)
-    : 0;
+  const liveBalanceMinor = selectedRow?.balanceMinor ?? 0;
 
   const selectedLedger = useMemo(() => {
     if (!selectedCustomerId) return [];
@@ -202,8 +207,8 @@ export function StoredValuePageClient() {
     setTopUpOpen(true);
   }
 
-  const emptyAll = isClient && rows.length === 0;
-  const emptyFiltered = isClient && rows.length > 0 && visible.length === 0;
+  const emptyAll = Boolean(remote) && rows.length === 0;
+  const emptyFiltered = Boolean(remote) && rows.length > 0 && visible.length === 0;
 
   return (
     <div
@@ -237,21 +242,21 @@ export function StoredValuePageClient() {
       <section className="mb-4 grid grid-cols-2 gap-2 min-[1200px]:grid-cols-4 min-[1200px]:gap-3">
         <SummaryCard
           label="持有儲值客戶"
-          value={isClient ? summary.holders : "—"}
+          value={remote ? summary.holders : "—"}
           accent="primary"
         />
         <SummaryCard
           label="可用儲值餘額"
-          value={isClient ? formatTwd(summary.availableMinor) : "—"}
+          value={remote ? formatTwd(summary.availableMinor) : "—"}
         />
         <SummaryCard
           label="本月儲值"
-          value={isClient ? formatTwd(summary.monthTopUpMinor) : "—"}
+          value={remote ? formatTwd(summary.monthTopUpMinor) : "—"}
           accent="success"
         />
         <SummaryCard
           label="本月使用"
-          value={isClient ? formatTwd(summary.monthUsageMinor) : "—"}
+          value={remote ? formatTwd(summary.monthUsageMinor) : "—"}
           accent="warning"
         />
       </section>
@@ -321,7 +326,9 @@ export function StoredValuePageClient() {
             </div>
           </div>
 
-          {!isClient ? (
+          {remoteError ? (
+            <Card padding="lg" className="text-center"><p role="alert">正式儲值資料讀取失敗，請重新整理後再試。</p></Card>
+          ) : !remote ? (
             <ListSkeleton />
           ) : emptyAll ? (
             <Card padding="lg" className="text-center">
@@ -448,6 +455,7 @@ export function StoredValuePageClient() {
           onClose={() => {
             setTopUpOpen(false);
             setTopUpCustomerId(null);
+            setRefresh(value => value + 1);
           }}
         />
       ) : null}
