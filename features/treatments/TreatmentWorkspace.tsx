@@ -29,6 +29,7 @@ import { stepIndex } from "@/lib/treatment-draft";
 import type { Appointment, Customer } from "@/types";
 import {
   TREATMENT_STEPS,
+  CLIENT_FEELINGS,
   isOptionalStep,
   type TreatmentStepId,
 } from "@/types/treatment";
@@ -396,7 +397,7 @@ export function TreatmentWorkspace({
               <label className="block text-sm font-semibold text-text" htmlFor="member-client-feeling">客人療程後感受（會員可見）</label>
               <select id="member-client-feeling" className="min-h-11 w-full rounded-xl border border-border bg-background px-3 text-sm text-text" value={draft.clientFeeling} onChange={event => updateDraft(prev => ({...prev, clientFeeling:event.target.value, discomfortNote:event.target.value==="不舒服"?prev.discomfortNote:""}))}>
                 <option value="">尚未選擇</option>
-                {["很舒服","舒服","普通","不舒服"].map(feeling=><option key={feeling} value={feeling}>{feeling}</option>)}
+                {CLIENT_FEELINGS.map(feeling=><option key={feeling} value={feeling}>{feeling}</option>)}
               </select>
               {draft.clientFeeling==="不舒服" ? <>
                 <label className="block text-sm font-semibold text-text" htmlFor="member-discomfort-note">不適情況（會員可見）</label>
