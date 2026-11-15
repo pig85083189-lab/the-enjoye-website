@@ -216,6 +216,11 @@ begin
   limit 1
   for update;
   if v_tx.id is not null then
+    -- Never report this draft as settled using a different appointment transaction.
+    -- That would mark the checkout complete without posting its stored-value debit.
+    if v_tx.checkout_draft_id is distinct from v_draft.id then
+      raise exception '此預約已有其他結帳交易，請先核對交易紀錄';
+    end if;
     update public.checkout_drafts
     set status = 'COMPLETED', updated_at = v_now
     where id = v_draft.id
@@ -264,6 +269,9 @@ begin
     raise exception '儲值金扣款金額必須大於零';
   end if;
   if v_wallet_charge > 0 then
+    if v_draft.currency <> 'TWD' then
+      raise exception '儲值金僅支援 TWD 結帳';
+    end if;
     perform 1 from public.customers where id=v_draft.customer_id and organization_id=v_draft.organization_id and status='ACTIVE' for update;
     if not found then raise exception '顧客帳號無效'; end if;
     if not exists (select 1 from public.member_line_customer_links ml where ml.organization_id=v_draft.organization_id and ml.customer_id=v_draft.customer_id and ml.verified_at is not null)
