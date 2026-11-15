@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
-import { createServiceRoleClient } from "@/lib/supabase/admin";
+import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const METHODS = new Set(["CASH", "CREDIT_CARD", "BANK_TRANSFER", "OTHER"]);
@@ -57,13 +57,7 @@ export async function POST(request: Request) {
     : process.env.VERCEL_ENV === "preview"
       && process.env.BEAUTY_OS_STORED_VALUE_MANUAL_TOPUP_TEST === "1";
   if (!enabled) return reject("此環境尚未啟用儲值入帳", 503);
-  // Financial records must never be queried or written against the member-booking Supabase project.
-  // Keep this server-side guard even if a shared Vercel environment variable is misconfigured.
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "") !== "https://bfzquejrtgqzzarhkiya.supabase.co") {
-    console.error("[stored-value] beauty_os_database_url_mismatch");
-    return reject("儲值資料庫連線設定不符", 503);
-  }
-  const db = createServiceRoleClient();
+  const db = createBeautyOsFinanceClient();
   if (!db) return reject("儲值資料庫尚未設定", 503);
 
   // Resolve tenant and customer from canonical rows. app IDs are not canonical UUIDs.
