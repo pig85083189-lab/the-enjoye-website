@@ -12,7 +12,7 @@ function reject(message: string, status: number) {
 
 /**
  * Manual settlement is an authenticated staff attestation, NOT bank verification.
- * Preview-only feature flag. Production is hard-disabled until release acceptance.
+ * Explicit environment-scoped release flags; never enable by default.
  * No browser-provided staff identity, organization UUID, or ledger balance is trusted.
  */
 export async function POST(request: Request) {
@@ -51,11 +51,12 @@ export async function POST(request: Request) {
   }
 
   // The service role is never available to the browser.
-  // Enable only in an isolated preview environment with the reviewed RPC installed.
-  if (process.env.VERCEL_ENV !== "preview" ||
-      process.env.BEAUTY_OS_STORED_VALUE_MANUAL_TOPUP_TEST !== "1") {
-    return reject("正式儲值尚未開放，請在隔離測試環境驗證", 503);
-  }
+  // Production and Preview must be explicitly enabled independently.
+  const enabled = process.env.VERCEL_ENV === "production"
+    ? process.env.BEAUTY_OS_STORED_VALUE_MANUAL_TOPUP_PRODUCTION === "1"
+    : process.env.VERCEL_ENV === "preview"
+      && process.env.BEAUTY_OS_STORED_VALUE_MANUAL_TOPUP_TEST === "1";
+  if (!enabled) return reject("此環境尚未啟用儲值入帳", 503);
   const db = createServiceRoleClient();
   if (!db) return reject("儲值資料庫尚未設定", 503);
 
