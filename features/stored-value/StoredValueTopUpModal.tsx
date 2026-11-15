@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { getCustomerById } from "@/data/mock-customers";
 import { Button } from "@/components/ui/Button";
 import {
   addCheckoutItem,
@@ -51,6 +52,8 @@ export function StoredValueTopUpModal({
   const [error, setError] = useState("");
 
   const selected = customers.find((row) => row.id === customerId) ?? null;
+  // A remotely read customer is not yet supported by the local-only ledger. Never charge it locally.
+  const isRemoteOnlyCustomer = Boolean(selected && !getCustomerById(selected.id, organizationId));
   const currentBalance = selected
     ? getCustomerStoredValueBalance(organizationId, selected.id)
     : 0;
@@ -60,7 +63,7 @@ export function StoredValueTopUpModal({
     amountMinor: amountMinor && amountMinor > 0 ? amountMinor : 0,
   });
   const canConfirm = canConfirmStoredValueTopUp({
-    customerId,
+    customerId: isRemoteOnlyCustomer ? null : customerId,
     amountMinor,
   });
   const hits = useMemo(
@@ -79,6 +82,10 @@ export function StoredValueTopUpModal({
   }
 
   function confirm() {
+    if (isRemoteOnlyCustomer) {
+      setError("此顧客來自正式資料庫，儲值帳務尚未完成安全串接，暫不可入帳。");
+      return;
+    }
     if (!selected || amountMinor == null || amountMinor <= 0) {
       setError("請選擇客戶並輸入儲值金額");
       return;
@@ -209,7 +216,11 @@ export function StoredValueTopUpModal({
             )}
           </section>
 
-          <p className="mt-3 text-[12px] leading-relaxed text-[#986B58]" role="note">\n            目前此儲值流程使用 Beauty OS 本機帳務，尚未與 LINE 會員中心同步。請勿將此處儲值視為會員中心已入帳。\n          </p>\n\n          <section className="mt-4">
+          <p className="mt-3 text-[12px] leading-relaxed text-[#986B58]" role="note">\n            目前此儲值流程使用 Beauty OS 本機帳務，尚未與 LINE 會員中心同步。請勿將此處儲值視為會員中心已入帳。\n          </p>\n\n          {isRemoteOnlyCustomer ? (
+            <p role="alert" className="mt-2 text-[12px] text-[#986B58]">此顧客尚未支援正式帳務入帳，已停用儲值確認，避免資料不同步。</p>
+          ) : null}
+
+          <section className="mt-4">
             <p className="text-[13px] font-semibold text-text">本次儲值</p>
             <label className="mt-2 block text-[12px] text-secondary-text">
               實收金額
