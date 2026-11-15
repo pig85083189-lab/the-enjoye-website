@@ -300,6 +300,7 @@ export function TreatmentWorkspace({
   } else if (finished) {
     stepContent = (
       <CompleteStep
+        consultationFields={consultationFields}
         customer={customer}
         appointment={appointment}
         draft={draft}
@@ -424,6 +425,7 @@ export function TreatmentWorkspace({
       case "complete":
         stepContent = (
           <CompleteStep
+            consultationFields={consultationFields}
             customer={customer}
             appointment={appointment}
             draft={draft}
