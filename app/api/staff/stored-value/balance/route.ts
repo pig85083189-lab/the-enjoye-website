@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
+import { resolveBookingSourceFinanceCustomer } from "@/lib/commerce/booking-source-customer";
 import {
   checkoutCustomerKeyIsDbId,
   chooseCheckoutCustomer,
@@ -38,7 +39,39 @@ export async function GET(request: Request) {
     if (idError) return fail(404, "CUSTOMER_NOT_FOUND");
     idMatches = (idRows ?? []).map(toCustomerRow).filter((row): row is CheckoutCustomerRow => Boolean(row));
   }
-  const customer = chooseCheckoutCustomer({ checkoutCustomerKey: customerId, appIdMatches, idMatches });
+  let customer = chooseCheckoutCustomer({ checkoutCustomerKey: customerId, appIdMatches, idMatches });
+  if (!customer) {
+    const { data: linkRows, error: linkError } = await db.from("booking_source_customer_links")
+      .select("organization_id, source_customer_key, finance_booking_customer_id, status, evidence_kind")
+      .eq("organization_id", org.id)
+      .eq("source_customer_key", customerId.trim())
+      .eq("status", "ACTIVE")
+      .limit(2);
+    if (linkError && identityRelationIsMissing(linkError.code)) return fail(404, "CUSTOMER_NOT_FOUND");
+    if (linkError) {
+      console.error("[stored-value/balance] source_link_lookup_failed", { code: linkError.code });
+      return fail(503, "LINK_LOOKUP_FAILED");
+    }
+    const financeCustomerId = resolveBookingSourceFinanceCustomer({
+      organizationId: org.id,
+      sourceCustomerKey: customerId,
+      links: (linkRows ?? []).map((row) => ({
+        organizationId: String(row.organization_id ?? ""),
+        sourceCustomerKey: String(row.source_customer_key ?? ""),
+        financeBookingCustomerId: String(row.finance_booking_customer_id ?? ""),
+        status: String(row.status ?? ""),
+        evidenceKind: String(row.evidence_kind ?? ""),
+      })),
+    });
+    if (!financeCustomerId) return fail(404, "CUSTOMER_NOT_FOUND");
+    const { data: linked, error: linkedError } = await db.from("customers")
+      .select("id, app_id, status")
+      .eq("organization_id", org.id)
+      .eq("id", financeCustomerId)
+      .maybeSingle();
+    if (linkedError || !linked) return fail(404, "CUSTOMER_NOT_FOUND");
+    customer = toCustomerRow(linked);
+  }
   if (!customer) return fail(404, "CUSTOMER_NOT_FOUND");
 
   const lineBound = async (customerUuid: string) => {

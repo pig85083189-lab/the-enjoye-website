@@ -1,36 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { COMMERCE_REMOTE_READ_PILOT_ENV } from "@/lib/commerce/commerce-remote-read-flag";
-import { COMMERCE_REMOTE_WRITE_PILOT_ENV } from "@/lib/commerce/commerce-remote-write-flag";
-import {
-  runAuthenticatedCommerceHydrate,
-  runAuthenticatedCommerceSaveDraft,
-  runAuthenticatedCommerceSettle,
-  type CommerceWriteClient,
-} from "@/lib/commerce/commerce-remote-write-pilot";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
 import type { CheckoutDiscount, CheckoutDraft, PaymentDraft, Transaction } from "@/lib/commerce/domain";
-import { createBrowserClientOrNull } from "@/lib/supabase/client";
 
-export function commerceWritePilotEnv(): NodeJS.Dict<string> {
-  return {
-    ...process.env,
-    [COMMERCE_REMOTE_READ_PILOT_ENV]: "1",
-    [COMMERCE_REMOTE_WRITE_PILOT_ENV]: "1",
-  };
-}
+type CommerceBundle = { draft: CheckoutDraft; transaction: Transaction | null };
 
-function writeClient(): CommerceWriteClient | null {
-  return createBrowserClientOrNull() as CommerceWriteClient | null;
-}
-
-function requireClient(): CommerceWriteClient {
-  const client = writeClient();
-  if (!client) {
-    throw new Error("目前無法完成結帳，請稍後再試");
+async function postCommerceCheckout(body: Record<string, unknown>): Promise<CommerceBundle> {
+  const response = await fetch("/api/staff/commerce/checkout", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify(body),
+  });
+  const payload = (await response.json()) as { bundle?: CommerceBundle; message?: string };
+  if (!response.ok || !payload.bundle) {
+    throw new Error(payload.message || "目前無法完成結帳，請稍後再試");
   }
-  return client;
+  return payload.bundle;
 }
 
 export type CommerceRemoteDraftState =
@@ -56,14 +44,11 @@ export function useCommerceRemoteDraft(input: {
     let cancelled = false;
     void (async () => {
       try {
-        const bundle = await runAuthenticatedCommerceHydrate(
-          requireClient(),
-          {
-            appointmentId: input.appointmentId!,
-            treatmentId: input.treatmentId!,
-          },
-          commerceWritePilotEnv(),
-        );
+        const bundle = await postCommerceCheckout({
+          action: "hydrate",
+          appointmentId: input.appointmentId,
+          treatmentId: input.treatmentId,
+        });
         if (cancelled) return;
         setResult({
           key: requestKey,
@@ -94,12 +79,22 @@ export async function submitCommerceRemoteSaveDraft(input: {
   payments: PaymentDraft[];
   discounts: CheckoutDiscount[];
 }) {
-  return runAuthenticatedCommerceSaveDraft(requireClient(), input, commerceWritePilotEnv());
+  return postCommerceCheckout({
+    action: "save",
+    draftId: input.draftId,
+    expectedUpdatedAt: input.expectedUpdatedAt,
+    payments: input.payments,
+    discounts: input.discounts,
+  });
 }
 
 export async function submitCommerceRemoteSettle(input: {
   draftId: string;
   expectedUpdatedAt: string;
 }) {
-  return runAuthenticatedCommerceSettle(requireClient(), input, commerceWritePilotEnv());
+  return postCommerceCheckout({
+    action: "settle",
+    draftId: input.draftId,
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  });
 }

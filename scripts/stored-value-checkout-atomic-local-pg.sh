@@ -28,6 +28,7 @@ createdb "$DB"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/stored-value-checkout-atomic.local-stub.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115140000_customer_wallet_identity.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/beauty-os/stored_value_checkout_atomic.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261115170000_booking_source_customer_links.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/stored-value-checkout-atomic.local-cases.sql"
 
 # Two different checkouts, one shared isolated wallet, released together.
@@ -190,6 +191,52 @@ begin
     where app_id in ('sale-link-a', 'sale-link-b') and status = 'OPEN'
   ) <> 1 then
     raise exception 'linked concurrent checkouts did not leave one draft open';
+  end if;
+end $$;
+SQL
+
+"${PSQL[@]}" <<'SQL'
+insert into public.customers (id, organization_id, status, app_id) values
+  ('f66fffff-ffff-4fff-8fff-ffffffffffff', '11111111-1111-4111-8111-111111111111', 'ACTIVE', 'cust-race-booking'),
+  ('f77fffff-ffff-4fff-8fff-ffffffffffff', '11111111-1111-4111-8111-111111111111', 'ACTIVE', 'cust-race-wallet');
+insert into public.member_line_customer_links (organization_id, customer_id, verified_at)
+values ('11111111-1111-4111-8111-111111111111', 'f77fffff-ffff-4fff-8fff-ffffffffffff', now());
+select tests.wallet('f77fffff-ffff-4fff-8fff-ffffffffffff', 2100);
+select set_config('tests.uid', '99999999-9999-4999-8999-999999999999', false);
+select public.confirm_customer_wallet_identity(
+  'org-stored-value-test', 'cust-race-booking', 'cust-race-wallet', '隔離測試同時扣款對應'
+);
+select public.confirm_booking_source_customer_link(
+  'org-stored-value-test', 'src-concurrent-0001', 'cust-race-booking',
+  'TRUSTED_MEMBER_RECORD', '隔離測試已核對可信會員', '99999999-9999-4999-8999-999999999999', 'staff-owner-test'
+);
+insert into tests.gate (id, open) values (4, false);
+SQL
+
+SOURCE_A="select set_config('tests.uid', '99999999-9999-4999-8999-999999999999', false); do \$\$ declare i int := 0; begin loop exit when exists (select 1 from tests.gate where id = 4 and open); perform pg_sleep(0.02); i := i + 1; if i > 400 then raise exception 'gate timeout'; end if; end loop; perform public.settle_booking_source_checkout('org-stored-value-test', 'src-concurrent-0001', 'sale-source-a', 'loc-isolated', 1500, 'staff-owner-test'); end \$\$;"
+SOURCE_B="${SOURCE_A//sale-source-a/sale-source-b}"
+psql -d "$DB" -v ON_ERROR_STOP=1 -X -c "$SOURCE_A" >/tmp/sv-source-a.txt 2>&1 &
+pid_source_a=$!
+psql -d "$DB" -v ON_ERROR_STOP=1 -X -c "$SOURCE_B" >/tmp/sv-source-b.txt 2>&1 &
+pid_source_b=$!
+sleep 0.3
+"${PSQL[@]}" -c "update tests.gate set open = true where id = 4;"
+source_status_a=0
+source_status_b=0
+wait "$pid_source_a" || source_status_a=$?
+wait "$pid_source_b" || source_status_b=$?
+echo "concurrent source checkouts exit: $source_status_a $source_status_b"
+echo "--- source A ---"
+cat /tmp/sv-source-a.txt
+echo "--- source B ---"
+cat /tmp/sv-source-b.txt
+
+"${PSQL[@]}" <<'SQL'
+do $$
+begin
+  if tests.balance('f77fffff-ffff-4fff-8fff-ffffffffffff'::uuid) <> 600
+     or tests.member_payments('f77fffff-ffff-4fff-8fff-ffffffffffff'::uuid) <> 1 then
+    raise exception 'concurrent source checkouts overdrew the wallet';
   end if;
 end $$;
 SQL
