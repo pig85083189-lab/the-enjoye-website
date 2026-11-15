@@ -13,6 +13,24 @@ export type StoredValueWalletDecision =
   | { ok: true; walletCustomerId: string; via: "self" | "confirmed_link" }
   | { ok: false; code: "LINE_LINK_REQUIRED" | "WALLET_CUSTOMER_UNAVAILABLE" };
 
+export type CrossDbIdentitySignals = {
+  appIdEqual: boolean;
+  lineHashEqual: boolean;
+  sharedAppointmentCount: number;
+  nameEqual: boolean;
+  phoneEqual: boolean;
+};
+
+/** Name and phone are recorded for the operator only. They never confirm a link. */
+export function crossDbIdentityEvidence(
+  signals: CrossDbIdentitySignals,
+): "app_id" | "line_hash" | "shared_appointment" | null {
+  if (signals.appIdEqual) return "app_id";
+  if (signals.lineHashEqual) return "line_hash";
+  if (signals.sharedAppointmentCount > 0) return "shared_appointment";
+  return null;
+}
+
 /** PostgREST/Postgres codes for a relation that has not been created yet. */
 export function identityRelationIsMissing(code: string | undefined): boolean {
   return code === "PGRST205" || code === "42P01";

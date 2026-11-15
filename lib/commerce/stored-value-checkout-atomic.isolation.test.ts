@@ -9,6 +9,7 @@ import {
 import { formatTwd } from "@/lib/commerce/money";
 import {
   chooseCheckoutCustomer,
+  crossDbIdentityEvidence,
   identityRelationIsMissing,
   resolveStoredValueWalletCustomer,
   type CheckoutCustomerRow,
@@ -159,6 +160,20 @@ describe("checkout stored-value balance response", () => {
         link: null,
       }),
     ).toEqual({ ok: true, walletCustomerId: "booking-a", via: "self" });
+    expect(crossDbIdentityEvidence({
+      appIdEqual: false,
+      lineHashEqual: false,
+      sharedAppointmentCount: 0,
+      nameEqual: true,
+      phoneEqual: true,
+    })).toBeNull();
+    expect(crossDbIdentityEvidence({
+      appIdEqual: false,
+      lineHashEqual: true,
+      sharedAppointmentCount: 0,
+      nameEqual: false,
+      phoneEqual: false,
+    })).toBe("line_hash");
     expect(identityRelationIsMissing("PGRST205")).toBe(true);
     expect(identityRelationIsMissing("42501")).toBe(false);
   });
