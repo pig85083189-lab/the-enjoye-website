@@ -64,6 +64,7 @@ export function ProfessionalNoteStep({
     <div>
       <header className="mb-5">
         <h1 className="text-2xl font-semibold text-text">美容師專業紀錄</h1>
+        <p className="mt-2 rounded-xl bg-[#EDF6EF] px-3 py-2 text-sm text-[#426A52]">會員可見紀錄 · 本頁服務紀錄、顧客感受與不適情況會在完成療程後同步會員。請勿填寫店內交班或內部資訊。</p>
         {isQuickMode ? (
           <p className="mt-2 rounded-2xl bg-primary-light/50 px-4 py-3 text-sm text-text">
             已沿用基本紀錄，請確認今天實際服務狀況。
