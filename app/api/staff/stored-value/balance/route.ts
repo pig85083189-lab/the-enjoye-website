@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
   // Revalidate LINE ownership server-side; never trust the picker or client-supplied customer ID.
   const { data: canonical, error: canonicalError } = await db.from("member_line_customer_links")
-    .select("customer_id").eq("organization_id", org.id).eq("customer_id", customer.id).limit(1);
+    .select("customer_id").eq("organization_id", org.id).eq("customer_id", customer.id).not("verified_at", "is", null).limit(1);
   if (canonicalError) return fail(503, "LINK_LOOKUP_FAILED");
   const { data: legacy, error: legacyError } = await db.from("line_customer_bindings")
     .select("customer_uuid").eq("organization_id", organizationId).eq("customer_uuid", customer.id)

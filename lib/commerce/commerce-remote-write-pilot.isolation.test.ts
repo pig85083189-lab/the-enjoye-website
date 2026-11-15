@@ -336,7 +336,7 @@ describe("Phase 1C-6H.2 commerce remote write / settle", () => {
     expect(snapshot.drafts.filter((row) => row.status === "OPEN")).toHaveLength(1);
   });
 
-  it("accepts mixed CASH + CARD and denies payment mismatch / stored value", async () => {
+  it("accepts mixed CASH + CARD and denies payment mismatch / package tender", async () => {
     const snapshot = baseSnapshot();
     const hydrated = hydrateCheckoutFromTreatment(snapshot);
     const mixed = saveCheckoutDraft(snapshot, {
@@ -355,7 +355,7 @@ describe("Phase 1C-6H.2 commerce remote write / settle", () => {
       saveCheckoutDraft(snapshot, {
         draftId: mixed.draft.id,
         expectedUpdatedAt: mixed.draft.updatedAt,
-        payments: [{ id: "pay-sv", method: "STORED_VALUE", amount: 2800 }],
+        payments: [{ id: "pay-pkg", method: "PACKAGE", amount: 2800 }],
         discounts: [],
       }),
     ).toThrow(COMMERCE_PAYMENT_UNAVAILABLE_MESSAGE);

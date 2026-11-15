@@ -17,6 +17,17 @@ export const COMMERCE_TREATMENT_NOT_COMPLETED_MESSAGE =
 
 export const COMMERCE_GENERIC_FAILURE_MESSAGE = "目前無法完成結帳，請稍後再試";
 
+const STORED_VALUE_CHECKOUT_MESSAGES = [
+  "必須先完成 LINE 會員綁定",
+  "儲值金餘額不足",
+  "找不到有效儲值帳戶",
+  "顧客帳號無效",
+  "儲值金僅支援 TWD 結帳",
+  "儲值金扣款金額必須大於零",
+  "儲值金扣款未入帳，請勿重複結帳",
+  "此預約已有其他結帳交易，請先核對交易紀錄",
+] as const;
+
 export class CommerceWritePilotDeniedError extends Error {
   constructor(message = COMMERCE_WRITE_FORBIDDEN_MESSAGE) {
     super(message);
@@ -56,7 +67,10 @@ export function toCommerceUserMessage(error: unknown): string {
   ) {
     return COMMERCE_WRITE_FORBIDDEN_MESSAGE;
   }
-  if (/尚未開放|STORED_VALUE|PACKAGE/.test(raw)) {
+  for (const message of STORED_VALUE_CHECKOUT_MESSAGES) {
+    if (raw.includes(message)) return message;
+  }
+  if (/尚未開放|\bPACKAGE\b/.test(raw)) {
     return COMMERCE_PAYMENT_UNAVAILABLE_MESSAGE;
   }
   if (/價格尚未設定|price_minor|missing service price/i.test(raw)) {

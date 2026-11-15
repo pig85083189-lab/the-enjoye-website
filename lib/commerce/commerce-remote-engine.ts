@@ -77,6 +77,22 @@ export type CommerceDraftBundle = {
   transaction: Transaction | null;
 };
 
+export type CommerceEngineStoredValueEntry = {
+  effectKey: string;
+  amountDeltaMinor: number;
+  type: "TOP_UP" | "PAYMENT" | "ADJUSTMENT" | "REVERSAL";
+};
+
+/** In-memory mirror of one canonical TWD wallet. Postgres remains the concurrency authority. */
+export type CommerceEngineStoredValue = {
+  customerAppId: string;
+  lineBound: boolean;
+  active: boolean;
+  currency: string;
+  balanceMinor: number;
+  entries: CommerceEngineStoredValueEntry[];
+};
+
 export type CommerceEngineSnapshot = {
   now: Date;
   actor: CommerceEngineActor;
@@ -85,6 +101,7 @@ export type CommerceEngineSnapshot = {
   service: CommerceEngineService;
   drafts: CheckoutDraft[];
   transactions: Transaction[];
+  storedValue?: CommerceEngineStoredValue;
   failSettleAfterLock?: boolean;
 };
 
@@ -345,6 +362,67 @@ export function saveCheckoutDraft(
   };
 }
 
+function storedValueCharge(draft: CheckoutDraft): number {
+  return draft.payments
+    .filter((payment) => payment.method === "STORED_VALUE")
+    .reduce((sum, payment) => sum + payment.amount, 0);
+}
+
+function storedValueEffectKey(draftId: string): string {
+  return `checkout:${draftId}`;
+}
+
+function assertStoredValueAvailable(
+  snapshot: CommerceEngineSnapshot,
+  draft: CheckoutDraft,
+): void {
+  const charge = storedValueCharge(draft);
+  if (charge <= 0) return;
+  if (draft.payments.some((payment) => payment.method === "STORED_VALUE" && payment.amount <= 0)) {
+    throw new Error("儲值金扣款金額必須大於零");
+  }
+  if (draft.currency !== "TWD") throw new Error("儲值金僅支援 TWD 結帳");
+  const wallet = snapshot.storedValue;
+  if (!wallet || wallet.customerAppId !== draft.customerId || !wallet.active) {
+    throw new Error("找不到有效儲值帳戶");
+  }
+  if (wallet.currency !== "TWD") throw new Error("儲值金僅支援 TWD 結帳");
+  if (!wallet.lineBound) throw new Error("必須先完成 LINE 會員綁定");
+  const posted = wallet.entries.find((entry) => entry.effectKey === storedValueEffectKey(draft.id));
+  if (posted) {
+    if (posted.type !== "PAYMENT" || posted.amountDeltaMinor !== -charge) {
+      throw new Error("儲值金扣款未入帳，請勿重複結帳");
+    }
+    return;
+  }
+  if (wallet.balanceMinor < charge) throw new Error("儲值金餘額不足");
+}
+
+function assertStoredValuePosted(
+  snapshot: CommerceEngineSnapshot,
+  draft: CheckoutDraft,
+): void {
+  const charge = storedValueCharge(draft);
+  if (charge <= 0) return;
+  const posted = snapshot.storedValue?.entries.find(
+    (entry) => entry.effectKey === storedValueEffectKey(draft.id),
+  );
+  if (!posted || posted.type !== "PAYMENT" || posted.amountDeltaMinor !== -charge) {
+    throw new Error("儲值金扣款未入帳，請勿重複結帳");
+  }
+}
+
+function postStoredValue(snapshot: CommerceEngineSnapshot, draft: CheckoutDraft): void {
+  const charge = storedValueCharge(draft);
+  if (charge <= 0) return;
+  const wallet = snapshot.storedValue;
+  if (!wallet) throw new Error("找不到有效儲值帳戶");
+  const effectKey = storedValueEffectKey(draft.id);
+  if (wallet.entries.some((entry) => entry.effectKey === effectKey)) return;
+  wallet.balanceMinor -= charge;
+  wallet.entries.push({ effectKey, amountDeltaMinor: -charge, type: "PAYMENT" });
+}
+
 export function settleCheckoutDraft(
   snapshot: CommerceEngineSnapshot,
   input: {
@@ -355,12 +433,12 @@ export function settleCheckoutDraft(
   const current = requireDraft(snapshot, input.draftId);
   assertActorBoundary(snapshot, snapshot.appointment.organizationDbId, current.locationId);
   if (current.status === "COMPLETED") {
-    const existing = completedTransactionFor(snapshot, {
-      draftId: current.id,
-      appointmentAppId: current.appointmentId,
-    });
-    if (existing) return { draft: current, transaction: existing };
-    throw new Error("結帳已完成，但找不到交易");
+    const existing = snapshot.transactions.find(
+      (tx) => tx.status === "COMPLETED" && tx.checkoutDraftId === current.id,
+    );
+    if (!existing) throw new Error("結帳已完成，但找不到交易");
+    assertStoredValuePosted(snapshot, current);
+    return { draft: current, transaction: existing };
   }
   if (current.status === "VOIDED") {
     throw new Error("已作廢的結帳不能收款");
@@ -379,6 +457,10 @@ export function settleCheckoutDraft(
     appointmentAppId: current.appointmentId,
   });
   if (existing) {
+    if (existing.checkoutDraftId !== current.id) {
+      throw new Error("此預約已有其他結帳交易，請先核對交易紀錄");
+    }
+    assertStoredValuePosted(snapshot, current);
     const completed: CheckoutDraft = {
       ...current,
       status: "COMPLETED",
@@ -400,6 +482,7 @@ export function settleCheckoutDraft(
   if (assembled.items.length === 0) {
     throw new Error("結帳至少需要一個項目");
   }
+  assertStoredValueAvailable(snapshot, assembled);
 
   if (snapshot.failSettleAfterLock) {
     throw new Error("settlement_forced_failure");
@@ -451,6 +534,7 @@ export function settleCheckoutDraft(
     status: "COMPLETED",
     updatedAt: completedAt,
   };
+  postStoredValue(snapshot, completedDraft);
   snapshot.transactions = [transaction, ...snapshot.transactions];
   snapshot.drafts = [
     completedDraft,

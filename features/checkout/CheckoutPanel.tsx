@@ -24,6 +24,12 @@ import {
   submitCommerceRemoteSettle,
 } from "@/features/checkout/use-commerce-remote-write";
 import { REMOTE_DISABLED_PAYMENT_METHODS } from "@/lib/commerce/commerce-remote-payments";
+import {
+  remoteStoredValueBlockReason,
+  remoteStoredValueStatusLabel,
+  remoteStoredValueWalletFromBalanceResponse,
+  type RemoteStoredValueWallet,
+} from "@/lib/commerce/checkout-stored-value";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
 import type { CheckoutDraft, Transaction } from "@/lib/commerce/domain";
 import {
@@ -179,6 +185,38 @@ export function CheckoutPanel({
   const [mixedTransfer, setMixedTransfer] = useState("");
   const [mixedOther, setMixedOther] = useState("");
   const [mixedStored, setMixedStored] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [walletNonce, setWalletNonce] = useState(0);
+  const [remoteWallet, setRemoteWallet] = useState<RemoteStoredValueWallet>({
+    status: "idle",
+  });
+
+  useEffect(() => {
+    if (!commerceRemoteWrite || !item.customerId) return undefined;
+    const controller = new AbortController();
+    setRemoteWallet({ status: "loading" });
+    const params = new URLSearchParams({
+      organizationId,
+      customerId: item.customerId,
+    });
+    void fetch(`/api/staff/stored-value/balance?${params.toString()}`, {
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const body: unknown = await response.json().catch(() => null);
+        if (controller.signal.aborted) return;
+        setRemoteWallet(remoteStoredValueWalletFromBalanceResponse(response.status, body));
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) {
+          return;
+        }
+        setRemoteWallet({ status: "unavailable" });
+      });
+    return () => controller.abort();
+  }, [commerceRemoteWrite, item.customerId, organizationId, walletNonce]);
 
   const membership = item.membership;
   const membershipText = customer
@@ -196,10 +234,14 @@ export function CheckoutPanel({
     if (commerceRemoteWrite) return [];
     return getServicesForOrganization(organizationId);
   }, [commerceRev, commerceRemoteWrite, organizationId]);
-  const svBalance =
-    commerceRemoteWrite || !item.customerId
+  const svBalance = commerceRemoteWrite
+    ? remoteWallet.status === "active"
+      ? remoteWallet.balanceMinor
+      : 0
+    : !item.customerId
       ? 0
       : getCustomerStoredValueBalance(organizationId, item.customerId);
+  const remoteStoredLabel = remoteStoredValueStatusLabel(remoteWallet);
   const primaryService =
     liveDraft?.items.find((row) => row.type === "SERVICE") ?? null;
   const usablePackages =
@@ -297,6 +339,13 @@ export function CheckoutPanel({
       setError("此付款方式目前尚未開放");
       return;
     }
+    if (commerceRemoteWrite && method === "STORED_VALUE" && total > 0) {
+      const blocked = remoteStoredValueBlockReason(remoteWallet, total);
+      if (blocked) {
+        setError(blocked);
+        return;
+      }
+    }
     if (total === 0) {
       if (commerceRemoteWrite) {
         void persistRemotePayments([]).then(
@@ -326,7 +375,14 @@ export function CheckoutPanel({
     const card = parseMoneyInput(mixedCard) ?? 0;
     const transfer = parseMoneyInput(mixedTransfer) ?? 0;
     const other = parseMoneyInput(mixedOther) ?? 0;
-    const stored = commerceRemoteWrite ? 0 : parseMoneyInput(mixedStored) ?? 0;
+    const stored = parseMoneyInput(mixedStored) ?? 0;
+    if (commerceRemoteWrite && stored > 0) {
+      const blocked = remoteStoredValueBlockReason(remoteWallet, stored);
+      if (blocked) {
+        setError(blocked);
+        return;
+      }
+    }
     const leftover = mixedPaymentRemaining(total, {
       CASH: cash,
       CARD: card,
@@ -862,9 +918,15 @@ export function CheckoutPanel({
                     <p className="text-[12px] font-medium text-secondary-text">付款方式</p>
                     <div className="flex flex-wrap gap-1.5">
                       {ACTIVE_PAYMENT_METHODS.map((method) => {
-                        const remoteDisabled =
+                        const packageDisabled =
                           commerceRemoteWrite &&
                           REMOTE_DISABLED_PAYMENT_METHODS.includes(method);
+                        const storedDisabled =
+                          commerceRemoteWrite &&
+                          method === "STORED_VALUE" &&
+                          remoteWallet.status !== "active" &&
+                          total !== 0;
+                        const remoteDisabled = packageDisabled || storedDisabled;
                         return (
                         <button
                           key={method}
@@ -879,8 +941,12 @@ export function CheckoutPanel({
                             remoteDisabled && "cursor-not-allowed opacity-50",
                           )}
                           onClick={() => {
-                            if (remoteDisabled) {
+                            if (packageDisabled) {
                               setError("此付款方式目前尚未開放");
+                              return;
+                            }
+                            if (storedDisabled) {
+                              setError(remoteStoredLabel);
                               return;
                             }
                             setMixedOpen(false);
@@ -888,7 +954,10 @@ export function CheckoutPanel({
                           }}
                         >
                           {PAYMENT_METHOD_LABEL[method]}
-                          {method === "STORED_VALUE" && !commerceRemoteWrite
+                          {method === "STORED_VALUE" &&
+                          (commerceRemoteWrite
+                            ? remoteWallet.status === "active"
+                            : true)
                             ? ` ${formatTwd(svBalance)}`
                             : ""}
                         </button>
@@ -945,22 +1014,20 @@ export function CheckoutPanel({
                             aria-label="其他金額"
                           />
                         </label>
-                        {commerceRemoteWrite ? (
-                          <p className="text-[12px] text-secondary-text">
-                            儲值金付款尚未開放
-                          </p>
-                        ) : (
                         <label className="flex items-center justify-between gap-2 text-[12px] text-secondary-text">
                           儲值
                           <input
-                            className="h-9 w-28 rounded-xl border border-border px-2 text-right text-[13px] tabular-nums"
+                            className="h-9 w-28 rounded-xl border border-border px-2 text-right text-[13px] tabular-nums disabled:opacity-50"
                             value={mixedStored}
                             onChange={(event) => setMixedStored(event.target.value)}
                             inputMode="numeric"
                             aria-label="儲值金額"
+                            disabled={commerceRemoteWrite && remoteWallet.status !== "active"}
                           />
                         </label>
-                        )}
+                        {commerceRemoteWrite && remoteWallet.status !== "active" ? (
+                          <p className="text-[12px] text-secondary-text">{remoteStoredLabel}</p>
+                        ) : null}
                         <p className="text-[12px] text-secondary-text">
                           剩餘{" "}
                           <span className="tabular-nums text-text">
@@ -972,9 +1039,7 @@ export function CheckoutPanel({
                                   CARD: parseMoneyInput(mixedCard) ?? 0,
                                   TRANSFER: parseMoneyInput(mixedTransfer) ?? 0,
                                   OTHER: parseMoneyInput(mixedOther) ?? 0,
-                                  STORED_VALUE: commerceRemoteWrite
-                                    ? 0
-                                    : parseMoneyInput(mixedStored) ?? 0,
+                                  STORED_VALUE: parseMoneyInput(mixedStored) ?? 0,
                                 }),
                               ),
                             )}
@@ -1120,14 +1185,25 @@ export function CheckoutPanel({
                 <div className="rounded-xl border border-border px-3 py-2.5">
                   <p className="text-[12px] text-secondary-text">儲值金</p>
                   <p className="mt-1 text-[20px] font-semibold tabular-nums text-text">
-                    {formatTwd(svBalance)}
+                    {commerceRemoteWrite && remoteWallet.status !== "active"
+                      ? "—"
+                      : formatTwd(svBalance)}
                   </p>
-                  <p
-                    className="mt-1 text-[12px] text-secondary-text"
-                    data-stored-value-closed
-                  >
-                    尚未開放儲值金付款
-                  </p>
+                  {commerceRemoteWrite ? (
+                    <p
+                      className="mt-1 text-[12px] text-secondary-text"
+                      data-stored-value-status
+                    >
+                      {remoteStoredLabel}
+                    </p>
+                  ) : (
+                    <p
+                      className="mt-1 text-[12px] text-secondary-text"
+                      data-stored-value-closed
+                    >
+                      尚未開放儲值金付款
+                    </p>
+                  )}
                 </div>
               </div>
             ) : null}
@@ -1173,21 +1249,33 @@ export function CheckoutPanel({
             <button
               type="button"
               data-checkout-confirm
-              disabled={!canConfirm}
+              disabled={!canConfirm || submitting}
               className="flex h-[50px] w-full items-center justify-center rounded-2xl bg-[#C56B70] text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               onClick={() => {
-                if (!liveDraft || !canConfirm) return;
+                if (!liveDraft || !canConfirm || submitting) return;
                 if (commerceRemoteWrite) {
+                  const blocked = remoteStoredValueBlockReason(
+                    remoteWallet,
+                    storedValuePaymentMinor(liveDraft.payments),
+                  );
+                  if (blocked) {
+                    setError(blocked);
+                    return;
+                  }
+                  setSubmitting(true);
                   void submitCommerceRemoteSettle({
                     draftId: liveDraft.id,
                     expectedUpdatedAt: liveDraft.updatedAt,
-                  }).then(
-                    (bundle) => {
-                      setEditedRemoteDraft(bundle.draft);
-                      if (bundle.transaction) onCompleted?.(bundle.transaction.id);
-                    },
-                    (err: unknown) => setError(toCommerceUserMessage(err)),
-                  );
+                  })
+                    .then(
+                      (bundle) => {
+                        setEditedRemoteDraft(bundle.draft);
+                        setWalletNonce((nonce) => nonce + 1);
+                        if (bundle.transaction) onCompleted?.(bundle.transaction.id);
+                      },
+                      (err: unknown) => setError(toCommerceUserMessage(err)),
+                    )
+                    .finally(() => setSubmitting(false));
                   return;
                 }
                 run(() => {
