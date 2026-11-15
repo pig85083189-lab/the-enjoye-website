@@ -48,6 +48,7 @@ export function StoredValueTopUpModal({
   const [eligibleIds, setEligibleIds] = useState<Set<string> | null>(null);
   const [verifiedCustomers, setVerifiedCustomers] = useState<Array<{ id: string; name: string; phone: string }>>([]);
   const [eligibilityError, setEligibilityError] = useState(false);
+  const [balanceState, setBalanceState] = useState<{ status: "loading" | "not_created" | "active" | "error"; balanceMinor: number | null }>({ status: "loading", balanceMinor: null });
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -81,12 +82,43 @@ export function StoredValueTopUpModal({
     return () => controller.abort();
   }, [open, organizationId]);
 
+  useEffect(() => {
+    if (!open || !customerId || !eligibleIds?.has(customerId)) {
+      setBalanceState({ status: "loading", balanceMinor: null });
+      return;
+    }
+    const controller = new AbortController();
+    setBalanceState({ status: "loading", balanceMinor: null });
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ organizationId, customerId });
+        const response = await fetch("/api/staff/stored-value/balance?" + params.toString(), {
+          credentials: "same-origin", cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("Balance query failed");
+        const result: unknown = await response.json();
+        if (!result || typeof result !== "object" || !("status" in result)) throw new Error("Invalid balance response");
+        if (result.status === "not_created") {
+          if (!controller.signal.aborted) setBalanceState({ status: "not_created", balanceMinor: null });
+        } else if (result.status === "active" && "balanceMinor" in result &&
+                   typeof result.balanceMinor === "number" && Number.isSafeInteger(result.balanceMinor)) {
+          if (!controller.signal.aborted) setBalanceState({ status: "active", balanceMinor: result.balanceMinor });
+        } else {
+          throw new Error("Invalid balance response");
+        }
+      } catch {
+        if (!controller.signal.aborted) setBalanceState({ status: "error", balanceMinor: null });
+      }
+    })();
+    return () => controller.abort();
+  }, [open, organizationId, customerId, eligibleIds]);
+
   // The server returns only LINE-verified customers from the dedicated Beauty OS database.
   // Never intersect with the browser's separate booking/customer Supabase adapter.
   const eligibleCustomers = verifiedCustomers.filter(row => eligibleIds?.has(row.id));
   const selected = eligibleCustomers.find(row => row.id === customerId) ?? null;
   const isRemoteOnlyCustomer = Boolean(selected);
-  const currentBalance = 0; // No local balance may be shown for canonical financial accounts.
+  const currentBalance = balanceState.status === "active" ? balanceState.balanceMinor ?? 0 : 0;
   const amountMinor = parseMoneyInput(amountRaw);
   const preview = previewStoredValueTopUp({
     currentBalanceMinor: currentBalance,
@@ -189,7 +221,7 @@ export function StoredValueTopUpModal({
                   <p className="text-[14px] font-semibold text-text">{selected.name}</p>
                   <p className="text-[12px] text-secondary-text">{selected.phone}</p>
                   <p className="text-[12px] tabular-nums text-secondary-text">
-                    {isRemoteOnlyCustomer ? "正式帳務餘額尚未連線，無法顯示" : `目前餘額 ${formatTwd(currentBalance)}`}
+                    {balanceState.status === "active" ? `目前餘額 ${formatTwd(currentBalance)}` : balanceState.status === "not_created" ? "尚未建立正式儲值帳戶" : balanceState.status === "error" ? "正式餘額查詢失敗，請稍後重試" : "正在查詢正式儲值餘額…"}
                   </p>
                 </div>
                 <button
@@ -257,7 +289,7 @@ export function StoredValueTopUpModal({
           </p>
 
           {isRemoteOnlyCustomer ? (
-            <p role="alert" className="mt-2 text-[12px] text-[#986B58]">正式顧客的餘額須由伺服器查詢；儲值時會再由資料庫確認 LINE 會員綁定，未綁定一律拒絕入帳。</p>
+            <p role="alert" className="mt-2 text-[12px] text-[#986B58]">正式餘額由 Beauty OS 資料庫唯讀查詢；儲值時會再由資料庫確認 LINE 會員綁定，未綁定一律拒絕入帳。</p>
           ) : null}
 
           <section className="mt-4">
@@ -301,7 +333,7 @@ export function StoredValueTopUpModal({
             </div>
           </section>
 
-          {selected && !isRemoteOnlyCustomer ? <section className="mt-4 rounded-2xl bg-[#FAF7F5] px-3.5 py-3 text-[13px]">
+          {selected && balanceState.status === "active" ? <section className="mt-4 rounded-2xl bg-[#FAF7F5] px-3.5 py-3 text-[13px]">
             <PreviewLine label="目前餘額" value={formatTwd(preview.currentBalanceMinor)} />
             <PreviewLine
               label="本次儲值"
@@ -330,7 +362,7 @@ export function StoredValueTopUpModal({
           <Button
             data-stored-value-topup-confirm
             className="mt-4 h-[50px] min-h-[50px] w-full rounded-2xl text-[15px]"
-            disabled={!canConfirm || !received || submitting}
+            disabled={!canConfirm || !received || submitting || balanceState.status === "loading" || balanceState.status === "error"}
             onClick={() => { void confirm(); }}
           >
             {submitting ? "正在確認入帳…" : amountMinor && amountMinor > 0
