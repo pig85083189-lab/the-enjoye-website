@@ -39,9 +39,9 @@ export async function GET(request: Request) {
     .not("line_user_id_hash", "is", null);
   if (bindingError) { console.error("[stored-value/eligible-customers] legacy_bindings_failed", { code: bindingError.code, message: bindingError.message }); return NextResponse.json({ error: "無法查詢 LINE 會員資格", code: "LEGACY_BINDINGS_FAILED" }, { status: 503, headers }); }
   const ids = Array.from(new Set([...(memberLinks ?? []).map(b => b.customer_id), ...(bindings ?? []).map(b => b.customer_uuid)].filter((id): id is string => typeof id === "string")));
-  if (ids.length === 0) return NextResponse.json({ customerIds: [] }, { headers });
+  if (ids.length === 0) return NextResponse.json({ customerIds: [], eligibleCustomers: [] }, { headers });
   const { data: customers, error: customerError } = await db.from("customers")
-    .select("app_id").eq("organization_id", org.id).eq("status", "ACTIVE").in("id", ids);
+    .select("app_id,full_name,phone").eq("organization_id", org.id).eq("status", "ACTIVE").in("id", ids);
   if (customerError) { console.error("[stored-value/eligible-customers] customers_failed", { code: customerError.code }); return NextResponse.json({ error: "無法確認會員顧客資料", code: "CUSTOMERS_FAILED" }, { status: 503, headers }); }
-  return NextResponse.json({ customerIds: (customers ?? []).map(c => c.app_id).filter(Boolean) }, { headers });
+  return NextResponse.json({ customerIds: (customers ?? []).map(c => c.app_id).filter(Boolean), eligibleCustomers: (customers ?? []).filter(c => c.app_id).map(c => ({ id: c.app_id, name: c.full_name ?? "", phone: c.phone ?? "" })) }, { headers });
 }
