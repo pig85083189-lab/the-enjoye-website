@@ -112,6 +112,8 @@ export async function POST(request: Request) {
           staffId: identity.membership.userId,
         });
       }
+      // Four arguments keep the draft's package redemption. Stored value can
+      // settle only after the finance debit posts a receipt.
       const bundle = await proxyRpc(COMMERCE_SAVE_RPC, {
         p_checkout_app_id: draftId,
         p_expected_updated_at: expectedUpdatedAt,

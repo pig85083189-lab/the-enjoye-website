@@ -241,4 +241,52 @@ begin
 end $$;
 SQL
 
+"${PSQL[@]}" <<'SQL'
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_class relation
+    join pg_namespace namespace on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'public'
+      and relation.relname = 'customer_wallet_identities_backup_20261115'
+      and relation.relrowsecurity
+  ) then
+    raise exception 'wallet identity backup is missing row level security';
+  end if;
+  if has_table_privilege('authenticated', 'public.customer_wallet_identities_backup_20261115', 'select')
+     or has_table_privilege('anon', 'public.customer_wallet_identities_backup_20261115', 'select')
+     or has_table_privilege('service_role', 'public.customer_wallet_identities_backup_20261115', 'select') then
+    raise exception 'wallet identity backup is readable by anon, authenticated, or service_role';
+  end if;
+  if has_function_privilege(
+       'authenticated',
+       'public.settle_booking_source_checkout(text,text,text,text,bigint,text)',
+       'execute'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.settle_booking_source_checkout(text,text,text,text,bigint,text)',
+       'execute'
+     ) then
+    raise exception 'anon or authenticated can execute the finance debit';
+  end if;
+  if not has_function_privilege(
+       'service_role',
+       'public.settle_booking_source_checkout(text,text,text,text,bigint,text)',
+       'execute'
+     ) then
+    raise exception 'service_role cannot execute the finance debit';
+  end if;
+  if pg_get_functiondef('public.settle_checkout_draft(text,timestamptz)'::regprocedure)
+       like '%stored_value_debit_receipts%' then
+    raise exception 'finance settle was replaced by the booking receipt function';
+  end if;
+  if pg_get_functiondef('public.settle_booking_source_checkout(text,text,text,text,bigint,text)'::regprocedure)
+       like '%package_redemption%' then
+    raise exception 'finance debit function changed the booking package field';
+  end if;
+end $$;
+SQL
+
 echo "stored-value checkout atomic cases passed"
