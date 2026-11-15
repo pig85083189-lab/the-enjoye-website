@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Search, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -182,7 +183,7 @@ export function StoredValueTopUpModal({
                 </div>
                 <ul className="mt-2 max-h-48 overflow-y-auto">
                   {hits.length === 0 ? (
-                    <li className="px-1 py-3 text-sm text-secondary-text">尚無符合的客戶</li>
+                    <li className="px-1 py-3 text-sm text-secondary-text"><p>目前載入的客戶清單沒有符合資料。</p><p className="mt-1 text-xs">LINE 會員資料不一定已同步至這份清單，請先至客戶管理確認身分，避免儲值到錯誤帳戶。</p><Link href="/staff/customers" className="mt-2 inline-block text-primary underline" onClick={close}>前往客戶管理</Link></li>
                   ) : (
                     hits.map((row) => (
                       <li key={row.id}>
