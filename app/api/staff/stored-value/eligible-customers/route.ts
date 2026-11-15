@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     .is("unbound_at", null)
     .is("blocked_at", null)
     .not("line_user_id_hash", "is", null);
-  if (bindingError) { console.error("[stored-value/eligible-customers] legacy_bindings_failed", { code: bindingError.code }); return NextResponse.json({ error: "無法查詢 LINE 會員資格", code: "LEGACY_BINDINGS_FAILED" }, { status: 503, headers }); }
+  if (bindingError) { console.error("[stored-value/eligible-customers] legacy_bindings_failed", { code: bindingError.code, message: bindingError.message }); return NextResponse.json({ error: "無法查詢 LINE 會員資格", code: "LEGACY_BINDINGS_FAILED" }, { status: 503, headers }); }
   const ids = Array.from(new Set([...(memberLinks ?? []).map(b => b.customer_id), ...(bindings ?? []).map(b => b.customer_uuid)].filter((id): id is string => typeof id === "string")));
   if (ids.length === 0) return NextResponse.json({ customerIds: [] }, { headers });
   const { data: customers, error: customerError } = await db.from("customers")
