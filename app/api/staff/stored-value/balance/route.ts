@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import {
+  checkoutCustomerKeyIsDbId,
+  chooseCheckoutCustomer,
   identityRelationIsMissing,
   resolveStoredValueWalletCustomer,
+  type CheckoutCustomerRow,
 } from "@/lib/commerce/stored-value-wallet-identity";
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
 
@@ -22,9 +25,21 @@ export async function GET(request: Request) {
   if (!db) return fail(503, "CONFIG_MISSING");
   const { data: org, error: orgError } = await db.from("organizations").select("id").eq("app_id", organizationId).maybeSingle();
   if (orgError || !org?.id) return fail(409, "ORG_NOT_FOUND");
-  const { data: customer, error: customerError } = await db.from("customers")
-    .select("id").eq("organization_id", org.id).eq("app_id", customerId).eq("status", "ACTIVE").maybeSingle();
-  if (customerError || !customer?.id) return fail(404, "CUSTOMER_NOT_FOUND");
+  const toCustomerRow = (row: { id?: string; app_id?: string | null; status?: string }): CheckoutCustomerRow | null =>
+    row.id && row.status ? { id: row.id, appId: row.app_id ?? null, status: row.status } : null;
+  const { data: appRows, error: appError } = await db.from("customers")
+    .select("id, app_id, status").eq("organization_id", org.id).eq("app_id", customerId).limit(2);
+  if (appError) return fail(404, "CUSTOMER_NOT_FOUND");
+  const appIdMatches = (appRows ?? []).map(toCustomerRow).filter((row): row is CheckoutCustomerRow => Boolean(row));
+  let idMatches: CheckoutCustomerRow[] = [];
+  if (appIdMatches.length === 0 && checkoutCustomerKeyIsDbId(customerId)) {
+    const { data: idRows, error: idError } = await db.from("customers")
+      .select("id, app_id, status").eq("organization_id", org.id).eq("id", customerId).limit(2);
+    if (idError) return fail(404, "CUSTOMER_NOT_FOUND");
+    idMatches = (idRows ?? []).map(toCustomerRow).filter((row): row is CheckoutCustomerRow => Boolean(row));
+  }
+  const customer = chooseCheckoutCustomer({ checkoutCustomerKey: customerId, appIdMatches, idMatches });
+  if (!customer) return fail(404, "CUSTOMER_NOT_FOUND");
 
   const lineBound = async (customerUuid: string) => {
     const { data: canonical, error: canonicalError } = await db.from("member_line_customer_links")
