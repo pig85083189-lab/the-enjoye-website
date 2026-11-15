@@ -531,3 +531,168 @@ begin
   end if;
 end;
 $$;
+
+-- A booking-database key is not a finance customer id.
+-- The managerial source link resolves it. An unconfirmed key cannot spend.
+do $$
+declare
+  v_org uuid := '11111111-1111-4111-8111-111111111111';
+  v_other uuid := '22222222-2222-4222-8222-222222222222';
+  v_booking uuid := 'f44fffff-ffff-4fff-8fff-ffffffffffff';
+  v_wallet uuid := 'f55fffff-ffff-4fff-8fff-ffffffffffff';
+  v_owner uuid := '99999999-9999-4999-8999-999999999999';
+  v_staff uuid := '88888888-8888-4888-8888-888888888881';
+  v_source text := 'src-isolated-0001';
+  v_appointments int;
+  v_topups int;
+  v_tx_customer uuid;
+  v_pay_customer uuid;
+  v_kept int;
+begin
+  select count(*) into v_appointments from public.appointments;
+  perform set_config('tests.uid', v_owner::text, true);
+  perform set_config('request.jwt.claim.role', '', true);
+  insert into public.locations (id, organization_id, app_id, name, is_active)
+  values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', v_org, 'loc-isolated', '隔離', true)
+  on conflict (id) do nothing;
+  insert into public.customers (id, organization_id, status, app_id) values
+    (v_booking, v_org, 'ACTIVE', 'cust-source-booking'),
+    (v_wallet, v_org, 'ACTIVE', 'cust-source-wallet');
+  insert into public.member_line_customer_links (organization_id, customer_id, verified_at)
+  values (v_org, v_wallet, now());
+  perform tests.wallet(v_wallet, 1000);
+  insert into public.stored_value_ledger_entries (
+    organization_id, account_id, customer_id, type, amount_delta_minor,
+    reason, effect_key, created_by_staff_id
+  )
+  select v_org, account_row.id, v_wallet, 'TOP_UP', 1100,
+    'ISOLATED_TEST_SEED', 'seed-source:' || v_wallet::text, 'staff-test-1'
+  from public.stored_value_accounts account_row
+  where account_row.customer_id = v_wallet;
+  if tests.balance(v_wallet) <> 2100 then
+    raise exception 'source fixture did not start at 2100';
+  end if;
+  perform public.confirm_customer_wallet_identity(
+    'org-stored-value-test', 'cust-source-booking', 'cust-source-wallet', '隔離測試保留既有儲值對應'
+  );
+
+  perform set_config('tests.uid', v_staff::text, true);
+  begin
+    perform public.confirm_booking_source_customer_link(
+      'org-stored-value-test', v_source, 'cust-source-booking',
+      'CUSTOMER_PRESENT', '隔離測試已完成本人核對', v_staff, 'staff-front-test'
+    );
+    raise exception 'frontline staff created a booking source link';
+  exception
+    when others then
+      if position('沒有權限建立顧客身分對應' in sqlerrm) = 0 then raise; end if;
+  end;
+
+  perform set_config('tests.uid', '', true);
+  begin
+    perform public.confirm_booking_source_customer_link(
+      'org-stored-value-test', v_source, 'cust-source-booking',
+      'CUSTOMER_PRESENT', '隔離測試已完成本人核對', v_owner, 'staff-owner-test'
+    );
+    raise exception 'missing staff session created a booking source link';
+  exception
+    when others then
+      if position('沒有權限' in sqlerrm) = 0 then raise; end if;
+  end;
+
+  perform set_config('tests.uid', v_owner::text, true);
+  begin
+    perform public.confirm_booking_source_customer_link(
+      'org-stored-value-other', v_source, 'cust-source-booking',
+      'CUSTOMER_PRESENT', '隔離測試已完成本人核對', v_owner, 'staff-other-test'
+    );
+    raise exception 'other organization created a booking source link';
+  exception
+    when others then
+      if position('沒有權限' in sqlerrm) = 0 and position('顧客帳號無效' in sqlerrm) = 0 then raise; end if;
+  end;
+  begin
+    insert into public.booking_source_customer_links (
+      organization_id, source_customer_key, finance_booking_customer_id,
+      evidence_kind, reason, confirmed_by_staff_id, confirmed_by_auth_user_id
+    ) values (
+      v_other, 'src-cross-org-1', v_booking, 'CUSTOMER_PRESENT',
+      '隔離測試跨組織', 'staff-owner-test', v_owner
+    );
+    raise exception 'cross-organization source link was accepted';
+  exception
+    when others then
+      if position('顧客帳號無效' in sqlerrm) = 0 then raise; end if;
+  end;
+
+  perform public.confirm_booking_source_customer_link(
+    'org-stored-value-test', v_source, 'cust-source-booking',
+    'CUSTOMER_PRESENT', '隔離測試已完成本人核對', v_owner, 'staff-owner-test'
+  );
+  if public.resolve_booking_source_customer(v_org, v_source) is distinct from v_booking then
+    raise exception 'booking source key did not resolve to the finance booking customer';
+  end if;
+
+  begin
+    perform public.settle_booking_source_checkout(
+      'org-stored-value-test', 'src-unconfirmed', 'sale-source-none',
+      'loc-isolated', 500, 'staff-owner-test'
+    );
+    raise exception 'unconfirmed booking key spent stored value';
+  exception
+    when others then
+      if position('必須先完成顧客身分對應' in sqlerrm) = 0 then raise; end if;
+  end;
+  if tests.balance(v_wallet) <> 2100 or tests.member_payments(v_wallet) <> 0 then
+    raise exception 'unconfirmed key changed the wallet';
+  end if;
+
+  begin
+    perform public.settle_booking_source_checkout(
+      'org-stored-value-test', v_source, 'sale-source-high',
+      'loc-isolated', 5000, 'staff-owner-test'
+    );
+    raise exception 'overdraft checkout was accepted';
+  exception
+    when others then
+      if position('儲值金餘額不足' in sqlerrm) = 0 then raise; end if;
+  end;
+  if tests.balance(v_wallet) <> 2100 or tests.member_payments(v_wallet) <> 0 then
+    raise exception 'failed overdraft did not roll back, balance %', tests.balance(v_wallet);
+  end if;
+
+  perform public.settle_booking_source_checkout(
+    'org-stored-value-test', v_source, 'sale-source-500',
+    'loc-isolated', 500, 'staff-owner-test'
+  );
+  perform public.settle_booking_source_checkout(
+    'org-stored-value-test', v_source, 'sale-source-500',
+    'loc-isolated', 500, 'staff-owner-test'
+  );
+  if tests.balance(v_wallet) <> 1600 or tests.member_payments(v_wallet) <> 1 then
+    raise exception 'source debit did not leave 1600 once, balance %', tests.balance(v_wallet);
+  end if;
+  select customer_id into v_tx_customer
+  from public.transactions
+  where app_id = 'stx-sale-source-500';
+  select customer_id into v_pay_customer
+  from public.stored_value_ledger_entries
+  where effect_key = 'booking-checkout:sale-source-500';
+  if v_tx_customer is distinct from v_booking or v_pay_customer is distinct from v_wallet then
+    raise exception 'source sale and payment customers were not kept apart';
+  end if;
+  select count(*) into v_topups
+  from public.stored_value_ledger_entries
+  where customer_id = v_wallet and type = 'TOP_UP';
+  select count(*) into v_kept from public.appointments;
+  if v_topups <> 2 or v_kept <> v_appointments then
+    raise exception 'source debit changed history topups % appointments %', v_topups, v_kept;
+  end if;
+  if (
+    select count(*) from public.customer_wallet_identities
+    where booking_customer_id = v_booking and wallet_customer_id = v_wallet and status = 'ACTIVE'
+  ) <> 1 then
+    raise exception 'source link replaced the existing wallet identity';
+  end if;
+end;
+$$;

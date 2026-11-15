@@ -10,6 +10,9 @@ begin
   if not exists (select 1 from pg_roles where rolname = 'authenticated') then
     create role authenticated nologin;
   end if;
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then
+    create role service_role nologin;
+  end if;
 end $$;
 
 create or replace function auth.uid()
@@ -54,6 +57,14 @@ end $$;
 create table if not exists public.organizations (
   id uuid primary key,
   app_id text not null unique
+);
+
+create table if not exists public.locations (
+  id uuid primary key,
+  organization_id uuid not null references public.organizations (id),
+  app_id text,
+  name text not null default 'location',
+  is_active boolean not null default true
 );
 
 create table if not exists public.customers (

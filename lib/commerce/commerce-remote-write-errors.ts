@@ -19,6 +19,7 @@ export const COMMERCE_GENERIC_FAILURE_MESSAGE = "目前無法完成結帳，請�
 
 const STORED_VALUE_CHECKOUT_MESSAGES = [
   "必須先完成 LINE 會員綁定",
+  "必須先完成顧客身分對應",
   "儲值金餘額不足",
   "找不到有效儲值帳戶",
   "顧客帳號無效",

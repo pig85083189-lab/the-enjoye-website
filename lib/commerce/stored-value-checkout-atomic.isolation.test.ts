@@ -7,6 +7,7 @@ import {
   remoteStoredValueWalletFromBalanceResponse,
 } from "@/lib/commerce/checkout-stored-value";
 import { formatTwd } from "@/lib/commerce/money";
+import { resolveBookingSourceFinanceCustomer } from "@/lib/commerce/booking-source-customer";
 import {
   chooseCheckoutCustomer,
   crossDbIdentityEvidence,
@@ -239,6 +240,57 @@ describe("checkout stored-value balance response", () => {
       }),
     ).toBeNull();
   });
+
+  it("uses a confirmed booking-source link and ignores unconfirmed or cross-organization keys", () => {
+    const organizationId = "11111111-1111-4111-8111-111111111111";
+    const sourceCustomerKey = "src-isolated-0001";
+    const financeBookingCustomerId = "f44fffff-ffff-4fff-8fff-ffffffffffff";
+    const link = {
+      organizationId,
+      sourceCustomerKey,
+      financeBookingCustomerId,
+      status: "ACTIVE",
+      evidenceKind: "CUSTOMER_PRESENT",
+    };
+    expect(resolveBookingSourceFinanceCustomer({
+      organizationId,
+      sourceCustomerKey,
+      links: [link],
+    })).toBe(financeBookingCustomerId);
+    expect(resolveBookingSourceFinanceCustomer({
+      organizationId,
+      sourceCustomerKey: "src-unconfirmed",
+      links: [link],
+    })).toBeNull();
+    expect(resolveBookingSourceFinanceCustomer({
+      organizationId: "22222222-2222-4222-8222-222222222222",
+      sourceCustomerKey,
+      links: [link],
+    })).toBeNull();
+    expect(resolveBookingSourceFinanceCustomer({
+      organizationId,
+      sourceCustomerKey,
+      links: [{ ...link, status: "REVOKED" }],
+    })).toBeNull();
+    expect(resolveBookingSourceFinanceCustomer({
+      organizationId,
+      sourceCustomerKey,
+      links: [link, { ...link, evidenceKind: "TRUSTED_MEMBER_RECORD" }],
+    })).toBeNull();
+    const decision = resolveStoredValueWalletCustomer({
+      bookingCustomerId: financeBookingCustomerId,
+      bookingLineBound: false,
+      link: { walletCustomerId: "f55fffff-ffff-4fff-8fff-ffffffffffff", walletActive: true, walletLineBound: true },
+    });
+    expect(decision).toEqual({
+      ok: true,
+      walletCustomerId: "f55fffff-ffff-4fff-8fff-ffffffffffff",
+      via: "confirmed_link",
+    });
+    const shown = remoteStoredValueWalletFromBalanceResponse(200, { status: "active", balanceMinor: 2100 });
+    expect(shown.status === "active" ? formatTwd(shown.balanceMinor) : "").toBe("NT$2,100");
+    expect(remoteStoredValueBlockReason(shown, 500)).toBeNull();
+  });
 });
 
 describe("stored-value checkout debit", () => {
@@ -422,7 +474,51 @@ describe("stored-value checkout SQL review", () => {
     expect(panel).toMatch(/remoteStoredValueBlockReason/);
     expect(balanceRoute).toMatch(/chooseCheckoutCustomer/);
     expect(balanceRoute).toMatch(/checkoutCustomerKeyIsDbId/);
+    expect(balanceRoute).toMatch(/resolveBookingSourceFinanceCustomer/);
+    expect(balanceRoute).toMatch(/booking_source_customer_links/);
     expect(balanceRoute).not.toMatch(/cust-musfocyt-3x0fpe|cust-line-a6cd6d968c4747c39229bc1deb985559/);
+    expect(balanceRoute).not.toMatch(/e06709d5-893f-4be1-8d83-b3d666a9257c|bceef2c0-4555-41b2-9d1e-b999d604fa81|a6cd6d96-8c47-47c3-9229-bc1deb985559/);
     expect(panel).not.toMatch(/cust-musfocyt-3x0fpe|cust-line-a6cd6d968c4747c39229bc1deb985559/);
+    const sourceLink = readFileSync(
+      path.join(ROOT, "supabase/migrations/20261115170000_booking_source_customer_links.sql"),
+      "utf8",
+    );
+    const checkoutRoute = readFileSync(
+      path.join(ROOT, "app/api/staff/commerce/checkout/route.ts"),
+      "utf8",
+    );
+    const bookingReceipt = readFileSync(
+      path.join(ROOT, "supabase/booking/20261115171000_checkout_stored_value_receipt.sql"),
+      "utf8",
+    );
+    expect(sourceLink).toMatch(/confirm_booking_source_customer_link/);
+    expect(sourceLink).toMatch(/CUSTOMER_PRESENT/);
+    expect(sourceLink).toMatch(/TRUSTED_MEMBER_RECORD/);
+    expect(sourceLink).toMatch(/settle_booking_source_checkout/);
+    expect(sourceLink).toMatch(/customer_wallet_identities_backup_20261115/);
+    expect(sourceLink).toMatch(/enable row level security/);
+    expect(sourceLink).not.toMatch(/create or replace function public\.settle_checkout_draft/);
+    expect(sourceLink).not.toMatch(/create or replace function public\.save_checkout_draft/);
+    expect(sourceLink).not.toMatch(/create table if not exists public\.locations/);
+    expect(sourceLink).not.toMatch(/full_name|phone/);
+    expect(sourceLink).not.toMatch(/e06709d5-893f-4be1-8d83-b3d666a9257c|cust-musfocyt-3x0fpe/);
+    expect(checkoutRoute).toMatch(/readBookingCheckoutSource/);
+    expect(checkoutRoute).toMatch(/financeCustomerId/);
+    expect(checkoutRoute).not.toMatch(/p_package_redemption/);
+    expect(checkoutRoute).not.toMatch(/e06709d5-893f-4be1-8d83-b3d666a9257c|bceef2c0-4555-41b2-9d1e-b999d604fa81/);
+    expect(bookingReceipt).toMatch(/stored_value_debit_receipts/);
+    expect(bookingReceipt).toMatch(/此付款方式目前尚未開放/);
+    expect(bookingReceipt).toMatch(/v_draft\.package_redemption/);
+    expect(bookingReceipt).toMatch(/apply_package_effects_for_transaction/);
+    expect(bookingReceipt).toMatch(/p_package_redemption jsonb/);
+    expect(bookingReceipt).toMatch(/method = 'PACKAGE'/);
+    expect(bookingReceipt).toMatch(
+      /grant execute on function public\.save_checkout_draft\(text, timestamptz, jsonb, jsonb, jsonb\)/,
+    );
+    expect(bookingReceipt).not.toMatch(/stored_value_ledger_entries/);
+    expect(bookingReceipt).not.toMatch(/create or replace function public\.apply_package_effects_for_transaction/);
+    expect(readFileSync(path.join(ROOT, "features/checkout/use-commerce-remote-write.ts"), "utf8")).toMatch(
+      /\/api\/staff\/commerce\/checkout/,
+    );
   });
 });
