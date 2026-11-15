@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { useCustomerRemoteList } from "@/features/customers/use-customer-remote-read";
@@ -47,6 +47,32 @@ export function StoredValueTopUpModal({
   const [received, setReceived] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [effectKey, setEffectKey] = useState<string | null>(null);
+  const [eligibleIds, setEligibleIds] = useState<Set<string> | null>(null);
+  const [eligibilityError, setEligibilityError] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setEligibleIds(null);
+    setEligibilityError(false);
+    void (async () => {
+      try {
+        const response = await fetch("/api/staff/stored-value/eligible-customers?organizationId=" + encodeURIComponent(organizationId), {
+          credentials: "same-origin", cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("LINE eligibility unavailable");
+        const result: unknown = await response.json();
+        if (!result || typeof result !== "object" || !("customerIds" in result) ||
+            !Array.isArray(result.customerIds) ||
+            !result.customerIds.every((id: unknown) => typeof id === "string")) {
+          throw new Error("Invalid eligibility response");
+        }
+        if (!controller.signal.aborted) setEligibleIds(new Set(result.customerIds as string[]));
+      } catch {
+        if (!controller.signal.aborted) setEligibilityError(true);
+      }
+    })();
+    return () => controller.abort();
+  }, [open, organizationId]);
 
   // Remote lookup is read-only; only rows authorized by the authenticated customer adapter are returned.
   const remote = useCustomerRemoteList(organizationId, open);
@@ -64,7 +90,8 @@ export function StoredValueTopUpModal({
     }
     return Array.from(byId.values());
   }, [customers, remote, organizationId]);
-  const selected = searchableCustomers.find((row) => row.id === customerId) ?? null;
+  const eligibleCustomers = eligibleIds ? searchableCustomers.filter(row => eligibleIds.has(row.id) && remoteCustomerIds.has(row.id)) : [];
+  const selected = eligibleCustomers.find((row) => row.id === customerId) ?? null;
   // A remotely read customer is not yet supported by the local-only ledger. Never charge it locally.
   const isRemoteOnlyCustomer = Boolean(selected && remoteCustomerIds.has(selected.id));
   const currentBalance = selected && !isRemoteOnlyCustomer
@@ -76,12 +103,12 @@ export function StoredValueTopUpModal({
     amountMinor: amountMinor && amountMinor > 0 ? amountMinor : 0,
   });
   const canConfirm = canConfirmStoredValueTopUp({
-    customerId: remote.status === "data" && remoteCustomerIds.has(customerId ?? "") ? customerId : null,
+    customerId: remote.status === "data" && eligibleIds?.has(customerId ?? "") && remoteCustomerIds.has(customerId ?? "") ? customerId : null,
     amountMinor,
   });
   const hits = useMemo(
-    () => filterCustomersForStoredValuePicker(searchableCustomers, query).slice(0, 8),
-    [searchableCustomers, query],
+    () => filterCustomersForStoredValuePicker(eligibleCustomers, query).slice(0, 8),
+    [eligibleCustomers, query],
   );
 
   if (!open) return null;
@@ -98,7 +125,7 @@ export function StoredValueTopUpModal({
 
   async function confirm() {
     if (submitting) return;
-    if (remote.status !== "data" || !selected || !remoteCustomerIds.has(selected.id)) {
+    if (remote.status !== "data" || !selected || !eligibleIds?.has(selected.id) || !remoteCustomerIds.has(selected.id)) {
       setError("正式顧客資料尚未確認，禁止本機入帳。");
       return;
     }
@@ -164,7 +191,7 @@ export function StoredValueTopUpModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
           <section>
-            <p className="text-[13px] font-semibold text-text">選擇客戶</p>
+            <p className="text-[13px] font-semibold text-text">選擇已綁定 LINE 會員</p>
             {selected ? (
               <div className="mt-2 flex items-center gap-3 rounded-2xl border border-border bg-[#FAF7F5] px-3 py-2.5">
                 <Avatar initials={selected.name.slice(0, 1)} size="sm" className="gap-0" />
@@ -199,16 +226,18 @@ export function StoredValueTopUpModal({
                     type="search"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="搜尋姓名 / 電話"
+                    placeholder="搜尋已綁定會員姓名 / 電話"
                     className="h-10 min-h-10 w-full rounded-xl border border-border bg-surface pl-9 pr-3 text-[14px] outline-none ring-primary/30 focus:ring-2"
                     aria-label="搜尋客戶姓名或電話"
                   />
                 </div>
+                {!eligibleIds && !eligibilityError ? <p className="mt-2 text-xs text-secondary-text">正在驗證 LINE 會員綁定…</p> : null}
+                {eligibilityError ? <p className="mt-2 text-xs text-[#986B58]" role="alert">LINE 會員資格查詢失敗，暫時無法儲值。</p> : null}
                 {remote.status === "loading" ? <p className="mt-2 text-xs text-secondary-text">正在查詢正式顧客資料…</p> : null}
-                {remote.status === "error" ? <p className="mt-2 text-xs text-[#986B58]" role="status">正式顧客資料暫時無法讀取，目前僅顯示本機清單。</p> : null}
+                {remote.status === "error" ? <p className="mt-2 text-xs text-[#986B58]" role="status">正式顧客資料暫時無法讀取，已停止儲值選擇。</p> : null}
                 <ul className="mt-2 max-h-48 overflow-y-auto">
                   {hits.length === 0 ? (
-                    <li className="px-1 py-3 text-sm text-secondary-text">尚無符合的客戶</li>
+                    <li className="px-1 py-3 text-sm text-secondary-text">尚無符合的已綁定 LINE 會員</li>
                   ) : (
                     hits.map((row) => (
                       <li key={row.id}>
