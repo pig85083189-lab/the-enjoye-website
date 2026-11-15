@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
-import { useCustomerRemoteList } from "@/features/customers/use-customer-remote-read";
 import { Button } from "@/components/ui/Button";
 import {
   EXTERNAL_PAYMENT_METHODS,
@@ -14,7 +13,6 @@ import { formatTwd, parseMoneyInput } from "@/lib/commerce/money";
 import { getCustomerStoredValueBalance } from "@/lib/stored-value/store";
 import {
   canConfirmStoredValueTopUp,
-  filterCustomersForStoredValuePicker,
   previewStoredValueTopUp,
 } from "@/lib/stored-value/stored-value-workspace-derived";
 import { cn } from "@/lib/utils";
@@ -48,11 +46,13 @@ export function StoredValueTopUpModal({
   const [submitting, setSubmitting] = useState(false);
   const [effectKey, setEffectKey] = useState<string | null>(null);
   const [eligibleIds, setEligibleIds] = useState<Set<string> | null>(null);
+  const [verifiedCustomers, setVerifiedCustomers] = useState<Array<{ id: string; name: string; phone: string }>>([]);
   const [eligibilityError, setEligibilityError] = useState(false);
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
     setEligibleIds(null);
+    setVerifiedCustomers([]);
     setEligibilityError(false);
     void (async () => {
       try {
@@ -66,7 +66,14 @@ export function StoredValueTopUpModal({
             !result.customerIds.every((id: unknown) => typeof id === "string")) {
           throw new Error("Invalid eligibility response");
         }
-        if (!controller.signal.aborted) setEligibleIds(new Set(result.customerIds as string[]));
+        const rows = "eligibleCustomers" in result ? result.eligibleCustomers : null;
+        if (!Array.isArray(rows) || !rows.every((row: unknown) => row && typeof row === "object" && "id" in row && typeof row.id === "string" && "name" in row && typeof row.name === "string" && "phone" in row && typeof row.phone === "string")) {
+          throw new Error("Invalid verified customer list");
+        }
+        if (!controller.signal.aborted) {
+          setEligibleIds(new Set(result.customerIds as string[]));
+          setVerifiedCustomers(rows as Array<{ id: string; name: string; phone: string }>);
+        }
       } catch {
         if (!controller.signal.aborted) setEligibilityError(true);
       }
@@ -74,40 +81,23 @@ export function StoredValueTopUpModal({
     return () => controller.abort();
   }, [open, organizationId]);
 
-  // Remote lookup is read-only; only rows authorized by the authenticated customer adapter are returned.
-  const remote = useCustomerRemoteList(organizationId, open);
-  const remoteCustomerIds = useMemo(() => new Set(
-    remote.status === "data" ? remote.value.map((customer) => customer.id).filter(Boolean) : [],
-  ), [remote]);
-  const searchableCustomers = useMemo(() => {
-    const byId = new Map(customers.map((customer) => [customer.id, customer]));
-    if (remote.status === "data") {
-      for (const customer of remote.value) {
-        if (customer.id && customer.organizationId === organizationId && !byId.has(customer.id)) {
-          byId.set(customer.id, customer);
-        }
-      }
-    }
-    return Array.from(byId.values());
-  }, [customers, remote, organizationId]);
-  const eligibleCustomers = eligibleIds ? searchableCustomers.filter(row => eligibleIds.has(row.id) && remoteCustomerIds.has(row.id)) : [];
-  const selected = eligibleCustomers.find((row) => row.id === customerId) ?? null;
-  // A remotely read customer is not yet supported by the local-only ledger. Never charge it locally.
-  const isRemoteOnlyCustomer = Boolean(selected && remoteCustomerIds.has(selected.id));
-  const currentBalance = selected && !isRemoteOnlyCustomer
-    ? getCustomerStoredValueBalance(organizationId, selected.id)
-    : 0;
+  // The server returns only LINE-verified customers from the dedicated Beauty OS database.
+  // Never intersect with the browser's separate booking/customer Supabase adapter.
+  const eligibleCustomers = verifiedCustomers.filter(row => eligibleIds?.has(row.id));
+  const selected = eligibleCustomers.find(row => row.id === customerId) ?? null;
+  const isRemoteOnlyCustomer = Boolean(selected);
+  const currentBalance = 0; // No local balance may be shown for canonical financial accounts.
   const amountMinor = parseMoneyInput(amountRaw);
   const preview = previewStoredValueTopUp({
     currentBalanceMinor: currentBalance,
     amountMinor: amountMinor && amountMinor > 0 ? amountMinor : 0,
   });
   const canConfirm = canConfirmStoredValueTopUp({
-    customerId: remote.status === "data" && eligibleIds?.has(customerId ?? "") && remoteCustomerIds.has(customerId ?? "") ? customerId : null,
+    customerId: selected && eligibleIds?.has(selected.id) ? selected.id : null,
     amountMinor,
   });
   const hits = useMemo(
-    () => filterCustomersForStoredValuePicker(eligibleCustomers, query).slice(0, 8),
+    () => eligibleCustomers.filter(row => `${row.name} ${row.phone}`.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 8),
     [eligibleCustomers, query],
   );
 
@@ -125,7 +115,7 @@ export function StoredValueTopUpModal({
 
   async function confirm() {
     if (submitting) return;
-    if (remote.status !== "data" || !selected || !eligibleIds?.has(selected.id) || !remoteCustomerIds.has(selected.id)) {
+    if (!selected || !eligibleIds?.has(selected.id)) {
       setError("正式顧客資料尚未確認，禁止本機入帳。");
       return;
     }
@@ -233,8 +223,6 @@ export function StoredValueTopUpModal({
                 </div>
                 {!eligibleIds && !eligibilityError ? <p className="mt-2 text-xs text-secondary-text">正在驗證 LINE 會員綁定…</p> : null}
                 {eligibilityError ? <p className="mt-2 text-xs text-[#986B58]" role="alert">LINE 會員資格查詢失敗，暫時無法儲值。</p> : null}
-                {remote.status === "loading" ? <p className="mt-2 text-xs text-secondary-text">正在查詢正式顧客資料…</p> : null}
-                {remote.status === "error" ? <p className="mt-2 text-xs text-[#986B58]" role="status">正式顧客資料暫時無法讀取，已停止儲值選擇。</p> : null}
                 <ul className="mt-2 max-h-48 overflow-y-auto">
                   {hits.length === 0 ? (
                     <li className="px-1 py-3 text-sm text-secondary-text">尚無符合的已綁定 LINE 會員</li>
