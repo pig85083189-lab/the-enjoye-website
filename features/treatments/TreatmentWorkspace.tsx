@@ -390,6 +390,19 @@ export function TreatmentWorkspace({
             <div className="mb-5 rounded-2xl border border-[#C9DDD1] bg-[#F2F8F3] p-4"><p className="text-xs font-semibold text-[#426A52]">01 會員可見紀錄</p><h1 className="mt-1 text-2xl font-semibold text-text">專業紀錄與保養推薦</h1><p className="mt-2 text-sm text-secondary-text">這裡的自訂欄位會同步會員。請填寫適合顧客閱讀的內容，不要輸入內部交班資訊。</p></div>
             {consultationError ? <p role="alert" className="mb-4 rounded-xl border border-warning/30 bg-background p-3 text-sm text-secondary-text">{consultationError}</p> : null}
             <ConsultationFields fields={consultationFields.filter((field) => field.section === "professionalNote")} values={consultationValues} onChange={changeConsultation} />
+            <div className="mt-5 space-y-4 rounded-2xl border border-[#C9DDD1] bg-white p-4">
+              <label className="block text-sm font-semibold text-text" htmlFor="member-professional-note">美容師服務紀錄（會員可見）</label>
+              <textarea id="member-professional-note" rows={4} className="w-full rounded-xl border border-border bg-background p-3 text-sm text-text" value={draft.professionalNote} onChange={event => updateDraft(prev => ({...prev, professionalNote:event.target.value, noteManuallyEdited:true}))} placeholder="記錄本次服務觀察與照護情況" />
+              <label className="block text-sm font-semibold text-text" htmlFor="member-client-feeling">客人療程後感受（會員可見）</label>
+              <select id="member-client-feeling" className="min-h-11 w-full rounded-xl border border-border bg-background px-3 text-sm text-text" value={draft.clientFeeling} onChange={event => updateDraft(prev => ({...prev, clientFeeling:event.target.value, discomfortNote:event.target.value==="不舒服"?prev.discomfortNote:""}))}>
+                <option value="">尚未選擇</option>
+                {["很舒服","舒服","普通","不舒服"].map(feeling=><option key={feeling} value={feeling}>{feeling}</option>)}
+              </select>
+              {draft.clientFeeling==="不舒服" ? <>
+                <label className="block text-sm font-semibold text-text" htmlFor="member-discomfort-note">不適情況（會員可見）</label>
+                <textarea id="member-discomfort-note" rows={3} className="w-full rounded-xl border border-border bg-background p-3 text-sm text-text" value={draft.discomfortNote} onChange={event => updateDraft(prev => ({...prev, discomfortNote:event.target.value}))} placeholder="請記錄不適部位與情況" />
+              </> : null}
+            </div>
             <div className="mt-5 flex justify-between gap-3"><button className="min-h-11 rounded-xl border border-border px-4" onClick={goBack}>上一步</button><button className="min-h-11 rounded-xl bg-primary px-4 text-white" onClick={goNext}>下一步：下次追蹤</button></div>
           </div>
         );
