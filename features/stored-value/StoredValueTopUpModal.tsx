@@ -280,7 +280,7 @@ export function StoredValueTopUpModal({
             </div>
           </section>
 
-          {!isRemoteOnlyCustomer ? <section className="mt-4 rounded-2xl bg-[#FAF7F5] px-3.5 py-3 text-[13px]">
+          {selected && !isRemoteOnlyCustomer ? <section className="mt-4 rounded-2xl bg-[#FAF7F5] px-3.5 py-3 text-[13px]">
             <PreviewLine label="目前餘額" value={formatTwd(preview.currentBalanceMinor)} />
             <PreviewLine
               label="本次儲值"
