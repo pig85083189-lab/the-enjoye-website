@@ -1,0 +1,43 @@
+import { NextResponse } from "next/server";
+import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
+import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
+import { createServiceRoleClient } from "@/lib/supabase/admin";
+
+export async function GET(request: Request) {
+  const organizationId = new URL(request.url).searchParams.get("organizationId");
+  const headers = { "Cache-Control": "private, no-store" };
+  if (!organizationId || organizationId.length > 120) {
+    return NextResponse.json({ error: "無效的組織" }, { status: 400, headers });
+  }
+  const identity = await getAuthenticatedStaffMembership({ organizationId });
+  if (identity.status === "unauthenticated") {
+    return NextResponse.json({ error: "請先登入員工帳號" }, { status: 401, headers });
+  }
+  if (identity.status !== "ok" || !canCheckout(identity.membership)) {
+    return NextResponse.json({ error: "沒有儲值權限" }, { status: 403, headers });
+  }
+  const db = createServiceRoleClient();
+  if (!db) return NextResponse.json({ error: "資料庫未設定" }, { status: 503, headers });
+  const { data: org, error: orgError } = await db.from("organizations")
+    .select("id").eq("app_id", organizationId).maybeSingle();
+  if (orgError || !org?.id) return NextResponse.json({ error: "無法確認組織" }, { status: 409, headers });
+
+  // Never return LINE IDs, binding secrets, or unbound customers.
+  const { data: bindings, error: bindingError } = await db.from("line_customer_bindings")
+    .select("customer_uuid")
+    .eq("organization_id", organizationId)
+    .eq("status", "active")
+    .eq("verified", true)
+    .not("confirmed_at", "is", null)
+    .not("bound_at", "is", null)
+    .is("unbound_at", null)
+    .is("blocked_at", null)
+    .not("line_user_id_hash", "is", null);
+  if (bindingError) return NextResponse.json({ error: "無法查詢 LINE 會員資格" }, { status: 503, headers });
+  const ids = Array.from(new Set((bindings ?? []).map(b => b.customer_uuid).filter((id): id is string => typeof id === "string")));
+  if (ids.length === 0) return NextResponse.json({ customerIds: [] }, { headers });
+  const { data: customers, error: customerError } = await db.from("customers")
+    .select("app_id").eq("organization_id", org.id).eq("status", "ACTIVE").in("id", ids);
+  if (customerError) return NextResponse.json({ error: "無法確認會員顧客資料" }, { status: 503, headers });
+  return NextResponse.json({ customerIds: (customers ?? []).map(c => c.app_id).filter(Boolean) }, { headers });
+}
