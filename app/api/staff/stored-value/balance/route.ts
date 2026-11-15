@@ -44,7 +44,7 @@ export async function GET(request: Request) {
   if (bookingLine.failed) return fail(503, "LINK_LOOKUP_FAILED");
 
   // Only an authorized identity row can point this booking customer at another wallet.
-  const { data: identity, error: identityError } = await db.from("customer_wallet_identities")
+  const { data: walletIdentity, error: identityError } = await db.from("customer_wallet_identities")
     .select("wallet_customer_id")
     .eq("organization_id", org.id)
     .eq("booking_customer_id", customer.id)
@@ -58,9 +58,9 @@ export async function GET(request: Request) {
   }
 
   let link: { walletCustomerId: string; walletActive: boolean; walletLineBound: boolean } | null = null;
-  if (identity?.wallet_customer_id) {
+  if (walletIdentity?.wallet_customer_id) {
     const { data: walletCustomer, error: walletCustomerError } = await db.from("customers")
-      .select("id,status").eq("organization_id", org.id).eq("id", identity.wallet_customer_id).maybeSingle();
+      .select("id,status").eq("organization_id", org.id).eq("id", walletIdentity.wallet_customer_id).maybeSingle();
     if (walletCustomerError) {
       console.error("[stored-value/balance] wallet_customer_lookup_failed", { code: walletCustomerError.code });
       return fail(503, "WALLET_CUSTOMER_LOOKUP_FAILED");
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
     const walletLine = walletCustomer ? await lineBound(walletCustomer.id) : { bound: false, failed: false as const };
     if (walletLine.failed) return fail(503, "LINK_LOOKUP_FAILED");
     link = {
-      walletCustomerId: identity.wallet_customer_id,
+      walletCustomerId: walletIdentity.wallet_customer_id,
       walletActive: walletCustomer?.status === "ACTIVE",
       walletLineBound: walletLine.bound,
     };
