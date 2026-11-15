@@ -235,7 +235,11 @@ export function StoredValueTopUpModal({
             )}
           </section>
 
-          <p className="mt-3 text-[12px] leading-relaxed text-[#986B58]" role="note">\n            此功能僅在隔離測試環境啟用正式資料庫入帳。未完成 LINE 綁定前，會員中心可能無法顯示餘額。\n          </p>\n\n          {isRemoteOnlyCustomer ? (
+          <p className="mt-3 text-[12px] leading-relaxed text-[#986B58]" role="note">
+            儲值將在員工確認實際收款後寫入正式帳務。會員中心餘額顯示仍需完成 LINE 顧客綁定。
+          </p>
+
+          {isRemoteOnlyCustomer ? (
             <p role="alert" className="mt-2 text-[12px] text-[#986B58]">正式顧客的餘額須由伺服器查詢，不能使用本機餘額作為依據。</p>
           ) : null}
 
