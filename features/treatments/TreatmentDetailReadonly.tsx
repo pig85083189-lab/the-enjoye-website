@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { loadConsultationFields } from "@/lib/consultation-settings";
+import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_CONSULTATION_FIELDS, type ConsultationField } from "@/lib/consultation-settings";
 import { ArrowLeft, CalendarDays, ClipboardList, HeartPulse, Image as ImageIcon, MapPinned, Sparkles, UserRound, CheckCircle2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -39,6 +39,17 @@ export function TreatmentDetailReadonly({
 }: TreatmentDetailReadonlyProps) {
   const isClient = useIsClient();
   const { organization, membership } = useOrganization();
+  const [configuredFields, setConfiguredFields] = useState<ConsultationField[]>(DEFAULT_CONSULTATION_FIELDS);
+  const [fieldsError, setFieldsError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setFieldsError(false);
+    fetch(`/api/staff/consultation-settings?organizationId=${encodeURIComponent(organization.id)}`, { cache: "no-store" })
+      .then(async response => { if (!response.ok) throw new Error("無法讀取店家評估設定"); return response.json(); })
+      .then(data => { if (!cancelled && Array.isArray(data.fields)) setConfiguredFields(data.fields); })
+      .catch(() => { if (!cancelled) setFieldsError(true); });
+    return () => { cancelled = true; };
+  }, [organization.id]);
   const localTreatment = useCrmJson(
     () =>
       treatmentRemoteReadPilot
@@ -121,12 +132,11 @@ export function TreatmentDetailReadonly({
   const focusAreas = treatment.suggestedTrackingAreas?.length
     ? treatment.suggestedTrackingAreas
     : markers.map((marker) => marker.area);
-  const configuredFields = loadConsultationFields(organization.id);
   const consultationAnswers = treatment.assessment.consultationAnswers ?? {};
   const configuredAnswers = configuredFields.flatMap(def => {
     const raw = consultationAnswers[def.id];
     const value = Array.isArray(raw) ? raw.filter(Boolean).join("、") : raw;
-    return value ? [{id:def.id,label:def.label,section:def.section,value}] : [];
+    return value !== null && value !== undefined && value !== "" && (!Array.isArray(value) || value.length > 0) ? [{id:def.id,label:def.label,section:def.section,value:String(value)}] : [];
   });
   const detailRow = (label: string, value: string) => value ? (
     <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-3 border-b border-[#F1E6E4] py-3 last:border-0 sm:grid-cols-[140px_minmax(0,1fr)]">
@@ -177,6 +187,7 @@ export function TreatmentDetailReadonly({
         <a href="#internal-only" className="shrink-0 rounded-xl bg-[#F9F0F0] px-3 py-2 text-sm font-medium text-[#94666F]">店內專用紀錄</a>
       </nav>
 
+      {fieldsError ? <p role="status" className="rounded-xl border border-[#E9D7D4] p-3 text-sm text-secondary-text">店家自訂評估設定暫時無法載入，以下僅依預設欄位顯示；不代表既有紀錄遺失。</p> : null}
       <section id="member-visible" className="scroll-mt-5 space-y-4">
         <div className="rounded-2xl border border-[#C9DDD1] bg-[#F2F8F3] p-4">
           <h2 className="flex items-center gap-2 font-semibold text-[#426A52]">01 會員可見紀錄</h2>
