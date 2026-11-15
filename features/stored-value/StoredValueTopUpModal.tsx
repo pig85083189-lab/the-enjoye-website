@@ -209,7 +209,7 @@ export function StoredValueTopUpModal({
             )}
           </section>
 
-          <section className="mt-4">
+          <p className="mt-3 text-[12px] leading-relaxed text-[#986B58]" role="note">\n            目前此儲值流程使用 Beauty OS 本機帳務，尚未與 LINE 會員中心同步。請勿將此處儲值視為會員中心已入帳。\n          </p>\n\n          <section className="mt-4">
             <p className="text-[13px] font-semibold text-text">本次儲值</p>
             <label className="mt-2 block text-[12px] text-secondary-text">
               實收金額
