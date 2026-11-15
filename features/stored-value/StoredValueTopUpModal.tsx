@@ -54,11 +54,14 @@ export function StoredValueTopUpModal({
 
   // Remote lookup is read-only; only rows authorized by the authenticated customer adapter are returned.
   const remote = useCustomerRemoteList(organizationId, open);
+  const remoteCustomerIds = useMemo(() => new Set(
+    remote.status === "data" ? remote.value.map((customer) => customer.id).filter(Boolean) : [],
+  ), [remote]);
   const searchableCustomers = useMemo(() => {
     const byId = new Map(customers.map((customer) => [customer.id, customer]));
     if (remote.status === "data") {
       for (const customer of remote.value) {
-        if (customer.organizationId === organizationId && !byId.has(customer.id)) {
+        if (customer.id && customer.organizationId === organizationId && !byId.has(customer.id)) {
           byId.set(customer.id, customer);
         }
       }
@@ -67,7 +70,7 @@ export function StoredValueTopUpModal({
   }, [customers, remote, organizationId]);
   const selected = searchableCustomers.find((row) => row.id === customerId) ?? null;
   // A remotely read customer is not yet supported by the local-only ledger. Never charge it locally.
-  const isRemoteOnlyCustomer = Boolean(selected && !getCustomerById(selected.id, organizationId));
+  const isRemoteOnlyCustomer = Boolean(selected && remoteCustomerIds.has(selected.id) && !getCustomerById(selected.id, organizationId));
   const currentBalance = selected && !isRemoteOnlyCustomer
     ? getCustomerStoredValueBalance(organizationId, selected.id)
     : 0;
