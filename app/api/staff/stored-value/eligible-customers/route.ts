@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   }
   // Financial records must never be queried or written against the member-booking Supabase project.
   // Keep this server-side guard even if a shared Vercel environment variable is misconfigured.
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\\/$/, "") !== "https://bfzquejrtgqzzarhkiya.supabase.co") {
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "") !== "https://bfzquejrtgqzzarhkiya.supabase.co") {
     console.error("[stored-value] beauty_os_database_url_mismatch");
     return NextResponse.json({ error: "儲值資料庫連線設定不符", code: "BEAUTY_OS_DATABASE_MISMATCH" }, { status: 503, headers });
   }
