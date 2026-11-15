@@ -259,6 +259,10 @@ begin
   end if;
   select coalesce(sum(amount_minor),0) into v_wallet_charge from public.checkout_payments
     where checkout_draft_id=v_draft.id and method='STORED_VALUE';
+  -- Fail closed on zero/negative wallet rows and conflicting duplicate payment components.
+  if exists (select 1 from public.checkout_payments where checkout_draft_id=v_draft.id and method='STORED_VALUE' and amount_minor<=0) then
+    raise exception '儲值金扣款金額必須大於零';
+  end if;
   if v_wallet_charge > 0 then
     perform 1 from public.customers where id=v_draft.customer_id and organization_id=v_draft.organization_id and status='ACTIVE' for update;
     if not found then raise exception '顧客帳號無效'; end if;
@@ -386,6 +390,7 @@ begin
   end loop;
 
   if v_wallet_charge>0 then
+    -- Unique effect_key is stable per checkout draft; transaction and debit commit atomically.
     insert into public.stored_value_ledger_entries (organization_id,account_id,customer_id,type,amount_delta_minor,transaction_id,appointment_id,location_id,reason,effect_key,created_by_staff_id)
     values (v_draft.organization_id,v_wallet.id,v_draft.customer_id,'PAYMENT',-v_wallet_charge,v_tx.id,v_draft.appointment_id,v_draft.location_id,'CHECKOUT','checkout:'||v_draft.id::text,v_staff_id);
   end if;
