@@ -3,15 +3,8 @@
 import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
-import { getCustomerById } from "@/data/mock-customers";
 import { useCustomerRemoteList } from "@/features/customers/use-customer-remote-read";
 import { Button } from "@/components/ui/Button";
-import {
-  addCheckoutItem,
-  completeCheckout,
-  createEmptyCheckoutDraft,
-  setCheckoutPayments,
-} from "@/lib/commerce/checkout-store";
 import {
   EXTERNAL_PAYMENT_METHODS,
   PAYMENT_METHOD_LABEL,
@@ -51,6 +44,9 @@ export function StoredValueTopUpModal({
   const [amountRaw, setAmountRaw] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [error, setError] = useState("");
+  const [received, setReceived] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [effectKey, setEffectKey] = useState<string | null>(null);
 
   // Remote lookup is read-only; only rows authorized by the authenticated customer adapter are returned.
   const remote = useCustomerRemoteList(organizationId, open);
@@ -70,7 +66,7 @@ export function StoredValueTopUpModal({
   }, [customers, remote, organizationId]);
   const selected = searchableCustomers.find((row) => row.id === customerId) ?? null;
   // A remotely read customer is not yet supported by the local-only ledger. Never charge it locally.
-  const isRemoteOnlyCustomer = Boolean(selected && remoteCustomerIds.has(selected.id) && !getCustomerById(selected.id, organizationId));
+  const isRemoteOnlyCustomer = Boolean(selected && remoteCustomerIds.has(selected.id));
   const currentBalance = selected && !isRemoteOnlyCustomer
     ? getCustomerStoredValueBalance(organizationId, selected.id)
     : 0;
@@ -80,7 +76,7 @@ export function StoredValueTopUpModal({
     amountMinor: amountMinor && amountMinor > 0 ? amountMinor : 0,
   });
   const canConfirm = canConfirmStoredValueTopUp({
-    customerId: isRemoteOnlyCustomer ? null : customerId,
+    customerId: remote.status === "data" && remoteCustomerIds.has(customerId ?? "") ? customerId : null,
     amountMinor,
   });
   const hits = useMemo(
@@ -95,44 +91,46 @@ export function StoredValueTopUpModal({
     setAmountRaw("");
     setError("");
     setMethod("CASH");
+    setReceived(false);
+    setEffectKey(null);
     onClose();
   }
 
-  function confirm() {
-    if (isRemoteOnlyCustomer) {
-      setError("此顧客來自正式資料庫，儲值帳務尚未完成安全串接，暫不可入帳。");
+  async function confirm() {
+    if (submitting) return;
+    if (remote.status !== "data" || !selected || !remoteCustomerIds.has(selected.id)) {
+      setError("正式顧客資料尚未確認，禁止本機入帳。");
       return;
     }
-    if (!selected || amountMinor == null || amountMinor <= 0) {
-      setError("請選擇客戶並輸入儲值金額");
+    if (!received || amountMinor == null || amountMinor <= 0 || !locationId ||
+        !(EXTERNAL_PAYMENT_METHODS as PaymentMethod[]).includes(method)) {
+      setError("請確認顧客、金額、付款方式及已實際收款");
       return;
     }
-    if (!locationId) {
-      setError("請先選擇可存取的分店");
-      return;
-    }
-    if (!(EXTERNAL_PAYMENT_METHODS as PaymentMethod[]).includes(method)) {
-      setError("請選擇現金、信用卡、轉帳或其他付款方式");
-      return;
-    }
+    // Reuse the same idempotency key after a network failure or uncertain response.
+    const key = effectKey ?? `manual-topup:${crypto.randomUUID()}`;
+    setEffectKey(key);
+    setSubmitting(true);
+    setError("");
     try {
-      const draft = createEmptyCheckoutDraft(organizationId, {
-        locationId,
-        customerId: selected.id,
-        createdByStaffId: staffId,
+      const response = await fetch("/api/staff/stored-value/top-up", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          organizationId, locationId, customerId: selected.id,
+          amountMinor, method, effectKey: key, manualPaymentConfirmed: true,
+        }),
       });
-      addCheckoutItem(organizationId, draft.id, {
-        type: "STORED_VALUE_TOP_UP",
-        name: "儲值",
-        unitPrice: amountMinor,
-      });
-      setCheckoutPayments(organizationId, draft.id, [
-        { method, amount: amountMinor },
-      ]);
-      completeCheckout(organizationId, draft.id);
+      const result = await response.json() as { error?: string; entryId?: string };
+      if (!response.ok || !result.entryId) {
+        throw new Error(result.error ?? "儲值入帳未確認，請勿重複收款");
+      }
       close();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "無法完成儲值");
+      setError(err instanceof Error ? err.message : "儲值入帳未確認，請勿重複收款");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -183,6 +181,8 @@ export function StoredValueTopUpModal({
                   onClick={() => {
                     setCustomerId(null);
                     setQuery("");
+                    setReceived(false);
+                    setEffectKey(null);
                   }}
                 >
                   重選
@@ -215,7 +215,7 @@ export function StoredValueTopUpModal({
                         <button
                           type="button"
                           className="flex min-h-12 w-full items-center gap-2.5 rounded-xl px-1 py-2 text-left hover:bg-primary-light/40"
-                          onClick={() => setCustomerId(row.id)}
+                          onClick={() => { setCustomerId(row.id); setReceived(false); setEffectKey(null); }}
                         >
                           <Avatar initials={row.name.slice(0, 1)} size="sm" className="gap-0" />
                           <span className="min-w-0">
@@ -235,8 +235,8 @@ export function StoredValueTopUpModal({
             )}
           </section>
 
-          <p className="mt-3 text-[12px] leading-relaxed text-[#986B58]" role="note">\n            目前此儲值流程使用 Beauty OS 本機帳務，尚未與 LINE 會員中心同步。請勿將此處儲值視為會員中心已入帳。\n          </p>\n\n          {isRemoteOnlyCustomer ? (
-            <p role="alert" className="mt-2 text-[12px] text-[#986B58]">此顧客尚未支援正式帳務入帳，已停用儲值確認，避免資料不同步。</p>
+          <p className="mt-3 text-[12px] leading-relaxed text-[#986B58]" role="note">\n            此功能僅在隔離測試環境啟用正式資料庫入帳。未完成 LINE 綁定前，會員中心可能無法顯示餘額。\n          </p>\n\n          {isRemoteOnlyCustomer ? (
+            <p role="alert" className="mt-2 text-[12px] text-[#986B58]">正式顧客的餘額須由伺服器查詢，不能使用本機餘額作為依據。</p>
           ) : null}
 
           <section className="mt-4">
@@ -249,7 +249,7 @@ export function StoredValueTopUpModal({
                 </span>
                 <input
                   value={amountRaw}
-                  onChange={(event) => setAmountRaw(event.target.value)}
+                  onChange={(event) => { setAmountRaw(event.target.value); setReceived(false); setEffectKey(null); }}
                   inputMode="numeric"
                   placeholder="0"
                   aria-label="實收金額"
@@ -266,7 +266,7 @@ export function StoredValueTopUpModal({
                 <button
                   key={item}
                   type="button"
-                  onClick={() => setMethod(item)}
+                  onClick={() => { setMethod(item); setReceived(false); setEffectKey(null); }}
                   className={cn(
                     "h-8 min-h-8 rounded-full px-3 text-[12px] font-medium",
                     method === item
@@ -300,13 +300,19 @@ export function StoredValueTopUpModal({
             </p>
           ) : null}
 
+          <label className="mt-4 flex items-start gap-2 text-[13px] text-text">
+            <input type="checkbox" checked={received} disabled={submitting}
+              onChange={(event) => setReceived(event.target.checked)}
+              className="mt-0.5" />
+            我已實際收到本筆款項，確認由本人負責此筆手動收款紀錄
+          </label>
           <Button
             data-stored-value-topup-confirm
             className="mt-4 h-[50px] min-h-[50px] w-full rounded-2xl text-[15px]"
-            disabled={!canConfirm}
-            onClick={confirm}
+            disabled={!canConfirm || !received || submitting}
+            onClick={() => { void confirm(); }}
           >
-            {amountMinor && amountMinor > 0
+            {submitting ? "正在確認入帳…" : amountMinor && amountMinor > 0
               ? `確認儲值 ${formatTwd(amountMinor)}`
               : "確認儲值"}
           </Button>
