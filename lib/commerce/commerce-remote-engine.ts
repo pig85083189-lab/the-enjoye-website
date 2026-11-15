@@ -86,6 +86,8 @@ export type CommerceEngineStoredValueEntry = {
 /** In-memory mirror of one canonical TWD wallet. Postgres remains the concurrency authority. */
 export type CommerceEngineStoredValue = {
   customerAppId: string;
+  /** Booking customer allowed to spend this wallet through a confirmed identity link. */
+  linkedBookingCustomerAppId?: string;
   lineBound: boolean;
   active: boolean;
   currency: string;
@@ -383,7 +385,9 @@ function assertStoredValueAvailable(
   }
   if (draft.currency !== "TWD") throw new Error("儲值金僅支援 TWD 結帳");
   const wallet = snapshot.storedValue;
-  if (!wallet || wallet.customerAppId !== draft.customerId || !wallet.active) {
+  const sameCustomer = wallet?.customerAppId === draft.customerId;
+  const confirmedLink = wallet?.linkedBookingCustomerAppId === draft.customerId;
+  if (!wallet || !wallet.active || (!sameCustomer && !confirmedLink)) {
     throw new Error("找不到有效儲值帳戶");
   }
   if (wallet.currency !== "TWD") throw new Error("儲值金僅支援 TWD 結帳");

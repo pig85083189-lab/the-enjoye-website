@@ -352,3 +352,182 @@ begin
   end;
 end;
 $$;
+
+-- Booking customer A keeps the appointments and the sale.
+-- Wallet customer B keeps the LINE link and the append-only ledger.
+do $$
+declare
+  v_org uuid := '11111111-1111-4111-8111-111111111111';
+  v_other uuid := '22222222-2222-4222-8222-222222222222';
+  v_booking uuid := 'a11aaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+  v_wallet uuid := 'b22bbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2';
+  v_other_customer uuid := 'c33ccccc-cccc-4ccc-8ccc-ccccccccccc3';
+  v_owner uuid := '99999999-9999-4999-8999-999999999999';
+  v_staff uuid := '88888888-8888-4888-8888-888888888881';
+  v_when timestamptz := timestamptz '2026-11-15 00:00:00+00';
+  v_account uuid;
+  v_tx_customer uuid;
+  v_pay_customer uuid;
+  v_topups int;
+  v_appointments int;
+begin
+  perform set_config('tests.uid', v_owner::text, true);
+  insert into public.organizations (id, app_id)
+  values (v_other, 'org-stored-value-other')
+  on conflict (id) do nothing;
+  insert into public.customers (id, organization_id, status, app_id) values
+    (v_booking, v_org, 'ACTIVE', 'cust-booking-isolated'),
+    (v_wallet, v_org, 'ACTIVE', 'cust-wallet-isolated'),
+    (v_other_customer, v_other, 'ACTIVE', 'cust-wallet-isolated');
+  insert into public.appointments (id, organization_id, status)
+  select ('c3000000-0000-4000-8000-00000000000' || g)::uuid, v_org, 'COMPLETED'
+  from generate_series(1, 5) g;
+  insert into public.member_line_customer_links (organization_id, customer_id, verified_at)
+  values (v_org, v_wallet, v_when);
+  perform tests.wallet(v_wallet, 1000);
+  select id into v_account from public.stored_value_accounts where customer_id = v_wallet;
+  insert into public.stored_value_ledger_entries (
+    organization_id, account_id, customer_id, type, amount_delta_minor,
+    reason, effect_key, created_by_staff_id
+  ) values (
+    v_org, v_account, v_wallet, 'TOP_UP', 1100,
+    'ISOLATED_TEST_SEED', 'seed-2:' || v_wallet::text, 'staff-test-1'
+  );
+  insert into public.staff_auth_memberships (id, user_id, auth_user_id, organization_id, role, is_active)
+  values
+    ('mem-owner', 'staff-owner-test', v_owner, 'org-stored-value-test', 'OWNER', true),
+    ('mem-staff', 'staff-front-test', v_staff, 'org-stored-value-test', 'STAFF', true),
+    ('mem-other', 'staff-other-test', v_owner, 'org-stored-value-other', 'OWNER', true);
+
+  perform tests.open_sale('sale-identity-unlinked', v_booking, 'c3000000-0000-4000-8000-000000000006', 'd3000000-0000-4000-8000-000000000006', 500);
+  perform tests.pay('sale-identity-unlinked', 'STORED_VALUE', 500);
+  begin
+    perform public.settle_checkout_draft('sale-identity-unlinked', v_when);
+    raise exception 'unlinked booking customer was allowed to spend the wallet';
+  exception
+    when others then
+      if position('必須先完成 LINE 會員綁定' in sqlerrm) = 0 then raise; end if;
+  end;
+  if tests.balance(v_wallet) <> 2100 or tests.member_payments(v_wallet) <> 0 or tests.balance(v_booking) <> 0 then
+    raise exception 'unlinked attempt changed a wallet';
+  end if;
+
+  perform set_config('tests.uid', v_staff::text, true);
+  begin
+    perform public.confirm_customer_wallet_identity(
+      'org-stored-value-test', 'cust-booking-isolated', 'cust-wallet-isolated', '隔離測試確認同一顧客'
+    );
+    raise exception 'frontline staff created an identity link';
+  exception
+    when others then
+      if position('沒有權限建立顧客身分對應' in sqlerrm) = 0 then raise; end if;
+  end;
+
+  perform set_config('tests.uid', v_owner::text, true);
+  begin
+    perform public.confirm_customer_wallet_identity(
+      'org-stored-value-other', 'cust-booking-isolated', 'cust-wallet-isolated', '隔離測試確認同一顧客'
+    );
+    raise exception 'other organization resolved this wallet';
+  exception
+    when others then
+      if position('顧客帳號無效' in sqlerrm) = 0 then raise; end if;
+  end;
+  begin
+    insert into public.customer_wallet_identities (
+      organization_id, booking_customer_id, wallet_customer_id, reason, confirmed_by_staff_id
+    ) values (
+      v_org, v_booking, v_other_customer, '隔離測試跨組織', 'staff-owner-test'
+    );
+    raise exception 'cross-organization identity insert was accepted';
+  exception
+    when others then
+      if position('顧客帳號無效' in sqlerrm) = 0 then raise; end if;
+  end;
+
+  perform public.confirm_customer_wallet_identity(
+    'org-stored-value-test', 'cust-booking-isolated', 'cust-wallet-isolated', '隔離測試確認同一顧客'
+  );
+  if tests.balance(v_wallet) <> 2100 or (select count(*) from public.stored_value_ledger_entries where customer_id = v_wallet and type = 'TOP_UP') <> 2 then
+    raise exception 'confirm copied or changed stored-value history';
+  end if;
+
+  perform tests.open_sale('sale-identity-rollback', v_booking, 'c3000000-0000-4000-8000-000000000007', 'd3000000-0000-4000-8000-000000000007', 500);
+  perform tests.pay('sale-identity-rollback', 'STORED_VALUE', 500, 'FORCE_ROLLBACK');
+  begin
+    perform public.settle_checkout_draft('sale-identity-rollback', v_when);
+    raise exception 'forced identity rollback was accepted';
+  exception
+    when others then
+      if position('forced_payment_failure' in sqlerrm) = 0 then raise; end if;
+  end;
+  if tests.balance(v_wallet) <> 2100 or tests.member_payments(v_wallet) <> 0
+     or (select status from public.checkout_drafts where app_id = 'sale-identity-rollback') <> 'OPEN' then
+    raise exception 'identity checkout rollback left a debit';
+  end if;
+
+  perform tests.open_sale('sale-identity', v_booking, 'c3000000-0000-4000-8000-000000000008', 'd3000000-0000-4000-8000-000000000008', 500);
+  perform tests.pay('sale-identity', 'STORED_VALUE', 500);
+  perform public.settle_checkout_draft('sale-identity', v_when);
+  perform public.settle_checkout_draft('sale-identity', v_when);
+  if tests.balance(v_wallet) <> 1600 or tests.member_payments(v_wallet) <> 1 or tests.balance(v_booking) <> 0 then
+    raise exception 'linked debit did not land once on the wallet customer, balance %', tests.balance(v_wallet);
+  end if;
+  select t.customer_id, d.customer_id into v_tx_customer, v_pay_customer
+  from public.transactions t
+  join public.checkout_drafts d on d.id = t.checkout_draft_id
+  where d.app_id = 'sale-identity';
+  if v_tx_customer <> v_booking or v_pay_customer <> v_booking then
+    raise exception 'sale customer changed from the booking customer';
+  end if;
+  select customer_id into v_pay_customer
+  from public.stored_value_ledger_entries
+  where type = 'PAYMENT' and customer_id in (v_booking, v_wallet);
+  if v_pay_customer <> v_wallet then
+    raise exception 'payment row was not stored on the wallet customer';
+  end if;
+
+  update public.member_line_customer_links set verified_at = null where customer_id = v_wallet;
+  perform public.settle_checkout_draft('sale-identity', v_when);
+  if tests.balance(v_wallet) <> 1600 then
+    raise exception 'replaying a settled checkout debited again after LINE lapse';
+  end if;
+  perform tests.open_sale('sale-identity-lapsed', v_booking, 'c3000000-0000-4000-8000-000000000009', 'd3000000-0000-4000-8000-000000000009', 100);
+  perform tests.pay('sale-identity-lapsed', 'STORED_VALUE', 100);
+  begin
+    perform public.settle_checkout_draft('sale-identity-lapsed', v_when);
+    raise exception 'lapsed LINE verification still spent the wallet';
+  exception
+    when others then
+      if position('必須先完成 LINE 會員綁定' in sqlerrm) = 0 then raise; end if;
+  end;
+
+  begin
+    update public.stored_value_ledger_entries set amount_delta_minor = 1 where customer_id = v_wallet;
+    raise exception 'ledger update was accepted';
+  exception
+    when others then
+      if position('immutable' in sqlerrm) = 0 then raise; end if;
+  end;
+
+  select count(*) into v_topups
+  from public.stored_value_ledger_entries
+  where customer_id = v_wallet and type = 'TOP_UP';
+  select count(*) into v_appointments
+  from public.appointments
+  where id in (
+    'c3000000-0000-4000-8000-000000000001',
+    'c3000000-0000-4000-8000-000000000002',
+    'c3000000-0000-4000-8000-000000000003',
+    'c3000000-0000-4000-8000-000000000004',
+    'c3000000-0000-4000-8000-000000000005',
+    'c3000000-0000-4000-8000-000000000006',
+    'c3000000-0000-4000-8000-000000000007',
+    'c3000000-0000-4000-8000-000000000008',
+    'c3000000-0000-4000-8000-000000000009'
+  );
+  if v_topups <> 2 or v_appointments <> 9 or tests.balance(v_wallet) <> 1600 or tests.member_payments(v_wallet) <> 1 then
+    raise exception 'identity fixture drifted topups % appointments % balance %', v_topups, v_appointments, tests.balance(v_wallet);
+  end if;
+end;
+$$;

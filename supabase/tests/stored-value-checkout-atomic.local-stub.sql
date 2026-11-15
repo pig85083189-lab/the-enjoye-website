@@ -340,6 +340,85 @@ create table if not exists tests.gate (
   open boolean not null
 );
 
+alter table public.customers add column if not exists app_id text;
+
+do $$ begin
+  create type public.staff_role as enum ('OWNER', 'MANAGER', 'STAFF', 'RECEPTIONIST', 'ACCOUNTANT');
+exception when duplicate_object then null;
+end $$;
+
+create or replace function public.is_operational_staff_id(value text)
+returns boolean
+language sql
+immutable
+as $$
+  select value is not null
+    and length(btrim(value)) > 0
+    and value !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
+$$;
+
+create or replace function public.staff_role_is_managerial(role public.staff_role)
+returns boolean
+language sql
+immutable
+as $$
+  select role in ('OWNER', 'MANAGER');
+$$;
+
+create table if not exists public.staff_auth_memberships (
+  id text primary key,
+  user_id text not null,
+  auth_user_id uuid,
+  organization_id text not null,
+  role text not null,
+  is_active boolean not null default true
+);
+
+create or replace function public.user_has_org_membership(target_org uuid)
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1
+    from public.staff_auth_memberships m
+    join public.organizations o on o.app_id = m.organization_id
+    where o.id = target_org
+      and m.auth_user_id = auth.uid()
+      and m.is_active
+  );
+$$;
+
+create or replace function public.user_org_role(target_org uuid)
+returns public.staff_role
+language sql
+stable
+as $$
+  select m.role::public.staff_role
+  from public.staff_auth_memberships m
+  join public.organizations o on o.app_id = m.organization_id
+  where o.id = target_org
+    and m.auth_user_id = auth.uid()
+    and m.is_active
+  order by case m.role when 'OWNER' then 0 when 'MANAGER' then 1 else 2 end
+  limit 1;
+$$;
+
+create or replace function public.current_operational_staff_id(target_org uuid)
+returns text
+language sql
+stable
+as $$
+  select m.user_id
+  from public.staff_auth_memberships m
+  join public.organizations o on o.app_id = m.organization_id
+  where o.id = target_org
+    and m.auth_user_id = auth.uid()
+    and m.is_active
+    and public.is_operational_staff_id(m.user_id)
+  limit 1;
+$$;
+
 insert into public.organizations (id, app_id)
 values ('11111111-1111-4111-8111-111111111111', 'org-stored-value-test')
 on conflict (id) do nothing;

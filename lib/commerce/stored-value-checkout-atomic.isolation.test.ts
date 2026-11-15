@@ -7,6 +7,10 @@ import {
   remoteStoredValueWalletFromBalanceResponse,
 } from "@/lib/commerce/checkout-stored-value";
 import {
+  identityRelationIsMissing,
+  resolveStoredValueWalletCustomer,
+} from "@/lib/commerce/stored-value-wallet-identity";
+import {
   hydrateCheckoutFromTreatment,
   saveCheckoutDraft,
   settleCheckoutDraft,
@@ -115,6 +119,45 @@ describe("checkout stored-value balance response", () => {
     expect(remoteStoredValueBlockReason({ status: "active", balanceMinor: 100 }, 101)).toBe("儲值金餘額不足");
     expect(remoteStoredValueBlockReason({ status: "active", balanceMinor: 100 }, 100)).toBeNull();
     expect(remoteStoredValueBlockReason({ status: "active", balanceMinor: 100 }, 0)).toBeNull();
+    expect(remoteStoredValueWalletFromBalanceResponse(503, { code: "IDENTITY_LOOKUP_FAILED" })).toEqual({
+      status: "unavailable",
+    });
+    expect(remoteStoredValueWalletFromBalanceResponse(409, { code: "WALLET_CUSTOMER_UNAVAILABLE" })).toEqual({
+      status: "unavailable",
+    });
+  });
+
+  it("uses a confirmed wallet identity and refuses name-based matching", () => {
+    expect(
+      resolveStoredValueWalletCustomer({
+        bookingCustomerId: "booking-a",
+        bookingLineBound: false,
+        link: { walletCustomerId: "wallet-b", walletActive: true, walletLineBound: true },
+      }),
+    ).toEqual({ ok: true, walletCustomerId: "wallet-b", via: "confirmed_link" });
+    expect(
+      resolveStoredValueWalletCustomer({
+        bookingCustomerId: "booking-a",
+        bookingLineBound: false,
+        link: null,
+      }),
+    ).toEqual({ ok: false, code: "LINE_LINK_REQUIRED" });
+    expect(
+      resolveStoredValueWalletCustomer({
+        bookingCustomerId: "booking-a",
+        bookingLineBound: true,
+        link: { walletCustomerId: "wallet-b", walletActive: true, walletLineBound: false },
+      }),
+    ).toEqual({ ok: false, code: "LINE_LINK_REQUIRED" });
+    expect(
+      resolveStoredValueWalletCustomer({
+        bookingCustomerId: "booking-a",
+        bookingLineBound: true,
+        link: null,
+      }),
+    ).toEqual({ ok: true, walletCustomerId: "booking-a", via: "self" });
+    expect(identityRelationIsMissing("PGRST205")).toBe(true);
+    expect(identityRelationIsMissing("42501")).toBe(false);
   });
 });
 
@@ -188,6 +231,47 @@ describe("stored-value checkout debit", () => {
     expect(toCommerceUserMessage(new Error("postgres 儲值金餘額不足"))).toBe("儲值金餘額不足");
   });
 
+  it("debits the confirmed wallet while the sale stays on the booking customer", () => {
+    const source = snapshot({
+      customerAppId: "cust-line-isolated",
+      linkedBookingCustomerAppId: FUTURE_QA_APPOINTMENT.customerAppId,
+      lineBound: true,
+      active: true,
+      currency: "TWD",
+      balanceMinor: 2100,
+      entries: [{ effectKey: "seed:wallet-b", amountDeltaMinor: 2100, type: "TOP_UP" }],
+    });
+    const paid = pay(source, [{ id: "pay-sv", method: "STORED_VALUE", amount: 800 }]);
+    const settled = settleCheckoutDraft(source, {
+      draftId: paid.draft.id,
+      expectedUpdatedAt: paid.draft.updatedAt,
+    });
+    expect(settled.transaction?.customerId).toBe(FUTURE_QA_APPOINTMENT.customerAppId);
+    expect(settled.draft.customerId).toBe(FUTURE_QA_APPOINTMENT.customerAppId);
+    expect(memberBalance(source)).toBe(1300);
+    expect(source.storedValue?.entries.filter((entry) => entry.type === "TOP_UP")).toHaveLength(1);
+    expect(source.storedValue?.entries.filter((entry) => entry.type === "PAYMENT")).toEqual([
+      { effectKey: `checkout:${paid.draft.id}`, amountDeltaMinor: -800, type: "PAYMENT" },
+    ]);
+
+    const unlinked = snapshot({
+      customerAppId: "cust-line-isolated",
+      lineBound: true,
+      active: true,
+      currency: "TWD",
+      balanceMinor: 2100,
+      entries: [{ effectKey: "seed:wallet-b", amountDeltaMinor: 2100, type: "TOP_UP" }],
+    });
+    const unlinkedPaid = pay(unlinked, [{ id: "pay-sv", method: "STORED_VALUE", amount: 800 }]);
+    expect(() =>
+      settleCheckoutDraft(unlinked, {
+        draftId: unlinkedPaid.draft.id,
+        expectedUpdatedAt: unlinkedPaid.draft.updatedAt,
+      }),
+    ).toThrow("找不到有效儲值帳戶");
+    expect(memberBalance(unlinked)).toBe(2100);
+  });
+
   it("does not let a second draft reuse another appointment transaction", () => {
     const source = snapshot(wallet(1000));
     const paid = pay(source, [{ id: "pay-sv", method: "STORED_VALUE", amount: 800 }]);
@@ -218,6 +302,10 @@ describe("stored-value checkout SQL review", () => {
     path.join(ROOT, "supabase/beauty-os/stored_value_checkout_atomic.sql"),
     "utf8",
   );
+  const identity = readFileSync(
+    path.join(ROOT, "supabase/migrations/20261115140000_customer_wallet_identity.sql"),
+    "utf8",
+  );
   const panel = readFileSync(path.join(ROOT, "features/checkout/CheckoutPanel.tsx"), "utf8");
 
   it("keeps package closed and posts one atomic stored-value debit", () => {
@@ -229,7 +317,13 @@ describe("stored-value checkout SQL review", () => {
     expect(sql).toMatch(/儲值金餘額不足/);
     expect(sql).toMatch(/必須先完成 LINE 會員綁定/);
     expect(sql).toMatch(/儲值金扣款未入帳，請勿重複結帳/);
+    expect(sql).toMatch(/v_wallet\.customer_id/);
+    expect(sql).toMatch(/customer_wallet_identities/);
     expect(sql).toMatch(/v_wallet_balance < 0/);
+    expect(identity).toMatch(/confirm_customer_wallet_identity/);
+    expect(identity).not.toMatch(/full_name|phone/);
+    expect(identity).not.toMatch(/update\s+public\.stored_value_ledger_entries/i);
+    expect(identity).not.toMatch(/delete\s+from\s+public\.stored_value_ledger_entries/i);
     expect(sql).not.toMatch(/\bBEGIN\b/);
     expect(sql).not.toMatch(/\bCOMMIT\b/);
     expect(sql).not.toMatch(/service_role/);
