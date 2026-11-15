@@ -54,7 +54,7 @@ export function StoredValueTopUpModal({
   const selected = customers.find((row) => row.id === customerId) ?? null;
   // A remotely read customer is not yet supported by the local-only ledger. Never charge it locally.
   const isRemoteOnlyCustomer = Boolean(selected && !getCustomerById(selected.id, organizationId));
-  const currentBalance = selected
+  const currentBalance = selected && !isRemoteOnlyCustomer
     ? getCustomerStoredValueBalance(organizationId, selected.id)
     : 0;
   const amountMinor = parseMoneyInput(amountRaw);
@@ -157,7 +157,7 @@ export function StoredValueTopUpModal({
                   <p className="text-[14px] font-semibold text-text">{selected.name}</p>
                   <p className="text-[12px] text-secondary-text">{selected.phone}</p>
                   <p className="text-[12px] tabular-nums text-secondary-text">
-                    目前餘額 {formatTwd(currentBalance)}
+                    {isRemoteOnlyCustomer ? "正式帳務餘額尚未連線，無法顯示" : `目前餘額 ${formatTwd(currentBalance)}`}
                   </p>
                 </div>
                 <button
@@ -261,7 +261,7 @@ export function StoredValueTopUpModal({
             </div>
           </section>
 
-          <section className="mt-4 rounded-2xl bg-[#FAF7F5] px-3.5 py-3 text-[13px]">
+          {!isRemoteOnlyCustomer ? <section className="mt-4 rounded-2xl bg-[#FAF7F5] px-3.5 py-3 text-[13px]">
             <PreviewLine label="目前餘額" value={formatTwd(preview.currentBalanceMinor)} />
             <PreviewLine
               label="本次儲值"
@@ -273,7 +273,7 @@ export function StoredValueTopUpModal({
               value={formatTwd(preview.afterBalanceMinor)}
               strong
             />
-          </section>
+          </section> : null}
 
           {error ? (
             <p className="mt-3 text-sm text-[#B07A4A]" role="alert">
