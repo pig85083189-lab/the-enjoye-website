@@ -79,6 +79,7 @@ export async function POST(request: Request) {
     p_staff_id: identity.membership.userId,
     p_amount_minor: amountMinor,
     p_effect_key: effectKey,
+    p_method: method,
   });
   if (error || !Array.isArray(data) || data.length !== 1) {
     console.error("[stored-value-top-up] ledger write failed", error?.code ?? "invalid_response");
