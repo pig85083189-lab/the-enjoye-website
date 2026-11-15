@@ -29,6 +29,7 @@ begin
      length(p_effect_key) > 180 then
     raise exception 'Invalid top-up request';
   end if;
+  -- Format check only: authenticated membership/checkout authority must be checked by API.
   if not public.is_operational_staff_id(p_staff_id) then
     raise exception 'Invalid operational staff';
   end if;
@@ -69,6 +70,15 @@ begin
     where a.organization_id = p_organization_id and a.customer_id = p_customer_id
       and a.status = 'ACTIVE' and a.currency = 'TWD'
     for update;
+  -- A suspended or closed wallet must not be silently replaced with a new active wallet.
+  if exists (
+    select 1 from public.stored_value_accounts a
+    where a.organization_id = p_organization_id
+      and a.customer_id = p_customer_id
+      and (a.status <> 'ACTIVE' or a.currency <> 'TWD')
+  ) then
+    raise exception 'Wallet is not eligible for top-up';
+  end if;
   if v_account is null then
     insert into public.stored_value_accounts (organization_id,customer_id,currency,status)
       values (p_organization_id,p_customer_id,'TWD','ACTIVE')
