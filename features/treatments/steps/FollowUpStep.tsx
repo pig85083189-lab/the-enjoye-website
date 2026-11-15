@@ -51,7 +51,7 @@ export function FollowUpStep({
             選填
           </span>
         </div>
-        <p className="mt-2 text-[15px] text-secondary-text">標記下次服務需要特別留意的重點</p>
+        <p className="mt-2 text-[15px] text-secondary-text">保養建議與建議日期會同步會員；店內追蹤標籤不會同步。</p>
       </header>
 
       <Card padding="md" className="mb-4">
@@ -83,6 +83,7 @@ export function FollowUpStep({
       </Card>
 
       <Card padding="md">
+        <p className="mb-3 text-xs font-semibold text-secondary-text">店內專用 · 追蹤標籤</p>
         <h2 className="text-base font-semibold text-text">追蹤重點</h2>
         <QuickSelect
           className="mt-3"
@@ -94,7 +95,7 @@ export function FollowUpStep({
 
       <Card padding="md" className="mt-4">
         <label htmlFor="suggested-date" className="text-base font-semibold text-text">
-          下次建議日期
+          建議下次保養日期（會員可見）
         </label>
         <p className="mt-1 text-sm text-secondary-text">非必填</p>
         <input
@@ -108,7 +109,7 @@ export function FollowUpStep({
 
       <Card padding="md" className="mt-4">
         <label htmlFor="follow-up-note" className="text-base font-semibold text-text">
-          追蹤備註
+          保養建議（會員可見）
         </label>
         <textarea
           id="follow-up-note"
@@ -130,7 +131,7 @@ export function FollowUpStep({
             }
             className="h-5 w-5 rounded border-border accent-primary"
           />
-          <span className="text-[15px] font-medium text-text">建議下次預約</span>
+          <span className="text-[15px] font-medium text-text">建議下次預約（店內專用）</span>
         </label>
       </Card>
 
