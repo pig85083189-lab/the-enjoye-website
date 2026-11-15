@@ -1,7 +1,16 @@
 -- Booking database only (knccefcxncglgpmvgqlp).
--- Do not apply this file to the finance database. It replaces checkout save and
--- settle so a posted finance receipt can record stored value on the booking sale.
--- The booking database does not choose a finance customer and does not debit a wallet.
+-- Do not apply this file to the finance database or to production until the
+-- isolated compatibility cases pass. It does not debit a wallet and does not
+-- choose a finance customer.
+--
+-- The save and settle functions below are the production package checkout
+-- functions. Package redemption, discounts, payments, transaction lines,
+-- staff permission checks, replay, and apply_package_effects_for_transaction
+-- stay as they are. The only checkout change is the stored-value gate:
+-- PACKAGE stays closed; STORED_VALUE may be saved on the draft, and settle
+-- accepts it only when a posted receipt matches that amount. The four-argument
+-- save still forwards the draft's existing package redemption to the
+-- five-argument save, so a payment update does not clear a package selection.
 
 create table if not exists public.stored_value_debit_receipts (
   id uuid primary key default gen_random_uuid(),
@@ -25,7 +34,8 @@ create or replace function public.save_checkout_draft(
   p_checkout_app_id text,
   p_expected_updated_at timestamptz,
   p_payments jsonb,
-  p_discounts jsonb
+  p_discounts jsonb,
+  p_package_redemption jsonb
 )
 returns jsonb
 language plpgsql
@@ -37,11 +47,15 @@ declare
   v_staff_id text;
   v_payment jsonb;
   v_discount jsonb;
+  v_item public.checkout_items;
   v_subtotal bigint := 0;
   v_line_discount bigint := 0;
   v_remaining bigint;
   v_discount_total bigint;
   v_amount bigint;
+  v_cpkg public.customer_packages;
+  v_redemption jsonb;
+  v_service_id text;
 begin
   if auth.uid() is null then
     raise exception '沒有權限結帳';
@@ -61,6 +75,76 @@ begin
   end if;
   if v_draft.updated_at is distinct from p_expected_updated_at then
     raise exception '資料已更新，請重新整理後再試';
+  end if;
+
+  if p_package_redemption is null or p_package_redemption = 'null'::jsonb then
+    v_redemption := null;
+    for v_item in
+      select * from public.checkout_items
+      where checkout_draft_id = v_draft.id
+        and type = 'SERVICE'
+    loop
+      update public.checkout_items
+      set
+        discount_amount_minor = 0,
+        line_total_minor = line_subtotal_minor
+      where id = v_item.id;
+    end loop;
+  else
+    if coalesce((p_package_redemption->>'sessions')::integer, 1) <> 1 then
+      raise exception '套票一次僅能使用 1 堂';
+    end if;
+    v_service_id := btrim(coalesce(p_package_redemption->>'serviceId', ''));
+    if v_service_id = '' then
+      raise exception '找不到可用套票';
+    end if;
+    select * into v_cpkg
+    from public.customer_packages
+    where organization_id = v_draft.organization_id
+      and customer_id = v_draft.customer_id
+      and app_id = p_package_redemption->>'customerPackageId'
+    limit 1
+    for update;
+    if v_cpkg.id is null then
+      raise exception '找不到可用套票';
+    end if;
+    if v_cpkg.status <> 'ACTIVE' then
+      raise exception '套票無法使用';
+    end if;
+    if v_cpkg.expires_at is not null and v_cpkg.expires_at < now() then
+      raise exception '套票已到期';
+    end if;
+    if not (v_service_id = any (v_cpkg.included_service_ids_snapshot)) then
+      raise exception '此套票不適用本次服務';
+    end if;
+    if public.package_ledger_balance(v_cpkg.id) < 1 then
+      raise exception '套票剩餘堂數不足';
+    end if;
+    if not exists (
+      select 1
+      from public.checkout_items
+      where checkout_draft_id = v_draft.id
+        and type = 'SERVICE'
+        and reference_id = v_service_id
+    ) then
+      raise exception '此套票不適用本次服務';
+    end if;
+    v_redemption := jsonb_build_object(
+      'customerPackageId', v_cpkg.app_id,
+      'serviceId', v_service_id,
+      'sessions', 1
+    );
+    update public.checkout_items
+    set
+      discount_amount_minor = case
+        when type = 'SERVICE' and reference_id = v_service_id then line_subtotal_minor
+        else discount_amount_minor
+      end,
+      line_total_minor = case
+        when type = 'SERVICE' and reference_id = v_service_id then 0
+        else line_total_minor
+      end
+    where checkout_draft_id = v_draft.id;
   end if;
 
   select
@@ -140,6 +224,7 @@ begin
 
   update public.checkout_drafts
   set
+    package_redemption = v_redemption,
     subtotal_minor = v_subtotal,
     discount_total_minor = v_discount_total,
     total_minor = v_subtotal - v_discount_total,
@@ -148,6 +233,33 @@ begin
   returning * into v_draft;
 
   return public.commerce_checkout_bundle(v_draft);
+end;
+$$;
+
+create or replace function public.save_checkout_draft(
+  p_checkout_app_id text,
+  p_expected_updated_at timestamptz,
+  p_payments jsonb,
+  p_discounts jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_existing jsonb;
+begin
+  select package_redemption into v_existing
+  from public.checkout_drafts
+  where app_id = p_checkout_app_id;
+  return public.save_checkout_draft(
+    p_checkout_app_id,
+    p_expected_updated_at,
+    p_payments,
+    p_discounts,
+    v_existing
+  );
 end;
 $$;
 
@@ -198,10 +310,12 @@ begin
     where organization_id = v_draft.organization_id
       and checkout_draft_id = v_draft.id
       and status = 'COMPLETED'
-    limit 1;
+    limit 1
+    for update;
     if v_tx.id is null then
       raise exception '結帳已完成，但找不到交易';
     end if;
+    perform public.apply_package_effects_for_transaction(v_tx, v_draft, v_staff_id);
     return public.commerce_checkout_bundle(v_draft);
   end if;
   if v_draft.status not in ('OPEN', 'READY') then
@@ -246,6 +360,7 @@ begin
     set status = 'COMPLETED', updated_at = v_now
     where id = v_draft.id
     returning * into v_draft;
+    perform public.apply_package_effects_for_transaction(v_tx, v_draft, v_staff_id);
     return public.commerce_checkout_bundle(v_draft);
   end if;
 
@@ -298,8 +413,8 @@ begin
     if not exists (
       select 1
       from public.stored_value_debit_receipts receipt
-      where receipt.checkout_app_id = v_draft.app_id
-        and receipt.organization_id = v_draft.organization_id
+      where receipt.organization_id = v_draft.organization_id
+        and receipt.checkout_app_id = v_draft.app_id
         and receipt.status = 'POSTED'
         and receipt.amount_minor = (
           select coalesce(sum(payment.amount_minor), 0)
@@ -333,6 +448,7 @@ begin
     app_id,
     transaction_number,
     status,
+    package_redemption,
     subtotal_minor,
     discount_total_minor,
     total_minor,
@@ -349,6 +465,7 @@ begin
     v_tx_app,
     public.next_transaction_number(v_draft.organization_id, v_now),
     'COMPLETED',
+    v_draft.package_redemption,
     v_subtotal,
     v_discount_total,
     v_subtotal - v_discount_total,
@@ -450,6 +567,8 @@ begin
     );
   end loop;
 
+  perform public.apply_package_effects_for_transaction(v_tx, v_draft, v_staff_id);
+
   update public.checkout_drafts
   set
     status = 'COMPLETED',
@@ -464,35 +583,17 @@ begin
 end;
 $$;
 
-revoke all on function public.staff_role_can_checkout(public.staff_role) from public, anon;
-revoke all on function public.current_operational_staff_id(uuid) from public, anon;
-revoke all on function public.next_transaction_number(uuid, timestamptz) from public, anon, authenticated;
-revoke all on function public.checkout_discount_amount(bigint, bigint, public.discount_type, bigint) from public, anon, authenticated;
-revoke all on function public.assert_commerce_checkout_actor(uuid, uuid) from public, anon, authenticated;
-revoke all on function public.commerce_checkout_bundle(public.checkout_drafts) from public, anon, authenticated;
-revoke all on function public.commerce_transaction_json(public.transactions) from public, anon, authenticated;
-create or replace function public.commerce_list_transactions()
-returns jsonb
-language plpgsql
-stable
-security definer
-set search_path = public
-as $$
-begin
-  if auth.uid() is null then
-    raise exception '沒有權限結帳';
-  end if;
-  return coalesce((
-    select jsonb_agg(public.commerce_transaction_json(t) order by t.completed_at desc)
-    from public.transactions t
-    where public.user_has_org_membership(t.organization_id)
-  ), '[]'::jsonb);
-end;
-$$;
-
-revoke all on function public.hydrate_checkout_from_treatment(text, text) from public, anon;
-
 revoke all on function public.save_checkout_draft(text, timestamptz, jsonb, jsonb) from public, anon;
+revoke all on function public.save_checkout_draft(text, timestamptz, jsonb, jsonb, jsonb) from public, anon;
 revoke all on function public.settle_checkout_draft(text, timestamptz) from public, anon;
+
 grant execute on function public.save_checkout_draft(text, timestamptz, jsonb, jsonb) to authenticated;
+grant execute on function public.save_checkout_draft(text, timestamptz, jsonb, jsonb, jsonb) to authenticated;
 grant execute on function public.settle_checkout_draft(text, timestamptz) to authenticated;
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant select, insert on public.stored_value_debit_receipts to service_role';
+  end if;
+end $$;

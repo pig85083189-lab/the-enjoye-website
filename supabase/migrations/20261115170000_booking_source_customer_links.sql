@@ -1,6 +1,7 @@
 -- Booking-database customer key to the finance booking customer.
 -- Apply on the finance database only. Does not update or delete ledger rows,
 -- customers, appointments, or customer_wallet_identities.
+-- Does not replace save_checkout_draft or settle_checkout_draft.
 -- A link is written only after a managerial staff session is verified.
 -- The function identifies the finance customer by app id inside one organization.
 
@@ -17,14 +18,14 @@ where not exists (
 );
 
 revoke all on public.customer_wallet_identities_backup_20261115 from public, anon, authenticated;
+alter table public.customer_wallet_identities_backup_20261115 enable row level security;
 
-create table if not exists public.locations (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null,
-  app_id text,
-  name text not null default 'location',
-  is_active boolean not null default true
-);
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'revoke all on public.customer_wallet_identities_backup_20261115 from service_role';
+  end if;
+end $$;
 
 create table if not exists public.booking_source_customer_links (
   id uuid primary key default gen_random_uuid(),
