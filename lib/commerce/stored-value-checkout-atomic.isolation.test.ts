@@ -495,13 +495,28 @@ describe("stored-value checkout SQL review", () => {
     expect(sourceLink).toMatch(/CUSTOMER_PRESENT/);
     expect(sourceLink).toMatch(/TRUSTED_MEMBER_RECORD/);
     expect(sourceLink).toMatch(/settle_booking_source_checkout/);
+    expect(sourceLink).toMatch(/customer_wallet_identities_backup_20261115/);
+    expect(sourceLink).toMatch(/enable row level security/);
+    expect(sourceLink).not.toMatch(/create or replace function public\.settle_checkout_draft/);
+    expect(sourceLink).not.toMatch(/create or replace function public\.save_checkout_draft/);
+    expect(sourceLink).not.toMatch(/create table if not exists public\.locations/);
     expect(sourceLink).not.toMatch(/full_name|phone/);
     expect(sourceLink).not.toMatch(/e06709d5-893f-4be1-8d83-b3d666a9257c|cust-musfocyt-3x0fpe/);
     expect(checkoutRoute).toMatch(/readBookingCheckoutSource/);
     expect(checkoutRoute).toMatch(/financeCustomerId/);
+    expect(checkoutRoute).not.toMatch(/p_package_redemption/);
     expect(checkoutRoute).not.toMatch(/e06709d5-893f-4be1-8d83-b3d666a9257c|bceef2c0-4555-41b2-9d1e-b999d604fa81/);
     expect(bookingReceipt).toMatch(/stored_value_debit_receipts/);
     expect(bookingReceipt).toMatch(/此付款方式目前尚未開放/);
+    expect(bookingReceipt).toMatch(/v_draft\.package_redemption/);
+    expect(bookingReceipt).toMatch(/apply_package_effects_for_transaction/);
+    expect(bookingReceipt).toMatch(/p_package_redemption jsonb/);
+    expect(bookingReceipt).toMatch(/method = 'PACKAGE'/);
+    expect(bookingReceipt).toMatch(
+      /grant execute on function public\.save_checkout_draft\(text, timestamptz, jsonb, jsonb, jsonb\)/,
+    );
+    expect(bookingReceipt).not.toMatch(/stored_value_ledger_entries/);
+    expect(bookingReceipt).not.toMatch(/create or replace function public\.apply_package_effects_for_transaction/);
     expect(readFileSync(path.join(ROOT, "features/checkout/use-commerce-remote-write.ts"), "utf8")).toMatch(
       /\/api\/staff\/commerce\/checkout/,
     );

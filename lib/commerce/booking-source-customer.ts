@@ -3,7 +3,11 @@
  * The link is an explicit managerial record. Name and phone are never inputs.
  */
 
-export const BOOKING_SOURCE_EVIDENCE = ["CUSTOMER_PRESENT", "TRUSTED_MEMBER_RECORD"] as const;
+export const BOOKING_SOURCE_EVIDENCE = [
+  "CUSTOMER_PRESENT",
+  "TRUSTED_MEMBER_RECORD",
+  "LINE_VERIFIED_SESSION",
+] as const;
 
 export type BookingSourceEvidence = (typeof BOOKING_SOURCE_EVIDENCE)[number];
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import { resolveBookingSourceFinanceCustomer } from "@/lib/commerce/booking-source-customer";
+import { lineMembershipIsCurrent, type VerifiedLineBinding } from "@/lib/commerce/line-verified-booking-source";
 import {
   checkoutCustomerKeyIsDbId,
   chooseCheckoutCustomer,
@@ -76,16 +77,38 @@ export async function GET(request: Request) {
 
   const lineBound = async (customerUuid: string) => {
     const { data: canonical, error: canonicalError } = await db.from("member_line_customer_links")
-      .select("customer_id").eq("organization_id", org.id).eq("customer_id", customerUuid).not("verified_at", "is", null).limit(1);
+      .select("line_subject_hash, verified_at").eq("organization_id", org.id).eq("customer_id", customerUuid).limit(5);
     if (canonicalError) return { bound: false, failed: true as const };
     const { data: legacy, error: legacyError } = await db.from("line_customer_bindings")
-      .select("customer_uuid").eq("organization_id", organizationId).eq("customer_uuid", customerUuid)
-      .eq("status", "active").eq("verified", true)
-      .not("confirmed_at", "is", null).not("bound_at", "is", null)
-      .is("unbound_at", null).is("blocked_at", null)
-      .not("line_user_id_hash", "is", null).limit(1);
+      .select("line_user_id_hash, status, verified, confirmed_at, bound_at, unbound_at, blocked_at")
+      .eq("organization_id", organizationId).eq("customer_uuid", customerUuid).limit(5);
     if (legacyError) return { bound: false, failed: true as const };
-    return { bound: Boolean(canonical?.length || legacy?.length), failed: false as const };
+    const bindings: VerifiedLineBinding[] = [
+      ...(legacy ?? []).map((row) => ({
+        source: "binding" as const,
+        hash: typeof row.line_user_id_hash === "string" ? row.line_user_id_hash : null,
+        verified: row.verified === true,
+        status: String(row.status ?? ""),
+        confirmedAt: row.confirmed_at,
+        boundAt: row.bound_at,
+        unboundAt: row.unbound_at,
+        blockedAt: row.blocked_at,
+      })),
+      ...(canonical ?? []).map((row) => ({
+        source: "member_link" as const,
+        hash: typeof row.line_subject_hash === "string" ? row.line_subject_hash : null,
+        verified: Boolean(row.verified_at),
+        status: row.verified_at ? "active" : "pending",
+        confirmedAt: row.verified_at,
+        boundAt: row.verified_at,
+        unboundAt: null,
+        blockedAt: null,
+      })),
+    ];
+    return {
+      bound: lineMembershipIsCurrent(bindings, (canonical ?? []).some((row) => Boolean(row.verified_at))),
+      failed: false as const,
+    };
   };
 
   const bookingLine = await lineBound(customer.id);

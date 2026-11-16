@@ -8,7 +8,11 @@ import {
 import { isCommerceRemoteWritePilotEnabled } from "@/lib/commerce/commerce-remote-write-flag";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
 import { commerceBundleFromRemoteJson } from "@/lib/persistence/commerce-mapping";
-import { identityRelationIsMissing } from "@/lib/commerce/stored-value-wallet-identity";
+import {
+  completeStoredValueDebit,
+  receiptInstallIsMissing,
+  storedValueEffectKey,
+} from "@/lib/commerce/stored-value-debit-alignment";
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
@@ -112,6 +116,8 @@ export async function POST(request: Request) {
           staffId: identity.membership.userId,
         });
       }
+      // Four arguments keep the draft's package redemption. Stored value can
+      // settle only after the finance debit posts a receipt.
       const bundle = await proxyRpc(COMMERCE_SAVE_RPC, {
         p_checkout_app_id: draftId,
         p_expected_updated_at: expectedUpdatedAt,
@@ -149,31 +155,46 @@ export async function POST(request: Request) {
         if (!actor || actor.id !== identity.membership.authUserId) return fail(403, "沒有權限結帳");
         const admin = createServiceRoleClient();
         if (!admin) return fail(503, "目前無法完成結帳，請稍後再試");
-        const receiptProbe = await admin.from("stored_value_debit_receipts").select("checkout_app_id").limit(1);
-        if (receiptProbe.error && identityRelationIsMissing(receiptProbe.error.code)) {
-          return fail(409, "此付款方式目前尚未開放");
-        }
-        if (receiptProbe.error) return fail(503, "目前無法完成結帳，請稍後再試");
-        const settled = await callBookingSourceCheckout("settle_booking_source_checkout", {
-          organizationAppId: source.organizationAppId,
-          sourceCustomerKey: source.sourceCustomerKey,
-          checkoutAppId: source.checkoutAppId,
-          locationAppId: source.locationAppId,
-          amount: stored,
-          staffId: identity.membership.userId,
+        const effectKey = storedValueEffectKey(source.checkoutAppId);
+        const receiptArgs = {
+          p_organization_id: source.organizationId,
+          p_checkout_app_id: source.checkoutAppId,
+          p_source_customer_key: source.sourceCustomerKey,
+          p_amount_minor: stored,
+          p_effect_key: effectKey,
+        };
+        await completeStoredValueDebit({
+          expectedEffectKey: effectKey,
+          claim: async () => {
+            const claim = await admin.rpc("claim_stored_value_debit_receipt", receiptArgs);
+            if (claim.error) {
+              if (receiptInstallIsMissing(claim.error)) throw new Error("此付款方式目前尚未開放");
+              throw new Error("目前無法完成結帳，請稍後再試");
+            }
+            if (claim.data !== "PENDING" && claim.data !== "POSTED") throw new Error("儲值金收據無法確認");
+            return claim.data;
+          },
+          debit: () => callBookingSourceCheckout("settle_booking_source_checkout", {
+            organizationAppId: source.organizationAppId,
+            sourceCustomerKey: source.sourceCustomerKey,
+            checkoutAppId: source.checkoutAppId,
+            locationAppId: source.locationAppId,
+            amount: stored,
+            staffId: identity.membership.userId,
+          }),
+          commit: async () => {
+            const committed = await admin.rpc("commit_stored_value_debit_receipt", receiptArgs);
+            if (committed.error || committed.data !== "POSTED") {
+              throw new Error("儲值金扣款尚未對上收據，請再試一次");
+            }
+          },
+          abandon: async () => {
+            const abandoned = await admin.rpc("abandon_stored_value_debit_receipt", receiptArgs);
+            if (abandoned.error || abandoned.data !== "FAILED") {
+              throw new Error("目前無法完成結帳，請稍後再試");
+            }
+          },
         });
-        const receipt = await admin.from("stored_value_debit_receipts").insert({
-          organization_id: source.organizationId,
-          checkout_app_id: source.checkoutAppId,
-          source_customer_key: source.sourceCustomerKey,
-          amount_minor: stored,
-          effect_key: settled.effectKey ?? `booking-checkout:${source.checkoutAppId}`,
-          status: "POSTED",
-        });
-        if (receipt.error && receipt.error.code !== "23505") {
-          console.error("[commerce/checkout] receipt_insert_failed", { code: receipt.error.code });
-          return fail(503, "目前無法完成結帳，請稍後再試");
-        }
       }
       const bundle = await proxyRpc(COMMERCE_SETTLE_RPC, {
         p_checkout_app_id: draftId,
