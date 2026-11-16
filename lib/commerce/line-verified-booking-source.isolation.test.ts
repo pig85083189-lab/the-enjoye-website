@@ -201,6 +201,8 @@ describe("verified LINE booking-source decision", () => {
     expect(migration).toMatch(/refusing to rewrite it/);
     expect(migration).toMatch(/refusing to replace constraints/);
     expect(migration).not.toMatch(/alter table public\.line_customer_bindings/i);
+    expect(migration).not.toMatch(/update\s+public\.line_customer_bindings/i);
+    expect(migration).not.toMatch(/insert\s+into\s+public\.line_customer_bindings/i);
     expect(migration).not.toMatch(/alter table public\.organizations/i);
     expect(migration).not.toMatch(/update public\.stored_value_ledger_entries|delete from public\.stored_value_ledger_entries/i);
     expect(migration).not.toMatch(/drop policy/i);

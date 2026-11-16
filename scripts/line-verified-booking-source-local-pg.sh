@@ -22,6 +22,7 @@ cleanup() {
   dropdb --if-exists "${PROD_DB:-}" >/dev/null 2>&1 || true
   dropdb --if-exists "${TYPE_DB:-}" >/dev/null 2>&1 || true
   dropdb --if-exists "${COLUMN_DB:-}" >/dev/null 2>&1 || true
+  dropdb --if-exists "${COUNT_DB:-}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -773,4 +774,210 @@ end $$;
 SQL
 dropdb --if-exists "$COLUMN_DB"
 dropdb --if-exists "$PROD_DB"
+
+# Production counts from bfzquejrtgqzzarhkiya: 2 bindings, both customer_uuid
+# values match the same organization, 1 revoked, 0 fully current.
+COUNT_DB="beauty_os_line_binding_prod_counts"
+dropdb --if-exists "$COUNT_DB"
+createdb "$COUNT_DB"
+psql -d "$COUNT_DB" -v ON_ERROR_STOP=1 -X -q -f "$ROOT/supabase/tests/stored-value-checkout-atomic.local-stub.sql" >/dev/null
+psql -d "$COUNT_DB" -v ON_ERROR_STOP=1 -X -q -f "$ROOT/supabase/migrations/20261115140000_customer_wallet_identity.sql" >/dev/null
+psql -d "$COUNT_DB" -v ON_ERROR_STOP=1 -X -q -f "$ROOT/supabase/migrations/20261115170000_booking_source_customer_links.sql" >/dev/null
+psql -d "$COUNT_DB" -v ON_ERROR_STOP=1 -X -q <<'SQL'
+insert into public.customers (id, organization_id, status, app_id) values
+  ('fc10ffff-ffff-4fff-8fff-ffffffffffff', '11111111-1111-4111-8111-111111111111', 'ACTIVE', 'cust-prod-revoked'),
+  ('fc11ffff-ffff-4fff-8fff-ffffffffffff', '11111111-1111-4111-8111-111111111111', 'ACTIVE', 'cust-prod-incomplete');
+insert into public.stored_value_accounts (id, organization_id, customer_id, currency, status) values
+  ('fc20ffff-ffff-4fff-8fff-ffffffffffff', '11111111-1111-4111-8111-111111111111', 'fc10ffff-ffff-4fff-8fff-ffffffffffff', 'TWD', 'ACTIVE'),
+  ('fc21ffff-ffff-4fff-8fff-ffffffffffff', '11111111-1111-4111-8111-111111111111', 'fc11ffff-ffff-4fff-8fff-ffffffffffff', 'TWD', 'ACTIVE');
+insert into public.stored_value_ledger_entries (
+  organization_id, account_id, customer_id, type, amount_delta_minor, effect_key, created_by_staff_id
+) values (
+  '11111111-1111-4111-8111-111111111111', 'fc20ffff-ffff-4fff-8fff-ffffffffffff',
+  'fc10ffff-ffff-4fff-8fff-ffffffffffff', 'TOP_UP', 2100, 'prod-count-ledger-keep', 'staff-owner-test'
+);
+insert into public.line_customer_bindings (
+  organization_id, customer_uuid, customer_id, status, verified, unbound_at, line_user_id_hash
+) values (
+  'org-stored-value-test', 'fc10ffff-ffff-4fff-8fff-ffffffffffff', 'cust-not-uuid-revoked',
+  'unbound', false, timestamptz '2026-11-15 00:00:00+00', repeat('a1', 32)
+);
+insert into public.line_customer_bindings (
+  organization_id, customer_uuid, customer_id, status, verified, line_user_id_hash
+) values (
+  'org-stored-value-test', 'fc11ffff-ffff-4fff-8fff-ffffffffffff', 'cust-not-uuid-incomplete',
+  'pending', false, repeat('a2', 32)
+);
+alter table public.member_line_customer_links add column if not exists line_subject_hash text;
+insert into public.member_line_customer_links (organization_id, customer_id, verified_at, line_subject_hash)
+values (
+  '11111111-1111-4111-8111-111111111111', 'fc10ffff-ffff-4fff-8fff-ffffffffffff',
+  timestamptz '2026-11-16 00:00:00+00', repeat('a1', 32)
+);
+alter table public.stored_value_ledger_entries enable row level security;
+create policy stored_value_ledger_select_org on public.stored_value_ledger_entries
+  for select to authenticated using (public.user_has_org_membership(organization_id));
+create policy stored_value_ledger_insert_org on public.stored_value_ledger_entries
+  for insert to authenticated with check (public.user_has_org_membership(organization_id));
+create table tests.binding_before as
+select id, organization_id, customer_id, customer_uuid, status, verified, confirmed_at, bound_at, unbound_at, blocked_at, line_user_id_hash
+from public.line_customer_bindings;
+create table tests.count_trigger_before as
+select tgname, pg_get_triggerdef(oid) as definition
+from pg_trigger
+where tgrelid = 'public.stored_value_ledger_entries'::regclass and not tgisinternal;
+create table tests.count_policy_before as
+select polname, pg_get_expr(polqual, polrelid) as qual, pg_get_expr(polwithcheck, polrelid) as with_check
+from pg_policy
+where polname in (
+  'booking_source_customer_links_select_org',
+  'stored_value_ledger_select_org',
+  'stored_value_ledger_insert_org'
+);
+SQL
+psql -d "$COUNT_DB" -v ON_ERROR_STOP=1 -X -q --single-transaction -f "$ROOT/supabase/migrations/20261116120000_line_verified_booking_source_link.sql"
+psql -d "$COUNT_DB" -v ON_ERROR_STOP=1 -X -q --single-transaction -f "$ROOT/supabase/migrations/20261116120000_line_verified_booking_source_link.sql"
+psql -d "$COUNT_DB" -v ON_ERROR_STOP=1 -X -q <<'SQL'
+do $$
+declare
+  v_counts record;
+  v_verified timestamptz;
+  v_result jsonb;
+begin
+  select
+    count(*) as binding_rows,
+    count(*) filter (where customer_uuid is not null) as customer_uuid_present,
+    count(*) filter (where customer_uuid is null) as customer_uuid_null,
+    count(*) filter (
+      where exists (
+        select 1
+        from public.customers customer_row
+        join public.organizations organization_row on organization_row.id = customer_row.organization_id
+        where organization_row.app_id = binding.organization_id
+          and customer_row.id = binding.customer_uuid
+      )
+    ) as customer_uuid_same_org,
+    count(*) filter (
+      where customer_uuid is null
+        and (
+          select count(*)
+          from public.customers customer_row
+          join public.organizations organization_row on organization_row.id = customer_row.organization_id
+          where organization_row.app_id = binding.organization_id
+            and customer_row.app_id = binding.customer_id
+        ) = 1
+    ) as unique_app_id_match,
+    count(*) filter (where status = 'unbound' or unbound_at is not null or blocked_at is not null) as revoked_rows,
+    count(*) filter (
+      where status = 'active' and verified is true and confirmed_at is not null
+        and bound_at is not null and unbound_at is null and blocked_at is null
+    ) as current_rows
+  into v_counts
+  from public.line_customer_bindings binding;
+  if v_counts.binding_rows <> 2
+     or v_counts.customer_uuid_present <> 2
+     or v_counts.customer_uuid_null <> 0
+     or v_counts.customer_uuid_same_org <> 2
+     or v_counts.unique_app_id_match <> 0
+     or v_counts.revoked_rows <> 1
+     or v_counts.current_rows <> 0 then
+    raise exception 'production count shape was not reproduced';
+  end if;
+  if exists (
+    select 1
+    from tests.binding_before previous
+    join public.line_customer_bindings current on current.id = previous.id
+    where current.organization_id is distinct from previous.organization_id
+       or current.customer_id is distinct from previous.customer_id
+       or current.customer_uuid is distinct from previous.customer_uuid
+       or current.status is distinct from previous.status
+       or current.verified is distinct from previous.verified
+       or current.confirmed_at is distinct from previous.confirmed_at
+       or current.bound_at is distinct from previous.bound_at
+       or current.unbound_at is distinct from previous.unbound_at
+       or current.blocked_at is distinct from previous.blocked_at
+       or current.line_user_id_hash is distinct from previous.line_user_id_hash
+  ) or (select count(*) from public.line_customer_bindings) <> 2 then
+    raise exception 'migration rewrote a production-shaped LINE binding';
+  end if;
+  if (select count(*) from public.booking_source_customer_links) <> 0 then
+    raise exception 'migration created a booking source link for an existing binding';
+  end if;
+  if public.customer_line_membership_is_current(
+       '11111111-1111-4111-8111-111111111111', 'fc10ffff-ffff-4fff-8fff-ffffffffffff') is not false
+     or public.customer_line_membership_is_current(
+       '11111111-1111-4111-8111-111111111111', 'fc11ffff-ffff-4fff-8fff-ffffffffffff') is not false then
+    raise exception 'a non-current production-shaped binding received stored-value eligibility';
+  end if;
+  select verified_at into v_verified
+  from public.member_line_customer_links
+  where customer_id = 'fc10ffff-ffff-4fff-8fff-ffffffffffff';
+  perform set_config('tests.uid', '99999999-9999-4999-8999-999999999999', false);
+  v_result := public.link_booking_source_from_verified_line(
+    'org-stored-value-test', 'src-prod-revoked', repeat('a1', 32), '99999999-9999-4999-8999-999999999999'
+  );
+  if v_result->>'reasonCode' <> 'LINE_REVOKED'
+     or (select verified_at from public.member_line_customer_links where customer_id = 'fc10ffff-ffff-4fff-8fff-ffffffffffff')
+        is distinct from v_verified
+     or (select status from public.line_customer_bindings where customer_uuid = 'fc10ffff-ffff-4fff-8fff-ffffffffffff') <> 'unbound' then
+    raise exception 'revoked binding was restored: %', v_result;
+  end if;
+  if (select definition from tests.count_trigger_before where tgname = 'trg_stored_value_ledger_immutable')
+     is distinct from (
+       select pg_get_triggerdef(oid) from pg_trigger where tgname = 'trg_stored_value_ledger_immutable'
+     )
+     or exists (
+       select 1
+       from tests.count_policy_before previous
+       join pg_policy current on current.polname = previous.polname
+       where pg_get_expr(current.polqual, current.polrelid) is distinct from previous.qual
+          or pg_get_expr(current.polwithcheck, current.polrelid) is distinct from previous.with_check
+     )
+     or (select amount_delta_minor from public.stored_value_ledger_entries where effect_key = 'prod-count-ledger-keep') <> 2100 then
+    raise exception 'migration changed the immutable trigger, policies, or historical ledger';
+  end if;
+end $$;
+SQL
+set +e
+psql -d "$COUNT_DB" -v ON_ERROR_STOP=1 -X -q -c "insert into public.stored_value_ledger_entries (organization_id, account_id, customer_id, type, amount_delta_minor, effect_key, created_by_staff_id) values ('11111111-1111-4111-8111-111111111111', 'fc20ffff-ffff-4fff-8fff-ffffffffffff', 'fc10ffff-ffff-4fff-8fff-ffffffffffff', 'TOP_UP', 100, 'prod-count-revoked-write', 'staff-owner-test');" >/tmp/line-count-revoked.txt 2>&1
+count_revoked_status=$?
+psql -d "$COUNT_DB" -v ON_ERROR_STOP=1 -X -q -c "insert into public.stored_value_ledger_entries (organization_id, account_id, customer_id, type, amount_delta_minor, effect_key, created_by_staff_id) values ('11111111-1111-4111-8111-111111111111', 'fc21ffff-ffff-4fff-8fff-ffffffffffff', 'fc11ffff-ffff-4fff-8fff-ffffffffffff', 'TOP_UP', 100, 'prod-count-incomplete-write', 'staff-owner-test');" >/tmp/line-count-incomplete.txt 2>&1
+count_incomplete_status=$?
+set -e
+if [[ "$count_revoked_status" -eq 0 || "$count_incomplete_status" -eq 0 ]] \
+  || ! grep -q '必須先完成 LINE 會員綁定' /tmp/line-count-revoked.txt \
+  || ! grep -q '必須先完成 LINE 會員綁定' /tmp/line-count-incomplete.txt; then
+  echo "production-shaped bindings were allowed to write stored value" >&2
+  exit 1
+fi
+psql -d "$COUNT_DB" -v ON_ERROR_STOP=1 -X -q <<'SQL'
+do $$
+begin
+  if (select count(*) from public.stored_value_ledger_entries where effect_key in ('prod-count-revoked-write', 'prod-count-incomplete-write')) <> 0 then
+    raise exception 'rejected production-shaped write left a ledger row';
+  end if;
+  begin
+    update public.stored_value_ledger_entries set amount_delta_minor = 1 where effect_key = 'prod-count-ledger-keep';
+    raise exception 'historical ledger update was accepted';
+  exception
+    when others then
+      if sqlerrm <> 'ledger is immutable' then
+        raise exception 'immutable trigger did not reject the update: %', sqlerrm;
+      end if;
+  end;
+  begin
+    delete from public.stored_value_ledger_entries where effect_key = 'prod-count-ledger-keep';
+    raise exception 'historical ledger delete was accepted';
+  exception
+    when others then
+      if sqlerrm <> 'ledger is immutable' then
+        raise exception 'immutable trigger did not reject the delete: %', sqlerrm;
+      end if;
+  end;
+  if (select amount_delta_minor from public.stored_value_ledger_entries where effect_key = 'prod-count-ledger-keep') <> 2100 then
+    raise exception 'historical ledger changed';
+  end if;
+end $$;
+SQL
+dropdb --if-exists "$COUNT_DB"
 echo "production-shaped LINE migration cases passed"
