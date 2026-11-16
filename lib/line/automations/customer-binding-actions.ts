@@ -193,6 +193,17 @@ export async function confirmLineCustomerBindingAction(input: {
       (payload as { organization_id?: unknown }).organization_id !== verified.organizationId) {
     return { ok: false, reason: "error", message: "尚未確認 LINE 身分驗證完成，請重新整理後檢查狀態", sentLine: false };
   }
+  const actor = await getServerStaffAuthUser();
+  if (actor) {
+    const { linkVerifiedLineBookingSource } = await import(
+      "@/lib/commerce/line-verified-booking-source-server"
+    );
+    await linkVerifiedLineBookingSource({
+      organizationAppId: verified.organizationId,
+      sourceCustomerKey: input.customerId.trim(),
+      authUserId: actor.id,
+    }).catch(() => undefined);
+  }
   return { ok: true, message: "已現場確認並啟用顧客 LINE 綁定", sentLine: false };
 }
 
