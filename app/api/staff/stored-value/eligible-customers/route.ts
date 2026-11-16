@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   // Accept the canonical, server-verified LINE member link, plus legacy confirmed bindings.
   // Never infer membership from a matching name or phone.
   const { data: memberLinks, error: memberError } = await db.from("member_line_customer_links")
-    .select("customer_id, verified_at").eq("organization_id", org.id);
+    .select("customer_id, line_subject_hash, verified_at").eq("organization_id", org.id);
   if (memberError) { console.error("[stored-value/eligible-customers] canonical_links_failed", { code: memberError.code }); return NextResponse.json({ error: "無法查詢 LINE 會員資格", code: "CANONICAL_LINKS_FAILED" }, { status: 503, headers }); }
   const { data: bindings, error: bindingError } = await db.from("line_customer_bindings")
     .select("customer_uuid, line_user_id_hash, status, verified, confirmed_at, bound_at, unbound_at, blocked_at")
@@ -47,6 +47,21 @@ export async function GET(request: Request) {
       blockedAt: row.blocked_at,
     });
     byCustomer.set(row.customer_uuid, current);
+  }
+  for (const row of memberLinks ?? []) {
+    if (typeof row.customer_id !== "string") continue;
+    const current = byCustomer.get(row.customer_id) ?? [];
+    current.push({
+      source: "member_link",
+      hash: typeof row.line_subject_hash === "string" ? row.line_subject_hash : null,
+      verified: Boolean(row.verified_at),
+      status: row.verified_at ? "active" : "pending",
+      confirmedAt: row.verified_at,
+      boundAt: row.verified_at,
+      unboundAt: null,
+      blockedAt: null,
+    });
+    byCustomer.set(row.customer_id, current);
   }
   const verifiedMembers = new Set((memberLinks ?? []).filter((row) => row.verified_at && typeof row.customer_id === "string").map((row) => row.customer_id as string));
   const ids = Array.from(new Set([...verifiedMembers, ...byCustomer.keys()])).filter((customerId) =>

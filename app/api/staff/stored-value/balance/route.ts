@@ -77,22 +77,34 @@ export async function GET(request: Request) {
 
   const lineBound = async (customerUuid: string) => {
     const { data: canonical, error: canonicalError } = await db.from("member_line_customer_links")
-      .select("verified_at").eq("organization_id", org.id).eq("customer_id", customerUuid).limit(5);
+      .select("line_subject_hash, verified_at").eq("organization_id", org.id).eq("customer_id", customerUuid).limit(5);
     if (canonicalError) return { bound: false, failed: true as const };
     const { data: legacy, error: legacyError } = await db.from("line_customer_bindings")
       .select("line_user_id_hash, status, verified, confirmed_at, bound_at, unbound_at, blocked_at")
       .eq("organization_id", organizationId).eq("customer_uuid", customerUuid).limit(5);
     if (legacyError) return { bound: false, failed: true as const };
-    const bindings: VerifiedLineBinding[] = (legacy ?? []).map((row) => ({
-      source: "binding" as const,
-      hash: typeof row.line_user_id_hash === "string" ? row.line_user_id_hash : null,
-      verified: row.verified === true,
-      status: String(row.status ?? ""),
-      confirmedAt: row.confirmed_at,
-      boundAt: row.bound_at,
-      unboundAt: row.unbound_at,
-      blockedAt: row.blocked_at,
-    }));
+    const bindings: VerifiedLineBinding[] = [
+      ...(legacy ?? []).map((row) => ({
+        source: "binding" as const,
+        hash: typeof row.line_user_id_hash === "string" ? row.line_user_id_hash : null,
+        verified: row.verified === true,
+        status: String(row.status ?? ""),
+        confirmedAt: row.confirmed_at,
+        boundAt: row.bound_at,
+        unboundAt: row.unbound_at,
+        blockedAt: row.blocked_at,
+      })),
+      ...(canonical ?? []).map((row) => ({
+        source: "member_link" as const,
+        hash: typeof row.line_subject_hash === "string" ? row.line_subject_hash : null,
+        verified: Boolean(row.verified_at),
+        status: row.verified_at ? "active" : "pending",
+        confirmedAt: row.verified_at,
+        boundAt: row.verified_at,
+        unboundAt: null,
+        blockedAt: null,
+      })),
+    ];
     return {
       bound: lineMembershipIsCurrent(bindings, (canonical ?? []).some((row) => Boolean(row.verified_at))),
       failed: false as const,

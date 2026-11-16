@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveBookingSourceFinanceCustomer } from "@/lib/commerce/booking-source-customer";
 import { decideVerifiedLineSubject, lineMembershipIsCurrent } from "@/lib/commerce/line-verified-booking-source";
+import { hashLineUserId } from "@/lib/line/line-bind";
 
 const ROOT = process.cwd();
 const HASH_A = "ab".repeat(32);
@@ -118,6 +120,23 @@ describe("verified LINE booking-source decision", () => {
       { ...trusted(HASH_A), status: "unbound", verified: false, confirmedAt: null, boundAt: null, unboundAt: "2026-11-15T00:00:00Z" },
     ], true)).toBe(false);
     expect(lineMembershipIsCurrent([trusted(HASH_B)], false)).toBe(true);
+    expect(decideVerifiedLineSubject({
+      organizationAppId: "org-the-enjoye",
+      customerOrganizationAppId: "org-the-enjoye",
+      customerStatus: "ACTIVE",
+      bindings: [{ ...trusted(HASH_A), status: "unbound", verified: false, confirmedAt: null, boundAt: null, unboundAt: null, blockedAt: null }],
+    })).toEqual({ outcome: "review", reason: "LINE_REVOKED" });
+    expect(lineMembershipIsCurrent([
+      { ...trusted(HASH_A), status: "unbound", verified: false, confirmedAt: null, boundAt: null, unboundAt: "2026-11-15T00:00:00Z" },
+      { source: "member_link", hash: HASH_B, verified: true, status: "active", confirmedAt: "2026-11-16T00:00:00Z", boundAt: "2026-11-16T00:00:00Z", unboundAt: null, blockedAt: null },
+    ], true)).toBe(true);
+  });
+
+  it("uses the same trimmed SHA-256 subject hash as the member login source", () => {
+    const subject = `U${"ab".repeat(16)}`;
+    const digest = createHash("sha256").update(subject.trim(), "utf8").digest("hex");
+    expect(hashLineUserId(`  ${subject}  `)).toBe(digest);
+    expect(digest).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("lets a verified LINE link resolve a balance and leaves other evidence unchanged", () => {
@@ -153,6 +172,10 @@ describe("verified LINE booking-source decision", () => {
       path.join(ROOT, "app/api/staff/stored-value/balance/route.ts"),
       "utf8",
     );
+    const eligible = readFileSync(
+      path.join(ROOT, "app/api/staff/stored-value/eligible-customers/route.ts"),
+      "utf8",
+    );
     expect(route).toMatch(/financeCustomerId/);
     expect(route).toMatch(/walletCustomerId/);
     expect(route).toMatch(/lineSubjectHash/);
@@ -165,9 +188,18 @@ describe("verified LINE booking-source decision", () => {
     expect(migration).toMatch(/LINE_VERIFIED_SESSION/);
     expect(migration).toMatch(/member_binding_requests/);
     expect(migration).toMatch(/active\.bound_at > revoked\.revoked_at/);
+    expect(migration).toMatch(/customer_line_membership_is_current/);
+    expect(migration).toMatch(/refusing to replace constraints/);
+    expect(migration).toMatch(/member_binding_requests is absent/);
     expect(migration).not.toMatch(/create or replace function public\.settle_checkout_draft/);
     expect(migration).not.toMatch(/drop table|truncate|delete from public\.member_/i);
+    expect(migration).not.toMatch(/drop constraint[^;]*member_line_customer_links/i);
+    expect(balance).toMatch(/line_subject_hash/);
+    expect(balance).toMatch(/member_link/);
     expect(balance).not.toMatch(/linkVerifiedLineBookingSource/);
     expect(balance).not.toMatch(/POST/);
+    expect(eligible).toMatch(/line_subject_hash/);
+    expect(eligible).toMatch(/member_link/);
+    expect(eligible).not.toMatch(/full_name ===|phone ===/);
   });
 });

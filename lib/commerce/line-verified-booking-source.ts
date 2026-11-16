@@ -72,11 +72,12 @@ function bindingIsCurrent(binding: VerifiedLineBinding): boolean {
  */
 function hashIsRevoked(hash: string, bindings: readonly VerifiedLineBinding[]): boolean {
   const rows = bindings.filter((binding) => binding.source === "binding" && hashOf(binding) === hash);
-  const revokedAt = rows.filter(bindingIsRevoked).reduce(
+  const revokedRows = rows.filter(bindingIsRevoked);
+  if (revokedRows.length === 0) return false;
+  const revokedAt = revokedRows.reduce(
     (latest, binding) => Math.max(latest, at(binding.unboundAt), at(binding.blockedAt)),
     Number.NEGATIVE_INFINITY,
   );
-  if (revokedAt === Number.NEGATIVE_INFINITY) return false;
   const reboundAt = rows.filter(bindingIsCurrent).reduce(
     (latest, binding) => Math.max(latest, at(binding.boundAt)),
     Number.NEGATIVE_INFINITY,
