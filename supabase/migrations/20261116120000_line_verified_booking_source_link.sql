@@ -14,11 +14,18 @@
 -- and the two unique keys. member_binding_requests is absent.
 -- line_customer_bindings.organization_id is compared as text to
 -- organizations.app_id. It is never cast to uuid and its type is never changed.
--- A text customer_id is used only when it matches a UUID; any other text is ignored.
--- organizations, evidence values, staff ids, link_origin, customer_uuid,
--- binding lifecycle columns, RLS policy bodies, and ledger constraints other
--- than the two identity types are not confirmed. A mismatch raises before the
--- booking-source rewrites. Apply this file inside one transaction so a later
+-- customer_uuid is used only when it is a UUID for a customer in the same
+-- organization. A non-UUID customer_id is used only when it equals exactly one
+-- customers.app_id in that organization. No binding, customer, or ledger row
+-- is rewritten to make those values match.
+-- Confirmed production shape: organizations.id uuid and app_id text; finance
+-- and customer foreign keys use organizations.id; line organization_id text
+-- with org- values; customer_id text; customer_uuid uuid; lifecycle columns
+-- line_user_id_hash, verified, status, confirmed_at, bound_at, unbound_at,
+-- and blocked_at; booking_source_customer_links is empty and has no
+-- link_origin; trg_stored_value_ledger_immutable blocks update and delete.
+-- A missing column, foreign key, or unexpected type raises before any
+-- booking-source rewrite. Apply this file inside one transaction so a later
 -- error rolls the whole file back. Do not apply to production in this phase.
 
 create or replace function public.line_binding_resolved_customer_id(p_binding jsonb)
@@ -58,16 +65,83 @@ begin
      ) then
     raise exception 'line_customer_bindings.organization_id is not text; refusing to rewrite it';
   end if;
-  if exists (
+  if not exists (
     select 1 from information_schema.columns
     where table_schema = 'public' and table_name = 'line_customer_bindings'
-      and column_name = 'customer_id' and udt_name <> 'text'
-  ) or exists (
+      and column_name = 'customer_id' and udt_name = 'text'
+  ) or not exists (
     select 1 from information_schema.columns
     where table_schema = 'public' and table_name = 'line_customer_bindings'
-      and column_name = 'customer_uuid' and udt_name <> 'uuid'
+      and column_name = 'customer_uuid' and udt_name = 'uuid'
   ) then
     raise exception 'line_customer_bindings customer identity column has an unexpected type; refusing to rewrite it';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings'
+      and column_name = 'line_user_id_hash' and udt_name = 'text'
+  ) or not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings'
+      and column_name = 'verified' and udt_name = 'bool'
+  ) or not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings'
+      and column_name = 'status' and udt_name = 'text'
+  ) or not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings'
+      and column_name = 'confirmed_at' and udt_name = 'timestamptz'
+  ) or not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings'
+      and column_name = 'bound_at' and udt_name = 'timestamptz'
+  ) or not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings'
+      and column_name = 'unbound_at' and udt_name = 'timestamptz'
+  ) or not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings'
+      and column_name = 'blocked_at' and udt_name = 'timestamptz'
+  ) then
+    raise exception 'line_customer_bindings lifecycle columns were not confirmed; refusing to install the LINE gate';
+  end if;
+  if to_regclass('public.customers') is null
+     or not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'customers'
+         and column_name = 'id' and udt_name = 'uuid'
+     )
+     or not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'customers'
+         and column_name = 'organization_id' and udt_name = 'uuid'
+     )
+     or not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'customers'
+         and column_name = 'app_id' and udt_name = 'text'
+     ) then
+    raise exception 'customers identity columns were not confirmed; refusing to resolve LINE bindings';
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.customers'::regclass
+      and contype = 'f'
+      and pg_get_constraintdef(oid) ilike '%organization_id%references%organizations%'
+  ) or not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.stored_value_ledger_entries'::regclass
+      and contype = 'f'
+      and pg_get_constraintdef(oid) ilike '%organization_id%references%organizations%'
+  ) or not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.stored_value_ledger_entries'::regclass
+      and contype = 'f'
+      and pg_get_constraintdef(oid) ilike '%customer_id%references%customers%'
+  ) then
+    raise exception 'finance customer foreign keys do not reference organizations or customers; refusing to install the LINE gate';
   end if;
   if not exists (
     select 1 from information_schema.columns
@@ -335,6 +409,37 @@ begin
 end;
 $$;
 
+create or replace function public.line_binding_customer_in_org(
+  p_organization_id uuid,
+  p_binding jsonb
+) returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case
+    when public.line_binding_resolved_customer_id(p_binding) is not null then (
+      select customer_row.id
+      from public.customers customer_row
+      where customer_row.organization_id = p_organization_id
+        and customer_row.id = public.line_binding_resolved_customer_id(p_binding)
+    )
+    when (
+      select count(*)
+      from public.customers customer_row
+      where customer_row.organization_id = p_organization_id
+        and customer_row.app_id = nullif(btrim(p_binding->>'customer_id'), '')
+    ) = 1 then (
+      select customer_row.id
+      from public.customers customer_row
+      where customer_row.organization_id = p_organization_id
+        and customer_row.app_id = btrim(p_binding->>'customer_id')
+    )
+    else null
+  end;
+$$;
+
 create or replace function public.current_line_subject_customers(
   p_organization_id uuid,
   p_organization_app_id text,
@@ -347,7 +452,7 @@ set search_path = public
 as $$
   with binding_rows as (
     select
-      public.line_binding_resolved_customer_id(to_jsonb(binding)) as customer_id,
+      public.line_binding_customer_in_org(p_organization_id, to_jsonb(binding)) as customer_id,
       binding.status,
       binding.verified,
       binding.confirmed_at,
@@ -357,7 +462,7 @@ as $$
     from public.line_customer_bindings binding
     where binding.organization_id = p_organization_app_id
       and binding.line_user_id_hash = p_line_subject_hash
-      and public.line_binding_resolved_customer_id(to_jsonb(binding)) is not null
+      and public.line_binding_customer_in_org(p_organization_id, to_jsonb(binding)) is not null
   ), revoked as (
     select customer_id, max(coalesce(unbound_at, blocked_at, '-infinity'::timestamptz)) as revoked_at
     from binding_rows
@@ -444,11 +549,11 @@ begin
 
   select count(*) into v_any_count
   from (
-    select public.line_binding_resolved_customer_id(to_jsonb(binding)) as customer_id
+    select public.line_binding_customer_in_org(v_org, to_jsonb(binding)) as customer_id
     from public.line_customer_bindings binding
     where binding.organization_id = v_org_app
       and binding.line_user_id_hash = v_hash
-      and public.line_binding_resolved_customer_id(to_jsonb(binding)) is not null
+      and public.line_binding_customer_in_org(v_org, to_jsonb(binding)) is not null
     union
     select member_link.customer_id
     from public.member_line_customer_links member_link
@@ -468,8 +573,8 @@ begin
       and not exists (
         select 1 from public.line_customer_bindings active_binding
         where active_binding.organization_id = binding.organization_id
-          and public.line_binding_resolved_customer_id(to_jsonb(active_binding))
-            = public.line_binding_resolved_customer_id(to_jsonb(binding))
+          and public.line_binding_customer_in_org(v_org, to_jsonb(active_binding))
+            = public.line_binding_customer_in_org(v_org, to_jsonb(binding))
           and active_binding.line_user_id_hash = binding.line_user_id_hash
           and active_binding.status = 'active'
           and active_binding.verified is true
@@ -674,7 +779,7 @@ as $$
       binding.blocked_at
     from public.line_customer_bindings binding
     join org on org.app_id = binding.organization_id
-    where public.line_binding_resolved_customer_id(to_jsonb(binding)) = p_customer_id
+    where public.line_binding_customer_in_org(p_organization_id, to_jsonb(binding)) = p_customer_id
       and lower(btrim(binding.line_user_id_hash)) ~ '^[0-9a-f]{64}$'
   ), revoked as (
     select hash, max(coalesce(unbound_at, blocked_at, '-infinity'::timestamptz)) as revoked_at
@@ -751,8 +856,10 @@ begin
 end $$;
 
 revoke all on function public.line_binding_resolved_customer_id(jsonb) from public, anon, authenticated;
+revoke all on function public.line_binding_customer_in_org(uuid, jsonb) from public, anon, authenticated;
 revoke all on function public.customer_line_membership_is_current(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.stored_value_ledger_requires_current_line_membership() from public, anon, authenticated;
+grant execute on function public.stored_value_ledger_requires_current_line_membership() to authenticated;
 revoke all on function public.current_line_subject_customers(uuid, text, text) from public, anon, authenticated;
 revoke all on function public.enqueue_member_binding_review(uuid, text, text, text, uuid) from public, anon, authenticated;
 revoke all on function public.link_booking_source_from_verified_line(text, text, text, uuid) from public, anon, authenticated;
@@ -770,6 +877,7 @@ end $$;
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant execute on function public.stored_value_ledger_requires_current_line_membership() to service_role';
     execute 'grant execute on function public.link_booking_source_from_verified_line(text, text, text, uuid) to service_role';
     execute 'grant execute on function public.enqueue_member_binding_review(uuid, text, text, text, uuid) to service_role';
     execute 'grant select on public.member_binding_requests to service_role';

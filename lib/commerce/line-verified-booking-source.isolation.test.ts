@@ -190,6 +190,13 @@ describe("verified LINE booking-source decision", () => {
     expect(migration).toMatch(/active\.bound_at > revoked\.revoked_at/);
     expect(migration).toMatch(/customer_line_membership_is_current/);
     expect(migration).toMatch(/line_binding_resolved_customer_id/);
+    expect(migration).toMatch(/line_binding_customer_in_org/);
+    expect(migration).toMatch(/customers\.app_id/);
+    expect(migration).toMatch(/line_customer_bindings lifecycle columns were not confirmed/);
+    expect(migration).toMatch(/finance customer foreign keys do not reference organizations or customers/);
+    expect(migration).toMatch(/grant execute on function public\.stored_value_ledger_requires_current_line_membership\(\) to authenticated/);
+    expect(migration).toMatch(/grant execute on function public\.stored_value_ledger_requires_current_line_membership\(\) to service_role/);
+    expect(migration).not.toMatch(/drop trigger if exists trg_stored_value_ledger_immutable/i);
     expect(migration).toMatch(/line_customer_bindings\.organization_id is not text/);
     expect(migration).toMatch(/refusing to rewrite it/);
     expect(migration).toMatch(/refusing to replace constraints/);
