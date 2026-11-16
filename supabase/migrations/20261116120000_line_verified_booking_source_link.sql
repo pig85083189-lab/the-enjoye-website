@@ -24,6 +24,9 @@
 -- line_user_id_hash, verified, status, confirmed_at, bound_at, unbound_at,
 -- and blocked_at; booking_source_customer_links is empty and has no
 -- link_origin; trg_stored_value_ledger_immutable blocks update and delete.
+-- Confirmed production counts: 2 bindings, both customer_uuid values match a
+-- customer in the same organization, 1 revoked, 0 fully current. This file
+-- does not update those rows or turn either one into a current binding.
 -- A missing column, foreign key, or unexpected type raises before any
 -- booking-source rewrite. Apply this file inside one transaction so a later
 -- error rolls the whole file back. Do not apply to production in this phase.
