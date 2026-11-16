@@ -114,6 +114,41 @@ begin
     raise exception 'revoked LINE binding was accepted: %', v_result;
   end if;
 
+  insert into public.member_line_customer_links (organization_id, customer_id, verified_at, line_subject_hash)
+  values (v_org, v_wallet, now(), v_revoked);
+  v_result := public.link_booking_source_from_verified_line(
+    'org-stored-value-test', 'src-line-stale-member', v_revoked, v_owner
+  );
+  if v_result->>'reasonCode' <> 'LINE_REVOKED'
+     or exists (
+       select 1 from public.booking_source_customer_links where source_customer_key = 'src-line-stale-member'
+     ) then
+    raise exception 'stale member verified_at restored a revoked binding: %', v_result;
+  end if;
+
+  insert into public.line_customer_bindings (
+    organization_id, customer_uuid, status, verified, confirmed_at, bound_at, line_user_id_hash
+  ) values (
+    'org-stored-value-test', v_second, 'active', true,
+    timestamptz '2026-11-14 00:00:00+00', timestamptz '2026-11-14 00:00:00+00', repeat('34', 32)
+  );
+  insert into public.line_customer_bindings (
+    organization_id, customer_uuid, status, verified, unbound_at, line_user_id_hash
+  ) values (
+    'org-stored-value-test', v_second, 'unbound', false, timestamptz '2026-11-15 00:00:00+00', repeat('34', 32)
+  );
+  insert into public.member_line_customer_links (organization_id, customer_id, verified_at, line_subject_hash)
+  values (v_org, v_second, now(), repeat('34', 32));
+  v_result := public.link_booking_source_from_verified_line(
+    'org-stored-value-test', 'src-line-history', repeat('34', 32), v_owner
+  );
+  if v_result->>'reasonCode' <> 'LINE_REVOKED'
+     or exists (
+       select 1 from public.booking_source_customer_links where source_customer_key = 'src-line-history'
+     ) then
+    raise exception 'historical active row beat the current revocation: %', v_result;
+  end if;
+
   insert into public.customers (id, organization_id, status, app_id)
   values ('f88fffff-ffff-4fff-8fff-ffffffffffff', v_other, 'ACTIVE', 'cust-other-org');
   insert into public.line_customer_bindings (
@@ -134,6 +169,55 @@ begin
       and source_customer_key <> 'src-line-0001'
   ) then
     raise exception 'a review outcome created a usable stored-value link';
+  end if;
+
+  insert into public.customers (id, organization_id, status, app_id) values
+    ('f97fffff-ffff-4fff-8fff-ffffffffffff', v_org, 'ACTIVE', 'cust-rebind-booking'),
+    ('f96fffff-ffff-4fff-8fff-ffffffffffff', v_org, 'ACTIVE', 'cust-rebind-wallet'),
+    ('f95fffff-ffff-4fff-8fff-ffffffffffff', v_org, 'ACTIVE', 'cust-member-only');
+  insert into public.customer_wallet_identities (
+    organization_id, booking_customer_id, wallet_customer_id, status, reason, confirmed_by_staff_id
+  ) values (
+    v_org, 'f97fffff-ffff-4fff-8fff-ffffffffffff', 'f96fffff-ffff-4fff-8fff-ffffffffffff',
+    'ACTIVE', '隔離測試重新綁定', 'staff-owner-test'
+  );
+  insert into public.line_customer_bindings (
+    organization_id, customer_uuid, status, verified, unbound_at, line_user_id_hash
+  ) values (
+    'org-stored-value-test', 'f96fffff-ffff-4fff-8fff-ffffffffffff', 'unbound', false,
+    timestamptz '2026-11-15 00:00:00+00', repeat('45', 32)
+  );
+  insert into public.member_line_customer_links (organization_id, customer_id, verified_at, line_subject_hash)
+  values (v_org, 'f96fffff-ffff-4fff-8fff-ffffffffffff', timestamptz '2026-11-14 00:00:00+00', repeat('45', 32));
+  insert into public.line_customer_bindings (
+    organization_id, customer_uuid, status, verified, confirmed_at, bound_at, line_user_id_hash
+  ) values (
+    'org-stored-value-test', 'f96fffff-ffff-4fff-8fff-ffffffffffff', 'active', true,
+    timestamptz '2026-11-16 00:00:00+00', timestamptz '2026-11-16 00:00:00+00', repeat('67', 32)
+  );
+  v_result := public.link_booking_source_from_verified_line(
+    'org-stored-value-test', 'src-line-rebind', repeat('67', 32), v_owner
+  );
+  if v_result->>'outcome' <> 'linked' then
+    raise exception 'newer LINE rebind was not linked: %', v_result;
+  end if;
+  v_result := public.link_booking_source_from_verified_line(
+    'org-stored-value-test', 'src-line-old-subject', repeat('45', 32), v_owner
+  );
+  if v_result->>'reasonCode' <> 'LINE_REVOKED'
+     or exists (
+       select 1 from public.booking_source_customer_links where source_customer_key = 'src-line-old-subject'
+     ) then
+    raise exception 'old subject survived a rebind: %', v_result;
+  end if;
+
+  insert into public.member_line_customer_links (organization_id, customer_id, verified_at, line_subject_hash)
+  values (v_org, 'f95fffff-ffff-4fff-8fff-ffffffffffff', now(), repeat('89', 32));
+  v_result := public.link_booking_source_from_verified_line(
+    'org-stored-value-test', 'src-line-member-only', repeat('89', 32), v_owner
+  );
+  if v_result->>'outcome' <> 'linked' then
+    raise exception 'member link without a revocation was not linked: %', v_result;
   end if;
 
   select id into v_request

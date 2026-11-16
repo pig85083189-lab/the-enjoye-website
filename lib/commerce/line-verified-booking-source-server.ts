@@ -20,8 +20,9 @@ function review(reason: LineBindingReviewReason): LineBookingSourceResult {
 }
 
 /**
- * Resolves the finance customer from the booking customer's verified LINE
- * subject. The caller cannot supply a finance customer id or a LINE hash.
+ * Staff-triggered sync from an existing verified LINE binding.
+ * This is not a LINE OAuth callback. The caller cannot supply a finance
+ * customer id or a LINE hash.
  */
 export async function linkVerifiedLineBookingSource(input: {
   organizationAppId: string;
@@ -86,6 +87,7 @@ export async function linkVerifiedLineBookingSource(input: {
     }
     for (const row of legacy.data ?? []) {
       bindings.push({
+        source: "binding",
         hash: typeof row.line_user_id_hash === "string" ? row.line_user_id_hash : null,
         verified: row.verified === true,
         status: String(row.status ?? ""),
@@ -106,6 +108,7 @@ export async function linkVerifiedLineBookingSource(input: {
     }
     for (const row of memberLinks.data ?? []) {
       bindings.push({
+        source: "member_link",
         hash: typeof row.line_subject_hash === "string" ? row.line_subject_hash : null,
         verified: Boolean(row.verified_at),
         status: row.verified_at ? "active" : "pending",

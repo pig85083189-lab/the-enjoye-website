@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
+import { lineMembershipIsCurrent, type VerifiedLineBinding } from "@/lib/commerce/line-verified-booking-source";
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
 
 export async function GET(request: Request) {
@@ -25,20 +26,32 @@ export async function GET(request: Request) {
   // Accept the canonical, server-verified LINE member link, plus legacy confirmed bindings.
   // Never infer membership from a matching name or phone.
   const { data: memberLinks, error: memberError } = await db.from("member_line_customer_links")
-    .select("customer_id").eq("organization_id", org.id).not("verified_at", "is", null);
+    .select("customer_id, verified_at").eq("organization_id", org.id);
   if (memberError) { console.error("[stored-value/eligible-customers] canonical_links_failed", { code: memberError.code }); return NextResponse.json({ error: "無法查詢 LINE 會員資格", code: "CANONICAL_LINKS_FAILED" }, { status: 503, headers }); }
   const { data: bindings, error: bindingError } = await db.from("line_customer_bindings")
-    .select("customer_uuid")
-    .eq("organization_id", organizationId)
-    .eq("status", "active")
-    .eq("verified", true)
-    .not("confirmed_at", "is", null)
-    .not("bound_at", "is", null)
-    .is("unbound_at", null)
-    .is("blocked_at", null)
-    .not("line_user_id_hash", "is", null);
+    .select("customer_uuid, line_user_id_hash, status, verified, confirmed_at, bound_at, unbound_at, blocked_at")
+    .eq("organization_id", organizationId);
   if (bindingError) { console.error("[stored-value/eligible-customers] legacy_bindings_failed", { code: bindingError.code, message: bindingError.message }); return NextResponse.json({ error: "無法查詢 LINE 會員資格", code: "LEGACY_BINDINGS_FAILED" }, { status: 503, headers }); }
-  const ids = Array.from(new Set([...(memberLinks ?? []).map(b => b.customer_id), ...(bindings ?? []).map(b => b.customer_uuid)].filter((id): id is string => typeof id === "string")));
+  const byCustomer = new Map<string, VerifiedLineBinding[]>();
+  for (const row of bindings ?? []) {
+    if (typeof row.customer_uuid !== "string") continue;
+    const current = byCustomer.get(row.customer_uuid) ?? [];
+    current.push({
+      source: "binding",
+      hash: typeof row.line_user_id_hash === "string" ? row.line_user_id_hash : null,
+      verified: row.verified === true,
+      status: String(row.status ?? ""),
+      confirmedAt: row.confirmed_at,
+      boundAt: row.bound_at,
+      unboundAt: row.unbound_at,
+      blockedAt: row.blocked_at,
+    });
+    byCustomer.set(row.customer_uuid, current);
+  }
+  const verifiedMembers = new Set((memberLinks ?? []).filter((row) => row.verified_at && typeof row.customer_id === "string").map((row) => row.customer_id as string));
+  const ids = Array.from(new Set([...verifiedMembers, ...byCustomer.keys()])).filter((customerId) =>
+    lineMembershipIsCurrent(byCustomer.get(customerId) ?? [], verifiedMembers.has(customerId)),
+  );
   if (ids.length === 0) return NextResponse.json({ customerIds: [], eligibleCustomers: [] }, { headers });
   const { data: customers, error: customerError } = await db.from("customers")
     .select("app_id,full_name,phone").eq("organization_id", org.id).eq("status", "ACTIVE").in("id", ids);

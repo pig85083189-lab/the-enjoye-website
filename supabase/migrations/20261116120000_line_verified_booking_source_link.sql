@@ -41,6 +41,24 @@ alter table public.booking_source_customer_links
     link_origin in ('MANAGER_REVIEW', 'LINE_VERIFIED_SESSION')
   );
 
+do $$
+begin
+  if to_regclass('public.member_line_customer_links') is not null and exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'member_line_customer_links'
+      and column_name = 'organization_id' and udt_name <> 'uuid'
+  ) then
+    raise exception 'member_line_customer_links.organization_id is not uuid; refusing to rewrite it';
+  end if;
+  if to_regclass('public.member_binding_requests') is not null and exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'member_binding_requests'
+      and column_name = 'organization_id' and udt_name <> 'uuid'
+  ) then
+    raise exception 'member_binding_requests.organization_id is not uuid; refusing to rewrite it';
+  end if;
+end $$;
+
 create table if not exists public.member_line_customer_links (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null,
@@ -53,41 +71,62 @@ create table if not exists public.member_line_customer_links (
 alter table public.member_line_customer_links
   add column if not exists line_subject_hash text;
 
-create table if not exists public.member_binding_requests (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations (id) on delete restrict,
-  line_subject_hash text,
-  source_customer_key text,
-  status text not null default 'PENDING',
-  reason_code text not null,
-  requested_by_auth_user_id uuid not null,
-  reviewed_by_staff_id text,
-  reviewed_by_auth_user_id uuid,
-  reviewed_at timestamptz,
-  created_at timestamptz not null default now(),
-  constraint member_binding_requests_status check (status in ('PENDING', 'APPROVED', 'REJECTED')),
-  constraint member_binding_requests_reason check (reason_code in (
-    'LINE_NOT_VERIFIED', 'LINE_REVOKED', 'MULTIPLE_LINE_SUBJECTS', 'MULTIPLE_CUSTOMERS',
-    'MULTIPLE_FINANCE_CUSTOMERS', 'ORG_MISMATCH', 'LINK_CONFLICT', 'ACCOUNT_DISABLED',
-    'NO_TRUSTED_ASSOCIATION'
-  )),
-  constraint member_binding_requests_hash check (
-    line_subject_hash is null or line_subject_hash ~ '^[0-9a-f]{64}$'
-  ),
-  constraint member_binding_requests_key check (
-    source_customer_key is null or char_length(btrim(source_customer_key)) between 8 and 120
-  ),
-  constraint member_binding_requests_reviewer check (
-    reviewed_by_staff_id is null or public.is_operational_staff_id(reviewed_by_staff_id)
-  )
-);
+do $$
+begin
+  if to_regclass('public.member_binding_requests') is null then
+    create table public.member_binding_requests (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references public.organizations (id) on delete restrict,
+      line_subject_hash text,
+      source_customer_key text,
+      status text not null default 'PENDING',
+      reason_code text not null,
+      requested_by_auth_user_id uuid not null,
+      reviewed_by_staff_id text,
+      reviewed_by_auth_user_id uuid,
+      reviewed_at timestamptz,
+      created_at timestamptz not null default now(),
+      constraint member_binding_requests_status check (status in ('PENDING', 'APPROVED', 'REJECTED')),
+      constraint member_binding_requests_reason check (reason_code in (
+        'LINE_NOT_VERIFIED', 'LINE_REVOKED', 'MULTIPLE_LINE_SUBJECTS', 'MULTIPLE_CUSTOMERS',
+        'MULTIPLE_FINANCE_CUSTOMERS', 'ORG_MISMATCH', 'LINK_CONFLICT', 'ACCOUNT_DISABLED',
+        'NO_TRUSTED_ASSOCIATION'
+      )),
+      constraint member_binding_requests_hash check (
+        line_subject_hash is null or line_subject_hash ~ '^[0-9a-f]{64}$'
+      ),
+      constraint member_binding_requests_key check (
+        source_customer_key is null or char_length(btrim(source_customer_key)) between 8 and 120
+      ),
+      constraint member_binding_requests_reviewer check (
+        reviewed_by_staff_id is null or public.is_operational_staff_id(reviewed_by_staff_id)
+      )
+    );
+    alter table public.member_binding_requests enable row level security;
+    revoke all on public.member_binding_requests from public, anon, authenticated;
+  else
+    alter table public.member_binding_requests add column if not exists line_subject_hash text;
+    alter table public.member_binding_requests add column if not exists source_customer_key text;
+    alter table public.member_binding_requests add column if not exists status text default 'PENDING';
+    alter table public.member_binding_requests add column if not exists reason_code text;
+    alter table public.member_binding_requests add column if not exists requested_by_auth_user_id uuid;
+    alter table public.member_binding_requests add column if not exists reviewed_by_staff_id text;
+    alter table public.member_binding_requests add column if not exists reviewed_by_auth_user_id uuid;
+    alter table public.member_binding_requests add column if not exists reviewed_at timestamptz;
+    alter table public.member_binding_requests add column if not exists created_at timestamptz default now();
+    if exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'member_binding_requests'
+        and column_name = 'id' and udt_name = 'uuid' and column_default is null
+    ) then
+      alter table public.member_binding_requests alter column id set default gen_random_uuid();
+    end if;
+  end if;
+end $$;
 
 create unique index if not exists member_binding_requests_pending_key
   on public.member_binding_requests (organization_id, source_customer_key, reason_code)
   where status = 'PENDING' and source_customer_key is not null;
-
-alter table public.member_binding_requests enable row level security;
-revoke all on public.member_binding_requests from public, anon, authenticated;
 
 create or replace function public.enqueue_member_binding_review(
   p_organization_id uuid,
@@ -126,6 +165,67 @@ begin
   limit 1;
   return v_id;
 end;
+$$;
+
+create or replace function public.current_line_subject_customers(
+  p_organization_id uuid,
+  p_organization_app_id text,
+  p_line_subject_hash text
+) returns table (customer_id uuid)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with binding_rows as (
+    select
+      binding.customer_uuid,
+      binding.status,
+      binding.verified,
+      binding.confirmed_at,
+      binding.bound_at,
+      binding.unbound_at,
+      binding.blocked_at
+    from public.line_customer_bindings binding
+    where binding.organization_id = p_organization_app_id
+      and binding.line_user_id_hash = p_line_subject_hash
+      and binding.customer_uuid is not null
+  ), revoked as (
+    select customer_uuid, max(coalesce(unbound_at, blocked_at, '-infinity'::timestamptz)) as revoked_at
+    from binding_rows
+    where status = 'unbound' or unbound_at is not null or blocked_at is not null
+    group by customer_uuid
+  ), active as (
+    select customer_uuid, max(bound_at) as bound_at
+    from binding_rows
+    where status = 'active'
+      and verified is true
+      and confirmed_at is not null
+      and bound_at is not null
+      and unbound_at is null
+      and blocked_at is null
+    group by customer_uuid
+  )
+  select active.customer_uuid
+  from active
+  left join revoked on revoked.customer_uuid = active.customer_uuid
+  where revoked.customer_uuid is null or active.bound_at > revoked.revoked_at
+  union
+  select member_link.customer_id
+  from public.member_line_customer_links member_link
+  where member_link.organization_id = p_organization_id
+    and member_link.line_subject_hash = p_line_subject_hash
+    and member_link.verified_at is not null
+    and not exists (
+      select 1
+      from revoked
+      where revoked.customer_uuid = member_link.customer_id
+        and not exists (
+          select 1 from active
+          where active.customer_uuid = member_link.customer_id
+            and active.bound_at > revoked.revoked_at
+        )
+    );
 $$;
 
 create or replace function public.link_booking_source_from_verified_line(
@@ -189,32 +289,27 @@ begin
   ) subjects;
 
   select count(*) into v_line_count
-  from (
-    select binding.customer_uuid as customer_id
-    from public.line_customer_bindings binding
-    where binding.organization_id = v_org_app
-      and binding.line_user_id_hash = v_hash
-      and binding.customer_uuid is not null
-      and binding.status = 'active'
-      and binding.verified is true
-      and binding.confirmed_at is not null
-      and binding.bound_at is not null
-      and binding.unbound_at is null
-      and binding.blocked_at is null
-    union
-    select member_link.customer_id
-    from public.member_line_customer_links member_link
-    where member_link.organization_id = v_org
-      and member_link.line_subject_hash = v_hash
-      and member_link.verified_at is not null
-  ) subjects;
+  from public.current_line_subject_customers(v_org, v_org_app, v_hash);
 
   if v_line_count = 0 then
     select count(*) into v_revoked_count
     from public.line_customer_bindings binding
     where binding.organization_id = v_org_app
       and binding.line_user_id_hash = v_hash
-      and (binding.status = 'unbound' or binding.unbound_at is not null or binding.blocked_at is not null);
+      and (binding.status = 'unbound' or binding.unbound_at is not null or binding.blocked_at is not null)
+      and not exists (
+        select 1 from public.line_customer_bindings active_binding
+        where active_binding.organization_id = binding.organization_id
+          and active_binding.customer_uuid = binding.customer_uuid
+          and active_binding.line_user_id_hash = binding.line_user_id_hash
+          and active_binding.status = 'active'
+          and active_binding.verified is true
+          and active_binding.confirmed_at is not null
+          and active_binding.bound_at is not null
+          and active_binding.unbound_at is null
+          and active_binding.blocked_at is null
+          and active_binding.bound_at > coalesce(binding.unbound_at, binding.blocked_at, '-infinity'::timestamptz)
+      );
     perform public.enqueue_member_binding_review(
       v_org, v_key, v_hash,
       case
@@ -237,26 +332,8 @@ begin
     return jsonb_build_object('outcome', 'review', 'reasonCode', 'MULTIPLE_CUSTOMERS');
   end if;
 
-  select subjects.customer_id into v_line
-  from (
-    select binding.customer_uuid as customer_id
-    from public.line_customer_bindings binding
-    where binding.organization_id = v_org_app
-      and binding.line_user_id_hash = v_hash
-      and binding.customer_uuid is not null
-      and binding.status = 'active'
-      and binding.verified is true
-      and binding.confirmed_at is not null
-      and binding.bound_at is not null
-      and binding.unbound_at is null
-      and binding.blocked_at is null
-    union
-    select member_link.customer_id
-    from public.member_line_customer_links member_link
-    where member_link.organization_id = v_org
-      and member_link.line_subject_hash = v_hash
-      and member_link.verified_at is not null
-  ) subjects;
+  select subject.customer_id into v_line
+  from public.current_line_subject_customers(v_org, v_org_app, v_hash) subject;
 
   if not exists (
     select 1 from public.customers customer_row
@@ -336,7 +413,7 @@ begin
       evidence_kind, reason, confirmed_by_staff_id, confirmed_by_auth_user_id, link_origin
     ) values (
       v_org, v_key, v_booking,
-      'LINE_VERIFIED_SESSION', 'LINE 登入已驗證且兩邊顧客唯一相符',
+      'LINE_VERIFIED_SESSION', '員工依現行 LINE 綁定證據建立對應',
       null, p_auth_user_id, 'LINE_VERIFIED_SESSION'
     );
   exception
@@ -406,6 +483,7 @@ begin
 end;
 $$;
 
+revoke all on function public.current_line_subject_customers(uuid, text, text) from public, anon, authenticated;
 revoke all on function public.enqueue_member_binding_review(uuid, text, text, text, uuid) from public, anon, authenticated;
 revoke all on function public.link_booking_source_from_verified_line(text, text, text, uuid) from public, anon, authenticated;
 revoke all on function public.decide_member_binding_request(uuid, text, uuid) from public, anon;
@@ -413,6 +491,7 @@ revoke all on function public.decide_member_binding_request(uuid, text, uuid) fr
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'revoke all on function public.current_line_subject_customers(uuid, text, text) from service_role';
     execute 'revoke all on function public.enqueue_member_binding_review(uuid, text, text, text, uuid) from service_role';
     execute 'revoke all on function public.decide_member_binding_request(uuid, text, uuid) from service_role';
   end if;
