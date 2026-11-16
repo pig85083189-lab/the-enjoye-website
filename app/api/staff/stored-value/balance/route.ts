@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
+import { linkVerifiedLineBookingSource } from "@/lib/commerce/line-verified-booking-source-server";
+import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import { resolveBookingSourceFinanceCustomer } from "@/lib/commerce/booking-source-customer";
 import {
@@ -52,10 +53,10 @@ export async function GET(request: Request) {
       console.error("[stored-value/balance] source_link_lookup_failed", { code: linkError.code });
       return fail(503, "LINK_LOOKUP_FAILED");
     }
-    const financeCustomerId = resolveBookingSourceFinanceCustomer({
+    const financeCustomerFrom = (rows: typeof linkRows) => resolveBookingSourceFinanceCustomer({
       organizationId: org.id,
       sourceCustomerKey: customerId,
-      links: (linkRows ?? []).map((row) => ({
+      links: (rows ?? []).map((row) => ({
         organizationId: String(row.organization_id ?? ""),
         sourceCustomerKey: String(row.source_customer_key ?? ""),
         financeBookingCustomerId: String(row.finance_booking_customer_id ?? ""),
@@ -63,6 +64,26 @@ export async function GET(request: Request) {
         evidenceKind: String(row.evidence_kind ?? ""),
       })),
     });
+    let financeCustomerId = financeCustomerFrom(linkRows);
+    if (!financeCustomerId) {
+      const actor = await getServerStaffAuthUser();
+      if (actor && actor.id === identity.membership.authUserId) {
+        const linked = await linkVerifiedLineBookingSource({
+          organizationAppId: organizationId,
+          sourceCustomerKey: customerId.trim(),
+          authUserId: actor.id,
+        });
+        if (linked.outcome === "linked" || linked.outcome === "already_linked") {
+          const again = await db.from("booking_source_customer_links")
+            .select("organization_id, source_customer_key, finance_booking_customer_id, status, evidence_kind")
+            .eq("organization_id", org.id)
+            .eq("source_customer_key", customerId.trim())
+            .eq("status", "ACTIVE")
+            .limit(2);
+          if (!again.error) financeCustomerId = financeCustomerFrom(again.data);
+        }
+      }
+    }
     if (!financeCustomerId) return fail(404, "CUSTOMER_NOT_FOUND");
     const { data: linked, error: linkedError } = await db.from("customers")
       .select("id, app_id, status")
