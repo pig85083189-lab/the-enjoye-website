@@ -2,8 +2,11 @@
 -- Does not replace save_checkout_draft, settle_checkout_draft, or the
 -- managerial confirm function. Does not update ledger, appointment, package,
 -- or historical identity rows. A pending review does not grant stored value.
--- Apply on the finance database only after the booking-source migration.
--- Do not apply to production in this phase.
+-- Apply on the finance database only, inside one transaction, after
+-- 20261115170000_booking_source_customer_links.sql and before
+-- 20261116143000_stored_value_line_checkout_gate.sql.
+-- This file does not enable checkout by itself. The booking receipt claim and
+-- the website checkout route have to be released in the same change.
 --
 -- Read-only production inspection confirmed:
 -- booking_source_customer_links.organization_id uuid,
@@ -29,7 +32,8 @@
 -- does not update those rows or turn either one into a current binding.
 -- A missing column, foreign key, or unexpected type raises before any
 -- booking-source rewrite. Apply this file inside one transaction so a later
--- error rolls the whole file back. Do not apply to production in this phase.
+-- error rolls the whole file back. The next migration replaces checkout and
+-- top-up so both call customer_line_membership_is_current before writing.
 
 create or replace function public.line_binding_resolved_customer_id(p_binding jsonb)
 returns uuid

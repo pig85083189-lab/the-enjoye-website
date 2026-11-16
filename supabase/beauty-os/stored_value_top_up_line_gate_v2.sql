@@ -1,7 +1,16 @@
--- REVIEW ONLY. Do not apply to production until staff authentication and payment
--- confirmation are enforced in the server endpoint and isolated tests pass.
--- This function accepts canonical UUIDs only; never expose service_role to a browser.
-begin;
+-- Finance-database manual top-up.
+-- The same function body is installed by
+-- supabase/migrations/20261116143000_stored_value_line_checkout_gate.sql.
+-- Apply that migration on bfzquejrtgqzzarhkiya after
+-- 20261116120000_line_verified_booking_source_link.sql. Running this file
+-- afterwards replaces the function with the same body; it does not rewrite
+-- customers, LINE bindings, or ledger rows.
+--
+-- app/api/staff/stored-value/top-up/route.ts authenticates the staff membership
+-- and requires manualPaymentConfirmed before this RPC. The function still
+-- rejects a customer who is not a current LINE member, and the ledger insert
+-- trigger repeats that check. A repeated effect key returns the original entry.
+-- service_role is the only execute grantee. The browser never receives it.
 
 create or replace function public.post_stored_value_top_up_v1(
   p_organization_id uuid,
@@ -30,7 +39,6 @@ begin
      length(p_effect_key) > 180 then
     raise exception 'Invalid top-up request';
   end if;
-  -- Format check only: authenticated membership/checkout authority must be checked by API.
   if p_method is null or p_method not in ('CASH','CREDIT_CARD','BANK_TRANSFER','OTHER') then
     raise exception 'Invalid manual payment method';
   end if;
@@ -38,32 +46,19 @@ begin
     raise exception 'Invalid operational staff';
   end if;
 
-  -- Serialize all top-ups per customer, including retries before account creation.
   perform 1 from public.customers
     where id = p_customer_id and organization_id = p_organization_id
       and status = 'ACTIVE'
     for update;
   if not found then raise exception 'Customer not found in organization'; end if;
-  -- Fail closed unless this canonical customer has a verified, confirmed LINE binding.
-  perform 1 from public.line_customer_bindings b
-    join public.organizations o on o.app_id = b.organization_id
-   where o.id = p_organization_id
-     and b.customer_uuid = p_customer_id
-     and b.status = 'active'
-     and b.verified is true
-     and b.confirmed_at is not null
-     and b.bound_at is not null
-     and b.unbound_at is null
-     and b.blocked_at is null
-     and nullif(trim(b.line_user_id_hash), '') is not null
-    for share of b;
-  if not found then raise exception 'LINE member binding required for top-up'; end if;
+  if not public.customer_line_membership_is_current(p_organization_id, p_customer_id) then
+    raise exception '必須先完成 LINE 會員綁定';
+  end if;
   perform 1 from public.locations
     where id = p_location_id and organization_id = p_organization_id
       and is_active = true;
   if not found then raise exception 'Invalid location'; end if;
 
-  -- A reused effect key with different parameters must never silently succeed.
   select e.id,e.account_id,e.customer_id,e.location_id,e.created_by_staff_id,
          e.amount_delta_minor,e.type,e.reason
     into v_entry
@@ -89,7 +84,6 @@ begin
     where a.organization_id = p_organization_id and a.customer_id = p_customer_id
       and a.status = 'ACTIVE' and a.currency = 'TWD'
     for update;
-  -- A suspended or closed wallet must not be silently replaced with a new active wallet.
   if exists (
     select 1 from public.stored_value_accounts a
     where a.organization_id = p_organization_id
@@ -118,10 +112,12 @@ begin
 end;
 $$;
 
--- Explicitly deny all non-server roles. API must authenticate the actual
--- staff membership and confirmed external payment BEFORE calling this RPC.
 revoke all on function public.post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text,text)
   from public, anon, authenticated;
-grant execute on function public.post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text,text)
-  to service_role;
-commit;
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant execute on function public.post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text,text) to service_role';
+  end if;
+end $$;

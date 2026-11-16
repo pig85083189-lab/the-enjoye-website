@@ -1,7 +1,17 @@
 -- Booking database only (knccefcxncglgpmvgqlp).
--- Do not apply this file to the finance database or to production until the
--- isolated compatibility cases pass. It does not debit a wallet and does not
--- choose a finance customer.
+-- Do not apply this file to the finance database bfzquejrtgqzzarhkiya.
+-- A receipt is not a wallet debit and does not choose a finance customer.
+-- PENDING is claimed before the finance debit. POSTED is written only after
+-- that debit returns effect_key booking-checkout:<checkout app id> for the
+-- same amount and source customer. FAILED is written only when the finance
+-- call returns a definite rejection and its transaction has rolled back.
+-- A timeout leaves PENDING. The next attempt replays the same effect key and
+-- then marks this same receipt POSTED. It does not create a second receipt
+-- and it does not change a POSTED receipt back to FAILED.
+-- Apply with psql --single-transaction in the same release as finance
+-- migration 20261116143000_stored_value_line_checkout_gate.sql and the
+-- website checkout route. Re-running this file replaces the checkout
+-- functions and the receipt claim; it does not delete receipts.
 --
 -- The save and settle functions below are the production package checkout
 -- functions. Package redemption, discounts, payments, transaction lines,
@@ -20,12 +30,21 @@ create table if not exists public.stored_value_debit_receipts (
   amount_minor bigint not null,
   effect_key text not null,
   status text not null,
+  finance_confirmed_at timestamptz,
+  updated_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
-  constraint stored_value_debit_receipts_status check (status = 'POSTED'),
+  constraint stored_value_debit_receipts_status check (status in ('PENDING', 'POSTED', 'FAILED')),
   constraint stored_value_debit_receipts_amount check (amount_minor > 0),
   constraint stored_value_debit_receipts_key check (char_length(btrim(source_customer_key)) between 8 and 120),
   unique (organization_id, checkout_app_id)
 );
+
+alter table public.stored_value_debit_receipts add column if not exists finance_confirmed_at timestamptz;
+alter table public.stored_value_debit_receipts add column if not exists updated_at timestamptz not null default now();
+alter table public.stored_value_debit_receipts drop constraint if exists stored_value_debit_receipts_status;
+alter table public.stored_value_debit_receipts
+  add constraint stored_value_debit_receipts_status
+  check (status in ('PENDING', 'POSTED', 'FAILED'));
 
 alter table public.stored_value_debit_receipts enable row level security;
 revoke all on public.stored_value_debit_receipts from public, anon, authenticated;
@@ -416,6 +435,7 @@ begin
       where receipt.organization_id = v_draft.organization_id
         and receipt.checkout_app_id = v_draft.app_id
         and receipt.status = 'POSTED'
+        and receipt.effect_key = 'booking-checkout:' || v_draft.app_id
         and receipt.amount_minor = (
           select coalesce(sum(payment.amount_minor), 0)
           from public.checkout_payments payment
@@ -583,9 +603,162 @@ begin
 end;
 $$;
 
+create or replace function public.claim_stored_value_debit_receipt(
+  p_organization_id uuid,
+  p_checkout_app_id text,
+  p_source_customer_key text,
+  p_amount_minor bigint,
+  p_effect_key text
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_checkout text := btrim(p_checkout_app_id);
+  v_source text := btrim(p_source_customer_key);
+  v_row public.stored_value_debit_receipts%rowtype;
+begin
+  if p_organization_id is null
+     or v_checkout = ''
+     or char_length(v_source) < 8
+     or char_length(v_source) > 120
+     or p_amount_minor is null
+     or p_amount_minor <= 0
+     or p_effect_key is distinct from ('booking-checkout:' || v_checkout) then
+    raise exception '儲值金收據無法確認';
+  end if;
+  select * into v_row
+  from public.stored_value_debit_receipts
+  where organization_id = p_organization_id
+    and checkout_app_id = v_checkout
+  for update;
+  if not found then
+    begin
+      insert into public.stored_value_debit_receipts (
+        organization_id, checkout_app_id, source_customer_key, amount_minor, effect_key, status
+      ) values (
+        p_organization_id, v_checkout, v_source, p_amount_minor, p_effect_key, 'PENDING'
+      );
+      return 'PENDING';
+    exception
+      when unique_violation then
+        select * into v_row
+        from public.stored_value_debit_receipts
+        where organization_id = p_organization_id
+          and checkout_app_id = v_checkout
+        for update;
+        if not found then
+          raise exception '儲值金收據無法確認';
+        end if;
+    end;
+  end if;
+  if v_row.source_customer_key is distinct from v_source
+     or v_row.amount_minor is distinct from p_amount_minor
+     or v_row.effect_key is distinct from p_effect_key then
+    raise exception '儲值金收據與結帳不一致';
+  end if;
+  if v_row.status = 'POSTED' then
+    return 'POSTED';
+  end if;
+  update public.stored_value_debit_receipts
+     set status = 'PENDING', updated_at = now()
+   where id = v_row.id;
+  return 'PENDING';
+end;
+$$;
+
+create or replace function public.commit_stored_value_debit_receipt(
+  p_organization_id uuid,
+  p_checkout_app_id text,
+  p_source_customer_key text,
+  p_amount_minor bigint,
+  p_effect_key text
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_checkout text := btrim(p_checkout_app_id);
+  v_source text := btrim(p_source_customer_key);
+  v_row public.stored_value_debit_receipts%rowtype;
+begin
+  if p_effect_key is distinct from ('booking-checkout:' || v_checkout) then
+    raise exception '儲值金收據無法確認';
+  end if;
+  select * into v_row
+  from public.stored_value_debit_receipts
+  where organization_id = p_organization_id
+    and checkout_app_id = v_checkout
+  for update;
+  if not found
+     or v_row.source_customer_key is distinct from v_source
+     or v_row.amount_minor is distinct from p_amount_minor
+     or v_row.effect_key is distinct from p_effect_key then
+    raise exception '儲值金收據與結帳不一致';
+  end if;
+  if v_row.status = 'POSTED' then
+    return 'POSTED';
+  end if;
+  if v_row.status <> 'PENDING' then
+    raise exception '儲值金收據無法確認';
+  end if;
+  update public.stored_value_debit_receipts
+     set status = 'POSTED',
+         finance_confirmed_at = coalesce(finance_confirmed_at, now()),
+         updated_at = now()
+   where id = v_row.id;
+  return 'POSTED';
+end;
+$$;
+
+create or replace function public.abandon_stored_value_debit_receipt(
+  p_organization_id uuid,
+  p_checkout_app_id text,
+  p_source_customer_key text,
+  p_amount_minor bigint,
+  p_effect_key text
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_checkout text := btrim(p_checkout_app_id);
+  v_source text := btrim(p_source_customer_key);
+  v_row public.stored_value_debit_receipts%rowtype;
+begin
+  select * into v_row
+  from public.stored_value_debit_receipts
+  where organization_id = p_organization_id
+    and checkout_app_id = v_checkout
+  for update;
+  if not found
+     or v_row.source_customer_key is distinct from v_source
+     or v_row.amount_minor is distinct from p_amount_minor
+     or v_row.effect_key is distinct from p_effect_key then
+    raise exception '儲值金收據與結帳不一致';
+  end if;
+  if v_row.status = 'POSTED' then
+    raise exception '儲值金收據已入帳，不能改為失敗';
+  end if;
+  if v_row.status = 'FAILED' then
+    return 'FAILED';
+  end if;
+  update public.stored_value_debit_receipts
+     set status = 'FAILED', updated_at = now()
+   where id = v_row.id;
+  return 'FAILED';
+end;
+$$;
+
 revoke all on function public.save_checkout_draft(text, timestamptz, jsonb, jsonb) from public, anon;
 revoke all on function public.save_checkout_draft(text, timestamptz, jsonb, jsonb, jsonb) from public, anon;
 revoke all on function public.settle_checkout_draft(text, timestamptz) from public, anon;
+revoke all on function public.claim_stored_value_debit_receipt(uuid, text, text, bigint, text) from public, anon, authenticated;
+revoke all on function public.commit_stored_value_debit_receipt(uuid, text, text, bigint, text) from public, anon, authenticated;
+revoke all on function public.abandon_stored_value_debit_receipt(uuid, text, text, bigint, text) from public, anon, authenticated;
 
 grant execute on function public.save_checkout_draft(text, timestamptz, jsonb, jsonb) to authenticated;
 grant execute on function public.save_checkout_draft(text, timestamptz, jsonb, jsonb, jsonb) to authenticated;
@@ -594,6 +767,9 @@ grant execute on function public.settle_checkout_draft(text, timestamptz) to aut
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then
-    execute 'grant select, insert on public.stored_value_debit_receipts to service_role';
+    execute 'grant select, insert, update on public.stored_value_debit_receipts to service_role';
+    execute 'grant execute on function public.claim_stored_value_debit_receipt(uuid, text, text, bigint, text) to service_role';
+    execute 'grant execute on function public.commit_stored_value_debit_receipt(uuid, text, text, bigint, text) to service_role';
+    execute 'grant execute on function public.abandon_stored_value_debit_receipt(uuid, text, text, bigint, text) to service_role';
   end if;
 end $$;

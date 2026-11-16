@@ -28,6 +28,7 @@ createdb "$DB"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/booking-checkout-receipt-compat.local-stub.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/booking/20261115171000_checkout_stored_value_receipt.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/tests/booking-checkout-receipt-compat.local-cases.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/tests/booking-checkout-receipt-claim.local-cases.sql"
 
 "${PSQL[@]}" <<'SQL'
 select set_config('tests.uid', '99999999-9999-4999-8999-999999999999', false);
