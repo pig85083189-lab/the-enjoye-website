@@ -4,6 +4,52 @@
 -- or historical identity rows. A pending review does not grant stored value.
 -- Apply on the finance database only after the booking-source migration.
 -- Do not apply to production in this phase.
+--
+-- Read-only production inspection on 2026-11-16 confirmed only:
+-- booking_source_customer_links and member_line_customer_links exist,
+-- their organization_id columns are uuid, RLS is enabled, member_line has
+-- verified_at and unique (organization_id, customer_id) plus unique
+-- (organization_id, line_subject_hash), and member_binding_requests is absent.
+-- Evidence values, staff ids, ledger shape, line_customer_bindings columns,
+-- and organizations are not confirmed here. This migration refuses to replace
+-- booking-source constraints when existing rows would not satisfy them.
+
+do $$
+begin
+  if to_regclass('public.booking_source_customer_links') is null then
+    raise exception 'booking_source_customer_links is absent; refusing to replace constraints';
+  end if;
+  if exists (
+    select 1 from public.booking_source_customer_links
+    where evidence_kind not in ('CUSTOMER_PRESENT', 'TRUSTED_MEMBER_RECORD', 'LINE_VERIFIED_SESSION')
+  ) then
+    raise exception 'booking_source_customer_links has an unrecognized evidence_kind; refusing to replace constraints';
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'booking_source_customer_links'
+      and column_name = 'link_origin'
+  ) then
+    if exists (
+      select 1 from public.booking_source_customer_links
+      where link_origin is not null
+        and link_origin not in ('MANAGER_REVIEW', 'LINE_VERIFIED_SESSION')
+    ) then
+      raise exception 'booking_source_customer_links.link_origin has an unrecognized value; refusing to replace constraints';
+    end if;
+  end if;
+  if exists (
+    select 1 from public.booking_source_customer_links
+    where evidence_kind in ('CUSTOMER_PRESENT', 'TRUSTED_MEMBER_RECORD')
+      and (
+        confirmed_by_staff_id is null
+        or not public.is_operational_staff_id(confirmed_by_staff_id)
+      )
+  ) then
+    raise exception 'existing managerial booking source link would violate the staff check; refusing to replace constraints';
+  end if;
+end $$;
 
 alter table public.booking_source_customer_links
   alter column confirmed_by_staff_id drop not null;
@@ -70,6 +116,38 @@ create table if not exists public.member_line_customer_links (
 
 alter table public.member_line_customer_links
   add column if not exists line_subject_hash text;
+
+do $$
+begin
+  -- Never drop an existing member-line unique constraint or index.
+  -- Production already has both keys. Add the subject key only when it is
+  -- absent and no non-null hash is duplicated.
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.member_line_customer_links'::regclass
+      and contype = 'u'
+      and pg_get_constraintdef(oid) ilike '%organization_id%line_subject_hash%'
+  ) and not exists (
+    select 1
+    from pg_index
+    where indrelid = 'public.member_line_customer_links'::regclass
+      and indisunique
+      and pg_get_indexdef(indexrelid) ilike '%organization_id%line_subject_hash%'
+  ) then
+    if exists (
+      select 1
+      from public.member_line_customer_links
+      where line_subject_hash is not null
+      group by organization_id, line_subject_hash
+      having count(*) > 1
+    ) then
+      raise exception 'member_line_customer_links has duplicate subject hashes; refusing to add a unique index';
+    end if;
+    alter table public.member_line_customer_links
+      add constraint member_line_customer_links_org_subject unique (organization_id, line_subject_hash);
+  end if;
+end $$;
 
 do $$
 begin
@@ -483,6 +561,119 @@ begin
 end;
 $$;
 
+create or replace function public.customer_line_membership_is_current(
+  p_organization_id uuid,
+  p_customer_id uuid
+) returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with org as (
+    select app_id from public.organizations where id = p_organization_id
+  ), bindings as (
+    select
+      lower(btrim(binding.line_user_id_hash)) as hash,
+      binding.status,
+      binding.verified,
+      binding.confirmed_at,
+      binding.bound_at,
+      binding.unbound_at,
+      binding.blocked_at
+    from public.line_customer_bindings binding
+    join org on org.app_id = binding.organization_id
+    where binding.customer_uuid = p_customer_id
+      and lower(btrim(binding.line_user_id_hash)) ~ '^[0-9a-f]{64}$'
+  ), revoked as (
+    select hash, max(coalesce(unbound_at, blocked_at, '-infinity'::timestamptz)) as revoked_at
+    from bindings
+    where status = 'unbound' or unbound_at is not null or blocked_at is not null
+    group by hash
+  ), active as (
+    select hash, max(bound_at) as bound_at
+    from bindings
+    where status = 'active'
+      and verified is true
+      and confirmed_at is not null
+      and bound_at is not null
+      and unbound_at is null
+      and blocked_at is null
+    group by hash
+  ), current_hashes as (
+    select active.hash
+    from active
+    left join revoked on revoked.hash = active.hash
+    where revoked.hash is null or active.bound_at > revoked.revoked_at
+    union
+    select lower(btrim(member_link.line_subject_hash))
+    from public.member_line_customer_links member_link
+    where member_link.organization_id = p_organization_id
+      and member_link.customer_id = p_customer_id
+      and member_link.verified_at is not null
+      and lower(btrim(member_link.line_subject_hash)) ~ '^[0-9a-f]{64}$'
+      and not exists (
+        select 1
+        from revoked
+        where revoked.hash = lower(btrim(member_link.line_subject_hash))
+          and not exists (
+            select 1 from active
+            where active.hash = revoked.hash
+              and active.bound_at > revoked.revoked_at
+          )
+      )
+  )
+  select
+    exists (select 1 from current_hashes)
+    or (
+      not exists (select 1 from revoked)
+      and exists (
+        select 1
+        from public.member_line_customer_links member_link
+        where member_link.organization_id = p_organization_id
+          and member_link.customer_id = p_customer_id
+          and member_link.verified_at is not null
+      )
+    );
+$$;
+
+create or replace function public.stored_value_ledger_requires_current_line_membership()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.customer_line_membership_is_current(new.organization_id, new.customer_id) then
+    raise exception '必須先完成 LINE 會員綁定';
+  end if;
+  return new;
+end;
+$$;
+
+do $$
+begin
+  if to_regclass('public.stored_value_ledger_entries') is null
+     or not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'stored_value_ledger_entries'
+         and column_name = 'organization_id' and udt_name = 'uuid'
+     )
+     or not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'stored_value_ledger_entries'
+         and column_name = 'customer_id' and udt_name = 'uuid'
+     ) then
+    raise exception 'stored_value_ledger_entries identity columns are not confirmed uuid; refusing to install the write gate';
+  end if;
+  drop trigger if exists trg_stored_value_ledger_current_line on public.stored_value_ledger_entries;
+  create trigger trg_stored_value_ledger_current_line
+    before insert on public.stored_value_ledger_entries
+    for each row execute function public.stored_value_ledger_requires_current_line_membership();
+end $$;
+
+revoke all on function public.customer_line_membership_is_current(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.stored_value_ledger_requires_current_line_membership() from public, anon, authenticated;
 revoke all on function public.current_line_subject_customers(uuid, text, text) from public, anon, authenticated;
 revoke all on function public.enqueue_member_binding_review(uuid, text, text, text, uuid) from public, anon, authenticated;
 revoke all on function public.link_booking_source_from_verified_line(text, text, text, uuid) from public, anon, authenticated;
