@@ -195,6 +195,8 @@ export async function confirmLineCustomerBindingAction(input: {
   }
   const actor = await getServerStaffAuthUser();
   if (actor) {
+    // Staff evidence sync after an in-person binding confirmation.
+    // There is no LINE OAuth callback on this path.
     const { linkVerifiedLineBookingSource } = await import(
       "@/lib/commerce/line-verified-booking-source-server"
     );

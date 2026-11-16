@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { linkVerifiedLineBookingSource } from "@/lib/commerce/line-verified-booking-source-server";
-import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
+import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import { resolveBookingSourceFinanceCustomer } from "@/lib/commerce/booking-source-customer";
+import { lineMembershipIsCurrent, type VerifiedLineBinding } from "@/lib/commerce/line-verified-booking-source";
 import {
   checkoutCustomerKeyIsDbId,
   chooseCheckoutCustomer,
@@ -53,10 +53,10 @@ export async function GET(request: Request) {
       console.error("[stored-value/balance] source_link_lookup_failed", { code: linkError.code });
       return fail(503, "LINK_LOOKUP_FAILED");
     }
-    const financeCustomerFrom = (rows: typeof linkRows) => resolveBookingSourceFinanceCustomer({
+    const financeCustomerId = resolveBookingSourceFinanceCustomer({
       organizationId: org.id,
       sourceCustomerKey: customerId,
-      links: (rows ?? []).map((row) => ({
+      links: (linkRows ?? []).map((row) => ({
         organizationId: String(row.organization_id ?? ""),
         sourceCustomerKey: String(row.source_customer_key ?? ""),
         financeBookingCustomerId: String(row.finance_booking_customer_id ?? ""),
@@ -64,26 +64,6 @@ export async function GET(request: Request) {
         evidenceKind: String(row.evidence_kind ?? ""),
       })),
     });
-    let financeCustomerId = financeCustomerFrom(linkRows);
-    if (!financeCustomerId) {
-      const actor = await getServerStaffAuthUser();
-      if (actor && actor.id === identity.membership.authUserId) {
-        const linked = await linkVerifiedLineBookingSource({
-          organizationAppId: organizationId,
-          sourceCustomerKey: customerId.trim(),
-          authUserId: actor.id,
-        });
-        if (linked.outcome === "linked" || linked.outcome === "already_linked") {
-          const again = await db.from("booking_source_customer_links")
-            .select("organization_id, source_customer_key, finance_booking_customer_id, status, evidence_kind")
-            .eq("organization_id", org.id)
-            .eq("source_customer_key", customerId.trim())
-            .eq("status", "ACTIVE")
-            .limit(2);
-          if (!again.error) financeCustomerId = financeCustomerFrom(again.data);
-        }
-      }
-    }
     if (!financeCustomerId) return fail(404, "CUSTOMER_NOT_FOUND");
     const { data: linked, error: linkedError } = await db.from("customers")
       .select("id, app_id, status")
@@ -97,16 +77,26 @@ export async function GET(request: Request) {
 
   const lineBound = async (customerUuid: string) => {
     const { data: canonical, error: canonicalError } = await db.from("member_line_customer_links")
-      .select("customer_id").eq("organization_id", org.id).eq("customer_id", customerUuid).not("verified_at", "is", null).limit(1);
+      .select("verified_at").eq("organization_id", org.id).eq("customer_id", customerUuid).limit(5);
     if (canonicalError) return { bound: false, failed: true as const };
     const { data: legacy, error: legacyError } = await db.from("line_customer_bindings")
-      .select("customer_uuid").eq("organization_id", organizationId).eq("customer_uuid", customerUuid)
-      .eq("status", "active").eq("verified", true)
-      .not("confirmed_at", "is", null).not("bound_at", "is", null)
-      .is("unbound_at", null).is("blocked_at", null)
-      .not("line_user_id_hash", "is", null).limit(1);
+      .select("line_user_id_hash, status, verified, confirmed_at, bound_at, unbound_at, blocked_at")
+      .eq("organization_id", organizationId).eq("customer_uuid", customerUuid).limit(5);
     if (legacyError) return { bound: false, failed: true as const };
-    return { bound: Boolean(canonical?.length || legacy?.length), failed: false as const };
+    const bindings: VerifiedLineBinding[] = (legacy ?? []).map((row) => ({
+      source: "binding" as const,
+      hash: typeof row.line_user_id_hash === "string" ? row.line_user_id_hash : null,
+      verified: row.verified === true,
+      status: String(row.status ?? ""),
+      confirmedAt: row.confirmed_at,
+      boundAt: row.bound_at,
+      unboundAt: row.unbound_at,
+      blockedAt: row.blocked_at,
+    }));
+    return {
+      bound: lineMembershipIsCurrent(bindings, (canonical ?? []).some((row) => Boolean(row.verified_at))),
+      failed: false as const,
+    };
   };
 
   const bookingLine = await lineBound(customer.id);

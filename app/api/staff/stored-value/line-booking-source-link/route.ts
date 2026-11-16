@@ -21,6 +21,10 @@ function fail(status: number, message: string) {
   return NextResponse.json({ message }, { status, headers });
 }
 
+/**
+ * Staff sync from an existing verified LINE binding.
+ * This route is not a LINE OAuth callback, and the project does not have one.
+ */
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
   try {
