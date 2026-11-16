@@ -84,6 +84,7 @@ create table if not exists public.member_line_customer_links (
 create table if not exists public.line_customer_bindings (
   id uuid primary key default gen_random_uuid(),
   organization_id text not null,
+  customer_id text,
   customer_uuid uuid,
   status text,
   verified boolean,
@@ -250,9 +251,9 @@ create unique index if not exists idx_stored_value_accounts_one_active
 
 create table if not exists public.stored_value_ledger_entries (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null,
+  organization_id uuid not null references public.organizations (id),
   account_id uuid not null references public.stored_value_accounts (id),
-  customer_id uuid not null,
+  customer_id uuid not null references public.customers (id),
   type public.stored_value_ledger_type not null,
   amount_delta_minor bigint not null,
   transaction_id uuid references public.transactions (id),
