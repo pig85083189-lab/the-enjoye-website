@@ -20,6 +20,7 @@ pg_isready -q || {
 cleanup() {
   dropdb --if-exists "$DB" >/dev/null 2>&1 || true
   dropdb --if-exists "${PROD_DB:-}" >/dev/null 2>&1 || true
+  dropdb --if-exists "${TYPE_DB:-}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -200,6 +201,22 @@ alter table public.booking_source_customer_links
   add constraint booking_source_customer_links_evidence check (
     evidence_kind in ('CUSTOMER_PRESENT', 'TRUSTED_MEMBER_RECORD')
   );
+create policy booking_source_keep_select on public.booking_source_customer_links for select using (true);
+create policy member_line_keep_select on public.member_line_customer_links for select using (true);
+create policy ledger_keep_select on public.stored_value_ledger_entries for select using (true);
+create table tests.column_types as
+select table_name, column_name, udt_name
+from information_schema.columns
+where table_schema = 'public'
+  and table_name in ('organizations', 'booking_source_customer_links', 'line_customer_bindings', 'stored_value_ledger_entries');
+create table tests.ledger_checks as
+select conname, pg_get_constraintdef(oid) as definition
+from pg_constraint
+where conrelid = 'public.stored_value_ledger_entries'::regclass;
+create table tests.policy_snapshot as
+select polrelid::regclass::text as table_name, polname, pg_get_expr(polqual, polrelid) as qual
+from pg_policy
+where polname in ('booking_source_keep_select', 'member_line_keep_select', 'ledger_keep_select');
 SQL
 
 psql -d "$PROD_DB" -v ON_ERROR_STOP=1 -X -q --single-transaction -f "$ROOT/supabase/migrations/20261116120000_line_verified_booking_source_link.sql"
@@ -320,7 +337,114 @@ begin
   if (select amount_delta_minor from public.stored_value_ledger_entries where effect_key = 'legacy-ledger-keep') <> 2100 then
     raise exception 'new writes changed the historical ledger';
   end if;
+  if exists (
+    select 1
+    from tests.column_types previous
+    join information_schema.columns current
+      on current.table_schema = 'public'
+     and current.table_name = previous.table_name
+     and current.column_name = previous.column_name
+    where current.udt_name is distinct from previous.udt_name
+  ) then
+    raise exception 'migration changed an existing column type';
+  end if;
+  if (select udt_name from information_schema.columns
+      where table_name = 'booking_source_customer_links' and column_name = 'link_origin') <> 'text'
+     or (select udt_name from information_schema.columns
+      where table_name = 'line_customer_bindings' and column_name = 'organization_id') <> 'text'
+     or (select udt_name from information_schema.columns
+      where table_name = 'organizations' and column_name = 'id') <> 'uuid'
+     or (select udt_name from information_schema.columns
+      where table_name = 'organizations' and column_name = 'app_id') <> 'text' then
+    raise exception 'confirmed identity column types were not preserved';
+  end if;
+  if exists (
+    select 1
+    from tests.ledger_checks previous
+    join pg_constraint current on current.conname = previous.conname
+    where current.conrelid = 'public.stored_value_ledger_entries'::regclass
+      and pg_get_constraintdef(current.oid) is distinct from previous.definition
+  ) or (select count(*) from tests.ledger_checks) <> (
+    select count(*) from pg_constraint where conrelid = 'public.stored_value_ledger_entries'::regclass
+  ) then
+    raise exception 'stored value ledger constraints were rewritten';
+  end if;
+  if (select count(*) from tests.policy_snapshot previous
+      join pg_policy current on current.polname = previous.polname
+      where pg_get_expr(current.polqual, current.polrelid) is not distinct from previous.qual) <> 3 then
+    raise exception 'existing row level security policies were rewritten';
+  end if;
+end $$;
+
+alter table public.line_customer_bindings add column if not exists customer_id text;
+insert into public.customers (id, organization_id, status, app_id)
+values ('fab4ffff-ffff-4fff-8fff-ffffffffffff', '11111111-1111-4111-8111-111111111111', 'ACTIVE', 'cust-text-id');
+insert into public.line_customer_bindings (
+  organization_id, customer_uuid, customer_id, status, verified, confirmed_at, bound_at, line_user_id_hash
+) values (
+  'org-stored-value-test', null, 'fab4ffff-ffff-4fff-8fff-ffffffffffff', 'active', true, now(), now(), repeat('66', 32)
+), (
+  '11111111-1111-4111-8111-111111111111', null, 'fab4ffff-ffff-4fff-8fff-ffffffffffff', 'active', true, now(), now(), repeat('77', 32)
+), (
+  'org-stored-value-test', null, 'not-a-uuid', 'active', true, now(), now(), repeat('88', 32)
+);
+SQL
+psql -d "$PROD_DB" -v ON_ERROR_STOP=1 -X -q <<'SQL'
+do $$
+begin
+  if public.line_binding_resolved_customer_id('{"customer_id":"not-a-uuid"}'::jsonb) is not null
+     or public.line_binding_resolved_customer_id('{"customer_id":"fab4ffff-ffff-4fff-8fff-ffffffffffff"}'::jsonb)
+        is distinct from 'fab4ffff-ffff-4fff-8fff-ffffffffffff'::uuid then
+    raise exception 'text customer id conversion was not safe';
+  end if;
+  if public.customer_line_membership_is_current(
+       '11111111-1111-4111-8111-111111111111', 'fab4ffff-ffff-4fff-8fff-ffffffffffff') is not true then
+    raise exception 'uuid-shaped text customer_id was not accepted';
+  end if;
+  if exists (
+    select 1 from public.current_line_subject_customers(
+      '11111111-1111-4111-8111-111111111111', 'org-stored-value-test', repeat('77', 32)
+    )
+  ) or exists (
+    select 1 from public.current_line_subject_customers(
+      '11111111-1111-4111-8111-111111111111', 'org-stored-value-test', repeat('88', 32)
+    )
+  ) then
+    raise exception 'uuid text organization_id or invalid customer_id was accepted';
+  end if;
 end $$;
 SQL
+
+TYPE_DB="beauty_os_line_binding_type_refuse"
+dropdb --if-exists "$TYPE_DB"
+createdb "$TYPE_DB"
+psql -d "$TYPE_DB" -v ON_ERROR_STOP=1 -X -q -f "$ROOT/supabase/tests/stored-value-checkout-atomic.local-stub.sql" >/dev/null
+psql -d "$TYPE_DB" -v ON_ERROR_STOP=1 -X -q -f "$ROOT/supabase/migrations/20261115140000_customer_wallet_identity.sql" >/dev/null
+psql -d "$TYPE_DB" -v ON_ERROR_STOP=1 -X -q -f "$ROOT/supabase/migrations/20261115170000_booking_source_customer_links.sql" >/dev/null
+psql -d "$TYPE_DB" -v ON_ERROR_STOP=1 -X -q -c "alter table public.line_customer_bindings alter column organization_id type uuid using '11111111-1111-4111-8111-111111111111'::uuid;"
+set +e
+psql -d "$TYPE_DB" -v ON_ERROR_STOP=1 -X -q --single-transaction -f "$ROOT/supabase/migrations/20261116120000_line_verified_booking_source_link.sql" >/tmp/line-type-refuse.txt 2>&1
+type_status=$?
+set -e
+if [[ "$type_status" -eq 0 ]]; then
+  echo "migration accepted a uuid line_customer_bindings.organization_id" >&2
+  exit 1
+fi
+psql -d "$TYPE_DB" -v ON_ERROR_STOP=1 -X -q <<'SQL'
+do $$
+begin
+  if (select udt_name from information_schema.columns
+      where table_name = 'line_customer_bindings' and column_name = 'organization_id') <> 'uuid' then
+    raise exception 'failed migration rewrote line_customer_bindings.organization_id';
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'booking_source_customer_links' and column_name = 'link_origin'
+  ) then
+    raise exception 'failed type check still added link_origin';
+  end if;
+end $$;
+SQL
+dropdb --if-exists "$TYPE_DB"
 dropdb --if-exists "$PROD_DB"
 echo "production-shaped LINE migration cases passed"

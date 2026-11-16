@@ -5,17 +5,98 @@
 -- Apply on the finance database only after the booking-source migration.
 -- Do not apply to production in this phase.
 --
--- Read-only production inspection on 2026-11-16 confirmed only:
--- booking_source_customer_links and member_line_customer_links exist,
--- their organization_id columns are uuid, RLS is enabled, member_line has
--- verified_at and unique (organization_id, customer_id) plus unique
--- (organization_id, line_subject_hash), and member_binding_requests is absent.
--- Evidence values, staff ids, ledger shape, line_customer_bindings columns,
--- and organizations are not confirmed here. This migration refuses to replace
--- booking-source constraints when existing rows would not satisfy them.
+-- Read-only production inspection confirmed:
+-- booking_source_customer_links.organization_id uuid,
+-- confirmed_by_staff_id text, evidence_kind text;
+-- stored_value_ledger_entries.organization_id and customer_id uuid;
+-- line_customer_bindings.organization_id text and customer_id text;
+-- member_line_customer_links.organization_id uuid, RLS enabled, verified_at,
+-- and the two unique keys. member_binding_requests is absent.
+-- line_customer_bindings.organization_id is compared as text to
+-- organizations.app_id. It is never cast to uuid and its type is never changed.
+-- A text customer_id is used only when it matches a UUID; any other text is ignored.
+-- organizations, evidence values, staff ids, link_origin, customer_uuid,
+-- binding lifecycle columns, RLS policy bodies, and ledger constraints other
+-- than the two identity types are not confirmed. A mismatch raises before the
+-- booking-source rewrites. Apply this file inside one transaction so a later
+-- error rolls the whole file back. Do not apply to production in this phase.
+
+create or replace function public.line_binding_resolved_customer_id(p_binding jsonb)
+returns uuid
+language sql
+immutable
+as $$
+  select case
+    when coalesce(p_binding->>'customer_uuid', '') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      then (p_binding->>'customer_uuid')::uuid
+    when coalesce(p_binding->>'customer_id', '') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      then (p_binding->>'customer_id')::uuid
+    else null
+  end;
+$$;
 
 do $$
 begin
+  if to_regclass('public.organizations') is null
+     or not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'organizations'
+         and column_name = 'id' and udt_name = 'uuid'
+     )
+     or not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'organizations'
+         and column_name = 'app_id' and udt_name = 'text'
+     ) then
+    raise exception 'organizations.id uuid and app_id text were not confirmed; refusing to rewrite organizations';
+  end if;
+  if to_regclass('public.line_customer_bindings') is null
+     or not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'line_customer_bindings'
+         and column_name = 'organization_id' and udt_name = 'text'
+     ) then
+    raise exception 'line_customer_bindings.organization_id is not text; refusing to rewrite it';
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings'
+      and column_name = 'customer_id' and udt_name <> 'text'
+  ) or exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'line_customer_bindings'
+      and column_name = 'customer_uuid' and udt_name <> 'uuid'
+  ) then
+    raise exception 'line_customer_bindings customer identity column has an unexpected type; refusing to rewrite it';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'booking_source_customer_links'
+      and column_name = 'organization_id' and udt_name = 'uuid'
+  ) or not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'booking_source_customer_links'
+      and column_name = 'confirmed_by_staff_id' and udt_name = 'text'
+  ) or not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'booking_source_customer_links'
+      and column_name = 'evidence_kind' and udt_name = 'text'
+  ) then
+    raise exception 'booking_source_customer_links identity columns do not match the confirmed types; refusing to rewrite them';
+  end if;
+  if to_regclass('public.stored_value_ledger_entries') is null
+     or not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'stored_value_ledger_entries'
+         and column_name = 'organization_id' and udt_name = 'uuid'
+     )
+     or not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'stored_value_ledger_entries'
+         and column_name = 'customer_id' and udt_name = 'uuid'
+     ) then
+    raise exception 'stored_value_ledger_entries identity columns are not confirmed uuid; refusing to install the write gate';
+  end if;
   if to_regclass('public.booking_source_customer_links') is null then
     raise exception 'booking_source_customer_links is absent; refusing to replace constraints';
   end if;
@@ -31,6 +112,15 @@ begin
       and table_name = 'booking_source_customer_links'
       and column_name = 'link_origin'
   ) then
+    if exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'booking_source_customer_links'
+        and column_name = 'link_origin'
+        and udt_name <> 'text'
+    ) then
+      raise exception 'booking_source_customer_links.link_origin is not text; refusing to rewrite it';
+    end if;
     if exists (
       select 1 from public.booking_source_customer_links
       where link_origin is not null
@@ -257,7 +347,7 @@ set search_path = public
 as $$
   with binding_rows as (
     select
-      binding.customer_uuid,
+      public.line_binding_resolved_customer_id(to_jsonb(binding)) as customer_id,
       binding.status,
       binding.verified,
       binding.confirmed_at,
@@ -267,14 +357,14 @@ as $$
     from public.line_customer_bindings binding
     where binding.organization_id = p_organization_app_id
       and binding.line_user_id_hash = p_line_subject_hash
-      and binding.customer_uuid is not null
+      and public.line_binding_resolved_customer_id(to_jsonb(binding)) is not null
   ), revoked as (
-    select customer_uuid, max(coalesce(unbound_at, blocked_at, '-infinity'::timestamptz)) as revoked_at
+    select customer_id, max(coalesce(unbound_at, blocked_at, '-infinity'::timestamptz)) as revoked_at
     from binding_rows
     where status = 'unbound' or unbound_at is not null or blocked_at is not null
-    group by customer_uuid
+    group by customer_id
   ), active as (
-    select customer_uuid, max(bound_at) as bound_at
+    select customer_id, max(bound_at) as bound_at
     from binding_rows
     where status = 'active'
       and verified is true
@@ -282,12 +372,12 @@ as $$
       and bound_at is not null
       and unbound_at is null
       and blocked_at is null
-    group by customer_uuid
+    group by customer_id
   )
-  select active.customer_uuid
+  select active.customer_id
   from active
-  left join revoked on revoked.customer_uuid = active.customer_uuid
-  where revoked.customer_uuid is null or active.bound_at > revoked.revoked_at
+  left join revoked on revoked.customer_id = active.customer_id
+  where revoked.customer_id is null or active.bound_at > revoked.revoked_at
   union
   select member_link.customer_id
   from public.member_line_customer_links member_link
@@ -297,10 +387,10 @@ as $$
     and not exists (
       select 1
       from revoked
-      where revoked.customer_uuid = member_link.customer_id
+      where revoked.customer_id = member_link.customer_id
         and not exists (
           select 1 from active
-          where active.customer_uuid = member_link.customer_id
+          where active.customer_id = member_link.customer_id
             and active.bound_at > revoked.revoked_at
         )
     );
@@ -354,11 +444,11 @@ begin
 
   select count(*) into v_any_count
   from (
-    select binding.customer_uuid as customer_id
+    select public.line_binding_resolved_customer_id(to_jsonb(binding)) as customer_id
     from public.line_customer_bindings binding
     where binding.organization_id = v_org_app
       and binding.line_user_id_hash = v_hash
-      and binding.customer_uuid is not null
+      and public.line_binding_resolved_customer_id(to_jsonb(binding)) is not null
     union
     select member_link.customer_id
     from public.member_line_customer_links member_link
@@ -378,7 +468,8 @@ begin
       and not exists (
         select 1 from public.line_customer_bindings active_binding
         where active_binding.organization_id = binding.organization_id
-          and active_binding.customer_uuid = binding.customer_uuid
+          and public.line_binding_resolved_customer_id(to_jsonb(active_binding))
+            = public.line_binding_resolved_customer_id(to_jsonb(binding))
           and active_binding.line_user_id_hash = binding.line_user_id_hash
           and active_binding.status = 'active'
           and active_binding.verified is true
@@ -583,7 +674,7 @@ as $$
       binding.blocked_at
     from public.line_customer_bindings binding
     join org on org.app_id = binding.organization_id
-    where binding.customer_uuid = p_customer_id
+    where public.line_binding_resolved_customer_id(to_jsonb(binding)) = p_customer_id
       and lower(btrim(binding.line_user_id_hash)) ~ '^[0-9a-f]{64}$'
   ), revoked as (
     select hash, max(coalesce(unbound_at, blocked_at, '-infinity'::timestamptz)) as revoked_at
@@ -653,25 +744,13 @@ $$;
 
 do $$
 begin
-  if to_regclass('public.stored_value_ledger_entries') is null
-     or not exists (
-       select 1 from information_schema.columns
-       where table_schema = 'public' and table_name = 'stored_value_ledger_entries'
-         and column_name = 'organization_id' and udt_name = 'uuid'
-     )
-     or not exists (
-       select 1 from information_schema.columns
-       where table_schema = 'public' and table_name = 'stored_value_ledger_entries'
-         and column_name = 'customer_id' and udt_name = 'uuid'
-     ) then
-    raise exception 'stored_value_ledger_entries identity columns are not confirmed uuid; refusing to install the write gate';
-  end if;
   drop trigger if exists trg_stored_value_ledger_current_line on public.stored_value_ledger_entries;
   create trigger trg_stored_value_ledger_current_line
     before insert on public.stored_value_ledger_entries
     for each row execute function public.stored_value_ledger_requires_current_line_membership();
 end $$;
 
+revoke all on function public.line_binding_resolved_customer_id(jsonb) from public, anon, authenticated;
 revoke all on function public.customer_line_membership_is_current(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.stored_value_ledger_requires_current_line_membership() from public, anon, authenticated;
 revoke all on function public.current_line_subject_customers(uuid, text, text) from public, anon, authenticated;

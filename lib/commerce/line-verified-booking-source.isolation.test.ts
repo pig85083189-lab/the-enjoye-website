@@ -189,7 +189,14 @@ describe("verified LINE booking-source decision", () => {
     expect(migration).toMatch(/member_binding_requests/);
     expect(migration).toMatch(/active\.bound_at > revoked\.revoked_at/);
     expect(migration).toMatch(/customer_line_membership_is_current/);
+    expect(migration).toMatch(/line_binding_resolved_customer_id/);
+    expect(migration).toMatch(/line_customer_bindings\.organization_id is not text/);
+    expect(migration).toMatch(/refusing to rewrite it/);
     expect(migration).toMatch(/refusing to replace constraints/);
+    expect(migration).not.toMatch(/alter table public\.line_customer_bindings/i);
+    expect(migration).not.toMatch(/alter table public\.organizations/i);
+    expect(migration).not.toMatch(/update public\.stored_value_ledger_entries|delete from public\.stored_value_ledger_entries/i);
+    expect(migration).not.toMatch(/drop policy/i);
     expect(migration).toMatch(/member_binding_requests is absent/);
     expect(migration).not.toMatch(/create or replace function public\.settle_checkout_draft/);
     expect(migration).not.toMatch(/drop table|truncate|delete from public\.member_/i);
