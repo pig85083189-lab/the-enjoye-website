@@ -1,11 +1,7 @@
--- Isolated reconstruction of the finance functions, immutable ledger trigger,
--- and privileges that PR #84 replaces.
--- Preimage commit: 05924b3d69a362b937eb31a261ce8bdfee659a58
--- This file was generated from a local database loaded with that commit's SQL.
--- It is not a live catalog dump of bfzquejrtgqzzarhkiya.
--- Do not apply it to production until supabase/rollback/production-catalog-readonly.sql
--- returns the same function and trigger definitions.
--- Applying this file does not delete stored_value_ledger_entries.
+-- Production catalog snapshot: finance bfzquejrtgqzzarhkiya, 2026-11-16.
+-- Read-only extracted function definitions and grants. No customer or ledger data.
+-- Apply only as a reviewed rollback, never as a deployment migration.
+
 CREATE OR REPLACE FUNCTION public.post_stored_value_top_up_v1(p_organization_id uuid, p_customer_id uuid, p_location_id uuid, p_staff_id text, p_amount_minor bigint, p_effect_key text, p_method text)
  RETURNS TABLE(entry_id uuid, account_id uuid, balance_minor bigint, was_duplicate boolean)
  LANGUAGE plpgsql
@@ -52,7 +48,7 @@ begin
      and b.blocked_at is null
      and nullif(trim(b.line_user_id_hash), '') is not null
     for share of b;
-  if not found then raise exception 'LINE member binding required for top-up'; end if;
+  if not found and not exists (select 1 from public.member_line_customer_links ml join public.customers mc on mc.id=ml.customer_id and mc.organization_id=ml.organization_id and mc.status='ACTIVE' where ml.organization_id=p_organization_id and ml.customer_id=p_customer_id and ml.verified_at is not null) then raise exception 'LINE member binding required for top-up'; end if;
   perform 1 from public.locations
     where id = p_location_id and organization_id = p_organization_id
       and is_active = true;
@@ -113,6 +109,8 @@ begin
 end;
 $function$
 ;
+REVOKE ALL ON FUNCTION public.post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text,text) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.settle_booking_source_checkout(p_organization_app_id text, p_source_customer_key text, p_checkout_app_id text, p_location_app_id text, p_amount bigint, p_staff_id text)
  RETURNS jsonb
@@ -258,16 +256,11 @@ begin
 end;
 $function$
 ;
+REVOKE ALL ON FUNCTION public.settle_booking_source_checkout(text,text,text,text,bigint,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.settle_booking_source_checkout(text,text,text,text,bigint,text) TO service_role;
 
-REVOKE ALL ON FUNCTION post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text,text) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION settle_booking_source_checkout(text,text,text,text,bigint,text) FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text,text) TO service_role;
-GRANT EXECUTE ON FUNCTION post_stored_value_top_up_v1(uuid,uuid,uuid,text,bigint,text,text) TO ubuntu;
-GRANT EXECUTE ON FUNCTION settle_booking_source_checkout(text,text,text,text,bigint,text) TO service_role;
-GRANT EXECUTE ON FUNCTION settle_booking_source_checkout(text,text,text,text,bigint,text) TO ubuntu;
 DROP TRIGGER IF EXISTS trg_stored_value_ledger_immutable ON public.stored_value_ledger_entries;
-CREATE TRIGGER trg_stored_value_ledger_immutable BEFORE DELETE OR UPDATE ON stored_value_ledger_entries FOR EACH ROW EXECUTE FUNCTION reject_ledger_mutation();
-
+CREATE TRIGGER trg_stored_value_ledger_immutable BEFORE DELETE OR UPDATE ON public.stored_value_ledger_entries FOR EACH ROW EXECUTE FUNCTION reject_ledger_mutation();
 -- Objects introduced by the release. Dropping them does not delete ledger rows.
 DROP TRIGGER IF EXISTS trg_stored_value_ledger_current_line ON public.stored_value_ledger_entries;
 DROP FUNCTION IF EXISTS public.stored_value_ledger_requires_current_line_membership();
