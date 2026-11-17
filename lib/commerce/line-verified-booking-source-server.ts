@@ -128,6 +128,13 @@ export async function linkVerifiedLineBookingSource(input: {
   });
 
   if (decision.outcome === "review") {
+    // Archived or cross-organization customers are not eligible for a
+    // checkout source. Do not attempt to enqueue a finance review for them:
+    // the review RPC can reject the inactive identity and obscure the
+    // actual reason as a transient UNAVAILABLE error.
+    if (decision.reason === "ACCOUNT_DISABLED" || decision.reason === "ORG_MISMATCH") {
+      return review(decision.reason);
+    }
     const financeOrganization = await financeOrganizationId(finance, organizationAppId);
     if (!financeOrganization) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
     const { error } = await finance.rpc(REVIEW_RPC, {
