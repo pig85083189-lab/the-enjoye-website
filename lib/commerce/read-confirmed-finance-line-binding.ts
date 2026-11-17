@@ -13,12 +13,34 @@ export async function readConfirmedFinanceLineBinding(customerKey:string,organiz
  const customerQuery=db.from("customers").select("id,status").eq("organization_id",FINANCE_ORG);
  const customer=uuid?await customerQuery.eq("id",customerKey).maybeSingle():await customerQuery.eq("app_id",customerKey).maybeSingle();
  if(customer.error)return "unavailable";
- if(!customer.data||customer.data.status!=="ACTIVE")return "not_verified";
- const links=await db.from("member_line_customer_links").select("line_subject_hash,verified_at").eq("organization_id",FINANCE_ORG).eq("customer_id",customer.data.id).limit(2);
+ let financeCustomer=customer.data;
+ if(!financeCustomer && uuid){
+  // A booking customer has a different UUID from its finance customer.
+  // Only the server-approved, non-revoked identity pair may bridge them.
+  const pairs=await db.from("member_booking_finance_identity_links")
+   .select("finance_customer_id,finance_confirmation_id")
+   .eq("organization_id",FINANCE_ORG).eq("booking_customer_id",customerKey)
+   .is("revoked_at",null).limit(2);
+  if(pairs.error)return "unavailable";
+  if(pairs.data?.length===1){
+   const financeRow=await db.from("customers").select("id,status")
+    .eq("organization_id",FINANCE_ORG).eq("id",pairs.data[0].finance_customer_id).maybeSingle();
+   if(financeRow.error)return "unavailable";
+   const confirmation=await db.from("member_finance_binding_challenges")
+    .select("id").eq("id",pairs.data[0].finance_confirmation_id)
+    .eq("organization_id",FINANCE_ORG)
+    .eq("confirmed_customer_id",pairs.data[0].finance_customer_id)
+    .eq("status","CONFIRMED").not("confirmed_at","is",null).maybeSingle();
+   if(confirmation.error)return "unavailable";
+   if(confirmation.data)financeCustomer=financeRow.data;
+  }
+ }
+ if(!financeCustomer||financeCustomer.status!=="ACTIVE")return "not_verified";
+ const links=await db.from("member_line_customer_links").select("line_subject_hash,verified_at").eq("organization_id",FINANCE_ORG).eq("customer_id",financeCustomer.id).limit(2);
  if(links.error)return "unavailable";
  if(links.data?.length!==1||!links.data[0].verified_at)return "not_verified";
  const hash=links.data[0].line_subject_hash;
- const confirmations=await db.from("member_finance_binding_challenges").select("confirmed_at").eq("organization_id",FINANCE_ORG).eq("line_subject_hash",hash).eq("confirmed_customer_id",customer.data.id).eq("status","CONFIRMED").not("confirmed_at","is",null).order("confirmed_at",{ascending:false}).limit(1);
+ const confirmations=await db.from("member_finance_binding_challenges").select("confirmed_at").eq("organization_id",FINANCE_ORG).eq("line_subject_hash",hash).eq("confirmed_customer_id",financeCustomer.id).eq("status","CONFIRMED").not("confirmed_at","is",null).order("confirmed_at",{ascending:false}).limit(1);
  const legacy=await db.from("line_customer_bindings").select("status,verified,bound_at,unbound_at,blocked_at").eq("line_user_id_hash",hash).limit(20);
  if(confirmations.error||legacy.error)return "unavailable";
  const proof=confirmations.data?.[0]?.confirmed_at;
