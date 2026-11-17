@@ -64,11 +64,31 @@ export async function GET(request: Request) {
         evidenceKind: String(row.evidence_kind ?? ""),
       })),
     });
-    if (!financeCustomerId) return fail(404, "CUSTOMER_NOT_FOUND");
+    let resolvedFinanceId = financeCustomerId;
+    if (!resolvedFinanceId && checkoutCustomerKeyIsDbId(customerId)) {
+      // The member booking database and finance database use distinct customer UUIDs.
+      // A staff balance read may bridge only a confirmed, non-revoked pair.
+      const { data: pairs, error: pairError } = await db.from("member_booking_finance_identity_links")
+        .select("finance_customer_id,finance_confirmation_id")
+        .eq("organization_id",org.id)
+        .eq("booking_customer_id",customerId.trim())
+        .is("revoked_at",null).limit(2);
+      if (pairError) return fail(503,"IDENTITY_LOOKUP_FAILED");
+      if (pairs?.length===1) {
+        const pair=pairs[0];
+        const { data: confirmation,error: confirmationError }=await db.from("member_finance_binding_challenges")
+          .select("id").eq("id",pair.finance_confirmation_id)
+          .eq("organization_id",org.id).eq("confirmed_customer_id",pair.finance_customer_id)
+          .eq("status","CONFIRMED").not("confirmed_at","is",null).maybeSingle();
+        if(confirmationError)return fail(503,"IDENTITY_LOOKUP_FAILED");
+        if(confirmation)resolvedFinanceId=pair.finance_customer_id;
+      }
+    }
+    if (!resolvedFinanceId) return fail(404, "CUSTOMER_NOT_FOUND");
     const { data: linked, error: linkedError } = await db.from("customers")
       .select("id, app_id, status")
       .eq("organization_id", org.id)
-      .eq("id", financeCustomerId)
+      .eq("id", resolvedFinanceId)
       .maybeSingle();
     if (linkedError || !linked) return fail(404, "CUSTOMER_NOT_FOUND");
     customer = toCustomerRow(linked);
