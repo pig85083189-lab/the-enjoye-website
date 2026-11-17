@@ -141,6 +141,41 @@ export async function linkVerifiedLineBookingSource(input: {
     return review(decision.reason);
   }
 
+  // A verified LINE subject alone is not sufficient to authorize a cross-database
+  // checkout link. Require the separately confirmed booking/finance identity pair,
+  // an active wallet mapping, and matching current finance LINE evidence.
+  const financeOrg = await financeOrganizationId(finance, organizationAppId);
+  if (!financeOrg || !customer.data?.id) return review("NO_TRUSTED_ASSOCIATION");
+  const pairs = await finance.from("member_booking_finance_identity_links")
+    .select("finance_customer_id,finance_confirmation_id")
+    .eq("organization_id", financeOrg)
+    .eq("booking_organization_id", organization.data.id)
+    .eq("booking_customer_id", customer.data.id)
+    .is("revoked_at", null).limit(2);
+  if (pairs.error) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+  if (pairs.data?.length !== 1) return review("NO_TRUSTED_ASSOCIATION");
+  const pair = pairs.data[0];
+  const confirmation = await finance.from("member_finance_binding_challenges")
+    .select("id").eq("id", pair.finance_confirmation_id)
+    .eq("organization_id", financeOrg)
+    .eq("confirmed_customer_id", pair.finance_customer_id)
+    .eq("status", "CONFIRMED").not("confirmed_at", "is", null).maybeSingle();
+  if (confirmation.error) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+  if (!confirmation.data) return review("NO_TRUSTED_ASSOCIATION");
+  const financeLine = await finance.from("member_line_customer_links")
+    .select("line_subject_hash,verified_at").eq("organization_id", financeOrg)
+    .eq("customer_id", pair.finance_customer_id).limit(2);
+  if (financeLine.error) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+  if (financeLine.data?.length !== 1 ||
+      financeLine.data[0].line_subject_hash !== decision.hash ||
+      !financeLine.data[0].verified_at) return review("NO_TRUSTED_ASSOCIATION");
+  const wallet = await finance.from("customer_wallet_identities")
+    .select("booking_customer_id").eq("organization_id", financeOrg)
+    .eq("wallet_customer_id", pair.finance_customer_id)
+    .eq("status", "ACTIVE").limit(2);
+  if (wallet.error) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+  if (wallet.data?.length !== 1) return review("NO_TRUSTED_ASSOCIATION");
+
   const linked = await finance.rpc(LINK_RPC, {
     p_organization_app_id: organizationAppId,
     p_source_customer_key: sourceCustomerKey,
