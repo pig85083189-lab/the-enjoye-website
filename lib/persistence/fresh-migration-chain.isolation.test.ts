@@ -69,6 +69,7 @@ const EXPECTED_CHAIN = [
   "20261115170000_booking_source_customer_links.sql",
   "20261116120000_line_verified_booking_source_link.sql",
   "20261116143000_stored_value_line_checkout_gate.sql",
+  "20261117103000_line_member_customer_link.sql",
 ] as const;
 
 function read(rel: string): string {
