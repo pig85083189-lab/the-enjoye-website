@@ -43,7 +43,7 @@ export async function readBookingCheckoutSource(draftAppId: string): Promise<{
   }
   const customer = await booking
     .from("customers")
-    .select("id, app_id")
+    .select("id, app_id, status, organization_id")
     .eq("id", String(draft.data.customer_id))
     .maybeSingle();
   const organization = await booking
@@ -56,6 +56,12 @@ export async function readBookingCheckoutSource(draftAppId: string): Promise<{
     .select("id, app_id")
     .eq("id", String(draft.data.location_id))
     .maybeSingle();
+  // A historical draft may still reference an archived customer. Never turn
+  // that record into a wallet source, nor silently substitute another person.
+  if (customer.error || customer.data?.status !== "ACTIVE" ||
+      customer.data.organization_id !== draft.data.organization_id) {
+    return null;
+  }
   const sourceKey = customer.data ? sourceCustomerKey(customer.data) : "";
   const organizationAppId = typeof organization.data?.app_id === "string" ? organization.data.app_id.trim() : "";
   const locationAppId = typeof location.data?.app_id === "string" ? location.data.app_id.trim() : "";
