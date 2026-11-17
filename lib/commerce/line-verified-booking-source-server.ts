@@ -68,13 +68,13 @@ export async function linkVerifiedLineBookingSource(input: {
   if (customer.data?.id) {
     const byCustomer = await booking
       .from("line_customer_bindings")
-      .select("line_user_id_hash, status, verified, confirmed_at, bound_at, unbound_at, blocked_at")
+      .select("line_user_id_hash, status, verified, confirmed_at, bound_at, unbound_at")
       .eq("organization_id", organizationAppId)
       .eq("customer_id", customer.data.id)
       .limit(5);
     const byUuid = await booking
       .from("line_customer_bindings")
-      .select("line_user_id_hash, status, verified, confirmed_at, bound_at, unbound_at, blocked_at")
+      .select("line_user_id_hash, status, verified, confirmed_at, bound_at, unbound_at")
       .eq("organization_id", organizationAppId)
       .eq("customer_uuid", customer.data.id)
       .limit(5);
@@ -94,7 +94,7 @@ export async function linkVerifiedLineBookingSource(input: {
         confirmedAt: row.confirmed_at,
         boundAt: row.bound_at,
         unboundAt: row.unbound_at,
-        blockedAt: row.blocked_at,
+        blockedAt: null, // Booking legacy table has no blocked_at column; revocation uses status/unbound_at.
       });
     }
     const memberLinks = await booking
