@@ -40,6 +40,9 @@ export function filterCustomers(
   now: Date = new Date(),
 ): Customer[] {
   return customers.filter((c) => {
+    // Archived customers remain addressable for historical appointments, treatments
+    // and financial audit, but are excluded from the ordinary CRM customer list.
+    if (c.listStatus === "archived") return false;
     if (!matchesCustomerSearch(c, query)) return false;
     if (filter === "all") return true;
     if (filter === "vip") return c.membership === "vip" || c.tags.some((t) => t.id === "vip");
