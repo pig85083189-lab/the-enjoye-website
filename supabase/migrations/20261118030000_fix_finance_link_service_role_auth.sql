@@ -202,8 +202,7 @@ begin
 
   return jsonb_build_object('outcome', 'linked', 'reasonCode', 'LINE_VERIFIED_SESSION');
 end;
-$function$
-
+$function$;
 
 revoke all on function public.link_booking_source_from_verified_line(text,text,text,uuid) from public, anon, authenticated;
 grant execute on function public.link_booking_source_from_verified_line(text,text,text,uuid) to service_role;
