@@ -47,6 +47,7 @@ interface WalletTabProps {
   onOpenTransactions?: () => void;
   commerceRemoteRead?: boolean;
   remoteTransactions?: Transaction[] | null;
+  balanceMinorOverride?: number;
 }
 
 export function WalletTab({
@@ -55,6 +56,7 @@ export function WalletTab({
   onOpenTransactions,
   commerceRemoteRead = false,
   remoteTransactions = null,
+  balanceMinorOverride,
 }: WalletTabProps) {
   const router = useRouter();
   const { organization, currentLocation, locations, membership } = useOrganization();
@@ -66,9 +68,9 @@ export function WalletTab({
     !commerceRemoteRead &&
     (membership?.role === "OWNER" || membership?.role === "MANAGER");
 
-  const svBalance = commerceRemoteRead
+  const svBalance = balanceMinorOverride ?? (commerceRemoteRead
     ? 0
-    : getCustomerStoredValueBalance(organization.id, customerId);
+    : getCustomerStoredValueBalance(organization.id, customerId));
   const packages = commerceRemoteRead
     ? []
     : listCustomerPackages(organization.id, { customerId });

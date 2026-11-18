@@ -12,7 +12,7 @@ import type { Customer } from "@/types";
 export type CustomerRemoteReadState<T> =
   | { status: "off" }
   | { status: "loading" }
-  | { status: "data"; value: T }
+  | { status: "data"; value: T; storedValueBalanceMinor?: number }
   | { status: "empty" }
   | { status: "error"; message: string };
 
@@ -74,8 +74,9 @@ export function useCustomerRemoteDetail(
   organizationId: string,
   customerId: string,
   enabled: boolean,
+  source: "authenticated" | "stored-value" = "authenticated",
 ): CustomerRemoteReadState<Customer> {
-  const requestKey = `detail:${organizationId}:${customerId}`;
+  const requestKey = `detail:${source}:${organizationId}:${customerId}`;
   const [result, setResult] = useState<{
     key: string;
     state: Settled<Customer>;
@@ -87,15 +88,42 @@ export function useCustomerRemoteDetail(
 
     void (async () => {
       try {
-        const client = createBrowserClientOrNull() as IdentitySupabaseClient | null;
-        if (!client) {
-          throw new Error("Authenticated Supabase client is unavailable");
+        let row: Customer | undefined;
+        let storedValueBalanceMinor: number | undefined;
+        if (source === "stored-value") {
+          const params = new URLSearchParams({ organizationId, customerId });
+          const response = await fetch(`/api/staff/stored-value/customer-detail?${params}`, {
+            credentials: "same-origin",
+            cache: "no-store",
+          });
+          if (response.status === 404) {
+            row = undefined;
+          } else {
+            if (!response.ok) throw new Error("Stored-value customer detail unavailable");
+            const result = (await response.json()) as {
+              customer?: Customer;
+              storedValueBalanceMinor?: number;
+            };
+            if (!result.customer || result.customer.id !== customerId || result.customer.organizationId !== organizationId) {
+              throw new Error("Stored-value customer identity mismatch");
+            }
+            if (!Number.isSafeInteger(result.storedValueBalanceMinor)) {
+              throw new Error("Stored-value balance unavailable");
+            }
+            row = result.customer;
+            storedValueBalanceMinor = result.storedValueBalanceMinor;
+          }
+        } else {
+          const client = createBrowserClientOrNull() as IdentitySupabaseClient | null;
+          if (!client) {
+            throw new Error("Authenticated Supabase client is unavailable");
+          }
+          row = await getRemotePilotCustomer(organizationId, customerId, client);
         }
-        const row = await getRemotePilotCustomer(organizationId, customerId, client);
         if (cancelled) return;
         setResult({
           key: requestKey,
-          state: row ? { status: "data", value: row } : { status: "empty" },
+          state: row ? { status: "data", value: row, storedValueBalanceMinor } : { status: "empty" },
         });
       } catch (error: unknown) {
         if (cancelled) return;
@@ -109,7 +137,7 @@ export function useCustomerRemoteDetail(
     return () => {
       cancelled = true;
     };
-  }, [enabled, organizationId, customerId, requestKey]);
+  }, [enabled, organizationId, customerId, requestKey, source]);
 
   if (!enabled) return { status: "off" };
   if (!result || result.key !== requestKey) return { status: "loading" };
