@@ -35,7 +35,7 @@ export const getServerStaffAuthUser = cache(async (): Promise<StaffAuthUser | nu
   } catch {
     return null;
   }
-);
+});
 
 export async function getAuthenticatedStaffMembership(input?: {
   organizationId?: string | null;
@@ -93,7 +93,7 @@ export const loadServerMembershipsForAuthUser = cache(async (
     if (seeded) return [{ ...seeded, authUserId: bootstrap }];
   }
   return [];
-);
+});
 
 export async function persistServerStaffMembership(
   membership: StaffMembership,
