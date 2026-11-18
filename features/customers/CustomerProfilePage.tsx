@@ -76,6 +76,7 @@ export function CustomerProfilePage({
 }: CustomerProfilePageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const fromStoredValue = searchParams.get("from") === "stored-value";
   const { organization } = useOrganization();
   const isClient = useIsClient();
   const localCustomer = useCrmJson(
@@ -93,12 +94,14 @@ export function CustomerProfilePage({
   // authenticated customer source used by the remote customer list.
   // This is read-only and does not merge, restore or mutate identities.
   const remoteFallback = !remoteReadPilot && isClient && !localCustomer;
+  const useRemoteCustomer = remoteReadPilot || remoteFallback || fromStoredValue;
   const remote = useCustomerRemoteDetail(
     organization.id,
     customerId,
-    remoteReadPilot || remoteFallback,
+    useRemoteCustomer,
+    fromStoredValue ? "stored-value" : "authenticated",
   );
-  const customer = remoteReadPilot || remoteFallback
+  const customer = useRemoteCustomer
     ? remote.status === "data"
       ? remote.value
       : null
@@ -142,7 +145,7 @@ export function CustomerProfilePage({
 
   if (
     !isClient ||
-    ((remoteReadPilot || remoteFallback) && (remote.status === "loading" || remote.status === "off"))
+    (useRemoteCustomer && (remote.status === "loading" || remote.status === "off"))
   ) {
     return (
       <div className="space-y-3">
@@ -152,7 +155,7 @@ export function CustomerProfilePage({
     );
   }
 
-  if ((remoteReadPilot || remoteFallback) && remote.status === "error") {
+  if (useRemoteCustomer && remote.status === "error") {
     return (
       <Card
         padding="lg"
@@ -176,7 +179,7 @@ export function CustomerProfilePage({
       <Card
         padding="lg"
         className="text-center"
-        data-customer-read-state={remoteReadPilot || remoteFallback ? "empty" : "local-missing"}
+        data-customer-read-state={useRemoteCustomer ? "empty" : "local-missing"}
         data-customer-id={customerId}
       >
         <p className="text-[15px] font-medium text-text">找不到此客戶</p>
@@ -192,7 +195,7 @@ export function CustomerProfilePage({
 
   return (
     <Customer360Workspace
-      remoteReadPilot={remoteReadPilot}
+      remoteReadPilot={remoteReadPilot || fromStoredValue}
       appointmentRemoteReadPilot={appointmentRemoteReadPilot}
       appointmentRemoteWritePilot={appointmentRemoteWritePilot}
       treatmentRemoteReadPilot={treatmentRemoteReadPilot}
@@ -212,6 +215,7 @@ export function CustomerProfilePage({
         setWalletSection(next === "wallet" ? section ?? "packages" : undefined);
         const params = new URLSearchParams();
         params.set("tab", next);
+        if (fromStoredValue) params.set("from", "stored-value");
         if (next === "wallet" && (section || walletSection)) {
           params.set("section", section ?? walletSection ?? "packages");
         }
