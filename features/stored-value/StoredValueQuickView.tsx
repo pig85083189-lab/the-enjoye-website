@@ -53,8 +53,8 @@ export function StoredValueQuickView({
   const [error, setError] = useState("");
   const visit = visitCountLabel(customer?.totalVisits ?? row.totalVisits);
   const visibleLedger = fullLedger ? [...ledger].reverse() : [...ledger].reverse().slice(0, 5);
-  const profileHref = `/staff/customers/${row.customerId}`;
-  const walletHref = `${profileHref}?tab=wallet`;
+  const profileHref = `/staff/customers/${encodeURIComponent(row.customerId)}?from=stored-value`;
+  const walletHref = `${profileHref}&tab=wallet`;
 
   function submitAdjustment() {
     const delta = parseMoneyInput(adjAmount);
