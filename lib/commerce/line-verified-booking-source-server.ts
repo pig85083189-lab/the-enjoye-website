@@ -35,7 +35,7 @@ export async function linkVerifiedLineBookingSource(input: {
   if (!organizationAppId || !sourceCustomerKey || !authUserId) return review("NO_TRUSTED_ASSOCIATION");
   const booking = createServiceRoleClient();
   const finance = createBeautyOsFinanceClient();
-  if (!booking || !finance) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+  if (!booking || !finance) return { outcome: "unavailable", reasonCode: "CLIENT_CONFIG" };
 
   const organization = await booking
     .from("organizations")
@@ -62,7 +62,7 @@ export async function linkVerifiedLineBookingSource(input: {
         .eq("app_id", sourceCustomerKey)
         .eq("organization_id", organization.data.id)
         .maybeSingle();
-  if (customer.error) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+  if (customer.error) return { outcome: "unavailable", reasonCode: "BOOKING_CUSTOMER_QUERY" };
 
   const bindings: VerifiedLineBinding[] = [];
   if (customer.data?.id) {
@@ -83,7 +83,7 @@ export async function linkVerifiedLineBookingSource(input: {
       data: [...(byCustomer.data ?? []), ...(byUuid.data ?? [])],
     };
     if (legacy.error && !identityRelationIsMissing(legacy.error.code)) {
-      return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+      return { outcome: "unavailable", reasonCode: "BOOKING_LEGACY_QUERY" };
     }
     for (const row of legacy.data ?? []) {
       bindings.push({
@@ -104,7 +104,7 @@ export async function linkVerifiedLineBookingSource(input: {
       .eq("customer_id", customer.data.id)
       .limit(5);
     if (memberLinks.error && !identityRelationIsMissing(memberLinks.error.code)) {
-      return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+      return { outcome: "unavailable", reasonCode: "BOOKING_MEMBER_QUERY" };
     }
     for (const row of memberLinks.data ?? []) {
       bindings.push({
@@ -136,7 +136,7 @@ export async function linkVerifiedLineBookingSource(input: {
       return review(decision.reason);
     }
     const financeOrganization = await financeOrganizationId(finance, organizationAppId);
-    if (!financeOrganization) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+    if (!financeOrganization) return { outcome: "unavailable", reasonCode: "FINANCE_ORG_LOOKUP" };
     const { error } = await finance.rpc(REVIEW_RPC, {
       p_organization_id: financeOrganization,
       p_source_customer_key: sourceCustomerKey,
@@ -144,7 +144,7 @@ export async function linkVerifiedLineBookingSource(input: {
       p_reason_code: decision.reason,
       p_auth_user_id: authUserId,
     });
-    if (error) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+    if (error) return { outcome: "unavailable", reasonCode: "FINANCE_REVIEW_RPC" };
     return review(decision.reason);
   }
 
@@ -159,7 +159,7 @@ export async function linkVerifiedLineBookingSource(input: {
     .eq("booking_organization_id", organization.data.id)
     .eq("booking_customer_id", customer.data.id)
     .is("revoked_at", null).limit(2);
-  if (pairs.error) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+  if (pairs.error) return { outcome: "unavailable", reasonCode: "FINANCE_PAIR_QUERY" };
   if (pairs.data?.length !== 1) return review("NO_TRUSTED_ASSOCIATION");
   const pair = pairs.data[0];
   const confirmation = await finance.from("member_finance_binding_challenges")
@@ -167,12 +167,12 @@ export async function linkVerifiedLineBookingSource(input: {
     .eq("organization_id", financeOrg)
     .eq("confirmed_customer_id", pair.finance_customer_id)
     .eq("status", "CONFIRMED").not("confirmed_at", "is", null).maybeSingle();
-  if (confirmation.error) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+  if (confirmation.error) return { outcome: "unavailable", reasonCode: "FINANCE_CONFIRMATION_QUERY" };
   if (!confirmation.data) return review("NO_TRUSTED_ASSOCIATION");
   const financeLine = await finance.from("member_line_customer_links")
     .select("line_subject_hash,verified_at").eq("organization_id", financeOrg)
     .eq("customer_id", pair.finance_customer_id).limit(2);
-  if (financeLine.error) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+  if (financeLine.error) return { outcome: "unavailable", reasonCode: "FINANCE_LINE_QUERY" };
   if (financeLine.data?.length !== 1 ||
       financeLine.data[0].line_subject_hash !== decision.hash ||
       !financeLine.data[0].verified_at) return review("NO_TRUSTED_ASSOCIATION");
@@ -180,7 +180,7 @@ export async function linkVerifiedLineBookingSource(input: {
     .select("booking_customer_id").eq("organization_id", financeOrg)
     .eq("wallet_customer_id", pair.finance_customer_id)
     .eq("status", "ACTIVE").limit(2);
-  if (wallet.error) return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+  if (wallet.error) return { outcome: "unavailable", reasonCode: "FINANCE_WALLET_QUERY" };
   if (wallet.data?.length !== 1) return review("NO_TRUSTED_ASSOCIATION");
 
   const linked = await finance.rpc(LINK_RPC, {
@@ -190,7 +190,7 @@ export async function linkVerifiedLineBookingSource(input: {
     p_auth_user_id: authUserId,
   });
   if (linked.error || !linked.data || typeof linked.data !== "object") {
-    return { outcome: "unavailable", reasonCode: "UNAVAILABLE" };
+    return { outcome: "unavailable", reasonCode: "FINANCE_LINK_RPC" };
   }
   const outcome = String((linked.data as { outcome?: unknown }).outcome ?? "");
   const reasonCode = String((linked.data as { reasonCode?: unknown }).reasonCode ?? "");
