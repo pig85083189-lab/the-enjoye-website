@@ -59,7 +59,26 @@ export async function GET(request: Request) {
   if (accountError) return fail(503, "無法確認儲值顧客");
   if (!account?.length) return fail(404, "找不到此儲值顧客");
 
+  // Finance ledger, not the legacy local CRM wallet, is the balance truth.
+  const { data: entries, error: ledgerError } = await db
+    .from("stored_value_ledger_entries")
+    .select("amount_delta_minor")
+    .eq("organization_id", organization[0]!.id)
+    .eq("account_id", account[0]!.id)
+    .limit(10001);
+  if (ledgerError || !entries || entries.length === 10001) {
+    return fail(503, "無法確認正式儲值餘額");
+  }
+  const storedValueBalanceMinor = entries.reduce(
+    (sum, entry) => sum + Number(entry.amount_delta_minor),
+    0,
+  );
+  if (!Number.isSafeInteger(storedValueBalanceMinor)) {
+    return fail(503, "正式儲值餘額格式異常");
+  }
+
   return NextResponse.json({
     customer: customerFromRemoteRow(organizationId, customerRow),
+    storedValueBalanceMinor,
   }, { headers });
 }
