@@ -64,13 +64,16 @@ export const loadServerMembershipsForAuthUser = cache(async (
     const mine = await fetchStaffAuthMembershipsByAuthUserId(admin, authUserId);
     const orgIds = new Set(mine.map((item) => item.organizationId));
     if (bootstrap === authUserId) orgIds.add(ORG_ENJOYE_ID);
+    // Organization roster reads are independent. Fetch them concurrently while
+    // preserving organization order and the existing membership deduplication.
+    const rosters = await Promise.all(
+      [...orgIds].map((organizationId) =>
+        fetchStaffAuthMembershipsByOrganizationId(admin, organizationId),
+      ),
+    );
     const roster: StaffMembership[] = [];
     const seen = new Set<string>();
-    for (const organizationId of orgIds) {
-      const rows = await fetchStaffAuthMembershipsByOrganizationId(
-        admin,
-        organizationId,
-      );
+    for (const rows of rosters) {
       for (const row of rows) {
         if (seen.has(row.id)) continue;
         seen.add(row.id);
