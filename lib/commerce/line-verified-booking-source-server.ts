@@ -190,6 +190,12 @@ export async function linkVerifiedLineBookingSource(input: {
     p_auth_user_id: authUserId,
   });
   if (linked.error || !linked.data || typeof linked.data !== "object") {
+    // Only PostgreSQL/PostgREST diagnostic codes are logged. Never log
+    // identities, LINE hashes, RPC arguments or raw database messages.
+    console.error("[commerce/checkout] finance_link_rpc_failed", {
+      dbCode: linked.error?.code ?? "NO_RESPONSE",
+      hasData: Boolean(linked.data),
+    });
     return { outcome: "unavailable", reasonCode: "FINANCE_LINK_RPC" };
   }
   const outcome = String((linked.data as { outcome?: unknown }).outcome ?? "");
