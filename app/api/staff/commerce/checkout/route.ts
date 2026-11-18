@@ -118,6 +118,7 @@ export async function POST(request: Request) {
           authUserId: actor.id,
         });
         if (link.outcome === "unavailable") {
+          console.error("[commerce/checkout] stored_value_identity_unavailable", { stage: link.reasonCode });
           return fail(503, "目前無法確認儲值金顧客身分，請稍後再試");
         }
         if (link.outcome !== "linked" && link.outcome !== "already_linked") {
