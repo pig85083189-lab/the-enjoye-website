@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
-import { REMOTE_CUSTOMER_COLUMNS, customerFromRemoteRow } from "@/lib/persistence/customer-mapping";
+import { customerFromRemoteRow } from "@/lib/persistence/customer-mapping";
 import { dbCustomerFromUnknown } from "@/lib/persistence/authenticated-customer-read-store";
 
 /**
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
 
   const { data: customers, error: customerError } = await db
     .from("customers")
-    .select(REMOTE_CUSTOMER_COLUMNS.join(","))
+    .select("id,organization_id,app_id,full_name,phone,email,birthday,gender,line_user_id,source,membership_tier,is_vip,primary_staff_id,status,notes,created_at,updated_at")
     .eq("organization_id", organization[0]!.id)
     .eq("app_id", customerId)
     .limit(2);
