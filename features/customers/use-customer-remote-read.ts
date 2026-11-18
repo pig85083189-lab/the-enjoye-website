@@ -12,7 +12,7 @@ import type { Customer } from "@/types";
 export type CustomerRemoteReadState<T> =
   | { status: "off" }
   | { status: "loading" }
-  | { status: "data"; value: T }
+  | { status: "data"; value: T; storedValueBalanceMinor?: number }
   | { status: "empty" }
   | { status: "error"; message: string };
 
@@ -89,6 +89,7 @@ export function useCustomerRemoteDetail(
     void (async () => {
       try {
         let row: Customer | undefined;
+        let storedValueBalanceMinor: number | undefined;
         if (source === "stored-value") {
           const params = new URLSearchParams({ organizationId, customerId });
           const response = await fetch(`/api/staff/stored-value/customer-detail?${params}`, {
@@ -99,11 +100,18 @@ export function useCustomerRemoteDetail(
             row = undefined;
           } else {
             if (!response.ok) throw new Error("Stored-value customer detail unavailable");
-            const result = (await response.json()) as { customer?: Customer };
+            const result = (await response.json()) as {
+              customer?: Customer;
+              storedValueBalanceMinor?: number;
+            };
             if (!result.customer || result.customer.id !== customerId || result.customer.organizationId !== organizationId) {
               throw new Error("Stored-value customer identity mismatch");
             }
+            if (!Number.isSafeInteger(result.storedValueBalanceMinor)) {
+              throw new Error("Stored-value balance unavailable");
+            }
             row = result.customer;
+            storedValueBalanceMinor = result.storedValueBalanceMinor;
           }
         } else {
           const client = createBrowserClientOrNull() as IdentitySupabaseClient | null;
@@ -115,7 +123,7 @@ export function useCustomerRemoteDetail(
         if (cancelled) return;
         setResult({
           key: requestKey,
-          state: row ? { status: "data", value: row } : { status: "empty" },
+          state: row ? { status: "data", value: row, storedValueBalanceMinor } : { status: "empty" },
         });
       } catch (error: unknown) {
         if (cancelled) return;
