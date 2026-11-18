@@ -74,8 +74,9 @@ export function useCustomerRemoteDetail(
   organizationId: string,
   customerId: string,
   enabled: boolean,
+  source: "authenticated" | "stored-value" = "authenticated",
 ): CustomerRemoteReadState<Customer> {
-  const requestKey = `detail:${organizationId}:${customerId}`;
+  const requestKey = `detail:${source}:${organizationId}:${customerId}`;
   const [result, setResult] = useState<{
     key: string;
     state: Settled<Customer>;
@@ -87,11 +88,30 @@ export function useCustomerRemoteDetail(
 
     void (async () => {
       try {
-        const client = createBrowserClientOrNull() as IdentitySupabaseClient | null;
-        if (!client) {
-          throw new Error("Authenticated Supabase client is unavailable");
+        let row: Customer | undefined;
+        if (source === "stored-value") {
+          const params = new URLSearchParams({ organizationId, customerId });
+          const response = await fetch(`/api/staff/stored-value/customer-detail?${params}`, {
+            credentials: "same-origin",
+            cache: "no-store",
+          });
+          if (response.status === 404) {
+            row = undefined;
+          } else {
+            if (!response.ok) throw new Error("Stored-value customer detail unavailable");
+            const result = (await response.json()) as { customer?: Customer };
+            if (!result.customer || result.customer.id !== customerId || result.customer.organizationId !== organizationId) {
+              throw new Error("Stored-value customer identity mismatch");
+            }
+            row = result.customer;
+          }
+        } else {
+          const client = createBrowserClientOrNull() as IdentitySupabaseClient | null;
+          if (!client) {
+            throw new Error("Authenticated Supabase client is unavailable");
+          }
+          row = await getRemotePilotCustomer(organizationId, customerId, client);
         }
-        const row = await getRemotePilotCustomer(organizationId, customerId, client);
         if (cancelled) return;
         setResult({
           key: requestKey,
@@ -109,7 +129,7 @@ export function useCustomerRemoteDetail(
     return () => {
       cancelled = true;
     };
-  }, [enabled, organizationId, customerId, requestKey]);
+  }, [enabled, organizationId, customerId, requestKey, source]);
 
   if (!enabled) return { status: "off" };
   if (!result || result.key !== requestKey) return { status: "loading" };
