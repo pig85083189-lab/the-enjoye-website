@@ -66,6 +66,11 @@ describe("stored-value customer profile is scoped and read-only", () => {
         organization_id: ORG_DB,
         customer_id: CUSTOMER_DB,
       }],
+      stored_value_ledger_entries: [{
+        organization_id: ORG_DB,
+        account_id: "33333333-3333-4333-8333-333333333333",
+        amount_delta_minor: 2100,
+      }],
     };
   });
 
@@ -79,11 +84,13 @@ describe("stored-value customer profile is scoped and read-only", () => {
       name: "LINE 會員",
       phone: "0911000000",
     });
+    expect(json.storedValueBalanceMinor).toBe(2100);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     expect(state.touched).toEqual([
       "from:organizations",
       "from:customers",
       "from:stored_value_accounts",
+      "from:stored_value_ledger_entries",
     ]);
   });
 
