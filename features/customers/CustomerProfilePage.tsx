@@ -88,12 +88,17 @@ export function CustomerProfilePage({
           }) ?? null,
     null as Customer | null,
   );
+  // Customer records created by LINE booking can have a DB UUID but no
+  // legacy local CRM record. When local lookup misses, read the same scoped,
+  // authenticated customer source used by the remote customer list.
+  // This is read-only and does not merge, restore or mutate identities.
+  const remoteFallback = !remoteReadPilot && isClient && !localCustomer;
   const remote = useCustomerRemoteDetail(
     organization.id,
     customerId,
-    remoteReadPilot,
+    remoteReadPilot || remoteFallback,
   );
-  const customer = remoteReadPilot
+  const customer = remoteReadPilot || remoteFallback
     ? remote.status === "data"
       ? remote.value
       : null
@@ -137,7 +142,7 @@ export function CustomerProfilePage({
 
   if (
     !isClient ||
-    (remoteReadPilot && (remote.status === "loading" || remote.status === "off"))
+    ((remoteReadPilot || remoteFallback) && (remote.status === "loading" || remote.status === "off"))
   ) {
     return (
       <div className="space-y-3">
@@ -147,7 +152,7 @@ export function CustomerProfilePage({
     );
   }
 
-  if (remoteReadPilot && remote.status === "error") {
+  if ((remoteReadPilot || remoteFallback) && remote.status === "error") {
     return (
       <Card
         padding="lg"
@@ -171,7 +176,7 @@ export function CustomerProfilePage({
       <Card
         padding="lg"
         className="text-center"
-        data-customer-read-state={remoteReadPilot ? "empty" : "local-missing"}
+        data-customer-read-state={remoteReadPilot || remoteFallback ? "empty" : "local-missing"}
         data-customer-id={customerId}
       >
         <p className="text-[15px] font-medium text-text">找不到此客戶</p>

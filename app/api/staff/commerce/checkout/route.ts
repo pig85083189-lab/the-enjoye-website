@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { callBookingSourceCheckout, readBookingCheckoutSource } from "@/lib/commerce/booking-source-checkout-server";
+import { linkVerifiedLineBookingSource } from "@/lib/commerce/line-verified-booking-source-server";
 import {
   COMMERCE_HYDRATE_RPC,
   COMMERCE_SAVE_RPC,
@@ -107,6 +108,30 @@ export async function POST(request: Request) {
         if (identity.status !== "ok" || !canCheckout(identity.membership)) return fail(403, "沒有權限結帳");
         const actor = await getServerStaffAuthUser();
         if (!actor || actor.id !== identity.membership.authUserId) return fail(403, "沒有權限結帳");
+        // The finance checkout source is a separate, staff-authorized identity
+        // link. Create it only when staff intentionally chooses stored value.
+        // This helper independently verifies the active booking customer,
+        // confirmed cross-database pair, matching LINE identity and wallet.
+        const link = await linkVerifiedLineBookingSource({
+          organizationAppId: source.organizationAppId,
+          sourceCustomerKey: source.sourceCustomerKey,
+          authUserId: actor.id,
+        });
+        if (link.outcome === "unavailable") {
+          console.error("[commerce/checkout] stored_value_identity_unavailable", { stage: link.reasonCode });
+          return fail(503, "目前無法確認儲值金顧客身分，請稍後再試");
+        }
+        if (link.outcome !== "linked" && link.outcome !== "already_linked") {
+          return fail(409, "儲值金顧客身分尚未完成安全對應，請由主管確認");
+        }
+        await callBookingSourceCheckout("open_booking_source_checkout", {
+          organizationAppId: source.organizationAppId,
+          sourceCustomerKey: source.sourceCustomerKey,
+          checkoutAppId: source.checkoutAppId,
+          locationAppId: source.locationAppId,
+          amount: stored,
+          staffId: identity.membership.userId,
+        });
         await callBookingSourceCheckout("save_booking_source_checkout", {
           organizationAppId: source.organizationAppId,
           sourceCustomerKey: source.sourceCustomerKey,

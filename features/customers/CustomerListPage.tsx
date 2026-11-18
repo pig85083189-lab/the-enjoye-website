@@ -120,13 +120,17 @@ export function CustomerListPage({
     [organization.id],
   );
 
+  const activeCustomers = useMemo(
+    () => customers.filter((customer) => customer.listStatus !== "archived"),
+    [customers],
+  );
   const visible = useMemo(
-    () => sortCustomers(filterCustomers(customers, filter, query, now), sort),
-    [customers, filter, query, sort, now],
+    () => sortCustomers(filterCustomers(activeCustomers, filter, query, now), sort),
+    [activeCustomers, filter, query, sort, now],
   );
   const summary = useMemo(
-    () => countCustomerCrmSummary(customers, now),
-    [customers, now],
+    () => countCustomerCrmSummary(activeCustomers, now),
+    [activeCustomers, now],
   );
   const filterCounts = useMemo(
     () => ({
@@ -158,7 +162,7 @@ export function CustomerListPage({
 
   function handleFilter(next: CustomerListFilter) {
     setFilter(next);
-    const nextVisible = filterCustomers(customers, next, query, now);
+    const nextVisible = filterCustomers(activeCustomers, next, query, now);
     if (
       shouldResetCustomerSelection({
         selectedId: selectedCustomerId,

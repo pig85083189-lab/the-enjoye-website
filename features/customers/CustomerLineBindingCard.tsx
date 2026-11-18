@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
+import { readConfirmedFinanceLineBinding } from "@/lib/commerce/read-confirmed-finance-line-binding";
 import { loadLineCustomerBindings, startLineCustomerBindAction, confirmLineCustomerBindingAction } from "@/lib/line/automations/customer-binding-actions";
 import { hasPendingCustomerRebind, isTrustedCustomerBinding, type LineCustomerBindingRow } from "@/lib/line/automations/customer-bindings";
 
 export function CustomerLineBindingCard({ customerId, organizationId }: { customerId: string; organizationId: string }) {
   const [row, setRow] = useState<LineCustomerBindingRow | null>(null);
+  const [financeVerified, setFinanceVerified] = useState(false);
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [showManualTools, setShowManualTools] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -18,7 +20,9 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
   useEffect(() => {
     let active = true;
     setRow(null);
+    setFinanceVerified(false);
     setStatus("loading");
+    void readConfirmedFinanceLineBinding(customerId, organizationId).then(value => { if (active) setFinanceVerified(value === "verified"); }).catch(() => undefined);
     setIdentityConfirmed(false);
     setShowManualTools(false);
     setIssuedCode(null);
@@ -38,6 +42,8 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
   }, [customerId, organizationId]);
 
   async function refresh() {
+    const finance = await readConfirmedFinanceLineBinding(customerId, organizationId).catch(() => "unavailable" as const);
+    setFinanceVerified(finance === "verified");
     const result = await loadLineCustomerBindings(organizationId);
     if (!result.ok || !result.data) { setStatus("unavailable"); return; }
     setRow(result.data.customers.find(item => item.customerId === customerId) ?? null);
@@ -70,7 +76,7 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
 
   const binding = row?.binding;
   const manualPending = binding?.status === "pending";
-  const trusted = status === "ready" && isTrustedCustomerBinding(binding);
+  const trusted = (status === "ready" && isTrustedCustomerBinding(binding)) || financeVerified;
   const label = status === "loading" ? "讀取中" :
     status === "unavailable" ? "無法確認" :
     trusted ? "已綁定" :
@@ -87,7 +93,7 @@ export function CustomerLineBindingCard({ customerId, organizationId }: { custom
         此處顯示顧客與會員帳號的連結狀態。未完成安全身分驗證前，會員中心不會讀取店內顧客資料。
       </p>
       {trusted ? (
-        <p className="text-sm text-text">已完成驗證{binding?.hint ? ` · LINE 識別提示 ${binding.hint}` : ""}。此處不顯示 LINE User ID。</p>
+        <p className="text-sm text-text">已完成驗證{!financeVerified && binding?.hint ? ` · LINE 識別提示 ${binding.hint}` : ""}。此處不顯示 LINE User ID。</p>
       ) : (
         <div className="rounded-xl border border-border/70 bg-[#FBF8F7] px-4 py-3">
           <p className="text-sm font-medium text-text">{status === "unavailable" ? "無法確認綁定狀態" : "連結需經安全身分驗證"}</p>
