@@ -106,6 +106,8 @@ export function CustomerProfilePage({
       ? remote.value
       : null
     : localCustomer;
+  const financeStoredValueBalanceMinor =
+    fromStoredValue && remote.status === "data" ? remote.storedValueBalanceMinor : undefined;
   const initialTab = searchParams.get("tab");
   const initialSection = searchParams.get("section");
   const [tab, setTab] = useState<Customer360TabId>(
@@ -196,6 +198,8 @@ export function CustomerProfilePage({
   return (
     <Customer360Workspace
       remoteReadPilot={remoteReadPilot || fromStoredValue}
+      financeProfileReadOnly={fromStoredValue}
+      financeStoredValueBalanceMinor={financeStoredValueBalanceMinor}
       appointmentRemoteReadPilot={appointmentRemoteReadPilot}
       appointmentRemoteWritePilot={appointmentRemoteWritePilot}
       treatmentRemoteReadPilot={treatmentRemoteReadPilot}
@@ -227,6 +231,8 @@ export function CustomerProfilePage({
 
 function Customer360Workspace({
   remoteReadPilot = false,
+  financeProfileReadOnly = false,
+  financeStoredValueBalanceMinor,
   appointmentRemoteReadPilot = false,
   appointmentRemoteWritePilot = false,
   treatmentRemoteReadPilot = false,
@@ -244,6 +250,8 @@ function Customer360Workspace({
   onSelectTab,
 }: {
   remoteReadPilot?: boolean;
+  financeProfileReadOnly?: boolean;
+  financeStoredValueBalanceMinor?: number;
   appointmentRemoteReadPilot?: boolean;
   appointmentRemoteWritePilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
@@ -296,7 +304,7 @@ function Customer360Workspace({
         ? getMembership(organization.id, customer.primaryStaffId)?.displayName
         : undefined),
   };
-  const snapshot = useCustomer360Snapshot(customerForView, {
+  const localSnapshot = useCustomer360Snapshot(customerForView, {
     remoteAppointments: appointmentRemoteReadPilot
       ? applyRosterStaffDisplayNames(
           remoteAppointments.status === "data" ? remoteAppointments.value : [],
@@ -311,6 +319,9 @@ function Customer360Workspace({
       : null,
     remoteTransactions,
   });
+  const snapshot = financeProfileReadOnly && financeStoredValueBalanceMinor !== undefined
+    ? { ...localSnapshot, svBalance: financeStoredValueBalanceMinor }
+    : localSnapshot;
   const createSurface = resolveCustomer360AppointmentCreateSurface({
     customerId: customer.id,
     customerRemoteReadPilot: remoteReadPilot,
@@ -556,7 +567,8 @@ function Customer360Workspace({
                 customerId={customer.id}
                 section={walletSection}
                 onOpenTransactions={() => onSelectTab("transactions")}
-                commerceRemoteRead={commerceRemoteReadPilot}
+                commerceRemoteRead={commerceRemoteReadPilot || financeProfileReadOnly}
+                balanceMinorOverride={financeStoredValueBalanceMinor}
                 remoteTransactions={remoteTransactions}
               />
             ) : null}
