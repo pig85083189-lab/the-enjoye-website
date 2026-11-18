@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { SEED_MEMBERSHIPS } from "@/data/seed-organizations";
 import { MEMBERSHIP_ENJOYE_OWNER_ID, ORG_ENJOYE_ID } from "@/lib/tenant/constants";
 import { tryGetSupabaseEnv, ownerBootstrapAuthUserId } from "@/lib/supabase/env";
@@ -19,7 +20,9 @@ import {
 } from "@/lib/staff-auth/resolve-membership";
 
 /** Server authorization: auth.getUser(), never getSession() alone. */
-export async function getServerStaffAuthUser(): Promise<StaffAuthUser | null> {
+// React cache is scoped to a single server render/request, never shared across users.
+// The staff layout and its session gate otherwise repeat auth.getUser().
+export const getServerStaffAuthUser = cache(async (): Promise<StaffAuthUser | null> => {
   if (!tryGetSupabaseEnv()) return null;
   try {
     const supabase = await createClient();
@@ -32,7 +35,7 @@ export async function getServerStaffAuthUser(): Promise<StaffAuthUser | null> {
   } catch {
     return null;
   }
-}
+);
 
 export async function getAuthenticatedStaffMembership(input?: {
   organizationId?: string | null;
@@ -50,9 +53,10 @@ export async function getAuthenticatedStaffMembership(input?: {
   });
 }
 
-export async function loadServerMembershipsForAuthUser(
+// Deduplicate the session gate + layout membership reads within this request only.
+export const loadServerMembershipsForAuthUser = cache(async (
   authUserId: string,
-): Promise<StaffMembership[]> {
+): Promise<StaffMembership[]> => {
   const bootstrap = ownerBootstrapAuthUserId();
   const admin = createServiceRoleClient();
   if (admin) {
@@ -89,7 +93,7 @@ export async function loadServerMembershipsForAuthUser(
     if (seeded) return [{ ...seeded, authUserId: bootstrap }];
   }
   return [];
-}
+);
 
 export async function persistServerStaffMembership(
   membership: StaffMembership,
