@@ -21,12 +21,14 @@ export async function migrateCompletedBrowserTreatment(
   client: TreatmentWriteClient,
   local: TreatmentDraft,
   env: NodeJS.Dict<string>,
+  allLocalRecords: readonly TreatmentDraft[] = [local],
 ): Promise<TreatmentDraft> {
   if (!isTreatmentRemoteWritePilotEnabled(env)) {
     throw new Error("Treatment migration requires explicit remote read and write flags");
   }
-  const preflight = preflightCompletedTreatmentMigration(local.organizationId, [local], []);
-  if (preflight[0]?.status !== "needs-identity-verification") {
+  const preflight = preflightCompletedTreatmentMigration(local.organizationId, allLocalRecords, []);
+  if (preflight.find((decision) => decision.localId === local.id)?.status !== "needs-identity-verification" ||
+      allLocalRecords.filter((row) => row.id === local.id).length !== 1) {
     throw new Error("Completed treatment failed migration preflight");
   }
   const persistence = await createAuthenticatedTreatmentWritePersistence(
