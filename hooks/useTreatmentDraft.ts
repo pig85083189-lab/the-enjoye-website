@@ -20,12 +20,7 @@ import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-ide
 import { TREATMENT_REMOTE_READ_PILOT_ENV } from "@/lib/treatments/treatment-remote-read-flag";
 import { getRemotePilotTreatmentByAppointment } from "@/lib/treatments/treatment-remote-read-pilot";
 import { TreatmentDuplicateError } from "@/lib/treatments/treatment-write-errors";
-import { completedTreatmentClinicalFieldsMatch } from "@/lib/treatments/completed-treatment-migration-preflight";
-import {
-  browserClinicalFieldsMatch,
-  decideBrowserCompletedHydration,
-  syncBrowserCompletedTreatment,
-} from "@/lib/treatments/sync-browser-completed-treatment";
+import { completedTreatmentClinicalFieldsMatch, preflightCompletedTreatmentMigration } from "@/lib/treatments/completed-treatment-migration-preflight";
 
 function treatmentReadPilotEnv(): NodeJS.Dict<string> {
   return {
@@ -108,8 +103,6 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
   const [autosaveRetryRevision, setAutosaveRetryRevision] = useState(0);
   const skipNextSave = useRef(true);
   const remoteRecordReady = useRef(false);
-  const remoteVerified = useRef(false);
-  const pendingBrowserSync = useRef(false);
   const autosaveInFlight = useRef(false);
   const locallyCompleted = useRef(false);
   const editRevision = useRef(0);
@@ -122,8 +115,6 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
     let cancelled = false;
     // Completion is scoped to one appointment, not the lifetime of the hook.
     locallyCompleted.current = false;
-    remoteVerified.current = false;
-    pendingBrowserSync.current = false;
     const timer = window.setTimeout(() => {
       void (async () => {
         if (cancelled) return;
@@ -174,36 +165,17 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
           const legacyCompleted = listStoredCompletedTreatments(args.organizationId).filter(
             (record) => record.appointmentId === args.appointmentId,
           );
-          const hydration = decideBrowserCompletedHydration({
-            remoteWrite,
-            localRecords: legacyCompleted,
-            remote: existing ?? null,
-            identity: {
-              organizationId: args.organizationId,
-              locationId: args.locationId,
-              appointmentId: args.appointmentId,
-              customerId: args.customerId,
-              staffId: args.staffId,
-              serviceId: args.serviceId,
-            },
-          });
-          if (hydration.action === "stop") {
-            throw new Error(hydration.message);
-          }
-          if (hydration.action === "sync") {
-            if (cancelled) return;
-            // Keep the browser copy. The therapist confirms it with the
-            // existing complete action; opening the screen does not write.
-            pendingBrowserSync.current = true;
-            remoteRecordReady.current = false;
-            remoteVerified.current = false;
-            setDraft(hydration.local);
-            setPhotos([]);
-            setHydrated(true);
-            skipNextSave.current = true;
-            setSaveError(null);
-            setSavedAt(new Date(hydration.local.updatedAt));
-            return;
+          if (legacyCompleted.length > 0) {
+            const decisions = preflightCompletedTreatmentMigration(
+              args.organizationId,
+              legacyCompleted,
+              existing ? [existing] : [],
+            );
+            if (decisions.some((decision) => decision.status !== "already-remote")) {
+              throw new Error(
+                "本機已完成療程與正式資料庫尚未確認完全一致，已保留原始紀錄並暫停切換。請先驗證並補同步。",
+              );
+            }
           }
           if (
             !existing &&
@@ -231,7 +203,6 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
           }
           if (cancelled) return;
           remoteRecordReady.current = Boolean(existing);
-          remoteVerified.current = existing?.status === "completed";
           const next =
             existing ??
             createEmptyDraft({
@@ -397,7 +368,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
         setDraft(persisted);
         return persisted;
       }
-      if (!remoteRecordReady.current && !pendingBrowserSync.current) {
+      if (!remoteRecordReady.current) {
         throw new Error("正式資料庫尚未建立療程草稿，無法完成療程。請重新進入療程後再試。");
       }
       if (saveError) {
@@ -417,91 +388,8 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
           }))) {
         throw new Error("療程內容剛更新，請確認最新內容後再次按完成療程。");
       }
-      if (
-        remoteVerified.current &&
-        next.status === "completed" &&
-        draftRef.current.status === "completed"
-      ) {
+      if (next.status === "completed" && draftRef.current.status === "completed") {
         return draftRef.current;
-      }
-      if (pendingBrowserSync.current) {
-        const identity = {
-          organizationId: args.organizationId,
-          locationId: args.locationId,
-          appointmentId: args.appointmentId,
-          customerId: args.customerId,
-          staffId: args.staffId,
-          serviceId: args.serviceId,
-        };
-        const synced = await syncBrowserCompletedTreatment({
-          identity,
-          local: next,
-          readRemote: async () => {
-            const verifyClient = createBrowserClientOrNull() as IdentitySupabaseClient | null;
-            if (!verifyClient) throw new Error("無法驗證正式療程資料，請保留原始紀錄。");
-            return (
-              (await getRemotePilotTreatmentByAppointment(
-                args.organizationId,
-                args.appointmentId,
-                verifyClient,
-                treatmentReadPilotEnv(),
-              )) ?? null
-            );
-          },
-          createRemote: (source) =>
-            submitTreatmentRemoteCreate({
-              organizationId: args.organizationId,
-              locationId: source.locationId ?? args.locationId ?? "",
-              customerId: source.customerId,
-              serviceId: source.serviceId,
-              staffId: source.staffId,
-              appointmentId: source.appointmentId,
-              draft: photoMetaOnly(source),
-            }),
-          completeRemote: (remote, source) =>
-            submitTreatmentRemoteComplete({
-              organizationId: args.organizationId,
-              treatmentId: remote.id,
-              expectedUpdatedAt: remote.updatedAt,
-              locationId: remote.locationId ?? args.locationId ?? "",
-              customerId: remote.customerId,
-              serviceId: remote.serviceId,
-              staffId: remote.staffId,
-              appointmentId: remote.appointmentId,
-              draft: photoMetaOnly({ ...source, id: remote.id }),
-              completedAtFromAppointment: true,
-            }),
-        });
-        const verifyClient = createBrowserClientOrNull() as IdentitySupabaseClient | null;
-        if (!verifyClient) throw new Error("無法驗證正式療程資料，請保留原始紀錄。");
-        const verified = await getRemotePilotTreatmentByAppointment(
-          args.organizationId,
-          args.appointmentId,
-          verifyClient,
-          treatmentReadPilotEnv(),
-        );
-        if (
-          !verified ||
-          verified.id !== synced.id ||
-          verified.organizationId !== args.organizationId ||
-          verified.appointmentId !== args.appointmentId ||
-          verified.customerId !== args.customerId ||
-          verified.status !== "completed" ||
-          !browserClinicalFieldsMatch(photoMetaOnly(next), verified)
-        ) {
-          throw new Error("療程已送出但正式資料庫回讀驗證失敗，請勿重複建立療程。");
-        }
-        pendingBrowserSync.current = false;
-        remoteRecordReady.current = true;
-        remoteVerified.current = true;
-        skipNextSave.current = true;
-        setDraft(verified);
-        setSavedAt(new Date(verified.updatedAt));
-        setSaveError(null);
-        return verified;
-      }
-      if (!remoteRecordReady.current) {
-        throw new Error("正式資料庫尚未建立療程草稿，無法完成療程。請重新進入療程後再試。");
       }
       const completed = await submitTreatmentRemoteComplete({
                 organizationId: args.organizationId,
@@ -528,7 +416,6 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
           !completedTreatmentClinicalFieldsMatch(photoMetaOnly(next), verified)) {
         throw new Error("療程已送出但正式資料庫回讀驗證失敗，請勿重複建立療程。");
       }
-      remoteVerified.current = true;
       skipNextSave.current = true;
       setDraft(verified);
       setSavedAt(new Date(verified.updatedAt));

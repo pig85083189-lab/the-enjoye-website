@@ -63,8 +63,6 @@ export type TreatmentRemoteUpdateInput = {
   appointmentId?: string;
   draft: TreatmentDraft;
   dbId?: string;
-  /** Browser backfill only. Live completion keeps the current clock. */
-  completedAtFromAppointment?: boolean;
 };
 
 export class TreatmentRemoteAdapter {
@@ -339,9 +337,7 @@ export class TreatmentRemoteAdapter {
 
     const staffId = this.mapper.requireOperationalStaffId(organizationId, input.staffId);
     const updatedBy = this.mapper.requireOperationalStaffId(organizationId, input.updatedBy);
-    const stamp = input.completedAtFromAppointment
-      ? await this.appointmentServiceInstant(orgDbId, current.appointment_id)
-      : this.now().toISOString();
+    const stamp = this.now().toISOString();
     const completedDraft: TreatmentDraft = {
       ...input.draft,
       status: "completed",
@@ -374,24 +370,6 @@ export class TreatmentRemoteAdapter {
       throw new TreatmentWriteZeroRowError();
     }
     throw new Error("Treatment complete returned an unexpected number of rows");
-  }
-
-  private async appointmentServiceInstant(
-    organizationDbId: string,
-    appointmentDbId: string | null,
-  ): Promise<string> {
-    const appointment = appointmentDbId
-      ? await this.appointments.getAppointmentByDbId(appointmentDbId)
-      : undefined;
-    if (
-      !appointment ||
-      appointment.organization_id !== organizationDbId ||
-      !appointment.starts_at ||
-      Number.isNaN(Date.parse(appointment.starts_at))
-    ) {
-      throw new Error("無法沿用正式預約的療程日期，已停止同步。");
-    }
-    return appointment.starts_at;
   }
 
   private async requireMatchingAppointment(input: {
