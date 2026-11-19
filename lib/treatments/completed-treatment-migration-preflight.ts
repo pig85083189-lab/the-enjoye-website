@@ -10,6 +10,26 @@ export type TreatmentMigrationDecision =
   | { status: "blocked"; localId: string; reason: string }
   | { status: "needs-identity-verification"; localId: string; appointmentId: string };
 
+/** Compare persisted clinical fields, not just matching IDs. Array order is meaningful. */
+export function completedTreatmentClinicalFieldsMatch(
+  local: TreatmentDraft,
+  remote: TreatmentDraft,
+): boolean {
+  const fields = [
+    "assessment", "bodyMarkers", "bodyMapNote", "operations", "products",
+    "professionalNote", "clientFeeling", "discomfortNote", "followUp",
+    "skippedSteps", "suggestedTrackingAreas", "selectedQuickPhrases",
+    "noteManuallyEdited", "mode",
+  ] as const;
+  return remote.status === "completed" && fields.every(
+    (field) => JSON.stringify(local[field]) === JSON.stringify(remote[field]),
+  ) && JSON.stringify(local.photos.map(({ id, type, createdAt, hadPreview }) => ({
+    id, type, createdAt, hadPreview,
+  }))) === JSON.stringify(remote.photos.map(({ id, type, createdAt, hadPreview }) => ({
+    id, type, createdAt, hadPreview,
+  })));
+}
+
 export function preflightCompletedTreatmentMigration(
   organizationId: string,
   localRecords: readonly TreatmentDraft[],
@@ -59,8 +79,10 @@ export function preflightCompletedTreatmentMigration(
       )) {
         return { status: "blocked", localId: row.id, reason: "Remote identity conflict; manual reconciliation required" };
       }
-      // Identical IDs alone do not prove clinical content was migrated.
-      return { status: "already-remote", localId: row.id, reason: "Matching remote identity found; clinical field comparison still required" };
+      if (matches.some((remote) => !completedTreatmentClinicalFieldsMatch(row, remote))) {
+        return { status: "blocked", localId: row.id, reason: "Remote clinical contents differ; do not overwrite either record" };
+      }
+      return { status: "already-remote", localId: row.id, reason: "Matching remote identity and clinical contents verified" };
     }
     return {
       status: "needs-identity-verification",
