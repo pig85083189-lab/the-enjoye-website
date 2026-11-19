@@ -120,5 +120,14 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
   approved_at:new Date().toISOString(),revoked_at:null,updated_at:new Date().toISOString()
  },{onConflict:"treatment_id"});
  if(error)throw Error("療程已儲存，但會員身體紀錄公開失敗，請勿重複建立療程");
+ // Verify the exact persisted publication before reporting success to the therapist.
+ const {data:verified,error:verifyError}=await db.from("member_treatment_publications")
+  .select("treatment_id,organization_id,customer_id,approved_fields,revoked_at")
+  .eq("treatment_id",t.id).eq("organization_id",t.organization_id).maybeSingle();
+ if(verifyError||!verified||verified.revoked_at||
+    verified.customer_id!==t.customer_id||
+    JSON.stringify(verified.approved_fields)!==JSON.stringify(fields)){
+  throw Error("療程已儲存，但會員公開資料回讀驗證失敗，請勿重複建立療程");
+ }
  return {ok:true};
 }
