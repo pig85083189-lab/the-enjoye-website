@@ -77,6 +77,20 @@ export function TreatmentPageClient({
     );
   }
 
+  // Remote treatment writes must use authoritative customer and appointment
+  // identities. A local-only identity cannot safely map a completed record
+  // to the LINE member's treatment history.
+  if (treatmentRemoteWritePilot && (
+    !customerRemoteReadPilot || !appointmentRemoteReadPilot
+  )) {
+    return (
+      <ComingSoon
+        title="療程同步設定尚未完成"
+        description="正式療程寫入需要同時啟用顧客及預約資料庫讀取，請聯絡管理員確認設定。"
+      />
+    );
+  }
+
   const customer = customerIdentity.customer;
 
   if (appointmentIdentity.status === "loading") {
