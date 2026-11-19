@@ -77,8 +77,8 @@ describe("completed treatment migration preflight", () => {
     const baseline = record({
       assessment: { concerns: ["乾燥"], clientFocus: "需要保養", sensitivityLevel: 1 },
       bodyMapNote: "胸口敏感",
-      operations: [{ id: "operation-1" }] as TreatmentDraft["operations"],
-      products: [{ id: "product-1" }] as TreatmentDraft["products"],
+      operations: ["operation-1"],
+      products: ["product-1"],
       professionalNote: "服務紀錄",
       clientFeeling: "不舒服",
       discomfortNote: "胸口不適",
