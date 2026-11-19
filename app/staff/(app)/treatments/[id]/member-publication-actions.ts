@@ -126,7 +126,7 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
   .eq("treatment_id",t.id).eq("organization_id",t.organization_id).maybeSingle();
  if(verifyError||!verified||verified.revoked_at||
     verified.customer_id!==t.customer_id||
-    JSON.stringify(verified.approved_fields)!==JSON.stringify(fields)){
+    Object.keys(fields).some(key=>JSON.stringify(obj(verified.approved_fields)[key])!==JSON.stringify(fields[key]))){
   throw Error("療程已儲存，但會員公開資料回讀驗證失敗，請勿重複建立療程");
  }
  return {ok:true};
