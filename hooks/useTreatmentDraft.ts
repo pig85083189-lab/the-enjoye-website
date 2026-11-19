@@ -267,6 +267,11 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
 
   const completeTreatment = useCallback(
     async (next: TreatmentDraft): Promise<TreatmentDraft> => {
+      // A remote-read-only session must never claim a locally completed
+      // treatment: the member portal only reads authoritative remote rows.
+      if (remoteRead && !remoteWrite) {
+        throw new Error("療程尚未啟用正式資料庫寫入，無法完成同步。請聯絡管理員確認設定。");
+      }
       if (!remoteWrite) {
         saveCompletedTreatment(next);
         skipNextSave.current = true;
