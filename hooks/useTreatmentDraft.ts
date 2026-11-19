@@ -166,6 +166,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
           ) {
             try {
               existing = await submitTreatmentRemoteCreate({
+                organizationId: args.organizationId,
                 locationId: args.locationId ?? "",
                 customerId: args.customerId,
                 serviceId: args.serviceId,
@@ -267,6 +268,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
         setSaving(true);
         try {
           const saved = await submitTreatmentRemoteAutosave({
+                organizationId: args.organizationId,
             treatmentId: draft.id,
             expectedUpdatedAt,
             locationId: draft.locationId ?? args.locationId ?? "",
@@ -372,6 +374,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
         return draftRef.current;
       }
       const completed = await submitTreatmentRemoteComplete({
+                organizationId: args.organizationId,
         treatmentId: next.id,
         expectedUpdatedAt: next.updatedAt,
         locationId: next.locationId ?? args.locationId ?? "",
