@@ -18,6 +18,7 @@ import {
 } from "@/lib/tenant/storage-keys";
 import { ORG_ENJOYE_ID, TENANT_STORAGE_NAMESPACE } from "@/lib/tenant/constants";
 import { ensureFollowUpTaskFromCompletedTreatment } from "@/lib/follow-ups/store";
+import { completedTreatmentClinicalFieldsMatch } from "@/lib/treatments/completed-treatment-migration-preflight";
 
 /** @deprecated Legacy key — migration only */
 export const DRAFT_KEY_PREFIX = "the-enjoye:treatment-draft:";
@@ -348,17 +349,13 @@ export function saveCompletedTreatment(draft: TreatmentDraft): void {
   const persisted = listStoredCompletedTreatments(organizationId).find(
     (item) => item.id === completed.id && item.appointmentId === completed.appointmentId,
   );
-  if (!persisted || persisted.status !== "completed" ||
-      JSON.stringify(persisted.assessment) !== JSON.stringify(completed.assessment) ||
-      JSON.stringify(persisted.bodyMarkers) !== JSON.stringify(completed.bodyMarkers) ||
-      persisted.professionalNote !== completed.professionalNote ||
-      persisted.clientFeeling !== completed.clientFeeling ||
-      persisted.discomfortNote !== completed.discomfortNote ||
-      persisted.bodyMapNote !== completed.bodyMapNote ||
-      JSON.stringify(persisted.operations) !== JSON.stringify(completed.operations) ||
-      JSON.stringify(persisted.products) !== JSON.stringify(completed.products) ||
-      JSON.stringify(persisted.photos) !== JSON.stringify(completed.photos) ||
-      JSON.stringify(persisted.followUp) !== JSON.stringify(completed.followUp)) {
+  if (!persisted ||
+      persisted.organizationId !== completed.organizationId ||
+      persisted.locationId !== completed.locationId ||
+      persisted.customerId !== completed.customerId ||
+      persisted.staffId !== completed.staffId ||
+      persisted.serviceId !== completed.serviceId ||
+      !completedTreatmentClinicalFieldsMatch(completed, persisted)) {
     throw new Error("療程完成紀錄驗證失敗，原始草稿已保留，請勿重複送出。");
   }
   clearDraft(organizationId, draft.appointmentId);
