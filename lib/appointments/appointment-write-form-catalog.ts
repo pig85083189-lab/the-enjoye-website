@@ -132,7 +132,7 @@ export async function loadAppointmentWriteFormCatalog(
     ),
   );
   for (const customer of customers) {
-    if (lineCustomerAppIds.has(customer.id)) customer.name = `${customer.name}（LINE 會員資料）`;
+    if (lineCustomerAppIds.has(customer.id)) customer.name = `${customer.name}（LINE 來源，請核對）`;
   }
   const services = (
     await readNamedRows(
