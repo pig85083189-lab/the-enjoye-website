@@ -15,10 +15,10 @@ function obj(v:unknown):Record<string,unknown>{return v&&typeof v==="object"&&!A
 function add(target:PublicFields,key:string,value:PublicValue|null) {
  if(value!==null&&(!Array.isArray(value)||value.length>0))target[key]=value;
 }
-async function context(organizationId:string,treatmentId:string){
+async function context(organizationId:string,treatmentId:string, allowStaff=false){
  if(!organizationId||organizationId.length>160||!treatmentId||treatmentId.length>160)throw Error("無效的療程資料");
  const auth=await getAuthenticatedStaffMembership({organizationId});
- if(auth.status!=="ok"||!allowedRoles.has(auth.membership.role))throw Error("僅店長或主管可以審核公開");
+ if(auth.status!=="ok"||(!allowedRoles.has(auth.membership.role)&&!(allowStaff&&auth.membership.role==="STAFF")))throw Error("沒有權限公開療程");
  const db=createServiceRoleClient();
  if(!db)throw Error("資料庫尚未設定");
  const {data:org,error:orgError}=await db.from("organizations").select("id").eq("app_id",organizationId).maybeSingle();
@@ -98,5 +98,21 @@ export async function revokeMemberTreatment(organizationId:string,treatmentId:st
  const {error}=await db.from("member_treatment_publications").update({revoked_at:new Date().toISOString(),updated_at:new Date().toISOString()})
  .eq("treatment_id",t.id).eq("organization_id",t.organization_id).is("revoked_at",null);
  if(error)throw Error("撤銷失敗");
+ return {ok:true};
+}
+
+/** Automatically publish an authenticated staff member's completed remote treatment.
+ * The treatment and customer must already exist in the authoritative database.
+ * The snapshot is generated server-side; callers cannot supply public fields.
+ */
+export async function autoPublishCompletedMemberTreatment(organizationId:string,treatmentId:string){
+ const {db,t,auth,consultationFields}=await context(organizationId,treatmentId,true);
+ const fields=makeSnapshot(t,consultationFields);
+ const {error}=await db.from("member_treatment_publications").upsert({
+  treatment_id:t.id,organization_id:t.organization_id,customer_id:t.customer_id,
+  approved_fields:fields,approved_by:auth.membership.userId,
+  approved_at:new Date().toISOString(),revoked_at:null,updated_at:new Date().toISOString()
+ },{onConflict:"treatment_id"});
+ if(error)throw Error("療程已儲存，但會員身體紀錄公開失敗，請勿重複建立療程");
  return {ok:true};
 }
