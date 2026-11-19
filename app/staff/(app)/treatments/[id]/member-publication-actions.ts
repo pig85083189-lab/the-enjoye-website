@@ -113,7 +113,19 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
   .select("treatment_id,revoked_at").eq("treatment_id",t.id).eq("organization_id",t.organization_id).maybeSingle();
  if(readError)throw Error("無法確認會員公開狀態，請稍後重試");
  if(existing?.revoked_at)throw Error("此療程已撤銷會員公開，無法自動重新公開");
- if(existing)return {ok:true};
+ if(existing){
+  // A retry must verify the already-published snapshot rather than treating
+  // the mere existence of a row as proof of a successful publication.
+  const {data:published,error:publishedError}=await db.from("member_treatment_publications")
+   .select("customer_id,approved_fields,revoked_at")
+   .eq("treatment_id",t.id).eq("organization_id",t.organization_id).maybeSingle();
+  if(publishedError||!published||published.revoked_at||
+     published.customer_id!==t.customer_id||
+     Object.keys(fields).some(key=>JSON.stringify(obj(published.approved_fields)[key])!==JSON.stringify(fields[key]))){
+   throw Error("療程已完成，但既有會員公開紀錄與最新內容不一致，請聯絡管理員確認，勿重複建立療程");
+  }
+  return {ok:true};
+ }
  const {error}=await db.from("member_treatment_publications").upsert({
   treatment_id:t.id,organization_id:t.organization_id,customer_id:t.customer_id,
   approved_fields:fields,approved_by:auth.membership.userId,
