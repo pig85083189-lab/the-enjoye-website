@@ -117,6 +117,23 @@ export async function loadAppointmentWriteFormCatalog(
     name: customer.name,
     phone: customer.phone,
   }));
+  // Label LINE-origin records in the appointment picker without changing
+  // their IDs or silently merging any same-name customers.
+  const lineCustomerRows = await readNamedRows(
+    client.from("customers")
+      .select("app_id, organization_id, source")
+      .eq("organization_id", identity.organizationDbId)
+      .eq("source", "LINE_MEMBER"),
+  );
+  const lineCustomerAppIds = new Set(
+    lineCustomerRows.flatMap((row) =>
+      typeof row.app_id === "string" && row.organization_id === identity.organizationDbId
+        ? [row.app_id] : [],
+    ),
+  );
+  for (const customer of customers) {
+    if (lineCustomerAppIds.has(customer.id)) customer.name = `${customer.name}（LINE 會員資料）`;
+  }
   const services = (
     await readNamedRows(
       client
