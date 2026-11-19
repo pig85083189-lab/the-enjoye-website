@@ -27,7 +27,7 @@ export function CompletedTreatmentMigrationPanel({ organizationId }: {
       const completed = await migrateCompletedBrowserTreatment(client, current, {
         [TREATMENT_REMOTE_READ_PILOT_ENV]: "1",
         [TREATMENT_REMOTE_WRITE_PILOT_ENV]: "1",
-      });
+      }, listStoredCompletedTreatments(organizationId));
       setMessage(`已寫入並重新驗證：${completed.id}。本機原始紀錄仍保留。`);
       setRecords(listStoredCompletedTreatments(organizationId));
     } catch (error) {
