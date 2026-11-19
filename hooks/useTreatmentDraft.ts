@@ -192,7 +192,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
             );
             if (!existing ||
                 existing.id !== legacyDraft.id ||
-                !completedTreatmentClinicalFieldsMatch(legacyDraft, existing)) {
+                !completedTreatmentClinicalFieldsMatch(legacyDraft, { ...existing, status: "completed" })) {
               throw new Error("本機療程草稿同步後驗證不一致，已保留原始草稿並停止完成。");
             }
           }
