@@ -13,6 +13,7 @@ export default async function TreatmentsIndexPage() {
       appointmentRemoteReadPilot={isAppointmentRemoteReadPilotEnabled()}
       treatmentRemoteReadPilot={isTreatmentRemoteReadPilotEnabled()}
       commerceRemoteReadPilot={isCommerceRemoteReadPilotEnabled()}
+      completedMigrationPilot={process.env.BEAUTY_OS_COMPLETED_TREATMENT_MIGRATION_PILOT === "1"}
     />
   );
 }
