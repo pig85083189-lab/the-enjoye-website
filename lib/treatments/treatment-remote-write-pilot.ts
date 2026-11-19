@@ -76,8 +76,9 @@ export function assertTreatmentWriteRole(actor: CapabilityActor): void {
 
 export async function createAuthenticatedTreatmentWritePersistence(
   client: TreatmentWriteClient,
+  organizationId?: string,
 ): Promise<AuthenticatedTreatmentWritePersistence> {
-  const identity = await loadAuthenticatedIdentityCatalog(client);
+  const identity = await loadAuthenticatedIdentityCatalog(client, organizationId);
   return {
     identity,
     treatments: new TreatmentRemoteAdapter(
@@ -99,6 +100,7 @@ function actorFromIdentity(identity: LoadedAuthenticatedIdentity): CapabilityAct
 export async function runAuthenticatedTreatmentCreate(
   client: TreatmentWriteClient,
   input: {
+    organizationId?: string;
     locationId: string;
     customerId: string;
     serviceId: string;
@@ -113,7 +115,7 @@ export async function runAuthenticatedTreatmentCreate(
   if (!isTreatmentRemoteWritePilotEnabled(env)) {
     throw new Error("Treatment remote write pilot is off");
   }
-  const persistence = await createAuthenticatedTreatmentWritePersistence(client);
+  const persistence = await createAuthenticatedTreatmentWritePersistence(client, input.organizationId);
   assertTreatmentWriteRole(actorFromIdentity(persistence.identity));
   return persistence.treatments.create(persistence.identity.organizationAppId, {
     ...input,
@@ -126,6 +128,7 @@ export async function runAuthenticatedTreatmentAutosave(
   input: {
     treatmentId: string;
     expectedUpdatedAt: string;
+    organizationId?: string;
     locationId: string;
     customerId: string;
     serviceId: string;
@@ -138,7 +141,7 @@ export async function runAuthenticatedTreatmentAutosave(
   if (!isTreatmentRemoteWritePilotEnabled(env)) {
     throw new Error("Treatment remote write pilot is off");
   }
-  const persistence = await createAuthenticatedTreatmentWritePersistence(client);
+  const persistence = await createAuthenticatedTreatmentWritePersistence(client, input.organizationId);
   assertTreatmentWriteRole(actorFromIdentity(persistence.identity));
   try {
     return await persistence.treatments.update(persistence.identity.organizationAppId, {
@@ -158,6 +161,7 @@ export async function runAuthenticatedTreatmentComplete(
   input: {
     treatmentId: string;
     expectedUpdatedAt: string;
+    organizationId?: string;
     locationId: string;
     customerId: string;
     serviceId: string;
@@ -170,7 +174,7 @@ export async function runAuthenticatedTreatmentComplete(
   if (!isTreatmentRemoteWritePilotEnabled(env)) {
     throw new Error("Treatment remote write pilot is off");
   }
-  const persistence = await createAuthenticatedTreatmentWritePersistence(client);
+  const persistence = await createAuthenticatedTreatmentWritePersistence(client, input.organizationId);
   assertTreatmentWriteRole(actorFromIdentity(persistence.identity));
   try {
     return await persistence.treatments.complete(persistence.identity.organizationAppId, {
