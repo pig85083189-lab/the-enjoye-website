@@ -18,7 +18,7 @@ function add(target:PublicFields,key:string,value:PublicValue|null) {
 async function context(organizationId:string,treatmentId:string, allowStaff=false){
  if(!organizationId||organizationId.length>160||!treatmentId||treatmentId.length>160)throw Error("無效的療程資料");
  const auth=await getAuthenticatedStaffMembership({organizationId});
- if(auth.status!=="ok"||(!allowedRoles.has(auth.membership.role)&&!(allowStaff&&auth.membership.role==="STAFF")))throw Error("沒有權限公開療程");
+ if(auth.status!=="ok"||(!allowedRoles.has(auth.membership.role)&&!(allowStaff&&["STAFF","RECEPTIONIST"].includes(auth.membership.role))))throw Error("沒有權限公開療程");
  const db=createServiceRoleClient();
  if(!db)throw Error("資料庫尚未設定");
  const {data:org,error:orgError}=await db.from("organizations").select("id").eq("app_id",organizationId).maybeSingle();
