@@ -12,6 +12,9 @@ on:
       - 'package.json'
       - 'lib/treatment-draft.ts'
       - 'hooks/useTreatmentDraft.ts'
+      - 'features/treatments/CompletedTreatmentMigrationPanel.tsx'
+      - 'features/treatments/TreatmentsListPageClient.tsx'
+      - 'app/staff/(app)/treatments/page.tsx'
       - 'lib/treatments/treatment-remote-write-pilot.ts'
       - 'app/layout.tsx'
   workflow_dispatch:
