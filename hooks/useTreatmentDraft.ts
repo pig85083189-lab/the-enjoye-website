@@ -20,7 +20,7 @@ import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-ide
 import { TREATMENT_REMOTE_READ_PILOT_ENV } from "@/lib/treatments/treatment-remote-read-flag";
 import { getRemotePilotTreatmentByAppointment } from "@/lib/treatments/treatment-remote-read-pilot";
 import { TreatmentDuplicateError } from "@/lib/treatments/treatment-write-errors";
-import { completedTreatmentClinicalFieldsMatch, preflightCompletedTreatmentMigration } from "@/lib/treatments/completed-treatment-migration-preflight";
+import { treatmentClinicalFieldsMatch, completedTreatmentClinicalFieldsMatch, preflightCompletedTreatmentMigration } from "@/lib/treatments/completed-treatment-migration-preflight";
 
 function treatmentReadPilotEnv(): NodeJS.Dict<string> {
   return {
@@ -160,6 +160,12 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
             if (!remoteWrite) {
               throw new Error("偵測到尚未同步的本機療程草稿，已保留原始資料並暫停切換。");
             }
+            if (!shouldCreateTreatmentForAppointment(args.appointmentStatus)) {
+              throw new Error("目前預約狀態不允許建立療程，已保留本機草稿並停止同步。");
+            }
+            if (legacyDraft.status !== "draft" || !legacyDraft.id.startsWith("trt-")) {
+              throw new Error("本機療程草稿狀態或編號無效，已保留資料並停止同步。");
+            }
             if (
               legacyDraft.organizationId !== args.organizationId ||
               legacyDraft.appointmentId !== args.appointmentId ||
@@ -192,7 +198,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
             );
             if (!existing ||
                 existing.id !== legacyDraft.id ||
-                !completedTreatmentClinicalFieldsMatch(legacyDraft, { ...existing, status: "completed" })) {
+                !(existing.status === "draft" && treatmentClinicalFieldsMatch(legacyDraft, existing))) {
               throw new Error("本機療程草稿同步後驗證不一致，已保留原始草稿並停止完成。");
             }
           }
