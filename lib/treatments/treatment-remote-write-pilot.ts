@@ -11,6 +11,7 @@
  */
 
 import type { TreatmentDraft } from "@/types/treatment";
+import { completedTreatmentClinicalFieldsMatch } from "./completed-treatment-migration-preflight";
 import {
   canWriteTreatment,
   type CapabilityActor,
@@ -184,6 +185,16 @@ export async function runAuthenticatedTreatmentComplete(
       );
       if (!existing) throw new TreatmentWriteNotFoundError();
       if (existing.status === "completed" && existing.updatedAt !== input.expectedUpdatedAt) {
+        if (existing.organizationId !== persistence.identity.organizationAppId ||
+            existing.id !== input.treatmentId ||
+            existing.appointmentId !== input.appointmentId ||
+            existing.customerId !== input.customerId ||
+            existing.locationId !== input.locationId ||
+            existing.staffId !== input.staffId ||
+            existing.serviceId !== input.serviceId ||
+            !completedTreatmentClinicalFieldsMatch(input.draft, existing)) {
+          throw new TreatmentWriteStaleError();
+        }
         return existing;
       }
       throw new TreatmentWriteStaleError();
