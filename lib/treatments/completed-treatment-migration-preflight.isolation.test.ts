@@ -50,6 +50,18 @@ describe("completed treatment migration preflight", () => {
     );
     expect(result[0].status).toBe("blocked");
   });
+  it("blocks a remote draft from masking a completed browser record", () => {
+    const result = preflightCompletedTreatmentMigration(
+      org, [record()], [record({ status: "draft" })],
+    );
+    expect(result[0].status).toBe("blocked");
+  });
+  it("blocks an existing remote record with the same appointment but different ID", () => {
+    const result = preflightCompletedTreatmentMigration(
+      org, [record()], [record({ id: "another-treatment" })],
+    );
+    expect(result[0].status).toBe("blocked");
+  });
   it("only accepts fully matching remote records as already present", () => {
     expect(preflightCompletedTreatmentMigration(org, [record()], [record()])[0].status)
       .toBe("already-remote");
