@@ -1,10 +1,9 @@
 import type { TreatmentDraft } from "@/types/treatment";
 
 /**
- * Read-only preflight for migrating browser-completed treatments.
- * Never mutates local history, creates identities, or writes to Supabase.
- * Callers must independently verify canonical customer, appointment, service,
- * staff and location identities with an authenticated server-side operation.
+ * Read-only migration preflight. This is not authorization to write.
+ * Canonical customer/appointment/location/service/staff identities must be
+ * verified by the authenticated write path before any Supabase mutation.
  */
 export type TreatmentMigrationDecision =
   | { status: "already-remote"; localId: string; reason: string }
@@ -16,26 +15,53 @@ export function preflightCompletedTreatmentMigration(
   localRecords: readonly TreatmentDraft[],
   remoteRecords: readonly TreatmentDraft[],
 ): TreatmentMigrationDecision[] {
-  const remoteIds = new Set(remoteRecords.map((row) => row.id));
-  const remoteAppointments = new Set(
-    remoteRecords.map((row) => row.appointmentId).filter(Boolean),
-  );
-  const seenLocalAppointments = new Set<string>();
+  // Keep full remote rows: a matching appointment is not proof that its
+  // customer, organization or clinical contents match the browser record.
+  const remoteById = new Map(remoteRecords.map((row) => [row.id, row]));
+  const remoteByAppointment = new Map<string, TreatmentDraft[]>();
+  for (const row of remoteRecords) {
+    if (!row.appointmentId) continue;
+    const matches = remoteByAppointment.get(row.appointmentId) ?? [];
+    matches.push(row);
+    remoteByAppointment.set(row.appointmentId, matches);
+  }
+  const localAppointmentCounts = new Map<string, number>();
+  const localIdCounts = new Map<string, number>();
+  for (const row of localRecords) {
+    if (row.appointmentId) localAppointmentCounts.set(
+      row.appointmentId, (localAppointmentCounts.get(row.appointmentId) ?? 0) + 1,
+    );
+    if (row.id) localIdCounts.set(row.id, (localIdCounts.get(row.id) ?? 0) + 1);
+  }
+
   return localRecords.map((row) => {
-    if (row.organizationId !== organizationId || row.status !== "completed") {
+    if (!organizationId || row.organizationId !== organizationId || row.status !== "completed") {
       return { status: "blocked", localId: row.id, reason: "Organization or completion status mismatch" };
     }
     if (!row.id || !row.appointmentId || !row.customerId ||
         !row.serviceId || !row.staffId || !row.locationId) {
       return { status: "blocked", localId: row.id, reason: "Required operational identity missing" };
     }
-    if (remoteIds.has(row.id) || remoteAppointments.has(row.appointmentId)) {
-      return { status: "already-remote", localId: row.id, reason: "Remote treatment or appointment already exists; compare contents manually" };
+    if ((localIdCounts.get(row.id) ?? 0) > 1 ||
+        (localAppointmentCounts.get(row.appointmentId) ?? 0) > 1) {
+      return { status: "blocked", localId: row.id, reason: "Duplicate local treatment ID or appointment" };
     }
-    if (seenLocalAppointments.has(row.appointmentId)) {
-      return { status: "blocked", localId: row.id, reason: "Duplicate appointment in local completed history" };
+    const matches = [
+      ...(remoteById.has(row.id) ? [remoteById.get(row.id)!] : []),
+      ...(remoteByAppointment.get(row.appointmentId) ?? []),
+    ];
+    if (matches.length) {
+      if (matches.some((remote) =>
+        remote.organizationId !== organizationId ||
+        remote.customerId !== row.customerId ||
+        remote.appointmentId !== row.appointmentId ||
+        remote.id !== row.id
+      )) {
+        return { status: "blocked", localId: row.id, reason: "Remote identity conflict; manual reconciliation required" };
+      }
+      // Identical IDs alone do not prove clinical content was migrated.
+      return { status: "already-remote", localId: row.id, reason: "Matching remote identity found; clinical field comparison still required" };
     }
-    seenLocalAppointments.add(row.appointmentId);
     return {
       status: "needs-identity-verification",
       localId: row.id,
