@@ -73,4 +73,40 @@ describe("completed treatment migration preflight", () => {
     expect(result[0].status).toBe("blocked");
   });
 
+  it("rejects every changed member-visible clinical field", () => {
+    const baseline = record({
+      assessment: { concerns: ["乾燥"], clientFocus: "需要保養", sensitivityLevel: 1 },
+      bodyMapNote: "胸口敏感",
+      operations: [{ id: "operation-1" }] as TreatmentDraft["operations"],
+      products: [{ id: "product-1" }] as TreatmentDraft["products"],
+      professionalNote: "服務紀錄",
+      clientFeeling: "不舒服",
+      discomfortNote: "胸口不適",
+      followUp: { tags: ["保濕"], suggestedDate: "2026-11-21", note: "下次追蹤", suggestNextBooking: true },
+    });
+    const variants: Partial<TreatmentDraft>[] = [
+      { assessment: { ...baseline.assessment, clientFocus: "不同評估" } },
+      { bodyMarkers: [] },
+      { bodyMapNote: "不同標記備註" },
+      { operations: [] },
+      { products: [] },
+      { professionalNote: "不同服務紀錄" },
+      { clientFeeling: "不同感受" },
+      { discomfortNote: "不同不適" },
+      { followUp: { ...baseline.followUp, note: "不同追蹤" } },
+    ];
+    for (const changes of variants) {
+      const remote = { ...baseline, ...changes };
+      expect(completedTreatmentClinicalFieldsMatch(baseline, remote)).toBe(false);
+      expect(preflightCompletedTreatmentMigration(org, [baseline], [remote])[0].status).toBe("blocked");
+    }
+  });
+  it("rejects changed photo metadata without uploading photos", () => {
+    const local = record({ photos: [{
+      id: "photo-1", treatmentId: "treatment-1", type: "BEFORE",
+      createdAt: "2026-11-19T01:00:00.000Z", hadPreview: true,
+    }] });
+    expect(completedTreatmentClinicalFieldsMatch(local, record())).toBe(false);
+  });
+
 });
