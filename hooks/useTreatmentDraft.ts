@@ -20,6 +20,7 @@ import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-ide
 import { TREATMENT_REMOTE_READ_PILOT_ENV } from "@/lib/treatments/treatment-remote-read-flag";
 import { getRemotePilotTreatmentByAppointment } from "@/lib/treatments/treatment-remote-read-pilot";
 import { TreatmentDuplicateError } from "@/lib/treatments/treatment-write-errors";
+import { completedTreatmentClinicalFieldsMatch } from "@/lib/treatments/completed-treatment-migration-preflight";
 
 function treatmentReadPilotEnv(): NodeJS.Dict<string> {
   return {
@@ -332,7 +333,12 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
           (item) => item.id === next.id &&
             item.appointmentId === args.appointmentId &&
             item.customerId === args.customerId &&
-            item.status === "completed",
+            item.status === "completed" &&
+            item.organizationId === args.organizationId &&
+            item.locationId === next.locationId &&
+            item.staffId === next.staffId &&
+            item.serviceId === next.serviceId &&
+            completedTreatmentClinicalFieldsMatch({ ...next, status: "completed" }, item),
         );
         if (!persisted) {
           throw new Error("客戶療程列表尚未讀取到已完成紀錄，已停止更新預約狀態。");
