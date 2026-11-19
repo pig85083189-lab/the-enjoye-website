@@ -10,6 +10,7 @@ on:
       - 'package-lock.json'
       - 'package.json'
       - 'lib/treatment-draft.ts'
+      - 'app/layout.tsx'
   workflow_dispatch:
 jobs:
   treatment-preflight:
