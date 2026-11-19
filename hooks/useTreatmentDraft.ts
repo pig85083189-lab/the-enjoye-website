@@ -402,13 +402,27 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
         appointmentId: next.appointmentId,
         draft: photoMetaOnly(next),
       });
+      // Re-read the authoritative row before reporting completion. A successful
+      // mutation response alone is not proof that the member-facing store can read it.
+      const verifyClient = createBrowserClientOrNull() as IdentitySupabaseClient | null;
+      if (!verifyClient) throw new Error("無法驗證正式療程資料，請保留原始紀錄。");
+      const verified = await getRemotePilotTreatmentByAppointment(
+        args.organizationId, args.appointmentId, verifyClient, treatmentReadPilotEnv(),
+      );
+      if (!verified || verified.id !== completed.id ||
+          verified.organizationId !== args.organizationId ||
+          verified.appointmentId !== args.appointmentId ||
+          verified.customerId !== args.customerId ||
+          !completedTreatmentClinicalFieldsMatch(photoMetaOnly(next), verified)) {
+        throw new Error("療程已送出但正式資料庫回讀驗證失敗，請勿重複建立療程。");
+      }
       skipNextSave.current = true;
-      setDraft(completed);
-      setSavedAt(new Date(completed.updatedAt));
+      setDraft(verified);
+      setSavedAt(new Date(verified.updatedAt));
       setSaveError(null);
-      return completed;
+      return verified;
     },
-    [args.locationId, remoteWrite, remoteRead, saveError, saving],
+    [args.appointmentId, args.customerId, args.organizationId, args.locationId, remoteWrite, remoteRead, saveError, saving],
   );
 
   const hasContent = useMemo(
