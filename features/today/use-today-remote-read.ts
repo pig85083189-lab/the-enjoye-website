@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { todayRemoteQueryRangeFromInstant } from "@/lib/calendar/calendar-appointment-time";
 import { listRemoteTodayAppointmentsByLocation } from "@/lib/appointments/today-remote-read-pilot";
 import { useAppointmentRemoteWriteRevision } from "@/lib/appointments/use-appointment-remote-write-revision";
 import type { ScheduleAppointment } from "@/lib/appointments/domain";
@@ -27,11 +28,16 @@ export function useTodayRemoteAppointments(input: {
   enabled: boolean;
 }): TodayRemoteReadState {
   const writeRevision = useAppointmentRemoteWriteRevision();
+  // Today reads a Taipei business-day window. A changing clock should not
+  // re-query the same day on every tick; writes still invalidate via revision.
+  const dayStartIso = input.nowIso
+    ? todayRemoteQueryRangeFromInstant(input.nowIso).startsAt
+    : null;
   const requestKey = [
     "today",
     input.organizationId,
     input.locationAppId,
-    input.nowIso ?? "",
+    dayStartIso ?? "",
     String(writeRevision),
   ].join(":");
   const [result, setResult] = useState<{
@@ -40,8 +46,7 @@ export function useTodayRemoteAppointments(input: {
   } | null>(null);
 
   useEffect(() => {
-    if (!input.enabled || !input.nowIso || !input.locationAppId) return undefined;
-    const nowIso = input.nowIso;
+    if (!input.enabled || !dayStartIso || !input.locationAppId) return undefined;
     let cancelled = false;
 
     void (async () => {
@@ -53,7 +58,7 @@ export function useTodayRemoteAppointments(input: {
         const rows = await listRemoteTodayAppointmentsByLocation(
           input.organizationId,
           input.locationAppId,
-          nowIso,
+          dayStartIso,
           client,
         );
         if (cancelled) return;
@@ -80,7 +85,7 @@ export function useTodayRemoteAppointments(input: {
     input.enabled,
     input.organizationId,
     input.locationAppId,
-    input.nowIso,
+    dayStartIso,
     requestKey,
   ]);
 
