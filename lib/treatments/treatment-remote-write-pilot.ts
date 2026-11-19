@@ -168,6 +168,7 @@ export async function runAuthenticatedTreatmentComplete(
     staffId: string;
     appointmentId?: string;
     draft: TreatmentDraft;
+    completedAtFromAppointment?: boolean;
   },
   env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
 ): Promise<TreatmentDraft> {
