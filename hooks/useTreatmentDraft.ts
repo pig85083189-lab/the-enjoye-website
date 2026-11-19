@@ -469,6 +469,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
               staffId: remote.staffId,
               appointmentId: remote.appointmentId,
               draft: photoMetaOnly({ ...source, id: remote.id }),
+              completedAtFromAppointment: true,
             }),
         });
         const verifyClient = createBrowserClientOrNull() as IdentitySupabaseClient | null;

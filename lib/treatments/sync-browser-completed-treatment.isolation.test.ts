@@ -83,9 +83,20 @@ async function seedAppointment(
   });
 }
 
+const SYNC_CLOCK = "2026-12-01T03:00:00.000Z";
+
+function taipeiDate(iso: string): string {
+  return new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
+
 describe("browser completed treatment sync", () => {
-  it("writes the browser record under the appointment customer and rereads it once", async () => {
-    const { db, remote } = createMemoryRemotePersistence();
+  it("writes the browser record under the appointment customer and keeps the appointment date", async () => {
+    const { db, remote } = createMemoryRemotePersistence(() => new Date(SYNC_CLOCK));
     const seeded = seedTwoOrgs(db);
     const appointment = await seedAppointment(remote);
     const local = localCompleted(appointment.id);
@@ -126,6 +137,7 @@ describe("browser completed treatment sync", () => {
             staffId: row.staffId,
             appointmentId: row.appointmentId,
             draft: source,
+            completedAtFromAppointment: true,
           }),
       });
 
@@ -140,10 +152,14 @@ describe("browser completed treatment sync", () => {
     const row = db.treatments[0]!;
     expect(row.organization_id).toBe(seeded.orgA.dbId);
     expect(row.customer_id).toBe(seeded.customerA.dbId);
+    expect(row.customer_id).toBe(db.appointments[0]?.customer_id);
     expect(row.appointment_id).toBe(db.appointments[0]?.id);
     expect(row.staff_id).toBe(STAFF_A);
     expect(row.status).toBe("COMPLETED");
-    expect(row.completed_at).toBeTruthy();
+    expect(row.completed_at).toBe(START);
+    expect(taipeiDate(row.completed_at!)).toBe("2026/11/19");
+    expect(taipeiDate(SYNC_CLOCK)).toBe("2026/12/01");
+    expect(row.completed_at).not.toBe(SYNC_CLOCK);
     expect(row.assessment).toMatchObject(local.assessment);
     expect(row.body_markers).toEqual(local.bodyMarkers);
     expect(row.body_map_note).toBe(local.bodyMapNote);
@@ -153,6 +169,32 @@ describe("browser completed treatment sync", () => {
     expect(row.suggested_tracking_areas).toEqual(local.suggestedTrackingAreas);
     expect(first.customerId).toBe(CUST_SHARED);
     expect(first.status).toBe("completed");
+  });
+
+  it("leaves the live completion clock unchanged when the appointment date is not requested", async () => {
+    const { db, remote } = createMemoryRemotePersistence(() => new Date(SYNC_CLOCK));
+    seedTwoOrgs(db);
+    const appointment = await seedAppointment(remote);
+    const created = await remote.treatments.create(ORG_A, {
+      locationId: LOC_A1,
+      customerId: CUST_SHARED,
+      serviceId: SVC_SHARED,
+      staffId: STAFF_A,
+      appointmentId: appointment.id,
+      createdBy: STAFF_A,
+    });
+    await remote.treatments.complete(ORG_A, {
+      treatmentId: created.id,
+      expectedUpdatedAt: created.updatedAt,
+      updatedBy: STAFF_A,
+      locationId: LOC_A1,
+      customerId: CUST_SHARED,
+      serviceId: SVC_SHARED,
+      staffId: STAFF_A,
+      appointmentId: appointment.id,
+      draft: localCompleted(appointment.id),
+    });
+    expect(db.treatments[0]?.completed_at).toBe(SYNC_CLOCK);
   });
 
   it("does not write when the browser customer is not the appointment customer", async () => {

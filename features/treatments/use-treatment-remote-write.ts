@@ -92,6 +92,7 @@ export async function submitTreatmentRemoteComplete(input: {
   staffId: string;
   appointmentId?: string;
   draft: TreatmentDraft;
+  completedAtFromAppointment?: boolean;
 }): Promise<TreatmentDraft> {
   const completed = await runAuthenticatedTreatmentComplete(
     requireClient(),
