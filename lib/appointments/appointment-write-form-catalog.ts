@@ -117,6 +117,38 @@ export async function loadAppointmentWriteFormCatalog(
     name: customer.name,
     phone: customer.phone,
   }));
+  // Label LINE-origin records in the appointment picker without changing
+  // their IDs or silently merging any same-name customers.
+  const lineCustomerRows = await readNamedRows(
+    client.from("customers")
+      .select("id, app_id, organization_id, source, status")
+      .eq("organization_id", identity.organizationDbId)
+      
+  );
+  const activeCustomerIds = new Set(
+    lineCustomerRows.flatMap((row) =>
+      row.organization_id === identity.organizationDbId && row.status === "ACTIVE"
+        ? [typeof row.app_id === "string" && row.app_id.trim() ? row.app_id : String(row.id ?? "")]
+        : [],
+    ),
+  );
+  const verifiedLineCustomerIds = new Set(
+    lineCustomerRows.flatMap((row) =>
+      row.organization_id === identity.organizationDbId &&
+      row.status === "ACTIVE" &&
+      row.source === "LINE_MEMBER"
+        ? [typeof row.app_id === "string" && row.app_id.trim() ? row.app_id : String(row.id ?? "")]
+        : [],
+    ),
+  );
+  const selectableCustomers = customers
+    .filter((customer) => activeCustomerIds.has(customer.id))
+    .map((customer) => ({
+      ...customer,
+      name: verifiedLineCustomerIds.has(customer.id)
+        ? `${customer.name}（LINE 來源，請核對）`
+        : customer.name,
+    }));
   const services = (
     await readNamedRows(
       client
@@ -184,7 +216,7 @@ export async function loadAppointmentWriteFormCatalog(
     role,
     canCreate: canCreateAppointment({ role, isActive: true }),
     canCancel: canCancelAppointment({ role, isActive: true }),
-    customers,
+    customers: selectableCustomers,
     services,
     staff,
   };
