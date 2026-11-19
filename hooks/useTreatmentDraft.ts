@@ -20,7 +20,7 @@ import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-ide
 import { TREATMENT_REMOTE_READ_PILOT_ENV } from "@/lib/treatments/treatment-remote-read-flag";
 import { getRemotePilotTreatmentByAppointment } from "@/lib/treatments/treatment-remote-read-pilot";
 import { TreatmentDuplicateError } from "@/lib/treatments/treatment-write-errors";
-import { completedTreatmentClinicalFieldsMatch } from "@/lib/treatments/completed-treatment-migration-preflight";
+import { completedTreatmentClinicalFieldsMatch, preflightCompletedTreatmentMigration } from "@/lib/treatments/completed-treatment-migration-preflight";
 
 function treatmentReadPilotEnv(): NodeJS.Dict<string> {
   return {
@@ -165,10 +165,17 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
           const legacyCompleted = listStoredCompletedTreatments(args.organizationId).filter(
             (record) => record.appointmentId === args.appointmentId,
           );
-          if (!existing && legacyCompleted.length > 0) {
-            throw new Error(
-              "偵測到尚未同步的本機已完成療程，已保留原始紀錄並暫停建立空白遠端療程。請先驗證並補同步。",
+          if (legacyCompleted.length > 0) {
+            const decisions = preflightCompletedTreatmentMigration(
+              args.organizationId,
+              legacyCompleted,
+              existing ? [existing] : [],
             );
+            if (decisions.some((decision) => decision.status !== "already-remote")) {
+              throw new Error(
+                "本機已完成療程與正式資料庫尚未確認完全一致，已保留原始紀錄並暫停切換。請先驗證並補同步。",
+              );
+            }
           }
           if (
             !existing &&
