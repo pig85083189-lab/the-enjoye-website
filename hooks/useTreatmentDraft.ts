@@ -159,6 +159,17 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
               "偵測到尚未同步的本機療程草稿，已保留原始資料並暫停建立空白遠端紀錄。請先確認資料轉移。",
             );
           }
+          // Never create a blank remote draft over a completed browser-only
+          // treatment. Its clinical contents require an explicit, verified
+          // migration, even when the old draft key has already been cleared.
+          const legacyCompleted = listStoredCompletedTreatments(args.organizationId).filter(
+            (record) => record.appointmentId === args.appointmentId,
+          );
+          if (!existing && legacyCompleted.length > 0) {
+            throw new Error(
+              "偵測到尚未同步的本機已完成療程，已保留原始紀錄並暫停建立空白遠端療程。請先驗證並補同步。",
+            );
+          }
           if (
             !existing &&
             remoteWrite &&
