@@ -387,7 +387,7 @@ export function WalletTab({
         <div>
           <h3 className="text-[15px] font-semibold text-text">儲值金</h3>
           <p className="mt-2 text-[28px] font-semibold leading-none tabular-nums tracking-tight text-text">
-            {formatTwd(svBalance)}
+            {svBalanceLabel}
           </p>
           <p className="mt-1.5 text-xs text-secondary-text">可用餘額</p>
         </div>
