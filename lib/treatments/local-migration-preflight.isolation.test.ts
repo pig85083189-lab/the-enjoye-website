@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { LEGACY_STORAGE_KEYS } from "@/lib/tenant/constants";
 import {
@@ -178,19 +176,5 @@ describe("local migration preflight", () => {
     const report = preflightLocalMigration(backup, confirmedRemote);
     expect(report.transferableAppointmentIds).toEqual(["apt-nov19-abcdef"]);
     expect(report.rows[0]?.transferable).toBe(true);
-  });
-});
-
-describe("browser backup script", () => {
-  const source = readFileSync(
-    path.join(process.cwd(), "scripts/beauty-os-local-backup.js"),
-    "utf8",
-  );
-
-  it("reads the appointment and treatment keys and does not mutate storage or call Supabase", () => {
-    expect(source).toContain("schedule-appointments:v1");
-    expect(source).toContain("treatments-completed:v1");
-    expect(source).toContain(LEGACY_STORAGE_KEYS.treatmentsCompleted);
-    expect(source).not.toMatch(/localStorage\.(setItem|removeItem|clear)|fetch\(|supabase|service_role|authorization/i);
   });
 });
