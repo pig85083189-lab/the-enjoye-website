@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import { listStoredCompletedTreatments } from "@/lib/treatment-draft";
 import { migrateCompletedBrowserTreatment } from "@/lib/treatments/completed-treatment-migration";
@@ -15,7 +15,10 @@ export function CompletedTreatmentMigrationPanel({ organizationId }: {
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [records, setRecords] = useState(() => listStoredCompletedTreatments(organizationId));
+  const [records, setRecords] = useState<ReturnType<typeof listStoredCompletedTreatments>>([]);
+  useEffect(() => {
+    setRecords(listStoredCompletedTreatments(organizationId));
+  }, [organizationId]);
   const current = records.find((item) => item.id === selected);
   async function submit() {
     if (!current || !confirmed || busy) return;
