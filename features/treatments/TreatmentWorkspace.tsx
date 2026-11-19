@@ -276,7 +276,10 @@ export function TreatmentWorkspace({
     };
 
     try {
-      await completeTreatment(next);
+      const persisted = await completeTreatment(next);
+      if (treatmentRemoteWritePilot && (persisted.status !== "completed" || persisted.appointmentId !== appointment.id || persisted.customerId !== customer.id || persisted.organizationId !== appointment.organizationId)) {
+        throw new Error("正式療程同步驗證失敗，尚未標記完成。請保留目前畫面並聯絡管理員。");
+      }
       if (!treatmentRemoteReadPilot) {
         setAppointmentStatus(appointment.id, "completed", appointment.organizationId);
       }
