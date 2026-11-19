@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { TreatmentQuickView } from "@/features/treatments/TreatmentQuickView";
+import { CompletedTreatmentMigrationPanel } from "@/features/treatments/CompletedTreatmentMigrationPanel";
 import { getServicesForOrganization } from "@/data/mock-services";
 import { formatHm } from "@/lib/appointments/domain";
 import {
@@ -120,11 +121,13 @@ export function TreatmentsListPageClient({
   appointmentRemoteReadPilot = false,
   treatmentRemoteReadPilot = false,
   commerceRemoteReadPilot = false,
+  completedMigrationPilot = false,
 }: {
   customerRemoteReadPilot?: boolean;
   appointmentRemoteReadPilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
   commerceRemoteReadPilot?: boolean;
+  completedMigrationPilot?: boolean;
 }) {
   const { organization, currentLocation } = useOrganization();
   const remoteTransactions = useCommerceRemoteTransactions({
@@ -376,6 +379,7 @@ export function TreatmentsListPageClient({
         </Link>
       </header>
 
+      {completedMigrationPilot && <CompletedTreatmentMigrationPanel organizationId={organization.id} />}
       <section className="mb-4 grid grid-cols-2 gap-2 min-[1200px]:grid-cols-4 min-[1200px]:gap-3">
         <TreatmentSummaryCard
           label="今日療程"
