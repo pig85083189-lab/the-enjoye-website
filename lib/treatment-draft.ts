@@ -318,6 +318,19 @@ export function saveCompletedTreatment(draft: TreatmentDraft): void {
   } catch {
     localStorage.setItem(key, JSON.stringify([completed]));
   }
+  // Verify the completed record before deleting the recoverable draft.
+  // A successful localStorage.setItem alone is not proof that the expected
+  // clinical fields survived serialization and the completed-list update.
+  const persisted = listStoredCompletedTreatments(organizationId).find(
+    (item) => item.id === completed.id && item.appointmentId === completed.appointmentId,
+  );
+  if (!persisted || persisted.status !== "completed" ||
+      JSON.stringify(persisted.assessment) !== JSON.stringify(completed.assessment) ||
+      JSON.stringify(persisted.bodyMarkers) !== JSON.stringify(completed.bodyMarkers) ||
+      persisted.professionalNote !== completed.professionalNote ||
+      JSON.stringify(persisted.followUp) !== JSON.stringify(completed.followUp)) {
+    throw new Error("療程完成紀錄驗證失敗，原始草稿已保留，請勿重複送出。");
+  }
   clearDraft(organizationId, draft.appointmentId);
   ensureFollowUpTaskFromCompletedTreatment(completed);
 }
