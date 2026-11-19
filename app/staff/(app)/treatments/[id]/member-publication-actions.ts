@@ -108,6 +108,12 @@ export async function revokeMemberTreatment(organizationId:string,treatmentId:st
 export async function autoPublishCompletedMemberTreatment(organizationId:string,treatmentId:string){
  const {db,t,auth,consultationFields}=await context(organizationId,treatmentId,true);
  const fields=makeSnapshot(t,consultationFields);
+ // Never undo an explicit member-publication revocation during a retry.
+ const {data:existing,error:readError}=await db.from("member_treatment_publications")
+  .select("treatment_id,revoked_at").eq("treatment_id",t.id).eq("organization_id",t.organization_id).maybeSingle();
+ if(readError)throw Error("無法確認會員公開狀態，請稍後重試");
+ if(existing?.revoked_at)throw Error("此療程已撤銷會員公開，無法自動重新公開");
+ if(existing)return {ok:true};
  const {error}=await db.from("member_treatment_publications").upsert({
   treatment_id:t.id,organization_id:t.organization_id,customer_id:t.customer_id,
   approved_fields:fields,approved_by:auth.membership.userId,
