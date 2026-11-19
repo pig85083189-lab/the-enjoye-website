@@ -313,6 +313,17 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
       if (autosaveInFlight.current || saving) {
         throw new Error("療程正在自動儲存，請等待儲存完成後再按完成療程。");
       }
+      // A completion must use the latest edited draft, not an older render
+      // captured while the user was still filling in clinical fields.
+      if (editRevision.current > 0 &&
+          JSON.stringify(photoMetaOnly(next)) !== JSON.stringify(photoMetaOnly({
+            ...draftRef.current,
+            status: "completed",
+            currentStep: "complete",
+            photos: next.photos,
+          }))) {
+        throw new Error("療程內容剛更新，請確認最新內容後再次按完成療程。");
+      }
       if (next.status === "completed" && draftRef.current.status === "completed") {
         return draftRef.current;
       }
