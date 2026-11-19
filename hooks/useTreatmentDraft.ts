@@ -101,6 +101,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
   const skipNextSave = useRef(true);
   const remoteRecordReady = useRef(false);
   const autosaveInFlight = useRef(false);
+  const editRevision = useRef(0);
   const draftRef = useRef(draft);
   useEffect(() => {
     draftRef.current = draft;
@@ -237,6 +238,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
       void (async () => {
         if (autosaveInFlight.current) return;
         autosaveInFlight.current = true;
+        const submittedRevision = editRevision.current;
         setSaving(true);
         try {
           const saved = await submitTreatmentRemoteAutosave({
@@ -249,8 +251,14 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
             appointmentId: draft.appointmentId,
             draft: photoMetaOnly(draft),
           });
-          skipNextSave.current = true;
-          setDraft(saved);
+          if (editRevision.current === submittedRevision) {
+            skipNextSave.current = true;
+            setDraft(saved);
+          } else {
+            // Preserve edits made while the request was in flight. Rebase the
+            // concurrency token so the next autosave persists those edits.
+            setDraft((current) => ({ ...current, updatedAt: saved.updatedAt }));
+          }
           setSavedAt(new Date(saved.updatedAt));
           setSaveError(null);
         } catch (error: unknown) {
@@ -265,10 +273,12 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
   }, [args.locationId, draft, hydrated, remoteRead, remoteWrite]);
 
   const updateDraft = useCallback((updater: (prev: TreatmentDraft) => TreatmentDraft) => {
+    editRevision.current += 1;
     setDraft((prev) => updater(prev));
   }, []);
 
   const setStep = useCallback((step: TreatmentStepId) => {
+    editRevision.current += 1;
     setDraft((prev) => ({ ...prev, currentStep: step }));
   }, []);
 
