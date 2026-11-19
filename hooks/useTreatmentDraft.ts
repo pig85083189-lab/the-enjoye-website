@@ -32,6 +32,7 @@ import {
   createEmptyDraft,
   draftHasContent,
   loadDraft,
+  listStoredCompletedTreatments,
   saveCompletedTreatment,
   saveDraft,
 } from "@/lib/treatment-draft";
@@ -318,11 +319,28 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
         throw new Error("療程尚未啟用正式資料庫寫入，無法完成同步。請聯絡管理員確認設定。");
       }
       if (!remoteWrite) {
+        // The customer history screen reads the completed-record collection,
+        // not the active treatment draft. Verify the exact appointment and
+        // customer there before reporting success or changing appointment status.
+        if (next.appointmentId !== args.appointmentId ||
+            next.customerId !== args.customerId ||
+            next.organizationId !== args.organizationId) {
+          throw new Error("療程身分與目前預約不一致，已停止完成並保留草稿。");
+        }
         saveCompletedTreatment(next);
+        const persisted = listStoredCompletedTreatments(args.organizationId).find(
+          (item) => item.id === next.id &&
+            item.appointmentId === args.appointmentId &&
+            item.customerId === args.customerId &&
+            item.status === "completed",
+        );
+        if (!persisted) {
+          throw new Error("客戶療程列表尚未讀取到已完成紀錄，已停止更新預約狀態。");
+        }
         locallyCompleted.current = true;
         skipNextSave.current = true;
-        setDraft(next);
-        return next;
+        setDraft(persisted);
+        return persisted;
       }
       if (!remoteRecordReady.current) {
         throw new Error("正式資料庫尚未建立療程草稿，無法完成療程。請重新進入療程後再試。");
