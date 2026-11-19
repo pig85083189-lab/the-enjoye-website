@@ -11,7 +11,7 @@ export type TreatmentMigrationDecision =
   | { status: "needs-identity-verification"; localId: string; appointmentId: string };
 
 /** Compare persisted clinical fields, not just matching IDs. Array order is meaningful. */
-export function completedTreatmentClinicalFieldsMatch(
+export function treatmentClinicalFieldsMatch(
   local: TreatmentDraft,
   remote: TreatmentDraft,
 ): boolean {
@@ -21,13 +21,17 @@ export function completedTreatmentClinicalFieldsMatch(
     "skippedSteps", "suggestedTrackingAreas", "selectedQuickPhrases",
     "noteManuallyEdited", "mode",
   ] as const;
-  return remote.status === "completed" && fields.every(
+  return fields.every(
     (field) => JSON.stringify(local[field]) === JSON.stringify(remote[field]),
   ) && JSON.stringify(local.photos.map(({ id, type, createdAt, hadPreview }) => ({
     id, type, createdAt, hadPreview,
   }))) === JSON.stringify(remote.photos.map(({ id, type, createdAt, hadPreview }) => ({
     id, type, createdAt, hadPreview,
   })));
+}
+
+export function completedTreatmentClinicalFieldsMatch(local: TreatmentDraft, remote: TreatmentDraft): boolean {
+  return remote.status === "completed" && treatmentClinicalFieldsMatch(local, remote);
 }
 
 export function preflightCompletedTreatmentMigration(
