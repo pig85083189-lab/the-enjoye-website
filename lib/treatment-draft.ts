@@ -323,6 +323,19 @@ export function saveCompletedTreatment(draft: TreatmentDraft): void {
   } catch {
     throw new Error("無法讀取既有療程紀錄，已保留原始資料與草稿，請勿重複送出。");
   }
+  // Never silently replace an unrelated completed record. A reused ID or
+  // appointment must be reconciled before any local history mutation.
+  const conflicts = list.filter((item) =>
+    (item.id === completed.id && (
+      item.organizationId !== completed.organizationId ||
+      item.appointmentId !== completed.appointmentId ||
+      item.customerId !== completed.customerId
+    )) ||
+    (item.appointmentId === completed.appointmentId && item.id !== completed.id),
+  );
+  if (conflicts.length) {
+    throw new Error("療程紀錄身分或預約資料衝突，已保留原始紀錄與草稿，請勿重複送出。");
+  }
   const next = [completed, ...list.filter((item) => item.id !== completed.id)];
   try {
     localStorage.setItem(key, JSON.stringify(next));
@@ -339,6 +352,12 @@ export function saveCompletedTreatment(draft: TreatmentDraft): void {
       JSON.stringify(persisted.assessment) !== JSON.stringify(completed.assessment) ||
       JSON.stringify(persisted.bodyMarkers) !== JSON.stringify(completed.bodyMarkers) ||
       persisted.professionalNote !== completed.professionalNote ||
+      persisted.clientFeeling !== completed.clientFeeling ||
+      persisted.discomfortNote !== completed.discomfortNote ||
+      persisted.bodyMapNote !== completed.bodyMapNote ||
+      JSON.stringify(persisted.operations) !== JSON.stringify(completed.operations) ||
+      JSON.stringify(persisted.products) !== JSON.stringify(completed.products) ||
+      JSON.stringify(persisted.photos) !== JSON.stringify(completed.photos) ||
       JSON.stringify(persisted.followUp) !== JSON.stringify(completed.followUp)) {
     throw new Error("療程完成紀錄驗證失敗，原始草稿已保留，請勿重複送出。");
   }
