@@ -310,13 +310,24 @@ export function saveCompletedTreatment(draft: TreatmentDraft): void {
   );
   migrateLegacyTenantStorage(organizationId);
   const key = getTenantStorageKey(organizationId, "treatments-completed");
+  // Never replace the entire history when parsing or writing fails. The
+  // previous fallback silently discarded older completed treatments.
+  let list: TreatmentDraft[];
   try {
     const raw = localStorage.getItem(key);
-    const list: TreatmentDraft[] = raw ? (JSON.parse(raw) as TreatmentDraft[]) : [];
-    const next = [completed, ...list.filter((item) => item.id !== completed.id)];
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) {
+      throw new Error("Completed treatment history is not an array");
+    }
+    list = parsed as TreatmentDraft[];
+  } catch {
+    throw new Error("無法讀取既有療程紀錄，已保留原始資料與草稿，請勿重複送出。");
+  }
+  const next = [completed, ...list.filter((item) => item.id !== completed.id)];
+  try {
     localStorage.setItem(key, JSON.stringify(next));
   } catch {
-    localStorage.setItem(key, JSON.stringify([completed]));
+    throw new Error("療程紀錄儲存失敗，已保留原始草稿，請檢查瀏覽器儲存空間。");
   }
   // Verify the completed record before deleting the recoverable draft.
   // A successful localStorage.setItem alone is not proof that the expected
