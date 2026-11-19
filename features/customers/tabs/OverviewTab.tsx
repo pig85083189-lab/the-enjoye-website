@@ -165,7 +165,7 @@ export function OverviewTab({ customer, snapshot, onOpenTab, financeBalanceOverr
       </div>
 
       <div className="order-6 min-[768px]:order-5">
-        <FinancialSummary snapshot={snapshot} onOpenTab={onOpenTab} />
+        <FinancialSummary snapshot={snapshot} onOpenTab={onOpenTab} financeLabel={financeLabel} financeDescription={financeDescription} />
       </div>
 
       <div className="order-7 max-[767px]:hidden min-[768px]:order-6">
@@ -459,9 +459,13 @@ function TimelineCard({
 function FinancialSummary({
   snapshot,
   onOpenTab,
+  financeLabel,
+  financeDescription,
 }: {
   snapshot: Customer360Snapshot;
   onOpenTab: (tab: Customer360TabId, section?: Customer360WalletSection) => void;
+  financeLabel: string;
+  financeDescription: string;
 }) {
   const pkg = snapshot.packagePreview[0];
 
