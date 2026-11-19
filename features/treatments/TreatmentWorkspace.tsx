@@ -17,6 +17,7 @@ import { CustomerSummaryStep } from "@/features/treatments/steps/CustomerSummary
 import { FollowUpStep } from "@/features/treatments/steps/FollowUpStep";
 import { PhotosStep } from "@/features/treatments/steps/PhotosStep";
 import { useTreatmentDraft } from "@/hooks/useTreatmentDraft";
+import { autoPublishCompletedMemberTreatment } from "@/app/staff/(app)/treatments/[id]/member-publication-actions";
 import { getTreatmentTemplateForService } from "@/data/treatment-templates";
 import { resolveTreatmentTemplateLabel } from "@/lib/treatments/treatment-display";
 import type { CanonicalAppointmentStatus } from "@/lib/appointments/domain";
@@ -279,6 +280,11 @@ export function TreatmentWorkspace({
       const persisted = await completeTreatment(next);
       if (treatmentRemoteWritePilot && (persisted.status !== "completed" || persisted.appointmentId !== appointment.id || persisted.customerId !== customer.id || persisted.organizationId !== appointment.organizationId)) {
         throw new Error("正式療程同步驗證失敗，尚未標記完成。請保留目前畫面並聯絡管理員。");
+      }
+      if (treatmentRemoteWritePilot) {
+        // The member-facing publication is required, not a manager approval step.
+        // A failed publication leaves the remote completion intact and visible as an error.
+        await autoPublishCompletedMemberTreatment(appointment.organizationId, persisted.id);
       }
       if (!treatmentRemoteReadPilot) {
         setAppointmentStatus(appointment.id, "completed", appointment.organizationId);
