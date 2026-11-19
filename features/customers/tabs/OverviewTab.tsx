@@ -31,9 +31,10 @@ interface OverviewTabProps {
   customer: Customer;
   snapshot: Customer360Snapshot;
   onOpenTab: (tab: Customer360TabId, section?: Customer360WalletSection) => void;
+  financeBalanceOverride?: number;
 }
 
-export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps) {
+export function OverviewTab({ customer, snapshot, onOpenTab, financeBalanceOverride }: OverviewTabProps) {
   const [showAllTimeline, setShowAllTimeline] = useState(false);
   const { organization } = useOrganization();
   const [finance, setFinance] = useState<{
@@ -43,6 +44,7 @@ export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps)
   } | null>(null);
   const balanceKey = organization.id + ":" + customer.id;
   useEffect(() => {
+    if (financeBalanceOverride !== undefined) return;
     const controller = new AbortController();
     const params = new URLSearchParams({ organizationId: organization.id, customerId: customer.id });
     void (async () => {
@@ -64,16 +66,20 @@ export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps)
       }
     })();
     return () => controller.abort();
-  }, [organization.id, customer.id, balanceKey]);
+  }, [organization.id, customer.id, balanceKey, financeBalanceOverride]);
   const financeReady = finance?.key === balanceKey;
-  const financeLabel = !financeReady
+  const financeLabel = financeBalanceOverride !== undefined
+    ? formatTwd(financeBalanceOverride)
+    : !financeReady
     ? "查詢中…"
     : finance.status === "active" && finance.amount !== null
       ? formatTwd(finance.amount)
       : finance.status === "not_created"
         ? "尚未建立儲值帳戶"
         : "無法確認正式餘額";
-  const financeDescription = financeReady && finance.status === "active"
+  const financeDescription = financeBalanceOverride !== undefined
+    ? "可用餘額"
+    : financeReady && finance.status === "active"
     ? "可用餘額"
     : financeReady && finance.status === "not_created"
       ? "尚未建立儲值帳戶"
