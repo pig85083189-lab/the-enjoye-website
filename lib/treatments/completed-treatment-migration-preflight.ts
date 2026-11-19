@@ -37,7 +37,13 @@ export function preflightCompletedTreatmentMigration(
 ): TreatmentMigrationDecision[] {
   // Keep full remote rows: a matching appointment is not proof that its
   // customer, organization or clinical contents match the browser record.
-  const remoteById = new Map(remoteRecords.map((row) => [row.id, row]));
+  const remoteById = new Map<string, TreatmentDraft[]>();
+  for (const row of remoteRecords) {
+    if (!row.id) continue;
+    const matches = remoteById.get(row.id) ?? [];
+    matches.push(row);
+    remoteById.set(row.id, matches);
+  }
   const remoteByAppointment = new Map<string, TreatmentDraft[]>();
   for (const row of remoteRecords) {
     if (!row.appointmentId) continue;
@@ -67,19 +73,28 @@ export function preflightCompletedTreatmentMigration(
       return { status: "blocked", localId: row.id, reason: "Duplicate local treatment ID or appointment" };
     }
     const matches = [
-      ...(remoteById.has(row.id) ? [remoteById.get(row.id)!] : []),
+      ...(remoteById.get(row.id) ?? []),
       ...(remoteByAppointment.get(row.appointmentId) ?? []),
     ];
     if (matches.length) {
-      if (matches.some((remote) =>
+      // A single canonical remote row may match both its ID and appointment.
+      // Distinct duplicate rows must never be silently treated as already synced.
+      const uniqueMatches = [...new Set(matches)];
+      if (uniqueMatches.length !== 1) {
+        return { status: "blocked", localId: row.id, reason: "Multiple remote treatments match this ID or appointment" };
+      }
+      if (uniqueMatches.some((remote) =>
         remote.organizationId !== organizationId ||
         remote.customerId !== row.customerId ||
+        remote.locationId !== row.locationId ||
+        remote.serviceId !== row.serviceId ||
+        remote.staffId !== row.staffId ||
         remote.appointmentId !== row.appointmentId ||
         remote.id !== row.id
       )) {
         return { status: "blocked", localId: row.id, reason: "Remote identity conflict; manual reconciliation required" };
       }
-      if (matches.some((remote) => !completedTreatmentClinicalFieldsMatch(row, remote))) {
+      if (uniqueMatches.some((remote) => !completedTreatmentClinicalFieldsMatch(row, remote))) {
         return { status: "blocked", localId: row.id, reason: "Remote clinical contents differ; do not overwrite either record" };
       }
       return { status: "already-remote", localId: row.id, reason: "Matching remote identity and clinical contents verified" };
