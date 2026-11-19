@@ -42,14 +42,29 @@ export function TreatmentsTab({
     customerId,
     treatmentRemoteReadPilot,
   );
-  const treatments = treatmentRemoteReadPilot
+  // Keep browser-only history visible during the gradual remote rollout.
+  // Remote rows take precedence for the same appointment; do not erase the
+  // original local records or imply that they have been synchronized.
+  const localTreatments = localTreatmentRepository.listByCustomer({
+    organizationId: organization.id,
+    customerId,
+  });
+  const remoteTreatments = treatmentRemoteReadPilot && remote.status !== "error"
     ? treatmentsFromRemoteListState(remote)
-    : localTreatmentRepository.listByCustomer({
-        organizationId: organization.id,
-        customerId,
-      });
+    : [];
+  const seenAppointments = new Set(
+    remoteTreatments.map((item) => item.appointmentId).filter(Boolean),
+  );
+  const seenIds = new Set(remoteTreatments.map((item) => item.id));
+  const treatments = [
+    ...remoteTreatments,
+    ...localTreatments.filter((item) =>
+      !seenIds.has(item.id) &&
+      (!item.appointmentId || !seenAppointments.has(item.appointmentId)),
+    ),
+  ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
-  if (treatmentRemoteReadPilot && remote.status === "loading") {
+  if (treatmentRemoteReadPilot && remote.status === "loading" && treatments.length === 0) {
     return (
       <div
         className="h-32 animate-pulse rounded-2xl bg-primary-light/40"
@@ -59,7 +74,7 @@ export function TreatmentsTab({
     );
   }
 
-  if (treatmentRemoteReadPilot && remote.status === "error") {
+  if (treatmentRemoteReadPilot && remote.status === "error" && treatments.length === 0) {
     return (
       <Card padding="lg" className="text-center" data-treatment-record-source="remote-pilot">
         <p className="text-[15px] font-medium text-text">無法載入療程紀錄</p>
@@ -92,6 +107,11 @@ export function TreatmentsTab({
       className="space-y-3"
       data-treatment-record-source={treatmentRemoteReadPilot ? "remote-pilot" : "local"}
     >
+      {treatmentRemoteReadPilot && remote.status === "error" ? (
+        <p className="text-sm text-secondary-text" role="status">
+          遠端療程暫時無法載入，以下保留顯示此瀏覽器的既有紀錄，尚未確認同步。
+        </p>
+      ) : null}
       {treatments.map((t) => (
         <TreatmentHistoryCard
           key={t.id}
