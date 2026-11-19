@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: "Beauty OS — multi-tenant SPA staff workspace",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-Hant" className="h-full antialiased">
       <body className="min-h-full font-sans text-text antialiased">{children}</body>
