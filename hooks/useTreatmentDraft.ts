@@ -100,6 +100,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
   const [saveError, setSaveError] = useState<string | null>(null);
   const skipNextSave = useRef(true);
   const remoteRecordReady = useRef(false);
+  const autosaveInFlight = useRef(false);
   const draftRef = useRef(draft);
   useEffect(() => {
     draftRef.current = draft;
@@ -234,6 +235,8 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
 
     const timer = window.setTimeout(() => {
       void (async () => {
+        if (autosaveInFlight.current) return;
+        autosaveInFlight.current = true;
         setSaving(true);
         try {
           const saved = await submitTreatmentRemoteAutosave({
@@ -253,6 +256,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
         } catch (error: unknown) {
           setSaveError(error instanceof Error ? error.message : "Remote autosave failed");
         } finally {
+          autosaveInFlight.current = false;
           setSaving(false);
         }
       })();
@@ -287,6 +291,9 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
       if (saveError) {
         throw new Error(`療程尚有未解決的儲存錯誤：${saveError}`);
       }
+      if (autosaveInFlight.current || saving) {
+        throw new Error("療程正在自動儲存，請等待儲存完成後再按完成療程。");
+      }
       if (next.status === "completed" && draftRef.current.status === "completed") {
         return draftRef.current;
       }
@@ -306,7 +313,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
       setSaveError(null);
       return completed;
     },
-    [args.locationId, remoteWrite, remoteRead, saveError],
+    [args.locationId, remoteWrite, remoteRead, saveError, saving],
   );
 
   const hasContent = useMemo(
