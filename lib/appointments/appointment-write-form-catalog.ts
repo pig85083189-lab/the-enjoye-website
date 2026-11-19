@@ -121,19 +121,34 @@ export async function loadAppointmentWriteFormCatalog(
   // their IDs or silently merging any same-name customers.
   const lineCustomerRows = await readNamedRows(
     client.from("customers")
-      .select("id, app_id, organization_id, source")
+      .select("id, app_id, organization_id, source, status")
       .eq("organization_id", identity.organizationDbId)
-      .in("source", ["LINE_MEMBER", "LINE_MEMBER_BOOKING"]),
+      
   );
-  const lineCustomerAppIds = new Set(
+  const activeCustomerIds = new Set(
     lineCustomerRows.flatMap((row) =>
-      row.organization_id === identity.organizationDbId
-        ? [typeof row.app_id === "string" && row.app_id.trim() ? row.app_id : String(row.id ?? "")] : [],
+      row.organization_id === identity.organizationDbId && row.status === "ACTIVE"
+        ? [typeof row.app_id === "string" && row.app_id.trim() ? row.app_id : String(row.id ?? "")]
+        : [],
     ),
   );
-  for (const customer of customers) {
-    if (lineCustomerAppIds.has(customer.id)) customer.name = `${customer.name}（LINE 來源，請核對）`;
-  }
+  const verifiedLineCustomerIds = new Set(
+    lineCustomerRows.flatMap((row) =>
+      row.organization_id === identity.organizationDbId &&
+      row.status === "ACTIVE" &&
+      row.source === "LINE_MEMBER"
+        ? [typeof row.app_id === "string" && row.app_id.trim() ? row.app_id : String(row.id ?? "")]
+        : [],
+    ),
+  );
+  const selectableCustomers = customers
+    .filter((customer) => activeCustomerIds.has(customer.id))
+    .map((customer) => ({
+      ...customer,
+      name: verifiedLineCustomerIds.has(customer.id)
+        ? `${customer.name}（LINE 來源，請核對）`
+        : customer.name,
+    }));
   const services = (
     await readNamedRows(
       client
@@ -201,7 +216,7 @@ export async function loadAppointmentWriteFormCatalog(
     role,
     canCreate: canCreateAppointment({ role, isActive: true }),
     canCancel: canCancelAppointment({ role, isActive: true }),
-    customers,
+    customers: selectableCustomers,
     services,
     staff,
   };
