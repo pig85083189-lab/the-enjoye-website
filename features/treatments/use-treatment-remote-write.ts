@@ -33,6 +33,7 @@ function requireClient(): TreatmentWriteClient {
 }
 
 export async function submitTreatmentRemoteCreate(input: {
+  organizationId?: string;
   locationId: string;
   customerId: string;
   serviceId: string;
@@ -59,6 +60,7 @@ export async function submitTreatmentRemoteCreate(input: {
 export async function submitTreatmentRemoteAutosave(input: {
   treatmentId: string;
   expectedUpdatedAt: string;
+  organizationId?: string;
   locationId: string;
   customerId: string;
   serviceId: string;
@@ -83,6 +85,7 @@ export async function submitTreatmentRemoteAutosave(input: {
 export async function submitTreatmentRemoteComplete(input: {
   treatmentId: string;
   expectedUpdatedAt: string;
+  organizationId?: string;
   locationId: string;
   customerId: string;
   serviceId: string;
