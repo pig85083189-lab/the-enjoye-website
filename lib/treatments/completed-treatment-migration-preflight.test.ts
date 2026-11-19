@@ -60,4 +60,17 @@ describe("completed treatment migration preflight", () => {
       followUp: { tags: [], suggestedDate: "", note: "", suggestNextBooking: false },
     }))).toBe(false);
   });
+  it("blocks mismatched remote staff or service even when clinical fields match", () => {
+    expect(preflightCompletedTreatmentMigration(org, [record()], [record({ staffId: "another-staff" })])[0].status)
+      .toBe("blocked");
+    expect(preflightCompletedTreatmentMigration(org, [record()], [record({ serviceId: "another-service" })])[0].status)
+      .toBe("blocked");
+  });
+  it("blocks multiple remote rows for the same appointment", () => {
+    const result = preflightCompletedTreatmentMigration(
+      org, [record()], [record(), record({ id: "another-treatment" })],
+    );
+    expect(result[0].status).toBe("blocked");
+  });
+
 });
