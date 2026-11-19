@@ -11,6 +11,7 @@ on:
       - 'package.json'
       - 'lib/treatment-draft.ts'
       - 'hooks/useTreatmentDraft.ts'
+      - 'lib/treatments/treatment-remote-write-pilot.ts'
       - 'app/layout.tsx'
   workflow_dispatch:
 jobs:
