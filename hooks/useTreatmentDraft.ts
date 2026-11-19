@@ -20,7 +20,7 @@ import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-ide
 import { TREATMENT_REMOTE_READ_PILOT_ENV } from "@/lib/treatments/treatment-remote-read-flag";
 import { getRemotePilotTreatmentByAppointment } from "@/lib/treatments/treatment-remote-read-pilot";
 import { TreatmentDuplicateError } from "@/lib/treatments/treatment-write-errors";
-import { completedTreatmentClinicalFieldsMatch, preflightCompletedTreatmentMigration } from "@/lib/treatments/completed-treatment-migration-preflight";
+import { treatmentClinicalFieldsMatch, preflightCompletedTreatmentMigration } from "@/lib/treatments/completed-treatment-migration-preflight";
 
 function treatmentReadPilotEnv(): NodeJS.Dict<string> {
   return {
@@ -198,7 +198,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
             );
             if (!existing ||
                 existing.id !== legacyDraft.id ||
-                !completedTreatmentClinicalFieldsMatch(legacyDraft, { ...existing, status: "completed" })) {
+                !(existing.status === "draft" && treatmentClinicalFieldsMatch(legacyDraft, existing))) {
               throw new Error("本機療程草稿同步後驗證不一致，已保留原始草稿並停止完成。");
             }
           }
