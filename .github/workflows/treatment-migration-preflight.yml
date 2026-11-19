@@ -5,6 +5,7 @@ on:
       - chatgpt/treatment-completion-sync-guard-20261119
     paths:
       - 'lib/treatments/completed-treatment-migration-preflight.ts'
+      - 'lib/treatments/completed-treatment-migration.ts'
       - 'lib/treatments/completed-treatment-migration-preflight.isolation.test.ts'
       - '.github/workflows/treatment-migration-preflight.yml'
       - 'package-lock.json'
