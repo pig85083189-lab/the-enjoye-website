@@ -5,7 +5,7 @@ on:
       - chatgpt/treatment-completion-sync-guard-20261119
     paths:
       - 'lib/treatments/completed-treatment-migration-preflight.ts'
-      - 'lib/treatments/completed-treatment-migration-preflight.test.ts'
+      - 'lib/treatments/completed-treatment-migration-preflight.isolation.test.ts'
       - '.github/workflows/treatment-migration-preflight.yml'
       - 'package-lock.json'
       - 'package.json'
@@ -24,6 +24,6 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Completed treatment migration preflight unit tests
-        run: npx vitest run lib/treatments/completed-treatment-migration-preflight.test.ts
+        run: npx vitest run lib/treatments/completed-treatment-migration-preflight.isolation.test.ts
       - name: TypeScript check
         run: npx tsc --noEmit
