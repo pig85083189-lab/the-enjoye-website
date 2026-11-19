@@ -1,0 +1,26 @@
+name: Treatment migration preflight tests
+on:
+  push:
+    branches:
+      - chatgpt/treatment-completion-sync-guard-20261119
+    paths:
+      - 'lib/treatments/completed-treatment-migration-preflight.ts'
+      - 'lib/treatments/completed-treatment-migration-preflight.test.ts'
+      - '.github/workflows/treatment-migration-preflight.yml'
+  workflow_dispatch:
+jobs:
+  treatment-preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Completed treatment migration preflight unit tests
+        run: npx vitest run lib/treatments/completed-treatment-migration-preflight.test.ts
+      - name: TypeScript check
+        run: npx tsc --noEmit
