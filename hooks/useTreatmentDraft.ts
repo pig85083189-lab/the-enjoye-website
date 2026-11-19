@@ -99,6 +99,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const skipNextSave = useRef(true);
+  const remoteRecordReady = useRef(false);
   const draftRef = useRef(draft);
   useEffect(() => {
     draftRef.current = draft;
@@ -129,6 +130,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
           return;
         }
 
+        remoteRecordReady.current = false;
         try {
           const client = createBrowserClientOrNull() as IdentitySupabaseClient | null;
           if (!client) {
@@ -164,6 +166,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
             }
           }
           if (cancelled) return;
+          remoteRecordReady.current = Boolean(existing);
           const next =
             existing ??
             createEmptyDraft({
@@ -278,6 +281,12 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
         setDraft(next);
         return next;
       }
+      if (!remoteRecordReady.current) {
+        throw new Error("正式資料庫尚未建立療程草稿，無法完成療程。請重新進入療程後再試。");
+      }
+      if (saveError) {
+        throw new Error(`療程尚有未解決的儲存錯誤：${saveError}`);
+      }
       if (next.status === "completed" && draftRef.current.status === "completed") {
         return draftRef.current;
       }
@@ -297,7 +306,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
       setSaveError(null);
       return completed;
     },
-    [args.locationId, remoteWrite],
+    [args.locationId, remoteWrite, remoteRead, saveError],
   );
 
   const hasContent = useMemo(
