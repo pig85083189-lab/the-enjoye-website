@@ -111,6 +111,8 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
 
   useEffect(() => {
     let cancelled = false;
+    // Completion is scoped to one appointment, not the lifetime of the hook.
+    locallyCompleted.current = false;
     const timer = window.setTimeout(() => {
       void (async () => {
         if (cancelled) return;
@@ -136,16 +138,6 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
 
         remoteRecordReady.current = false;
         try {
-          // A legacy browser-only draft must not be silently replaced by a
-          // newly created empty remote row when remote mode is enabled.
-          // Keep the original local record untouched until a deliberate,
-          // identity-checked migration can be performed.
-          const legacyDraft = loadDraft(args.organizationId, args.appointmentId);
-          if (legacyDraft && draftHasContent(legacyDraft)) {
-            throw new Error(
-              "偵測到尚未同步的本機療程草稿。為避免覆蓋既有紀錄，已暫停遠端載入與寫入；請先完成資料轉移確認。",
-            );
-          }
           const client = createBrowserClientOrNull() as IdentitySupabaseClient | null;
           if (!client) {
             throw new Error("Authenticated Supabase client is unavailable");
@@ -156,6 +148,15 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
             client,
             treatmentReadPilotEnv(),
           );
+          // Only block creating an empty remote record if a meaningful
+          // browser-only draft exists. An already persisted remote treatment
+          // must remain accessible even when an old local draft is present.
+          const legacyDraft = loadDraft(args.organizationId, args.appointmentId);
+          if (!existing && legacyDraft && draftHasContent(legacyDraft)) {
+            throw new Error(
+              "偵測到尚未同步的本機療程草稿，已保留原始資料並暫停建立空白遠端紀錄。請先確認資料轉移。",
+            );
+          }
           if (
             !existing &&
             remoteWrite &&
