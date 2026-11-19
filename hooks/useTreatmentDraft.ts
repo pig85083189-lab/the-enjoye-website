@@ -98,6 +98,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
   const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [autosaveRetryRevision, setAutosaveRetryRevision] = useState(0);
   const skipNextSave = useRef(true);
   const remoteRecordReady = useRef(false);
   const autosaveInFlight = useRef(false);
@@ -236,7 +237,10 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
 
     const timer = window.setTimeout(() => {
       void (async () => {
-        if (autosaveInFlight.current) return;
+        if (autosaveInFlight.current) {
+          // The pending request will schedule a retry when it settles.
+          return;
+        }
         autosaveInFlight.current = true;
         const submittedRevision = editRevision.current;
         setSaving(true);
@@ -266,11 +270,16 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
         } finally {
           autosaveInFlight.current = false;
           setSaving(false);
+          // A newer draft may have been skipped while this request ran.
+          // Re-evaluate autosave with the latest draft and concurrency token.
+          if (editRevision.current !== submittedRevision) {
+            setAutosaveRetryRevision((revision) => revision + 1);
+          }
         }
       })();
     }, 280);
     return () => window.clearTimeout(timer);
-  }, [args.locationId, draft, hydrated, remoteRead, remoteWrite]);
+  }, [args.locationId, draft, hydrated, remoteRead, remoteWrite, autosaveRetryRevision]);
 
   const updateDraft = useCallback((updater: (prev: TreatmentDraft) => TreatmentDraft) => {
     editRevision.current += 1;
