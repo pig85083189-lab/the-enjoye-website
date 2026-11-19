@@ -102,6 +102,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
   const skipNextSave = useRef(true);
   const remoteRecordReady = useRef(false);
   const autosaveInFlight = useRef(false);
+  const locallyCompleted = useRef(false);
   const editRevision = useRef(0);
   const draftRef = useRef(draft);
   useEffect(() => {
@@ -224,8 +225,15 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
     }
     if (!remoteRead) {
       const timer = window.setTimeout(() => {
-        saveDraft(draft);
-        setSavedAt(new Date());
+        // Completion clears the draft. A delayed autosave must not recreate it.
+        if (locallyCompleted.current || draft.status === "completed") return;
+        try {
+          saveDraft(draft);
+          setSavedAt(new Date());
+          setSaveError(null);
+        } catch (error: unknown) {
+          setSaveError(error instanceof Error ? error.message : "療程草稿儲存失敗");
+        }
       }, 280);
       return () => window.clearTimeout(timer);
     }
@@ -300,6 +308,7 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
       }
       if (!remoteWrite) {
         saveCompletedTreatment(next);
+        locallyCompleted.current = true;
         skipNextSave.current = true;
         setDraft(next);
         return next;
