@@ -49,9 +49,13 @@ export async function migrateCompletedBrowserTreatment(
     persistence.treatments.get(local.organizationId, local.id),
     persistence.treatments.getByAppointmentId(local.organizationId, local.appointmentId),
   ]);
-  const existing = [...new Set([byId, byAppointment].filter(
-    (item): item is TreatmentDraft => Boolean(item),
-  ))];
+  // Both lookups may return separate JS objects representing the same DB row.
+  // Deduplicate by stable treatment ID, not object identity.
+  const existingById = new Map<string, TreatmentDraft>();
+  for (const row of [byId, byAppointment]) {
+    if (row) existingById.set(row.id, row);
+  }
+  const existing = [...existingById.values()];
   const decision = preflightCompletedTreatmentMigration(
     local.organizationId, [local], existing,
   )[0];
