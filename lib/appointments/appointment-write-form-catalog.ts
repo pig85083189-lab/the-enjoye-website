@@ -121,14 +121,14 @@ export async function loadAppointmentWriteFormCatalog(
   // their IDs or silently merging any same-name customers.
   const lineCustomerRows = await readNamedRows(
     client.from("customers")
-      .select("app_id, organization_id, source")
+      .select("id, app_id, organization_id, source")
       .eq("organization_id", identity.organizationDbId)
-      .eq("source", "LINE_MEMBER"),
+      .in("source", ["LINE_MEMBER", "LINE_MEMBER_BOOKING"]),
   );
   const lineCustomerAppIds = new Set(
     lineCustomerRows.flatMap((row) =>
-      typeof row.app_id === "string" && row.organization_id === identity.organizationDbId
-        ? [row.app_id] : [],
+      row.organization_id === identity.organizationDbId
+        ? [typeof row.app_id === "string" && row.app_id.trim() ? row.app_id : String(row.id ?? "")] : [],
     ),
   );
   for (const customer of customers) {
