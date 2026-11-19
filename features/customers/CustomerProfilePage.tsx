@@ -536,7 +536,7 @@ function Customer360Workspace({
             aria-labelledby={`customer-tab-${tab === "wallet" || tab === "transactions" ? "financial" : tab}`}
           >
             {tab === "overview" ? (
-              <OverviewTab customer={customerForView} snapshot={snapshot} onOpenTab={onSelectTab} />
+              <OverviewTab customer={customerForView} snapshot={snapshot} onOpenTab={onSelectTab} financeBalanceOverride={financeStoredValueBalanceMinor} />
             ) : null}
             {tab === "consultation" ? <ConsultationsTab customerId={customer.id} /> : null}
             {tab === "treatments" ? (

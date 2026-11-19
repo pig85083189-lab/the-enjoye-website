@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -31,11 +31,60 @@ interface OverviewTabProps {
   customer: Customer;
   snapshot: Customer360Snapshot;
   onOpenTab: (tab: Customer360TabId, section?: Customer360WalletSection) => void;
+  financeBalanceOverride?: number;
 }
 
-export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps) {
+export function OverviewTab({ customer, snapshot, onOpenTab, financeBalanceOverride }: OverviewTabProps) {
   const [showAllTimeline, setShowAllTimeline] = useState(false);
   const { organization } = useOrganization();
+  const [finance, setFinance] = useState<{
+    key: string;
+    status: "active" | "not_created" | "unavailable";
+    amount: number | null;
+  } | null>(null);
+  const balanceKey = organization.id + ":" + customer.id;
+  useEffect(() => {
+    if (financeBalanceOverride !== undefined) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ organizationId: organization.id, customerId: customer.id });
+    void (async () => {
+      try {
+        const response = await fetch("/api/staff/stored-value/balance?" + params.toString(), {
+          credentials: "same-origin", cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("Balance or identity unavailable");
+        const data = (await response.json()) as { status?: string; balanceMinor?: number | null };
+        if (data.status === "active" && Number.isSafeInteger(data.balanceMinor)) {
+          if (!controller.signal.aborted) setFinance({ key: balanceKey, status: "active", amount: data.balanceMinor! });
+        } else if (data.status === "not_created" && data.balanceMinor === null) {
+          if (!controller.signal.aborted) setFinance({ key: balanceKey, status: "not_created", amount: null });
+        } else {
+          throw new Error("Unexpected balance response");
+        }
+      } catch {
+        if (!controller.signal.aborted) setFinance({ key: balanceKey, status: "unavailable", amount: null });
+      }
+    })();
+    return () => controller.abort();
+  }, [organization.id, customer.id, balanceKey, financeBalanceOverride]);
+  const financeReady = finance?.key === balanceKey;
+  const financeLabel = financeBalanceOverride !== undefined
+    ? formatTwd(financeBalanceOverride)
+    : !financeReady
+    ? "查詢中…"
+    : finance.status === "active" && finance.amount !== null
+      ? formatTwd(finance.amount)
+      : finance.status === "not_created"
+        ? "尚未建立儲值帳戶"
+        : "無法確認正式餘額";
+  const financeDescription = financeBalanceOverride !== undefined
+    ? "可用餘額"
+    : financeReady && finance.status === "active"
+    ? "可用餘額"
+    : financeReady && finance.status === "not_created"
+      ? "尚未建立儲值帳戶"
+      : financeReady ? "請至財務確認綁定狀態" : "正在讀取正式餘額";
+
   const timeline = showAllTimeline ? snapshot.timeline : snapshot.timelinePreview;
   const prefs = customer.preferences;
   const hasPrefs = Boolean(
@@ -116,7 +165,7 @@ export function OverviewTab({ customer, snapshot, onOpenTab }: OverviewTabProps)
       </div>
 
       <div className="order-6 min-[768px]:order-5">
-        <FinancialSummary snapshot={snapshot} onOpenTab={onOpenTab} />
+        <FinancialSummary snapshot={snapshot} onOpenTab={onOpenTab} financeLabel={financeLabel} financeDescription={financeDescription} />
       </div>
 
       <div className="order-7 max-[767px]:hidden min-[768px]:order-6">
@@ -410,9 +459,13 @@ function TimelineCard({
 function FinancialSummary({
   snapshot,
   onOpenTab,
+  financeLabel,
+  financeDescription,
 }: {
   snapshot: Customer360Snapshot;
   onOpenTab: (tab: Customer360TabId, section?: Customer360WalletSection) => void;
+  financeLabel: string;
+  financeDescription: string;
 }) {
   const pkg = snapshot.packagePreview[0];
 
@@ -470,14 +523,10 @@ function FinancialSummary({
           </button>
         </div>
         <p className="mt-2 text-lg font-semibold tabular-nums text-text">
-          {formatTwd(snapshot.svBalance)}
+          {financeLabel}
         </p>
         <p className="mt-0.5 text-xs text-secondary-text">
-          {snapshot.commerceRemoteRead
-            ? "儲值尚未開放"
-            : snapshot.svBalance === 0
-              ? "目前沒有可用儲值"
-              : "可用餘額"}
+          {financeDescription}
         </p>
       </Card>
 
