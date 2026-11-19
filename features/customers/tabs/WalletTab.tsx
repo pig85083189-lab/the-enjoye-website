@@ -68,9 +68,49 @@ export function WalletTab({
     !commerceRemoteRead &&
     (membership?.role === "OWNER" || membership?.role === "MANAGER");
 
-  const svBalance = balanceMinorOverride ?? (commerceRemoteRead
-    ? 0
-    : getCustomerStoredValueBalance(organization.id, customerId));
+  // The finance ledger is authoritative. Never display a legacy/local zero as
+  // the balance of an unverified booking customer.
+  const [financeBalance, setFinanceBalance] = useState<{
+    key: string;
+    status: "active" | "not_created" | "unavailable";
+    amount: number | null;
+  } | null>(null);
+  const balanceKey = `${organization.id}:${customerId}`;
+  useEffect(() => {
+    if (balanceMinorOverride !== undefined) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ organizationId: organization.id, customerId });
+    void (async () => {
+      try {
+        const response = await fetch(`/api/staff/stored-value/balance?${params}`, {
+          credentials: "same-origin", cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("Finance identity or balance unavailable");
+        const data = (await response.json()) as { status?: string; balanceMinor?: number | null };
+        if (data.status === "active" && Number.isSafeInteger(data.balanceMinor)) {
+          if (!controller.signal.aborted) setFinanceBalance({ key: balanceKey, status: "active", amount: data.balanceMinor! });
+        } else if (data.status === "not_created" && data.balanceMinor === null) {
+          if (!controller.signal.aborted) setFinanceBalance({ key: balanceKey, status: "not_created", amount: null });
+        } else {
+          throw new Error("Unexpected finance balance response");
+        }
+      } catch {
+        if (!controller.signal.aborted) setFinanceBalance({ key: balanceKey, status: "unavailable", amount: null });
+      }
+    })();
+    return () => controller.abort();
+  }, [organization.id, customerId, balanceKey, balanceMinorOverride]);
+  const svBalance = balanceMinorOverride ??
+    (financeBalance?.key === balanceKey && financeBalance.status === "active"
+      ? financeBalance.amount
+      : null);
+  const svBalanceLabel = svBalance !== null && svBalance !== undefined
+    ? formatTwd(svBalance)
+    : balanceMinorOverride === undefined && financeBalance?.key !== balanceKey
+      ? "查詢中…"
+      : financeBalance?.status === "not_created"
+        ? "尚未建立儲值帳戶"
+        : "無法確認正式餘額";
   const packages = commerceRemoteRead
     ? []
     : listCustomerPackages(organization.id, { customerId });
@@ -178,7 +218,7 @@ export function WalletTab({
           </div>
           <div>
             <dt className="text-xs text-secondary-text">儲值</dt>
-            <dd className="mt-0.5 text-[15px] tabular-nums text-text">{formatTwd(svBalance)}</dd>
+            <dd className="mt-0.5 text-[15px] tabular-nums text-text">{svBalanceLabel}</dd>
           </div>
           {recentTx.length > 0 ? (
             <div>
