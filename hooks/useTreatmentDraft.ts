@@ -20,7 +20,7 @@ import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-ide
 import { TREATMENT_REMOTE_READ_PILOT_ENV } from "@/lib/treatments/treatment-remote-read-flag";
 import { getRemotePilotTreatmentByAppointment } from "@/lib/treatments/treatment-remote-read-pilot";
 import { TreatmentDuplicateError } from "@/lib/treatments/treatment-write-errors";
-import { treatmentClinicalFieldsMatch, preflightCompletedTreatmentMigration } from "@/lib/treatments/completed-treatment-migration-preflight";
+import { treatmentClinicalFieldsMatch, completedTreatmentClinicalFieldsMatch, preflightCompletedTreatmentMigration } from "@/lib/treatments/completed-treatment-migration-preflight";
 
 function treatmentReadPilotEnv(): NodeJS.Dict<string> {
   return {
