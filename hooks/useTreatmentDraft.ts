@@ -136,6 +136,16 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
 
         remoteRecordReady.current = false;
         try {
+          // A legacy browser-only draft must not be silently replaced by a
+          // newly created empty remote row when remote mode is enabled.
+          // Keep the original local record untouched until a deliberate,
+          // identity-checked migration can be performed.
+          const legacyDraft = loadDraft(args.organizationId, args.appointmentId);
+          if (legacyDraft && draftHasContent(legacyDraft)) {
+            throw new Error(
+              "偵測到尚未同步的本機療程草稿。為避免覆蓋既有紀錄，已暫停遠端載入與寫入；請先完成資料轉移確認。",
+            );
+          }
           const client = createBrowserClientOrNull() as IdentitySupabaseClient | null;
           if (!client) {
             throw new Error("Authenticated Supabase client is unavailable");
