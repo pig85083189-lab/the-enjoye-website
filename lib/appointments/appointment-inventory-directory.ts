@@ -15,7 +15,7 @@ export interface InventoryReadClient {
 }
 
 export type InventoryDirectoryResult =
-  | InventoryIdentityDirectory
+  | (InventoryIdentityDirectory & { remoteCheck: "checked" })
   | { remoteCheck: "unavailable"; message: string };
 
 export async function fetchAppointmentInventoryDirectory(
@@ -33,7 +33,7 @@ export async function fetchAppointmentInventoryDirectory(
       client.from("customers").select("app_id, organization_id").eq("organization_id", organization.id),
       client.from("services").select("app_id, organization_id").eq("organization_id", organization.id),
       client.from("staff_auth_memberships").select("user_id, auth_user_id, role, is_active, organization_id").eq("organization_id", organizationAppId),
-      client.from("appointments").select("id, app_id, staff_id, start_at, end_at, status").eq("organization_id", organization.id),
+      client.from("appointments").select("id, app_id, staff_id, starts_at, ends_at, status").eq("organization_id", organization.id),
     ]);
     for (const result of [locations, customers, services, staff, appointments]) {
       if (result.error) return unavailable(result.error.message);
@@ -48,10 +48,11 @@ export async function fetchAppointmentInventoryDirectory(
     const staffRows = staffRecords(staff.data, organizationAppId);
     if (!staffRows) return unavailable("員工身分無法唯一對應");
     const remoteAppointments = remoteRecords(appointments.data);
-    if (!remoteAppointments) return unavailable("正式預約 app_id 重複或缺失");
+    if (!remoteAppointments) return unavailable("正式預約缺少 starts_at、ends_at，或預約身分重複");
 
     return {
       remoteCheck: "checked",
+      remoteCheckMessage: "",
       organizationAppId,
       locationAppIds,
       customerAppIds,
@@ -66,6 +67,23 @@ export async function fetchAppointmentInventoryDirectory(
 
 function unavailable(message: string): InventoryDirectoryResult {
   return { remoteCheck: "unavailable", message };
+}
+
+export function inventoryDirectoryForPage(
+  loaded: InventoryDirectoryResult,
+  organizationAppId: string,
+): InventoryIdentityDirectory {
+  if (loaded.remoteCheck === "checked") return loaded;
+  return {
+    remoteCheck: "unavailable",
+    remoteCheckMessage: loaded.message,
+    organizationAppId,
+    locationAppIds: [],
+    customerAppIds: [],
+    serviceAppIds: [],
+    staff: [],
+    remoteAppointments: [],
+  };
 }
 
 function oneAppRow(rows: unknown[] | null, appId: string): { id: string } | null {
@@ -99,13 +117,18 @@ function staffRecords(rows: unknown[] | null, organizationAppId: string): Invent
     if (seen.has(row.user_id)) return null;
     seen.add(row.user_id);
     const authUserId = typeof row.auth_user_id === "string" ? row.auth_user_id : null;
-    const record = {
+    const access = classifyProductionStaffAccess({
       userId: row.user_id,
       authUserId,
       role: row.role,
       isActive: true,
-    };
-    records.push({ ...record, access: classifyProductionStaffAccess(record) });
+    });
+    records.push({
+      userId: row.user_id,
+      role: row.role,
+      isActive: true,
+      access,
+    });
   }
   return records;
 }
@@ -119,13 +142,15 @@ function remoteRecords(rows: unknown[] | null): InventoryIdentityDirectory["remo
     const appId = typeof row.app_id === "string" ? row.app_id.trim() : "";
     const dbId = typeof row.id === "string" ? row.id : "";
     const id = appId || dbId;
-    if (!id || seen.has(id)) return null;
+    const startAt = typeof row.starts_at === "string" ? row.starts_at : "";
+    const endAt = typeof row.ends_at === "string" ? row.ends_at : "";
+    if (!id || !startAt || !endAt || seen.has(id)) return null;
     seen.add(id);
     records.push({
       id,
       staffId: typeof row.staff_id === "string" ? row.staff_id : "",
-      startAt: typeof row.start_at === "string" ? row.start_at : "",
-      endAt: typeof row.end_at === "string" ? row.end_at : "",
+      startAt,
+      endAt,
       status: typeof row.status === "string" ? row.status : "",
     });
   }

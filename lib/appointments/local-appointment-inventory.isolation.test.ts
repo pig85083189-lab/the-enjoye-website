@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { fetchAppointmentInventoryDirectory } from "@/lib/appointments/appointment-inventory-directory";
+import {
+  fetchAppointmentInventoryDirectory,
+  inventoryDirectoryForPage,
+} from "@/lib/appointments/appointment-inventory-directory";
 import {
   buildLocalAppointmentInventory,
   planAuthorizedAppointmentMigration,
@@ -20,12 +23,13 @@ function staff(userId: string, authUserId: string | null, role: string) {
     role,
     isActive: true,
   });
-  return { userId, authUserId, role, isActive: true, access };
+  return { userId, role, isActive: true, access };
 }
 
 function directory(overrides: Partial<InventoryIdentityDirectory> = {}): InventoryIdentityDirectory {
   return {
     remoteCheck: "checked",
+    remoteCheckMessage: "",
     organizationAppId: ORG,
     locationAppIds: ["loc-enjoye-main"],
     customerAppIds: ["cust-line-1"],
@@ -211,24 +215,41 @@ describe("read-only local appointment inventory", () => {
     expect(readFileSync("lib/appointments/local-appointment-inventory.ts", "utf8"))
       .not.toMatch(/\.insert\(|localStorage\.setItem|upsert\(/);
   });
+
+  it("keeps the 2026/11/19 historical appointment out of migration candidates", () => {
+    const report = buildLocalAppointmentInventory({
+      organizationId: ORG,
+      now: NOW,
+      localAppointments: [
+        local(),
+        local({
+          id: "apt-20261119",
+          startAt: "2026-11-19T02:00:00.000Z",
+          endAt: "2026-11-19T04:00:00.000Z",
+        }),
+      ],
+      directory: directory(),
+    });
+    expect(report.rows.find((row) => row.id === "apt-20261119")?.disposition).toBe("not_future_active");
+    const planned = planAuthorizedAppointmentMigration({
+      explicitAuthorization: true,
+      report,
+      remoteAppointments: [],
+    });
+    expect(planned.readyIds).toEqual(["apt-local-future"]);
+    expect(readFileSync("lib/appointments/local-appointment-inventory.ts", "utf8")).not.toMatch(/treatments-completed/);
+    expect(readFileSync("lib/appointments/appointment-inventory-directory.ts", "utf8")).not.toMatch(/from\("treatments|completed_treatments/);
+  });
 });
 
 describe("formal directory read", () => {
-  it("reads identity ids and does not upload customers", async () => {
+  const AUTH_OWNER = "11111111-1111-4111-8111-111111111111";
+
+  function clientFor(
+    rows: Record<string, unknown[]>,
+    errors: Record<string, string> = {},
+  ) {
     const calls: string[] = [];
-    const rows: Record<string, unknown[]> = {
-      organizations: [{ id: "org-uuid", app_id: ORG }],
-      locations: [{ app_id: "loc-enjoye-main", organization_id: "org-uuid" }],
-      customers: [{ app_id: "cust-line-1", organization_id: "org-uuid" }],
-      services: [{ app_id: "svc-upup", organization_id: "org-uuid" }],
-      staff_auth_memberships: [
-        { user_id: "staff-owner", auth_user_id: "auth-owner", role: "OWNER", is_active: true, organization_id: ORG },
-        { user_id: "staff-002", auth_user_id: null, role: "STAFF", is_active: true, organization_id: ORG },
-      ],
-      appointments: [
-        { id: "db-1", app_id: "", staff_id: "staff-002", start_at: "2026-11-22T02:00:00.000Z", end_at: "2026-11-22T03:00:00.000Z", status: "BOOKED" },
-      ],
-    };
     const client = {
       from(table: string) {
         return {
@@ -236,6 +257,8 @@ describe("formal directory read", () => {
             return {
               eq(column: string, value: string) {
                 calls.push(`${table}:${columns}:${column}=${value}`);
+                const message = errors[table];
+                if (message) return Promise.resolve({ data: null, error: { message } });
                 return Promise.resolve({ data: rows[table] ?? [], error: null });
               },
             };
@@ -243,15 +266,115 @@ describe("formal directory read", () => {
         };
       },
     };
-    const directory = await fetchAppointmentInventoryDirectory(client, ORG);
-    expect(directory.remoteCheck).toBe("checked");
-    if (directory.remoteCheck !== "checked") return;
-    expect(directory.customerAppIds).toEqual(["cust-line-1"]);
-    expect(directory.staff.find((item) => item.userId === "staff-002")?.access.operationalIdentityValid).toBe(true);
-    expect(directory.remoteAppointments[0]?.id).toBe("db-1");
-    expect(calls.some((call) => call.startsWith("customers:"))).toBe(true);
+    return { client, calls };
+  }
+
+  function productionRows(appointments: unknown[]) {
+    return {
+      organizations: [{ id: "org-uuid", app_id: ORG }],
+      locations: [{ app_id: "loc-enjoye-main", organization_id: "org-uuid" }],
+      customers: [{ app_id: "cust-line-1", organization_id: "org-uuid" }],
+      services: [{ app_id: "svc-upup", organization_id: "org-uuid" }],
+      staff_auth_memberships: [
+        { user_id: "staff-owner", auth_user_id: AUTH_OWNER, role: "OWNER", is_active: true, organization_id: ORG },
+        { user_id: "staff-002", auth_user_id: null, role: "STAFF", is_active: true, organization_id: ORG },
+      ],
+      appointments,
+    };
+  }
+
+  it("maps starts_at and ends_at and does not return auth uuids or customer identity", async () => {
+    const { client, calls } = clientFor(productionRows([
+      {
+        id: "db-1",
+        app_id: "",
+        staff_id: "staff-002",
+        starts_at: "2026-11-22T02:00:00.000Z",
+        ends_at: "2026-11-22T03:00:00.000Z",
+        status: "BOOKED",
+      },
+    ]));
+    const loaded = await fetchAppointmentInventoryDirectory(client, ORG);
+    expect(loaded.remoteCheck).toBe("checked");
+    if (loaded.remoteCheck !== "checked") return;
+    expect(loaded.remoteCheckMessage).toBe("");
+    expect(loaded.customerAppIds).toEqual(["cust-line-1"]);
+    expect(loaded.staff.find((item) => item.userId === "staff-002")?.access.operationalIdentityValid).toBe(true);
+    expect(loaded.remoteAppointments[0]).toEqual({
+      id: "db-1",
+      staffId: "staff-002",
+      startAt: "2026-11-22T02:00:00.000Z",
+      endAt: "2026-11-22T03:00:00.000Z",
+      status: "BOOKED",
+    });
+    expect(JSON.stringify(loaded)).not.toContain(AUTH_OWNER);
+    expect(loaded.staff.every((item) => !("authUserId" in item))).toBe(true);
+    const appointmentCall = calls.find((call) => call.startsWith("appointments:"));
+    expect(appointmentCall?.split(":")[1]?.split(", ")).toEqual([
+      "id",
+      "app_id",
+      "staff_id",
+      "starts_at",
+      "ends_at",
+      "status",
+    ]);
+    const customerCall = calls.find((call) => call.startsWith("customers:"));
+    expect(customerCall?.split(":")[1]?.split(", ")).toEqual(["app_id", "organization_id"]);
     expect(calls.join("\n")).not.toMatch(/insert|upsert|update|delete/);
-    expect(readFileSync("app/staff/(app)/appointment-inventory/page.tsx", "utf8")).not.toMatch(/<button|insert\(/);
+    const page = readFileSync("app/staff/(app)/appointment-inventory/page.tsx", "utf8");
+    const report = readFileSync("features/appointments/AppointmentInventoryReport.tsx", "utf8");
+    const action = readFileSync("lib/appointments/appointment-inventory-action.ts", "utf8");
+    expect(page).not.toMatch(/<button|insert\(|authUserId|auth_user_id|directory=/);
+    expect(report).not.toMatch(/authUserId|auth_user_id|customerName|guestContactPhone|email/);
+    expect(report).toContain("JSON.stringify(report, null, 2)");
+    expect(action).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|\.delete\(|BEAUTY_OS_/);
     expect(readFileSync("lib/navigation/config.ts", "utf8")).not.toContain("appointment-inventory");
+  });
+
+  it("does not mark the remote check complete when the appointment query fails", async () => {
+    const reason = "column appointments.start_at does not exist";
+    const { client } = clientFor(productionRows([]), { appointments: reason });
+    const loaded = await fetchAppointmentInventoryDirectory(client, ORG);
+    expect(loaded.remoteCheck).toBe("unavailable");
+    if (loaded.remoteCheck !== "unavailable") return;
+    expect(loaded.message).toBe(reason);
+    const directory = inventoryDirectoryForPage(loaded, ORG);
+    expect(directory.remoteCheck).toBe("unavailable");
+    expect(directory.remoteCheckMessage).toBe(reason);
+    const report = buildLocalAppointmentInventory({
+      organizationId: ORG,
+      now: NOW,
+      localAppointments: [local()],
+      directory,
+    });
+    expect(report.remoteCheck).toBe("unavailable");
+    expect(report.remoteCheckMessage).toBe(reason);
+    expect(report.rows[0]?.disposition).toBe("remote_not_checked");
+  });
+
+  it("rejects appointment rows that only have the wrong start_at and end_at columns", async () => {
+    const { client } = clientFor(productionRows([
+      {
+        id: "db-1",
+        app_id: "apt-remote",
+        staff_id: "staff-002",
+        start_at: "2026-11-22T02:00:00.000Z",
+        end_at: "2026-11-22T03:00:00.000Z",
+        status: "BOOKED",
+      },
+    ]));
+    const loaded = await fetchAppointmentInventoryDirectory(client, ORG);
+    expect(loaded.remoteCheck).toBe("unavailable");
+    if (loaded.remoteCheck !== "unavailable") return;
+    expect(loaded.message).toContain("starts_at");
+    expect(loaded.message).toContain("ends_at");
+    const report = buildLocalAppointmentInventory({
+      organizationId: ORG,
+      now: NOW,
+      localAppointments: [local()],
+      directory: inventoryDirectoryForPage(loaded, ORG),
+    });
+    expect(report.remoteCheck).not.toBe("checked");
+    expect(report.rows[0]?.disposition).toBe("remote_not_checked");
   });
 });

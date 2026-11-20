@@ -1,30 +1,49 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
+import { loadAppointmentInventoryReport } from "@/lib/appointments/appointment-inventory-action";
 import {
   buildLocalAppointmentInventory,
   readPersistedInventoryAppointments,
-  type InventoryIdentityDirectory,
+  type LocalAppointmentInventoryReport,
 } from "@/lib/appointments/local-appointment-inventory";
+import { inventoryDirectoryForPage } from "@/lib/appointments/appointment-inventory-directory";
 
 export function AppointmentInventoryReport({
   organizationId,
-  directory,
   nowIso,
 }: {
   organizationId: string;
-  directory: InventoryIdentityDirectory;
   nowIso: string;
 }) {
-  const report = useMemo(
-    () => buildLocalAppointmentInventory({
-      organizationId,
-      now: new Date(nowIso),
-      localAppointments: readPersistedInventoryAppointments(organizationId),
-      directory,
-    }),
-    [directory, nowIso, organizationId],
-  );
+  const [report, setReport] = useState<LocalAppointmentInventoryReport | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const localAppointments = readPersistedInventoryAppointments(organizationId);
+    void loadAppointmentInventoryReport({ nowIso, localAppointments })
+      .then((next) => {
+        if (!cancelled) setReport(next);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setReport(buildLocalAppointmentInventory({
+          organizationId,
+          now: new Date(nowIso),
+          localAppointments,
+          directory: inventoryDirectoryForPage(
+            {
+              remoteCheck: "unavailable",
+              message: error instanceof Error ? error.message : "無法讀取正式資料",
+            },
+            organizationId,
+          ),
+        }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [nowIso, organizationId]);
 
   return (
     <article className="min-w-0" data-appointment-inventory="readonly">
@@ -35,7 +54,7 @@ export function AppointmentInventoryReport({
         </p>
       </header>
       <pre className="overflow-auto rounded-2xl border border-border bg-surface p-4 text-xs text-text">
-        {JSON.stringify(report, null, 2)}
+        {report ? JSON.stringify(report, null, 2) : ""}
       </pre>
     </article>
   );

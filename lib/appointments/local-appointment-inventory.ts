@@ -29,9 +29,9 @@ export interface InventoryIdentityDirectory {
   locationAppIds: readonly string[];
   customerAppIds: readonly string[];
   serviceAppIds: readonly string[];
+  remoteCheckMessage: string;
   staff: readonly {
     userId: string;
-    authUserId: string | null;
     role: string;
     isActive: boolean;
     access: ProductionStaffAccess;
@@ -71,8 +71,16 @@ export interface LocalAppointmentInventoryReport {
   writesPerformed: false;
   organizationId: string;
   remoteCheck: "checked" | "unavailable";
+  remoteCheckMessage: string;
   rows: InventoryRow[];
   counts: Record<InventoryDisposition, number>;
+}
+
+export function acceptInventoryAppointments(
+  rows: readonly unknown[],
+  organizationId: string,
+): InventoryAppointmentInput[] {
+  return rows.flatMap((row) => toInventoryAppointment(row, organizationId));
 }
 
 export function readPersistedInventoryAppointments(organizationId: string): InventoryAppointmentInput[] {
@@ -82,7 +90,7 @@ export function readPersistedInventoryAppointments(organizationId: string): Inve
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown[];
     if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((item) => toInventoryAppointment(item, organizationId));
+    return acceptInventoryAppointments(parsed, organizationId);
   } catch {
     return [];
   }
@@ -110,6 +118,7 @@ export function buildLocalAppointmentInventory(input: {
     writesPerformed: false,
     organizationId: input.organizationId,
     remoteCheck: input.directory.remoteCheck,
+    remoteCheckMessage: input.directory.remoteCheckMessage,
     rows,
     counts,
   };
