@@ -51,3 +51,19 @@ export function publicationFallbackInsertStatus(code: string | null | undefined)
   if (code === "23505") return "conflict";
   return "error";
 }
+
+/** Constraint name or a short raised message. Row contents are never returned. */
+export function publicationWriteFailure(error: { code?: string | null; message?: string | null } | null | undefined): {
+  code: string;
+  constraint: string | null;
+  raised: string | null;
+} {
+  const code = error?.code || "unknown";
+  const message = typeof error?.message === "string" ? error.message : "";
+  const constraint = message.match(/constraint "([A-Za-z0-9_]+)"/)?.[1] ?? null;
+  const firstLine = message.split("\n")[0]?.trim() ?? "";
+  const raised = !constraint && firstLine && !/failing row|detail/i.test(firstLine)
+    ? firstLine.slice(0, 160)
+    : null;
+  return { code, constraint, raised };
+}

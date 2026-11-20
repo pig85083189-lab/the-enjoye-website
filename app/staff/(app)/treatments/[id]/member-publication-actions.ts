@@ -19,7 +19,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { TreatmentDraft } from "@/types/treatment";
 import { storeMemberTreatmentPhotos } from "@/app/staff/(app)/treatments/[id]/member-photo-actions";
 import { verifiedBookingPublicationApprover } from "@/lib/treatments/publication-approver";
-import { publicationFallbackInsertStatus, publicationRpcStatus } from "@/lib/treatments/member-sync-completion";
+import { publicationFallbackInsertStatus, publicationRpcStatus, publicationWriteFailure } from "@/lib/treatments/member-sync-completion";
 import { isAuthUuid } from "@/lib/staff-auth/staff-id";
 import {
   MEMBER_TREATMENT_PHOTO_BUCKET,
@@ -213,7 +213,7 @@ async function insertPublicationOnce(
   p_approved_by:row.approvedBy,
  });
  if(error){
-  console.error("[member-publication] rpc_error",{code:error.code??"unknown"});
+  console.error("[member-publication] rpc_error",publicationWriteFailure(error));
   return "error";
  }
  const status=publicationRpcStatus(data);
@@ -233,7 +233,7 @@ async function insertPublicationOnce(
   updated_at:new Date().toISOString(),
  });
  const inserted=publicationFallbackInsertStatus(wrote.error?.code);
- if(inserted==="error")console.error("[member-publication] insert_error",{code:wrote.error?.code??"unknown"});
+ if(inserted==="error")console.error("[member-publication] insert_error",publicationWriteFailure(wrote.error));
  return inserted;
 }
 export async function autoPublishCompletedMemberTreatment(organizationId:string,treatmentId:string){

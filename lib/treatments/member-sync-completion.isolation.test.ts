@@ -4,6 +4,7 @@ import {
   memberSyncCompletionState,
   publicationFallbackInsertStatus,
   publicationRpcStatus,
+  publicationWriteFailure,
 } from "./member-sync-completion";
 
 const PUBLICATION_FAILED = "療程已儲存，但會員身體紀錄公開失敗。請再次按完成療程補公開，勿另建療程。";
@@ -54,6 +55,15 @@ describe("complete button after member sync", () => {
     expect(publicationFallbackInsertStatus(undefined)).toBe("ok");
     expect(publicationFallbackInsertStatus("23505")).toBe("conflict");
     expect(publicationFallbackInsertStatus("23503")).toBe("error");
+    expect(publicationFallbackInsertStatus("23514")).toBe("error");
+    expect(publicationWriteFailure({
+      code: "23514",
+      message: 'new row for relation "member_treatment_publications" violates check constraint "member_treatment_publications_status_check"\nFailing row contains (secret).',
+    })).toEqual({
+      code: "23514",
+      constraint: "member_treatment_publications_status_check",
+      raised: null,
+    });
     const writer = publication.slice(
       publication.indexOf("async function insertPublicationOnce"),
       publication.indexOf("export async function autoPublishCompletedMemberTreatment"),
