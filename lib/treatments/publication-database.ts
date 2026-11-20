@@ -1,13 +1,14 @@
 /**
- * Member publication may run only when the staff writer and the member reader
- * are the same finance project. The booking project is a different database.
- * This does not change Production environment variables.
+ * Beauty OS keeps writing through its booking connection.
+ * Member publication is readable only on the finance project.
+ * When those are different projects, the server copies one member snapshot
+ * onto finance. It does not retarget NEXT_PUBLIC_SUPABASE_URL.
  */
 export const FINANCE_SUPABASE_ORIGIN = "https://bfzquejrtgqzzarhkiya.supabase.co";
 export const BOOKING_SUPABASE_ORIGIN = "https://knccefcxncglgpmvgqlp.supabase.co";
 
 export const PUBLICATION_DATABASE_MISMATCH =
-  "正式療程寫入資料庫與會員讀取資料庫不是同一個財務專案，已停止公開，未另建療程。";
+  "正式療程寫入資料庫與會員讀取資料庫不是已核對的預約／財務組合，已停止公開，未另建療程。";
 
 export function canonicalSupabaseOrigin(value: string | undefined): string | null {
   if (!value) return null;
@@ -38,6 +39,27 @@ export function publicationDatabasesAlign(env: NodeJS.Dict<string> = process.env
     && publicationDatabaseKind(env.BEAUTY_OS_SUPABASE_URL) === "finance";
 }
 
-export function assertPublicationDatabasesAlign(env: NodeJS.Dict<string> = process.env): void {
-  if (!publicationDatabasesAlign(env)) throw new Error(PUBLICATION_DATABASE_MISMATCH);
+export type MemberPublicationSyncMode = "same-finance" | "booking-to-finance";
+
+/**
+ * same-finance: the completed treatment already lives where the member reads.
+ * booking-to-finance: keep the booking writer and copy one snapshot to finance.
+ * Any other combination, including both URLs pointing at booking, is refused.
+ */
+export function memberPublicationSyncMode(
+  env: NodeJS.Dict<string> = process.env,
+): MemberPublicationSyncMode | null {
+  const writer = publicationDatabaseKind(env.NEXT_PUBLIC_SUPABASE_URL);
+  const reader = publicationDatabaseKind(env.BEAUTY_OS_SUPABASE_URL);
+  if (writer === "finance" && reader === "finance") return "same-finance";
+  if (writer === "booking" && reader === "finance") return "booking-to-finance";
+  return null;
+}
+
+export function assertMemberPublicationTarget(
+  env: NodeJS.Dict<string> = process.env,
+): MemberPublicationSyncMode {
+  const mode = memberPublicationSyncMode(env);
+  if (!mode) throw new Error(PUBLICATION_DATABASE_MISMATCH);
+  return mode;
 }

@@ -8,7 +8,14 @@ import {
   memberVisiblePhotos,
   type ExistingPublication,
 } from "@/lib/treatments/member-publication-guard";
-import { assertPublicationDatabasesAlign } from "@/lib/treatments/publication-database";
+import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
+import {
+  commitMemberTreatmentCopy,
+  financeMemberFromEvidence,
+  MEMBER_IDENTITY_UNVERIFIED,
+  type MirrorRecord,
+} from "@/lib/treatments/member-treatment-sync";
+import { assertMemberPublicationTarget } from "@/lib/treatments/publication-database";
 
 const allowedRoles = new Set(["OWNER","MANAGER"]);
 type PublicValue = string | string[] | number | boolean | Array<{label:string;value:string}> | Array<{area:string;conditions:string[];note:string|null}>;
@@ -29,7 +36,7 @@ async function context(organizationId:string,treatmentId:string, allowStaff=fals
  if(!db)throw Error("資料庫尚未設定");
  const {data:org,error:orgError}=await db.from("organizations").select("id").eq("app_id",organizationId).maybeSingle();
  if(orgError||!org)throw Error("找不到此店家的正式資料，無法公開");
- const {data:matches,error}=await db.from("treatments").select("id,organization_id,customer_id,completed_at,status,staff_id,professional_note,assessment,body_markers,body_map_note,discomfort_note,client_feeling,products,follow_up,suggested_tracking_areas,photo_meta")
+ const {data:matches,error}=await db.from("treatments").select("id,organization_id,customer_id,service_id,completed_at,status,staff_id,professional_note,assessment,body_markers,body_map_note,discomfort_note,client_feeling,products,follow_up,suggested_tracking_areas,photo_meta")
   .eq("app_id",treatmentId).eq("organization_id",org.id).eq("status","COMPLETED").not("completed_at","is",null).limit(2);
  const t=matches?.length===1?matches[0]:null;
  if(error||!t)throw Error("只有正式資料庫中已完成的療程可以公開");
@@ -119,7 +126,7 @@ export async function revokeMemberTreatment(organizationId:string,treatmentId:st
  * The treatment and customer must already exist in the authoritative database.
  * The snapshot is generated server-side; callers cannot supply public fields.
  */
-async function readPublication(db:ReturnType<typeof createServiceRoleClient>,treatmentDbId:string,organizationDbId:string):Promise<ExistingPublication>{
+async function readPublication(db:NonNullable<ReturnType<typeof createServiceRoleClient>>,treatmentDbId:string,organizationDbId:string):Promise<ExistingPublication>{
  if(!db)throw Error("資料庫尚未設定");
  const {data,error}=await db.from("member_treatment_publications")
   .select("customer_id,approved_fields,revoked_at")
@@ -127,22 +134,128 @@ async function readPublication(db:ReturnType<typeof createServiceRoleClient>,tre
  if(error)throw Error("無法確認會員公開狀態，請稍後重試");
  return data??null;
 }
+async function memberLabels(db:NonNullable<ReturnType<typeof createServiceRoleClient>>,t:Record<string,unknown>,organizationAppId:string){
+ let serviceName:string|null=null;
+ if(typeof t.service_id==="string"&&t.service_id){
+  const service=await db.from("services").select("name").eq("id",t.service_id).eq("organization_id",t.organization_id).maybeSingle();
+  if(service.error)throw Error("無法確認課程名稱，請稍後重試");
+  serviceName=str(service.data?.name);
+ }
+ let staffName:string|null=null;
+ if(typeof t.staff_id==="string"&&t.staff_id){
+  const staff=await db.from("staff_auth_memberships").select("display_name").eq("user_id",t.staff_id).eq("organization_id",organizationAppId).maybeSingle();
+  if(staff.error)throw Error("無法確認美容師名稱，請稍後重試");
+  staffName=str(staff.data?.display_name);
+ }
+ return {serviceName,staffName};
+}
+function mirrorFromTreatment(t:Record<string,unknown>,financeOrganizationId:string,financeCustomerId:string,labels:{serviceName:string|null;staffName:string|null}):MirrorRecord{
+ return {
+  treatment_id:String(t.id),
+  organization_id:financeOrganizationId,
+  customer_id:financeCustomerId,
+  booking_customer_id:String(t.customer_id),
+  status:"COMPLETED",
+  completed_at:String(t.completed_at),
+  service_name:labels.serviceName,
+  staff_name:labels.staffName,
+  assessment:t.assessment??{},
+  body_markers:t.body_markers??[],
+  body_map_note:str(t.body_map_note),
+  professional_note:typeof t.professional_note==="string"?t.professional_note.trim().slice(0,4000):null,
+  client_feeling:str(t.client_feeling),
+  discomfort_note:str(t.discomfort_note),
+  follow_up:t.follow_up??{},
+  products:t.products??[],
+  suggested_tracking_areas:Array.isArray(t.suggested_tracking_areas)?t.suggested_tracking_areas:[],
+ };
+}
+const MIRROR_READ_FAILED="療程已儲存，但無法確認會員同步狀態，請稍後重試。";
 export async function autoPublishCompletedMemberTreatment(organizationId:string,treatmentId:string){
- // The member reader uses the finance project. Refuse before any publication
- // write when this server would use the booking project or a different URL.
- assertPublicationDatabasesAlign();
- const {db,t,auth,consultationFields}=await context(organizationId,treatmentId,true);
- const fields=withMemberPhotos(t,makeSnapshot(t,consultationFields));
+ // Booking stays the Beauty OS writer. Finance stays the member reader.
+ // A refused pairing writes nothing and does not create another treatment.
+ const mode=assertMemberPublicationTarget();
+ const {db,t,auth,org,consultationFields}=await context(organizationId,treatmentId,true);
+ const labels=await memberLabels(db,t,organizationId);
+ const fields={...withMemberPhotos(t,makeSnapshot(t,consultationFields)),status:"COMPLETED",completed_at:t.completed_at,...(labels.serviceName?{service_name:labels.serviceName}:{}),...(labels.staffName?{staff_name:labels.staffName}:{})};
+ const publicationTarget=mode==="same-finance"?db:createBeautyOsFinanceClient();
+ if(!publicationTarget)throw Error("會員讀取資料庫尚未設定，未另建療程。");
+ let financeOrganizationId=org.id;
+ let financeCustomerId=t.customer_id;
+ if(mode==="booking-to-finance"){
+  const financeOrg=await publicationTarget.from("organizations").select("id").eq("app_id",organizationId).maybeSingle();
+  if(financeOrg.error||!financeOrg.data?.id)throw Error(MEMBER_IDENTITY_UNVERIFIED);
+  financeOrganizationId=financeOrg.data.id;
+  const links=await publicationTarget.from("member_booking_finance_identity_links")
+   .select("finance_customer_id,finance_confirmation_id")
+   .eq("organization_id",financeOrganizationId)
+   .eq("booking_organization_id",org.id)
+   .eq("booking_customer_id",t.customer_id)
+   .is("revoked_at",null).limit(2);
+  if(links.error)throw Error(MEMBER_IDENTITY_UNVERIFIED);
+  const evidence=[];
+  for(const link of links.data??[]){
+   const confirmation=await publicationTarget.from("member_finance_binding_challenges").select("id")
+    .eq("id",link.finance_confirmation_id).eq("organization_id",financeOrganizationId)
+    .eq("confirmed_customer_id",link.finance_customer_id).eq("status","CONFIRMED").not("confirmed_at","is",null).maybeSingle();
+   const customer=await publicationTarget.from("customers").select("id,status")
+    .eq("id",link.finance_customer_id).eq("organization_id",financeOrganizationId).maybeSingle();
+   const line=await publicationTarget.from("member_line_customer_links").select("verified_at")
+    .eq("organization_id",financeOrganizationId).eq("customer_id",link.finance_customer_id).limit(2);
+   if(confirmation.error||customer.error||line.error)throw Error(MEMBER_IDENTITY_UNVERIFIED);
+   const lineRows=line.data??[];
+   evidence.push({
+    financeCustomerId:customer.data?.id??"",
+    confirmationStatus:confirmation.data?"CONFIRMED":null,
+    customerStatus:customer.data?.status??null,
+    verifiedLineSubjects:lineRows.length===1&&lineRows[0].verified_at?1:0,
+   });
+  }
+  const member=financeMemberFromEvidence(evidence);
+  if(!member)throw Error(MEMBER_IDENTITY_UNVERIFIED);
+  financeCustomerId=member.customerId;
+  const mirror=mirrorFromTreatment(t,financeOrganizationId,financeCustomerId,labels);
+  const readMirror=async()=>{
+   const row=await publicationTarget.from("member_treatment_mirrors")
+    .select("treatment_id,organization_id,customer_id,booking_customer_id,status,completed_at,service_name,staff_name,assessment,body_markers,body_map_note,professional_note,client_feeling,discomfort_note,follow_up,products,suggested_tracking_areas")
+    .eq("treatment_id",t.id).maybeSingle();
+   if(row.error)throw Error(MIRROR_READ_FAILED);
+   return row.data as MirrorRecord|null;
+  };
+  await commitMemberTreatmentCopy({
+   mirror,
+   fields,
+   readMirror,
+   insertMirror:async()=>{
+    const {error}=await publicationTarget.from("member_treatment_mirrors").insert(mirror);
+    if(!error)return "ok";
+    if(error.code==="23505")return "conflict";
+    return "error";
+   },
+   readPublication:()=>readPublication(publicationTarget,t.id,financeOrganizationId),
+   insertPublication:async()=>{
+    const {error}=await publicationTarget.from("member_treatment_publications").insert({
+     treatment_id:t.id,organization_id:financeOrganizationId,customer_id:financeCustomerId,
+     approved_fields:fields,approved_by:auth.membership.userId,
+     approved_at:new Date().toISOString(),revoked_at:null,updated_at:new Date().toISOString()
+    });
+    if(!error)return "ok";
+    if(error.code==="23505")return "conflict";
+    return "error";
+   },
+  });
+  return {ok:true};
+ }
  // The completed treatment row stays completed when publication fails.
  // A later press inserts the missing publication or verifies the existing one.
  // It does not create another treatment and does not clear revoked_at.
  await commitAutomaticPublication({
-  customerId:t.customer_id,
+  customerId:financeCustomerId,
   fields,
-  read:()=>readPublication(db,t.id,t.organization_id),
+  read:()=>readPublication(publicationTarget,t.id,financeOrganizationId),
   insert:async()=>{
-   const {error}=await db.from("member_treatment_publications").insert({
-    treatment_id:t.id,organization_id:t.organization_id,customer_id:t.customer_id,
+   const {error}=await publicationTarget.from("member_treatment_publications").insert({
+    treatment_id:t.id,organization_id:financeOrganizationId,customer_id:financeCustomerId,
     approved_fields:fields,approved_by:auth.membership.userId,
     approved_at:new Date().toISOString(),revoked_at:null,updated_at:new Date().toISOString()
    });

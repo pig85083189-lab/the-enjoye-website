@@ -10,6 +10,7 @@ import {
 import {
   BOOKING_SUPABASE_ORIGIN,
   FINANCE_SUPABASE_ORIGIN,
+  memberPublicationSyncMode,
   publicationDatabasesAlign,
 } from "./publication-database";
 
@@ -124,6 +125,22 @@ describe("publication database alignment", () => {
     })).toBe(false);
     expect(publicationDatabasesAlign({})).toBe(false);
   });
+
+  it("copies from the booking writer onto the finance reader without retargeting the writer", () => {
+    expect(memberPublicationSyncMode({
+      NEXT_PUBLIC_SUPABASE_URL: BOOKING_SUPABASE_ORIGIN,
+      BEAUTY_OS_SUPABASE_URL: FINANCE_SUPABASE_ORIGIN,
+    })).toBe("booking-to-finance");
+    expect(memberPublicationSyncMode({
+      NEXT_PUBLIC_SUPABASE_URL: FINANCE_SUPABASE_ORIGIN,
+      BEAUTY_OS_SUPABASE_URL: FINANCE_SUPABASE_ORIGIN,
+    })).toBe("same-finance");
+    expect(memberPublicationSyncMode({
+      NEXT_PUBLIC_SUPABASE_URL: BOOKING_SUPABASE_ORIGIN,
+      BEAUTY_OS_SUPABASE_URL: BOOKING_SUPABASE_ORIGIN,
+    })).toBeNull();
+    expect(memberPublicationSyncMode({})).toBeNull();
+  });
 });
 
 describe("publication sql and retry wiring", () => {
@@ -137,7 +154,10 @@ describe("publication sql and retry wiring", () => {
     expect(sql).not.toMatch(/on conflict[\s\S]*do update/i);
     expect(sql).toContain("revoke all on function");
     const automatic = publication.slice(publication.indexOf("export async function autoPublishCompletedMemberTreatment"));
-    expect(automatic).toContain("assertPublicationDatabasesAlign");
+    expect(automatic).toContain("assertMemberPublicationTarget");
+    expect(automatic).toContain("member_treatment_mirrors");
+    expect(automatic).toContain("member_booking_finance_identity_links");
+    expect(automatic).not.toMatch(/full_name|phone/);
     expect(automatic).toContain(".insert(");
     expect(automatic).not.toContain(".upsert(");
     expect(automatic).toContain('error.code==="23505"');
