@@ -2,6 +2,10 @@ import { hasAppointmentConflict, type ScheduleAppointment } from "@/lib/appointm
 import { getScheduleAppointmentsKey } from "@/lib/tenant/storage-keys";
 import type { ProductionStaffAccess } from "@/lib/staff-auth/production-write-access";
 
+export const APPOINTMENT_INVENTORY_MAX_ROWS = 500;
+export const APPOINTMENT_INVENTORY_MAX_BYTES = 512 * 1024;
+export const INVENTORY_EMPTY_NOTICE = "本次未找到可盤點資料";
+
 const ACTIVE_FUTURE_STATUSES = new Set([
   "BOOKED",
   "CONFIRMED",
@@ -72,8 +76,38 @@ export interface LocalAppointmentInventoryReport {
   organizationId: string;
   remoteCheck: "checked" | "unavailable";
   remoteCheckMessage: string;
+  inventoryNotice: string;
+  migrationClaimed: false;
+  storageKey: string;
   rows: InventoryRow[];
   counts: Record<InventoryDisposition, number>;
+}
+
+export function inspectInventorySubmission(value: unknown):
+  | { ok: true; rows: readonly unknown[] }
+  | { ok: false; message: string } {
+  if (!Array.isArray(value)) {
+    return { ok: false, message: "預約盤點資料必須是陣列，已停止盤點，沒有截斷資料。" };
+  }
+  if (value.length > APPOINTMENT_INVENTORY_MAX_ROWS) {
+    return {
+      ok: false,
+      message: `本次送出 ${value.length} 筆預約，超過 ${APPOINTMENT_INVENTORY_MAX_ROWS} 筆上限，已停止盤點，沒有截斷資料。`,
+    };
+  }
+  let bytes = 0;
+  try {
+    bytes = new TextEncoder().encode(JSON.stringify(value)).length;
+  } catch {
+    return { ok: false, message: "預約盤點資料無法計算大小，已停止盤點，沒有截斷資料。" };
+  }
+  if (bytes > APPOINTMENT_INVENTORY_MAX_BYTES) {
+    return {
+      ok: false,
+      message: `本次送出的預約資料為 ${bytes} bytes，超過 ${APPOINTMENT_INVENTORY_MAX_BYTES} bytes 上限，已停止盤點，沒有截斷資料。`,
+    };
+  }
+  return { ok: true, rows: value };
 }
 
 export function acceptInventoryAppointments(
@@ -101,6 +135,7 @@ export function buildLocalAppointmentInventory(input: {
   now: Date;
   localAppointments: readonly InventoryAppointmentInput[];
   directory: InventoryIdentityDirectory;
+  inventoryNotice?: string;
 }): LocalAppointmentInventoryReport {
   const rows = input.localAppointments
     .filter((item) => item.organizationId === input.organizationId)
@@ -119,6 +154,9 @@ export function buildLocalAppointmentInventory(input: {
     organizationId: input.organizationId,
     remoteCheck: input.directory.remoteCheck,
     remoteCheckMessage: input.directory.remoteCheckMessage,
+    inventoryNotice: input.inventoryNotice ?? (rows.length === 0 ? INVENTORY_EMPTY_NOTICE : ""),
+    migrationClaimed: false,
+    storageKey: input.organizationId ? getScheduleAppointmentsKey(input.organizationId) : "",
     rows,
     counts,
   };

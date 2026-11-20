@@ -5,7 +5,12 @@ import {
   inventoryDirectoryForPage,
 } from "@/lib/appointments/appointment-inventory-directory";
 import {
+  APPOINTMENT_INVENTORY_MAX_BYTES,
+  APPOINTMENT_INVENTORY_MAX_ROWS,
+  INVENTORY_EMPTY_NOTICE,
+  acceptInventoryAppointments,
   buildLocalAppointmentInventory,
+  inspectInventorySubmission,
   planAuthorizedAppointmentMigration,
   readPersistedInventoryAppointments,
   type InventoryIdentityDirectory,
@@ -239,6 +244,77 @@ describe("read-only local appointment inventory", () => {
     expect(planned.readyIds).toEqual(["apt-local-future"]);
     expect(readFileSync("lib/appointments/local-appointment-inventory.ts", "utf8")).not.toMatch(/treatments-completed/);
     expect(readFileSync("lib/appointments/appointment-inventory-directory.ts", "utf8")).not.toMatch(/from\("treatments|completed_treatments/);
+  });
+
+  it("says no inventory data was found when local storage and the result are empty", () => {
+    localStorage.removeItem(getScheduleAppointmentsKey(ORG));
+    expect(readPersistedInventoryAppointments(ORG)).toEqual([]);
+    const report = buildLocalAppointmentInventory({
+      organizationId: ORG,
+      now: NOW,
+      localAppointments: [],
+      directory: directory(),
+    });
+    expect(report.rows).toEqual([]);
+    expect(report.remoteCheck).toBe("checked");
+    expect(report.inventoryNotice).toBe(INVENTORY_EMPTY_NOTICE);
+    expect(report.migrationClaimed).toBe(false);
+    expect(report.storageKey).toBe(getScheduleAppointmentsKey(ORG));
+    expect(JSON.stringify(report)).not.toMatch(/已經移轉|已全部移轉|全部移轉完成/);
+    expect(localStorage.getItem(getScheduleAppointmentsKey(ORG))).toBeNull();
+  });
+
+  it("rejects an oversized submission instead of truncating it into a completed inventory", () => {
+    const tooMany = Array.from({ length: APPOINTMENT_INVENTORY_MAX_ROWS + 1 }, (_, index) => (
+      local({ id: `apt-${index}` })
+    ));
+    const counted = inspectInventorySubmission(tooMany);
+    expect(counted.ok).toBe(false);
+    if (counted.ok) return;
+    const countedReport = buildLocalAppointmentInventory({
+      organizationId: ORG,
+      now: NOW,
+      localAppointments: [],
+      inventoryNotice: counted.message,
+      directory: directory({ remoteCheck: "unavailable", remoteCheckMessage: counted.message }),
+    });
+    expect(countedReport.remoteCheck).toBe("unavailable");
+    expect(countedReport.rows).toEqual([]);
+    expect(countedReport.inventoryNotice).toContain("已停止盤點");
+    expect(countedReport.inventoryNotice).toContain("沒有截斷資料");
+    expect(countedReport.inventoryNotice).not.toBe(INVENTORY_EMPTY_NOTICE);
+    expect(countedReport.migrationClaimed).toBe(false);
+    expect(acceptInventoryAppointments(tooMany, ORG)).toHaveLength(APPOINTMENT_INVENTORY_MAX_ROWS + 1);
+
+    const bulky = [local({ note: "x".repeat(APPOINTMENT_INVENTORY_MAX_BYTES) })];
+    const sized = inspectInventorySubmission(bulky);
+    expect(sized.ok).toBe(false);
+    if (!sized.ok) expect(sized.message).toContain(`${APPOINTMENT_INVENTORY_MAX_BYTES} bytes`);
+
+    const atLimit = Array.from({ length: APPOINTMENT_INVENTORY_MAX_ROWS }, (_, index) => (
+      local({ id: `apt-${index}` })
+    ));
+    expect(inspectInventorySubmission(atLimit).ok).toBe(true);
+    expect(inspectInventorySubmission({ id: "apt-not-a-list" }).ok).toBe(false);
+  });
+
+  it("reads the same persisted schedule key as the calendar and leaves other stores untouched", () => {
+    expect(getScheduleAppointmentsKey(ORG)).toBe(`beauty-os:${ORG}:schedule-appointments:v1`);
+    const store = readFileSync("lib/appointments/store.ts", "utf8");
+    const calendar = readFileSync("features/calendar/CalendarPage.tsx", "utf8");
+    const inventory = readFileSync("lib/appointments/local-appointment-inventory.ts", "utf8");
+    const action = readFileSync("lib/appointments/appointment-inventory-action.ts", "utf8");
+    expect(store).toContain("getScheduleAppointmentsKey(organizationId)");
+    expect(calendar).toContain("listAppointments(");
+    expect(inventory).toContain("getScheduleAppointmentsKey(organizationId)");
+    expect(inventory).not.toMatch(/appointment-status|crm-appointments|treatments-completed/);
+    expect(action.indexOf("await getAuthenticatedStaffMembership")).toBeLessThan(
+      action.indexOf("inspectInventorySubmission(input"),
+    );
+    expect(action.indexOf("inspectInventorySubmission(input")).toBeLessThan(
+      action.indexOf("fetchAppointmentInventoryDirectory("),
+    );
+    expect(action).not.toMatch(/\.slice\(|\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
   });
 });
 

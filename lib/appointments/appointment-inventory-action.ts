@@ -8,6 +8,7 @@ import {
 import {
   acceptInventoryAppointments,
   buildLocalAppointmentInventory,
+  inspectInventorySubmission,
   type LocalAppointmentInventoryReport,
 } from "@/lib/appointments/local-appointment-inventory";
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
@@ -39,20 +40,34 @@ export async function loadAppointmentInventoryReport(input: {
 }): Promise<LocalAppointmentInventoryReport> {
   const resolved = await getAuthenticatedStaffMembership();
   if (resolved.status !== "ok") {
+    const message = "需要已綁定的員工登入才能讀取正式資料";
     return buildLocalAppointmentInventory({
       organizationId: "",
       now: new Date(input.nowIso),
       localAppointments: [],
+      inventoryNotice: message,
       directory: inventoryDirectoryForPage(
-        { remoteCheck: "unavailable", message: "需要已綁定的員工登入才能讀取正式資料" },
+        { remoteCheck: "unavailable", message },
         "",
       ),
     });
   }
 
   const organizationId = resolved.membership.organizationId;
-  const submitted = Array.isArray(input.localAppointments) ? input.localAppointments : [];
-  const localAppointments = acceptInventoryAppointments(submitted, organizationId);
+  const submission = inspectInventorySubmission(input.localAppointments);
+  if (!submission.ok) {
+    return buildLocalAppointmentInventory({
+      organizationId,
+      now: new Date(input.nowIso),
+      localAppointments: [],
+      inventoryNotice: submission.message,
+      directory: inventoryDirectoryForPage(
+        { remoteCheck: "unavailable", message: submission.message },
+        organizationId,
+      ),
+    });
+  }
+  const localAppointments = acceptInventoryAppointments(submission.rows, organizationId);
   const now = new Date(input.nowIso);
   try {
     const loaded = await fetchAppointmentInventoryDirectory(
