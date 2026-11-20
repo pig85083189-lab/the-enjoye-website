@@ -33,8 +33,10 @@ describe("automatic member treatment publication", () => {
     const automatic = publication.slice(publication.indexOf("export async function autoPublishCompletedMemberTreatment"));
     expect(automatic).not.toContain("onConflict");
     expect(automatic).toContain("insertPublicationOnce");
-    expect(automatic.indexOf("memberSyncCustomerAllowed")).toBeGreaterThan(-1);
-    expect(automatic.indexOf("memberSyncCustomerAllowed")).toBeLessThan(automatic.indexOf("createBeautyOsFinanceClient"));
+    expect(automatic).not.toContain("memberSyncCustomerAllowed");
+    expect(automatic).toContain("member_booking_finance_identity_links");
+    expect(workspace).toContain("await syncBrowserCompletedMemberTreatment");
+    expect(workspace).not.toMatch(/BEAUTY_OS_TREATMENT_REMOTE_WRITE_PILOT\s*=\s*"1"/);
     expect(automatic.indexOf("privatePhotoRefsFromMeta")).toBeLessThan(automatic.indexOf("commitMemberTreatmentCopy"));
     expect(automatic.indexOf("confirmPrivateTreatmentPhotos")).toBeLessThan(automatic.indexOf("commitMemberTreatmentCopy"));
     expect(automatic).not.toContain("withMemberPhotos");

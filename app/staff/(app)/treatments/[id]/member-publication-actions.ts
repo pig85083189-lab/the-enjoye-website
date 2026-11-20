@@ -14,7 +14,10 @@ import {
   MEMBER_IDENTITY_UNVERIFIED,
   type MirrorRecord,
 } from "@/lib/treatments/member-treatment-sync";
-import { memberSyncCustomerAllowed } from "@/lib/treatments/member-sync-allowlist";
+import { persistBrowserCompletedTreatment } from "@/lib/treatments/member-sync-persist";
+import { createClient } from "@/lib/supabase/server";
+import type { TreatmentDraft } from "@/types/treatment";
+import { storeMemberTreatmentPhotos } from "@/app/staff/(app)/treatments/[id]/member-photo-actions";
 import { verifiedBookingPublicationApprover } from "@/lib/treatments/publication-approver";
 import {
   MEMBER_TREATMENT_PHOTO_BUCKET,
@@ -219,7 +222,6 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
  // A refused pairing writes nothing and does not create another treatment.
  const mode=assertMemberPublicationTarget();
  const {db,t,auth,org,consultationFields}=await context(organizationId,treatmentId,true);
- if(!memberSyncCustomerAllowed(t.customer_id))throw Error("這位顧客不在會員同步允許名單，未公開給任何會員。");
  const approvedBy=await publicationApprover(db,organizationId,auth.membership);
  const labels=await memberLabels(db,t,organizationId);
  const photoRefs=privatePhotoRefsFromMeta(t.id,t.photo_meta);
@@ -310,5 +312,47 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
    treatmentId:t.id,organizationId:financeOrganizationId,customerId:financeCustomerId,fields,approvedBy,
   }),
  });
+ return {ok:true};
+}
+
+/** Persist a browser-completed treatment, then copy it to the member database.
+ * The appointment row supplies the customer. The browser cannot choose the member.
+ * Remote read and write pilots stay off. A failure leaves the local treatment saved.
+ */
+export async function syncBrowserCompletedMemberTreatment(
+ organizationId:string,
+ draft:TreatmentDraft,
+ uploads:unknown,
+){
+ if(!draft||draft.organizationId!==organizationId||draft.status!=="completed"||!draft.appointmentId){
+  throw Error("療程尚未完成，未同步到會員。");
+ }
+ const auth=await getAuthenticatedStaffMembership({organizationId});
+ if(auth.status!=="ok"||!["OWNER","MANAGER","STAFF","RECEPTIONIST"].includes(auth.membership.role)){
+  throw Error("沒有權限同步療程");
+ }
+ if(auth.membership.userId!==draft.staffId)throw Error("無法確認操作人員與療程美容師一致，未同步。");
+ const admin=createServiceRoleClient();
+ if(!admin)throw Error("資料庫尚未設定");
+ const org=await admin.from("organizations").select("id").eq("app_id",organizationId).maybeSingle();
+ if(org.error||!org.data?.id)throw Error("找不到此店家的正式資料，未同步。");
+ const appointment=await admin.from("appointments").select("customer_id").eq("organization_id",org.data.id).eq("app_id",draft.appointmentId).maybeSingle();
+ if(appointment.error||!appointment.data?.customer_id)throw Error("找不到這筆預約，未同步。");
+ const customer=await admin.from("customers").select("id,app_id").eq("id",appointment.data.customer_id).eq("organization_id",org.data.id).maybeSingle();
+ if(customer.error||!customer.data?.id)throw Error("顧客身分與預約不一致，未同步到會員。");
+ const appointmentCustomerId=typeof customer.data.app_id==="string"&&customer.data.app_id?customer.data.app_id:customer.data.id;
+ if(draft.customerId!==appointmentCustomerId)throw Error("顧客身分與預約不一致，未同步到會員。");
+ const uploadedIds=new Set(Array.isArray(uploads)?uploads.flatMap((item)=>{
+  const photoId=item&&typeof item==="object"&&typeof (item as {photoId?:unknown}).photoId==="string"?(item as {photoId:string}).photoId:"";
+  return photoId?[photoId]:[];
+ }):[]);
+ const storedDraft=uploadedIds.size?{
+  ...draft,
+  photos:draft.photos.map((photo)=>uploadedIds.has(photo.id)?{...photo,privateObject:true}:photo),
+ }:draft;
+ const session=await createClient();
+ await persistBrowserCompletedTreatment(session,storedDraft,appointmentCustomerId);
+ if(uploadedIds.size)await storeMemberTreatmentPhotos(organizationId,draft.id,uploads);
+ await autoPublishCompletedMemberTreatment(organizationId,draft.id);
  return {ok:true};
 }

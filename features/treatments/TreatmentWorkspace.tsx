@@ -17,7 +17,7 @@ import { CustomerSummaryStep } from "@/features/treatments/steps/CustomerSummary
 import { FollowUpStep } from "@/features/treatments/steps/FollowUpStep";
 import { PhotosStep } from "@/features/treatments/steps/PhotosStep";
 import { useTreatmentDraft } from "@/hooks/useTreatmentDraft";
-import { autoPublishCompletedMemberTreatment } from "@/app/staff/(app)/treatments/[id]/member-publication-actions";
+import { autoPublishCompletedMemberTreatment, syncBrowserCompletedMemberTreatment } from "@/app/staff/(app)/treatments/[id]/member-publication-actions";
 import { storeMemberTreatmentPhotos } from "@/app/staff/(app)/treatments/[id]/member-photo-actions";
 import { treatmentPhotoBase64, treatmentPhotoFile } from "@/lib/treatments/treatment-photo-files";
 import { getTreatmentTemplateForService } from "@/data/treatment-templates";
@@ -305,6 +305,19 @@ export function TreatmentWorkspace({
         // The member-facing publication is required, not a manager approval step.
         // A failed publication leaves the remote completion intact and visible as an error.
         await autoPublishCompletedMemberTreatment(appointment.organizationId, persisted.id);
+      } else {
+        const uploads = [];
+        for (const photo of mergedPhotos.filter((item) => item.hadPreview && item.privateObject !== true)) {
+          const file = treatmentPhotoFile(photo.id);
+          if (!file) throw new Error("療程照片不在這次瀏覽器工作階段，尚未完成同步。請重新加入照片後再按完成，勿另建療程。");
+          uploads.push({
+            photoId: photo.id,
+            type: photo.type,
+            contentType: file.type,
+            bytesBase64: await treatmentPhotoBase64(file),
+          });
+        }
+        await syncBrowserCompletedMemberTreatment(appointment.organizationId, persisted, uploads);
       }
       if (!treatmentRemoteReadPilot) {
         setAppointmentStatus(appointment.id, "completed", appointment.organizationId);

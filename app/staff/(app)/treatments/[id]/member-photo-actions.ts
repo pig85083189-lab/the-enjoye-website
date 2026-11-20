@@ -3,7 +3,6 @@
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
-import { memberSyncCustomerAllowed } from "@/lib/treatments/member-sync-allowlist";
 import {
   MEMBER_TREATMENT_PHOTO_BUCKET,
   preparePrivateTreatmentPhotos,
@@ -45,7 +44,6 @@ export async function storeMemberTreatmentPhotos(
   if (matches.error || !treatment || (treatment.status !== "DRAFT" && treatment.status !== "COMPLETED")) {
     throw new Error("找不到可附加照片的療程，尚未同步。");
   }
-  if (!memberSyncCustomerAllowed(treatment.customer_id)) throw new Error("這位顧客不在會員同步允許名單，未公開給任何會員。");
   const stored = await putPrivateTreatmentPhotos(treatment.id, prepared.photos, {
     async put(key, bytes, contentType) {
       const result = await finance.storage.from(MEMBER_TREATMENT_PHOTO_BUCKET).upload(key, Buffer.from(bytes), {
