@@ -62,7 +62,8 @@ async function readyDatabase() {
 
 async function publicationResult(db: PGlite, customerId: string, payload: unknown = fields) {
   const result = await db.query<{ result: string }>(
-    `select public.insert_member_treatment_publication_once($1,$2,$3,$4,$5) as result`,
+    `select set_config('request.jwt.claim.role', 'service_role', true),
+            public.insert_member_treatment_publication_once($1,$2,$3,$4,$5) as result`,
     [treatment, org, customerId, payload, approver],
   );
   return result.rows[0]?.result;
@@ -282,13 +283,19 @@ describe("isolated finance schema apply", () => {
     expect(table.rows[0]?.mirror).toBeNull();
   });
 
-  it("rejects an operational staff id without inserting a publication", async () => {
+  it("rejects a caller that is not the service role, even with a UUID", async () => {
     const db = await readyDatabase();
     const rejected = await db.query<{ result: string }>(
       `select public.insert_member_treatment_publication_once($1,$2,$3,$4,$5) as result`,
-      [treatment, org, member, fields, "staff-001"],
+      [treatment, org, member, fields, approver],
     );
     expect(rejected.rows[0]?.result).toBe("unauthorized");
+    const forged = await db.query<{ result: string }>(
+      `select set_config('request.jwt.claim.role', 'service_role', true),
+              public.insert_member_treatment_publication_once($1,$2,$3,$4,$5) as result`,
+      [treatment, org, member, fields, "staff-001"],
+    );
+    expect(forged.rows[0]?.result).toBe("unauthorized");
     const count = await db.query<{ count: number }>("select count(*)::int as count from public.member_treatment_publications");
     expect(count.rows[0]?.count).toBe(0);
   });

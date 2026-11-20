@@ -212,6 +212,10 @@ describe("publication sql and retry wiring", () => {
     expect(automatic).toContain("member_booking_finance_identity_links");
     expect(automatic).toContain("insertPublicationOnce");
     expect(automatic).toContain("publicationApprover");
+    expect(publication).toContain("staff_auth_memberships");
+    expect(publication).toContain("getServerStaffAuthUser");
+    expect(sql).toContain("request.jwt.claim.role");
+    expect(sql).not.toMatch(/from\s+auth\.users/i);
     expect(automatic).not.toMatch(/full_name|phone/);
     expect(automatic).not.toContain('from("member_treatment_publications").insert');
     expect(automatic).not.toContain(".upsert(");
@@ -219,7 +223,7 @@ describe("publication sql and retry wiring", () => {
     expect(writer).toContain('rpc("insert_member_treatment_publication_once"');
     expect(sql).toContain("if not found then");
     expect(sql).toContain("return 'unauthorized'");
-    expect(publication).toContain("publicationApprover(auth.membership.authUserId)");
+    expect(publication).toContain("publicationApprover(db,organizationId,auth.membership)");
     expect(publication).not.toContain("publicationApprover(auth.membership.userId)");
   });
 

@@ -1,6 +1,6 @@
 "use server";
 
-import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
+import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { DEFAULT_CONSULTATION_FIELDS } from "@/lib/consultation-settings";
 import {
@@ -15,6 +15,7 @@ import {
   type MirrorRecord,
 } from "@/lib/treatments/member-treatment-sync";
 import { memberSyncCustomerAllowed } from "@/lib/treatments/member-sync-allowlist";
+import { verifiedBookingPublicationApprover } from "@/lib/treatments/publication-approver";
 import {
   MEMBER_TREATMENT_PHOTO_BUCKET,
   confirmPrivateTreatmentPhotos,
@@ -172,11 +173,28 @@ function mirrorFromTreatment(t:Record<string,unknown>,financeOrganizationId:stri
  };
 }
 const MIRROR_READ_FAILED="療程已儲存，但無法確認會員同步狀態，請稍後重試。";
-const APPROVER_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-function publicationApprover(authUserId:string|null|undefined){
- const id=authUserId?.trim()??"";
- if(!APPROVER_UUID.test(id))throw Error("無法確認操作人員身分，未公開給會員。");
- return id;
+async function publicationApprover(
+ db:NonNullable<ReturnType<typeof createServiceRoleClient>>,
+ organizationId:string,
+ membership:{authUserId?:string|null;userId:string},
+){
+ const session=await getServerStaffAuthUser();
+ const membershipRows=await db.from("staff_auth_memberships")
+  .select("auth_user_id,user_id,role,is_active,organization_id")
+  .eq("auth_user_id",session?.id??"")
+  .eq("organization_id",organizationId)
+  .eq("user_id",membership.userId)
+  .limit(2);
+ if(membershipRows.error)throw Error("無法確認操作人員身分，未公開給會員。");
+ const approvedBy=verifiedBookingPublicationApprover({
+  sessionUserId:session?.id??null,
+  membershipAuthUserId:membership.authUserId??null,
+  membershipUserId:membership.userId,
+  organizationId,
+  rows:membershipRows.data??[],
+ });
+ if(!approvedBy)throw Error("無法確認操作人員身分，未公開給會員。");
+ return approvedBy;
 }
 async function insertPublicationOnce(
  db:NonNullable<ReturnType<typeof createServiceRoleClient>>,
@@ -202,7 +220,7 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
  const mode=assertMemberPublicationTarget();
  const {db,t,auth,org,consultationFields}=await context(organizationId,treatmentId,true);
  if(!memberSyncCustomerAllowed(t.customer_id))throw Error("這位顧客不在會員同步允許名單，未公開給任何會員。");
- const approvedBy=publicationApprover(auth.membership.authUserId);
+ const approvedBy=await publicationApprover(db,organizationId,auth.membership);
  const labels=await memberLabels(db,t,organizationId);
  const photoRefs=privatePhotoRefsFromMeta(t.id,t.photo_meta);
  if(!photoRefs.ok)throw Error(photoRefs.error);

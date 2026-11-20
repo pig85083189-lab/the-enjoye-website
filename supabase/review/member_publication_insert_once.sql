@@ -6,8 +6,14 @@
 -- approved_by is text. This script does not rebuild the primary key and
 -- does not alter that column.
 -- A second unique index with another name is not created.
--- The text argument is accepted only when it is an authenticated user UUID.
--- Operational ids such as staff-* are rejected and nothing is inserted.
+-- Beauty OS and this finance project use different Auth databases.
+-- This function must not read finance auth.users: those ids are not the
+-- staff who signed in to Beauty OS.
+-- A UUID-shaped approved_by only constrains the stored text. Login is
+-- verified by the booking server with auth.getUser() and
+-- staff_auth_memberships before it calls this function as service_role.
+-- request.jwt.claim.role must be service_role. Anon and authenticated
+-- cannot execute the function.
 
 do $$
 declare
@@ -97,7 +103,12 @@ set search_path = public
 as $$
 declare
   existing public.member_treatment_publications%rowtype;
+  request_role text := current_setting('request.jwt.claim.role', true);
 begin
+  if request_role is distinct from 'service_role' then
+    return 'unauthorized';
+  end if;
+  -- Stored shape only. This does not look up a login on either Auth project.
   if p_approved_by is null
      or p_approved_by !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
     return 'unauthorized';
@@ -142,6 +153,6 @@ grant execute on function public.insert_member_treatment_publication_once(uuid, 
   to service_role;
 
 comment on function public.insert_member_treatment_publication_once(uuid, uuid, uuid, jsonb, text) is
-  'Insert a member publication once. approved_by must be an auth user UUID stored as text. Conflict does not update, and a revoked row stays revoked.';
+  'Insert a member publication once. Caller must be the service role. approved_by is the booking auth user id already verified by the server. Conflict does not update, and a revoked row stays revoked.';
 
 notify pgrst, 'reload schema';
