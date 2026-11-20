@@ -87,6 +87,15 @@ export function combineLocalAndRemoteTreatments<T extends TreatmentCoexistenceRe
   };
 }
 
+export function remoteTreatmentWriteStoppedByStoredLocal(
+  next: TreatmentCoexistenceRecord,
+  stored: readonly TreatmentCoexistenceRecord[],
+): boolean {
+  const sameId = stored.find((item) =>
+    item.organizationId === next.organizationId && item.id === next.id);
+  return Boolean(sameId && !sameTreatmentRecord(sameId, next));
+}
+
 function treatmentIdentityKey(treatment: TreatmentCoexistenceRecord): string {
   return `${treatment.organizationId}\0${treatment.id}`;
 }

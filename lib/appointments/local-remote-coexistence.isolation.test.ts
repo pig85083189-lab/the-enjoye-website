@@ -4,6 +4,9 @@ import { ORG_ENJOYE_ID } from "@/lib/tenant/constants";
 import { getScheduleAppointmentsKey } from "@/lib/tenant/storage-keys";
 import {
   combineLocalAndRemoteAppointments,
+  identityConflictForId,
+  persistedLocalAppointmentOverlap,
+  remoteCheckoutBlockedByLocalAppointment,
   type AppointmentCoexistenceRecord,
 } from "./local-remote-coexistence";
 import { listPersistedScheduleAppointments } from "./store";
@@ -112,6 +115,64 @@ describe("local and remote appointments coexist", () => {
     expect(rows.map((item) => item.id)).toEqual(["apt-browser-only"]);
     expect(rows.some((item) => item.id === "apt-001")).toBe(false);
     expect(localStorage.getItem(key)).toBe(before);
+  });
+});
+
+describe("local appointments can still collide on the server", () => {
+  it("stops a same-browser remote create that overlaps an unsynced local appointment", () => {
+    const local = appointment({ staffId: "staff-001", status: "BOOKED" });
+    const hit = persistedLocalAppointmentOverlap({
+      staffId: "staff-001",
+      startAt: local.startAt,
+      endAt: local.endAt,
+      localAppointments: [local],
+    });
+    expect(hit?.id).toBe(local.id);
+    expect(persistedLocalAppointmentOverlap({
+      staffId: "staff-002",
+      startAt: local.startAt,
+      endAt: local.endAt,
+      localAppointments: [local],
+    })).toBeUndefined();
+  });
+
+  it("does not let the server overlap check see browser appointments", () => {
+    const source = readFileSync("lib/appointments/appointment-write-create.ts", "utf8");
+    const check = source.slice(source.indexOf("const existing"), source.indexOf("if (overlap)"));
+    expect(check).toContain("persistence.appointments.list");
+    expect(check).not.toMatch(/localStorage|listPersistedScheduleAppointments/);
+  });
+
+  it("stops cancel and checkout when the same appointment id belongs to different customers", () => {
+    const local = appointment({ customerId: "cust-local" });
+    const remote = appointment({ customerId: "cust-remote" });
+    const merged = combineLocalAndRemoteAppointments({
+      remoteReadEnabled: true,
+      remoteReady: true,
+      localAppointments: [local],
+      remoteAppointments: [remote],
+    });
+    expect(identityConflictForId(merged.conflicts, local.id)?.local.customerId).toBe("cust-local");
+    expect(remoteCheckoutBlockedByLocalAppointment({
+      localAppointment: local,
+      remoteCustomerId: remote.customerId,
+      remoteLocationId: remote.locationId,
+      remoteStaffId: remote.staffId,
+      remoteServiceId: remote.serviceId,
+      remoteStartAt: remote.startAt,
+    })).toBe(true);
+    expect(remoteCheckoutBlockedByLocalAppointment({
+      localAppointment: null,
+      remoteCustomerId: remote.customerId,
+      remoteLocationId: remote.locationId,
+      remoteStaffId: remote.staffId,
+      remoteServiceId: remote.serviceId,
+      remoteStartAt: remote.startAt,
+    })).toBe(false);
+    const page = readFileSync("features/calendar/CalendarPage.tsx", "utf8");
+    const cancel = page.slice(page.indexOf("onConfirm={async () => {"));
+    expect(cancel.indexOf("identityConflictForId")).toBeLessThan(cancel.indexOf("submitCalendarRemoteAppointmentCancel"));
+    expect(readFileSync("features/checkout/CheckoutPageClient.tsx", "utf8")).toContain("checkoutBlocked");
   });
 });
 

@@ -9,6 +9,8 @@ import {
   useTreatmentRemoteListByCustomer,
 } from "@/features/treatments/use-treatment-remote-read";
 import { localTreatmentRepository } from "@/lib/repositories/local-treatment-repository";
+import { getCompletedTreatmentsForCustomer } from "@/lib/treatment-draft";
+import { combineLocalAndRemoteTreatments } from "@/lib/treatments/local-remote-coexistence";
 import { getMembership } from "@/lib/tenant/organization-store";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import {
@@ -42,27 +44,22 @@ export function TreatmentsTab({
     customerId,
     treatmentRemoteReadPilot,
   );
-  // Keep browser-only history visible during the gradual remote rollout.
-  // Remote rows take precedence for the same appointment; do not erase the
-  // original local records or imply that they have been synchronized.
-  const localTreatments = localTreatmentRepository.listByCustomer({
-    organizationId: organization.id,
-    customerId,
+  const remoteReady = treatmentRemoteReadPilot && remote.status === "data";
+  const localTreatments = treatmentRemoteReadPilot
+    ? getCompletedTreatmentsForCustomer(organization.id, customerId)
+    : localTreatmentRepository.listByCustomer({
+        organizationId: organization.id,
+        customerId,
+      });
+  const treatmentCoexistence = combineLocalAndRemoteTreatments({
+    remoteReadEnabled: treatmentRemoteReadPilot,
+    remoteReady,
+    localTreatments,
+    remoteTreatments: remoteReady ? treatmentsFromRemoteListState(remote) : [],
   });
-  const remoteTreatments = treatmentRemoteReadPilot && remote.status !== "error"
-    ? treatmentsFromRemoteListState(remote)
-    : [];
-  const seenAppointments = new Set(
-    remoteTreatments.map((item) => item.appointmentId).filter(Boolean),
+  const treatments = [...treatmentCoexistence.records].sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
   );
-  const seenIds = new Set(remoteTreatments.map((item) => item.id));
-  const treatments = [
-    ...remoteTreatments,
-    ...localTreatments.filter((item) =>
-      !seenIds.has(item.id) &&
-      (!item.appointmentId || !seenAppointments.has(item.appointmentId)),
-    ),
-  ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   if (treatmentRemoteReadPilot && remote.status === "loading" && treatments.length === 0) {
     return (
@@ -106,6 +103,7 @@ export function TreatmentsTab({
     <div
       className="space-y-3"
       data-treatment-record-source={treatmentRemoteReadPilot ? "remote-pilot" : "local"}
+      data-local-remote-conflicts={treatmentCoexistence.conflicts.length}
     >
       {treatmentRemoteReadPilot && remote.status === "error" ? (
         <p className="text-sm text-secondary-text" role="status">
@@ -114,7 +112,7 @@ export function TreatmentsTab({
       ) : null}
       {treatments.map((t) => (
         <TreatmentHistoryCard
-          key={t.id}
+          key={`${t.id}:${t.customerId}:${t.updatedAt}`}
           treatment={t}
           organizationId={organization.id}
           catalog={catalog}

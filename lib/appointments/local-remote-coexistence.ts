@@ -1,3 +1,5 @@
+import { hasAppointmentConflict, type ScheduleAppointment } from "@/lib/appointments/domain";
+
 /**
  * Read-only union of browser appointments and Supabase appointments.
  * Dedupes only an exact organization and appointment identity.
@@ -69,6 +71,61 @@ export function combineLocalAndRemoteAppointments<T extends AppointmentCoexisten
 
 function appointmentIdentityKey(appointment: AppointmentCoexistenceRecord): string {
   return `${appointment.organizationId}\0${appointment.id}`;
+}
+
+export const LOCAL_REMOTE_WRITE_STOPPED_MESSAGE =
+  "本機與正式資料的身分或內容不一致，已停止寫入並保留兩邊原始資料。";
+
+export function identityConflictForId<T extends { id: string }>(
+  conflicts: readonly LocalRemoteConflict<T>[],
+  id: string,
+): LocalRemoteConflict<T> | undefined {
+  return conflicts.find((item) => item.local.id === id || item.remote.id === id);
+}
+
+/** Same-browser guard only. The database exclusion constraint cannot see these rows. */
+export function persistedLocalAppointmentOverlap(input: {
+  staffId: string;
+  startAt: string;
+  endAt: string;
+  localAppointments: readonly AppointmentCoexistenceRecord[];
+}): AppointmentCoexistenceRecord | undefined {
+  return hasAppointmentConflict(
+    {
+      id: "__remote_create_candidate__",
+      staffId: input.staffId,
+      startAt: input.startAt,
+      endAt: input.endAt,
+      status: "BOOKED",
+    },
+    input.localAppointments as readonly ScheduleAppointment[] as ScheduleAppointment[],
+  );
+}
+
+export function remoteCheckoutBlockedByLocalAppointment(input: {
+  localAppointment: AppointmentCoexistenceRecord | null;
+  remoteCustomerId?: string;
+  remoteLocationId?: string;
+  remoteStaffId?: string;
+  remoteServiceId?: string;
+  remoteStartAt?: string;
+}): boolean {
+  const local = input.localAppointment;
+  if (!local) return false;
+  if (!input.remoteCustomerId || !input.remoteLocationId || !input.remoteStaffId || !input.remoteServiceId || !input.remoteStartAt) {
+    return true;
+  }
+  return local.customerId !== input.remoteCustomerId
+    || local.locationId !== input.remoteLocationId
+    || local.staffId !== input.remoteStaffId
+    || local.serviceId !== input.remoteServiceId
+    || !sameInstant(local.startAt, input.remoteStartAt);
+}
+
+function sameInstant(left: string, right: string): boolean {
+  const a = new Date(left).getTime();
+  const b = new Date(right).getTime();
+  return Number.isFinite(a) && a === b;
 }
 
 function sameAppointmentIdentity(

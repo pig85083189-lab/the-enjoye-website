@@ -39,7 +39,11 @@ import {
   getAppointmentStatusRaw,
   subscribeAppointments,
 } from "@/lib/appointment-store";
-import { listAppointments } from "@/lib/appointments/store";
+import {
+  LOCAL_REMOTE_WRITE_STOPPED_MESSAGE,
+  remoteCheckoutBlockedByLocalAppointment,
+} from "@/lib/appointments/local-remote-coexistence";
+import { listAppointments, listPersistedScheduleAppointments } from "@/lib/appointments/store";
 import {
   createCheckoutFromAppointment,
   createEmptyCheckoutDraft,
@@ -292,13 +296,33 @@ export function CheckoutPageClient({
         (row) => row.identity.appointmentId === selectedItem.appointmentId,
       ) ?? (remoteDetailState.status === "data" ? remoteDetailState.value : null)
     : null;
+  const checkoutAppointmentId = selectedItem?.appointmentId ?? appointmentIdParam ?? "";
+  const localCheckoutAppointment = isClient && checkoutAppointmentId
+    ? listPersistedScheduleAppointments({ organizationId: organization.id }).find(
+        (item) => item.id === checkoutAppointmentId,
+      ) ?? null
+    : null;
+  const remoteCheckoutSettled = !remoteReadEnabled
+    || remoteListState.status === "data"
+    || remoteListState.status === "empty"
+    || remoteListState.status === "error";
+  const checkoutBlocked = remoteWriteEnabled
+    && remoteCheckoutSettled
+    && remoteCheckoutBlockedByLocalAppointment({
+      localAppointment: localCheckoutAppointment,
+      remoteCustomerId: selectedRemoteCandidate?.identity.customerId,
+      remoteLocationId: selectedRemoteCandidate?.identity.locationId,
+      remoteStaffId: selectedRemoteCandidate?.identity.staffId,
+      remoteServiceId: selectedRemoteCandidate?.identity.serviceId,
+      remoteStartAt: selectedRemoteCandidate?.startAt,
+    });
   const remoteDraftState = useCommerceRemoteDraft({
     appointmentId: selectedItem?.appointmentId ?? appointmentIdParam,
     treatmentId:
       selectedItem?.treatmentId ??
       selectedRemoteCandidate?.identity.treatmentId ??
       treatmentIdParam,
-    enabled: remoteWriteEnabled && Boolean(selectedItem && !selectedItem.paid),
+    enabled: remoteWriteEnabled && Boolean(selectedItem && !selectedItem.paid) && !checkoutBlocked,
   });
   const selectedPanelItem =
     selectedItem && remoteDraftState.status === "data"
@@ -446,9 +470,9 @@ export function CheckoutPageClient({
         )}
       </header>
 
-      {error ? (
+      {error || checkoutBlocked ? (
         <p className="mb-3 text-sm text-[#B07A4A]" role="alert">
-          {error}
+          {checkoutBlocked ? LOCAL_REMOTE_WRITE_STOPPED_MESSAGE : error}
         </p>
       ) : null}
 

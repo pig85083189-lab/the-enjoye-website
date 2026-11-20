@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   combineLocalAndRemoteTreatments,
+  remoteTreatmentWriteStoppedByStoredLocal,
   type TreatmentCoexistenceRecord,
 } from "./local-remote-coexistence";
 
@@ -104,6 +105,27 @@ describe("local and remote treatments coexist", () => {
     const page = readFileSync("features/treatments/TreatmentsListPageClient.tsx", "utf8");
     expect(page).toContain("無法載入療程紀錄");
     expect(page).toContain("listStoredCompletedTreatments");
+  });
+
+  it("stops a remote completion when the same treatment id has different content", () => {
+    const local = treatment({ id: "trt-shared-aaaaaa", professionalNote: "本機內容" });
+    const remote = treatment({ id: "trt-shared-aaaaaa", professionalNote: "正式內容" });
+    expect(remoteTreatmentWriteStoppedByStoredLocal(remote, [local])).toBe(true);
+    expect(remoteTreatmentWriteStoppedByStoredLocal(remote, [remote])).toBe(false);
+    const hook = readFileSync("hooks/useTreatmentDraft.ts", "utf8");
+    const remoteWrite = hook.slice(hook.indexOf("if (!remoteRecordReady.current)"));
+    expect(remoteWrite.indexOf("remoteTreatmentWriteStoppedByStoredLocal")).toBeLessThan(
+      remoteWrite.indexOf("submitTreatmentRemoteComplete"),
+    );
+    expect(readFileSync("features/today/TodayDashboard.tsx", "utf8")).not.toMatch(
+      /todayRemoteReadPilot\s*\?\s*\[\]/,
+    );
+    expect(readFileSync("features/customers/tabs/TreatmentsTab.tsx", "utf8")).toContain(
+      "combineLocalAndRemoteTreatments",
+    );
+    expect(readFileSync("features/customers/tabs/TreatmentsTab.tsx", "utf8")).not.toContain(
+      "seenAppointments",
+    );
   });
 
   it("does not upload a browser completion while opening a remote-backed screen", () => {

@@ -39,8 +39,9 @@ import {
   getAppointmentStatusRaw,
   subscribeAppointments,
 } from "@/lib/appointment-store";
-import { listTodayAppointments } from "@/lib/appointments/store";
-import { todayBucket } from "@/lib/appointments/domain";
+import { combineLocalAndRemoteAppointments } from "@/lib/appointments/local-remote-coexistence";
+import { listPersistedScheduleAppointments, listTodayAppointments } from "@/lib/appointments/store";
+import { isSameLocalDay, todayBucket } from "@/lib/appointments/domain";
 import { applyRosterStaffDisplayNames } from "@/lib/staff-auth/roster-display-name";
 import { listMemberships } from "@/lib/tenant/organization-store";
 import { getSessionRaw, parseSession, subscribeAuth } from "@/lib/auth";
@@ -78,13 +79,23 @@ export function TodayDashboard({
     nowIso: now ? now.toISOString() : null,
     enabled: todayRemoteReadPilot,
   });
+  const storedToday = listPersistedScheduleAppointments({
+    organizationId: organization.id,
+    locationId: currentLocation?.id,
+  }).filter((item) => isSameLocalDay(item.startAt, day));
   const localSchedule = todayRemoteReadPilot
-    ? []
+    ? storedToday
     : listTodayAppointments(
         organization.id,
         currentLocation?.id,
         day,
       );
+  const todayAppointments = combineLocalAndRemoteAppointments({
+    remoteReadEnabled: todayRemoteReadPilot,
+    remoteReady: todayRemoteReadPilot && remoteState.status === "data",
+    localAppointments: localSchedule,
+    remoteAppointments: remoteState.status === "data" ? remoteState.value : [],
+  });
   const remoteTreatments = useTreatmentRemoteList(
     organization.id,
     treatmentRemoteReadPilot,
@@ -100,9 +111,7 @@ export function TodayDashboard({
     transactionsFromRemoteCommerceState(remoteTransactions),
   );
   const schedule = applyRosterStaffDisplayNames(
-    todayRemoteReadPilot && remoteState.status === "data"
-      ? remoteState.value
-      : localSchedule,
+    todayAppointments.records,
     listMemberships(organization.id),
   );
   const bucketOf = (appointmentId: string, status: (typeof schedule)[number]["status"]) =>
@@ -189,7 +198,11 @@ export function TodayDashboard({
   ];
 
   return (
-    <div className="min-w-0">
+    <div
+      className="min-w-0"
+      data-local-remote-conflicts={todayAppointments.conflicts.length}
+      data-remote-appointments-included={todayAppointments.remoteIncluded ? "true" : "false"}
+    >
       <header className="mb-5 flex items-start justify-between gap-4">
         <div className="min-w-0 space-y-1.5">
           <p className="text-[11px] tracking-[0.18em] text-secondary-text">
@@ -256,7 +269,7 @@ export function TodayDashboard({
         </div>
       ) : null}
 
-      {remoteLoading ? null : nextAppointment ? (
+      {remoteLoading && schedule.length === 0 ? null : nextAppointment ? (
         <section className="mb-5 min-[1200px]:hidden">
           <NextCustomerPanel
             appointment={nextAppointment}
@@ -394,7 +407,7 @@ export function TodayDashboard({
         </section>
 
         <aside className="hidden min-w-0 min-[1200px]:block">
-          {remoteLoading ? null : nextAppointment ? (
+          {remoteLoading && schedule.length === 0 ? null : nextAppointment ? (
             <NextCustomerPanel
               appointment={nextAppointment}
               customer={nextCustomer}

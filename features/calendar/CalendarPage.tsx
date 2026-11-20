@@ -65,7 +65,10 @@ import {
   appointmentWriteSaveDisabled,
 } from "@/lib/appointments/appointment-write-submit";
 import { appointmentWriteRangeFromTaipei } from "@/lib/appointments/appointment-write-time";
-import { appointmentWriteUserMessage } from "@/lib/appointments/appointment-write-ui-error";
+import {
+  APPOINTMENT_WRITE_UI,
+  appointmentWriteUserMessage,
+} from "@/lib/appointments/appointment-write-ui-error";
 import {
   addMinutes,
   combineLocalDateTime,
@@ -73,7 +76,12 @@ import {
   formatYmd,
   type ScheduleAppointment,
 } from "@/lib/appointments/domain";
-import { combineLocalAndRemoteAppointments } from "@/lib/appointments/local-remote-coexistence";
+import {
+  combineLocalAndRemoteAppointments,
+  identityConflictForId,
+  LOCAL_REMOTE_WRITE_STOPPED_MESSAGE,
+  persistedLocalAppointmentOverlap,
+} from "@/lib/appointments/local-remote-coexistence";
 import {
   createAppointment,
   listAppointments,
@@ -919,6 +927,9 @@ export function CalendarPage({
           item={cancelItem}
           onClose={() => setCancelTarget(null)}
           onConfirm={async () => {
+            if (identityConflictForId(dayAppointments.conflicts, cancelItem.id)) {
+              throw new Error(LOCAL_REMOTE_WRITE_STOPPED_MESSAGE);
+            }
             if (allowRemoteCancel) {
               await submitCalendarRemoteAppointmentCancel({
                 organizationId: organization.id,
@@ -1267,6 +1278,20 @@ function AppointmentEditor({
       const durationMinutes =
         services.find((s) => s.id === serviceId)?.durationMinutes ??
         DEFAULT_SERVICE_DURATION_MINUTES;
+      const range = appointmentWriteRangeFromTaipei(date, start, durationMinutes);
+      const localOverlap = persistedLocalAppointmentOverlap({
+        staffId,
+        startAt: range.startsAt,
+        endAt: range.endsAt,
+        localAppointments: listPersistedScheduleAppointments({
+          organizationId,
+          locationId: loc,
+        }),
+      });
+      if (localOverlap) {
+        setError(APPOINTMENT_WRITE_UI.conflict);
+        return;
+      }
       const result = await remoteSubmission.submit(async (appointmentId) => {
         return submitCalendarRemoteAppointmentCreate({
           organizationId,
