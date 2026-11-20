@@ -59,6 +59,73 @@ for (const name of columns) {
   if (columnDescription || shape) console.log("[publication-schema] column", name, shape, columnDescription);
 }
 
+const rpcNames = Object.keys(spec.paths ?? {}).filter((path) => path.includes("/rpc/")).sort();
+console.log("[publication-schema] rpc", rpcNames.join(",") || "none");
+
+const keys = [
+  "consultation_answers", "professional_note", "body_marker_details", "concerns", "client_focus",
+  "comparison_to_last", "sensitivity_level", "body_markers", "body_map_note", "discomfort_note",
+  "client_feeling", "products", "follow_up_note", "follow_up_tags", "suggest_next_booking",
+  "suggested_date", "suggested_tracking_areas", "photos", "status", "completed_at", "service_name", "staff_name",
+];
+const samples = {
+  consultation_answers: [{ label: "加強部位", value: "肩頸" }],
+  professional_note: "note",
+  body_marker_details: [{ area: "肩頸", conditions: [], note: null }],
+  concerns: ["緊繃"],
+  client_focus: "肩頸",
+  comparison_to_last: "相同",
+  sensitivity_level: 1,
+  body_markers: ["肩頸"],
+  body_map_note: "note",
+  discomfort_note: "note",
+  client_feeling: "note",
+  products: ["精華"],
+  follow_up_note: "note",
+  follow_up_tags: ["回訪"],
+  suggest_next_booking: false,
+  suggested_date: "2026-12-01",
+  suggested_tracking_areas: ["肩頸"],
+  photos: [{ photoId: "photo-a-b", side: "left", label: "左側", access: "private" }],
+  status: "COMPLETED",
+  completed_at: "2026-11-20T14:28:45.000Z",
+  service_name: "課程",
+  staff_name: "美容師",
+};
+let probeSerial = 1;
+async function probeFields(label, fields) {
+  const id = `00000000-0000-4000-8000-${String(probeSerial++).padStart(12, "0")}`;
+  const result = await fetch(`${url}/rest/v1/member_treatment_publications`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json", Prefer: "tx=rollback,return=minimal" },
+    body: JSON.stringify({
+      treatment_id: id,
+      organization_id: "00000000-0000-4000-8000-00000000c142",
+      customer_id: "00000000-0000-4000-8000-00000000c143",
+      approved_fields: fields,
+      approved_by: "00000000-0000-4000-8000-00000000c144",
+      approved_at: "2026-11-20T00:00:00.000Z",
+      revoked_at: null,
+      updated_at: "2026-11-20T00:00:00.000Z",
+    }),
+  });
+  let body = null;
+  try { body = await result.json(); } catch { body = null; }
+  const parsed = safeError(body);
+  console.log("[publication-schema] key", label, parsed.code, parsed.constraint ?? "", parsed.relation ?? "");
+  return id;
+}
+const probedIds = [];
+probedIds.push(await probeFields("empty", {}));
+for (const key of keys) probedIds.push(await probeFields(key, { [key]: samples[key] }));
+const snapshot = Object.fromEntries(keys.filter((key) => !["photos", "status", "completed_at", "service_name", "staff_name"].includes(key)).map((key) => [key, samples[key]]));
+probedIds.push(await probeFields("snapshot", snapshot));
+probedIds.push(await probeFields("snapshot_status", { ...snapshot, status: "COMPLETED" }));
+const leftIds = `(${probedIds.join(",")})`;
+const leftRows = await fetch(`${url}/rest/v1/member_treatment_publications?treatment_id=in.${leftIds}&select=treatment_id`, { headers });
+const leftBody = leftRows.ok ? await leftRows.json() : [];
+console.log("[publication-schema] key_probe_left", Array.isArray(leftBody) ? leftBody.length : "unreadable");
+
 const probeId = "00000000-0000-4000-8000-00000000c141";
 const probe = await fetch(`${url}/rest/v1/member_treatment_publications`, {
   method: "POST",
