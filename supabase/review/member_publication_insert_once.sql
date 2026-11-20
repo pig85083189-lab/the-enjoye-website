@@ -12,7 +12,9 @@
 -- A UUID-shaped approved_by only constrains the stored text. Login is
 -- verified by the booking server with auth.getUser() and
 -- staff_auth_memberships before it calls this function as service_role.
--- request.jwt.claim.role must be service_role. Anon and authenticated
+-- The caller must be service_role. Current PostgREST puts the role in
+-- request.jwt.claims and may leave the legacy request.jwt.claim.role empty.
+-- An empty legacy setting is not a failed login. Anon and authenticated
 -- cannot execute the function.
 
 do $$
@@ -103,7 +105,10 @@ set search_path = public
 as $$
 declare
   existing public.member_treatment_publications%rowtype;
-  request_role text := current_setting('request.jwt.claim.role', true);
+  request_role text := coalesce(
+    nullif(current_setting('request.jwt.claim.role', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'
+  );
 begin
   if request_role is distinct from 'service_role' then
     return 'unauthorized';

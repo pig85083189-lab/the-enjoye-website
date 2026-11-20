@@ -156,6 +156,40 @@ describe("isolated finance schema apply", () => {
     expect(owner.rows[0]?.approved_fields.professional_note).toBe("今天以淋巴引流為主");
   });
 
+  it("accepts service_role from request.jwt.claims when the legacy role setting is empty", async () => {
+    const db = await readyDatabase();
+    const inserted = await db.query<{ result: string }>(
+      `select set_config('request.jwt.claim.role', '', true),
+              set_config('request.jwt.claims', '{"role":"service_role"}', true),
+              public.insert_member_treatment_publication_once($1,$2,$3,$4,$5) as result`,
+      [treatment, org, member, fields, approver],
+    );
+    expect(inserted.rows[0]?.result).toBe("inserted");
+    const again = await db.query<{ result: string }>(
+      `select set_config('request.jwt.claim.role', '', true),
+              set_config('request.jwt.claims', '{"role":"service_role"}', true),
+              public.insert_member_treatment_publication_once($1,$2,$3,$4,$5) as result`,
+      [treatment, org, member, fields, approver],
+    );
+    expect(again.rows[0]?.result).toBe("already");
+    const count = await db.query<{ count: number }>(
+      "select count(*)::int as count from public.member_treatment_publications",
+    );
+    expect(count.rows[0]?.count).toBe(1);
+
+    const refused = await db.query<{ result: string }>(
+      `select set_config('request.jwt.claim.role', '', true),
+              set_config('request.jwt.claims', '{"role":"authenticated"}', true),
+              public.insert_member_treatment_publication_once($1,$2,$3,$4,$5) as result`,
+      ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", org, member, fields, approver],
+    );
+    expect(refused.rows[0]?.result).toBe("unauthorized");
+    const stillOne = await db.query<{ count: number }>(
+      "select count(*)::int as count from public.member_treatment_publications",
+    );
+    expect(stillOne.rows[0]?.count).toBe(1);
+  });
+
   it("does not grant the mirror or the function to anonymous clients", async () => {
     const db = await readyDatabase();
     const privileges = await db.query<Record<string, boolean>>(`

@@ -20,6 +20,7 @@ import { useTreatmentDraft } from "@/hooks/useTreatmentDraft";
 import { autoPublishCompletedMemberTreatment, syncBrowserCompletedMemberTreatment } from "@/app/staff/(app)/treatments/[id]/member-publication-actions";
 import { storeMemberTreatmentPhotos } from "@/app/staff/(app)/treatments/[id]/member-photo-actions";
 import { treatmentPhotoBase64, treatmentPhotoFile } from "@/lib/treatments/treatment-photo-files";
+import { memberSyncCompletionState } from "@/lib/treatments/member-sync-completion";
 import { getTreatmentTemplateForService } from "@/data/treatment-templates";
 import { resolveTreatmentTemplateLabel } from "@/lib/treatments/treatment-display";
 import type { CanonicalAppointmentStatus } from "@/lib/appointments/domain";
@@ -317,7 +318,12 @@ export function TreatmentWorkspace({
             bytesBase64: await treatmentPhotoBase64(file),
           });
         }
-        await syncBrowserCompletedMemberTreatment(appointment.organizationId, persisted, uploads);
+        const synced = await syncBrowserCompletedMemberTreatment(appointment.organizationId, persisted, uploads);
+        const screen = memberSyncCompletionState(synced);
+        if (!screen.finished) {
+          setCompleteError(screen.error);
+          return;
+        }
       }
       if (!treatmentRemoteReadPilot) {
         setAppointmentStatus(appointment.id, "completed", appointment.organizationId);

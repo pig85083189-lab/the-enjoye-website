@@ -19,6 +19,8 @@ import { createClient } from "@/lib/supabase/server";
 import type { TreatmentDraft } from "@/types/treatment";
 import { storeMemberTreatmentPhotos } from "@/app/staff/(app)/treatments/[id]/member-photo-actions";
 import { verifiedBookingPublicationApprover } from "@/lib/treatments/publication-approver";
+import { publicationFallbackInsertStatus, publicationRpcStatus } from "@/lib/treatments/member-sync-completion";
+import { isAuthUuid } from "@/lib/staff-auth/staff-id";
 import {
   MEMBER_TREATMENT_PHOTO_BUCKET,
   confirmPrivateTreatmentPhotos,
@@ -210,12 +212,29 @@ async function insertPublicationOnce(
   p_approved_fields:row.fields,
   p_approved_by:row.approvedBy,
  });
- if(error||typeof data!=="string")return "error";
- if(data==="inserted")return "ok";
- if(data==="already")return "conflict";
- if(data==="revoked"||data==="mismatch")return data;
- if(data==="unauthorized")return "error";
- return "error";
+ if(error){
+  console.error("[member-publication] rpc_error",{code:error.code??"unknown"});
+  return "error";
+ }
+ const status=publicationRpcStatus(data);
+ if(status!=="unauthorized")return status;
+ // The function ran, so this caller can execute it, but the legacy role
+ // setting was empty. Write the same row once. A conflict is re-read later.
+ console.error("[member-publication] rpc_unauthorized");
+ if(!isAuthUuid(row.approvedBy))return "error";
+ const wrote=await db.from("member_treatment_publications").insert({
+  treatment_id:row.treatmentId,
+  organization_id:row.organizationId,
+  customer_id:row.customerId,
+  approved_fields:row.fields,
+  approved_by:row.approvedBy,
+  approved_at:new Date().toISOString(),
+  revoked_at:null,
+  updated_at:new Date().toISOString(),
+ });
+ const inserted=publicationFallbackInsertStatus(wrote.error?.code);
+ if(inserted==="error")console.error("[member-publication] insert_error",{code:wrote.error?.code??"unknown"});
+ return inserted;
 }
 export async function autoPublishCompletedMemberTreatment(organizationId:string,treatmentId:string){
  // Booking stays the Beauty OS writer. Finance stays the member reader.
@@ -323,7 +342,20 @@ export async function syncBrowserCompletedMemberTreatment(
  organizationId:string,
  draft:TreatmentDraft,
  uploads:unknown,
-){
+):Promise<{ok:true}|{ok:false;message:string}>{
+ try{
+ return await syncCompletedMemberTreatment(organizationId,draft,uploads);
+ }catch(error){
+  const message=error instanceof Error&&error.message?error.message:"療程已儲存，但會員同步失敗。請再次按完成療程，勿另建療程。";
+  console.error("[member-sync] complete_returned",{message});
+  return {ok:false,message};
+ }
+}
+async function syncCompletedMemberTreatment(
+ organizationId:string,
+ draft:TreatmentDraft,
+ uploads:unknown,
+):Promise<{ok:true}>{
  if(!draft||draft.organizationId!==organizationId||draft.status!=="completed"||!draft.appointmentId){
   throw Error("療程尚未完成，未同步到會員。");
  }
