@@ -431,6 +431,8 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
           }))) {
         throw new Error("療程內容剛更新，請確認最新內容後再次按完成療程。");
       }
+      // Already completed in the authoritative row. Return it unchanged so the
+      // caller can retry member publication without inserting another treatment.
       if (next.status === "completed" && draftRef.current.status === "completed") {
         return draftRef.current;
       }

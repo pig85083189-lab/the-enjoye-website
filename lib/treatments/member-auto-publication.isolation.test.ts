@@ -23,13 +23,13 @@ describe("automatic member treatment publication", () => {
   it("lets the completing staff publish without a manager review and refuses revoked rows", () => {
     expect(publication).toContain("export async function autoPublishCompletedMemberTreatment");
     expect(publication).toContain('["STAFF","RECEPTIONIST"]');
-    expect(publication).toContain("此療程已撤銷會員公開，無法自動重新公開");
-    expect(publication).toContain("會員公開資料回讀驗證失敗");
-    expect(publication).toContain('onConflict:"treatment_id"');
+    expect(publication).toContain("commitAutomaticPublication");
+    const automatic = publication.slice(publication.indexOf("export async function autoPublishCompletedMemberTreatment"));
+    expect(automatic).not.toContain("onConflict");
+    expect(automatic).toContain('error.code==="23505"');
     expect(publication).not.toMatch(/from\("treatments"\)[\s\S]{0,120}\.delete\(/);
     const manual = publication.indexOf("export async function publishMemberTreatment");
-    const automatic = publication.indexOf("export async function autoPublishCompletedMemberTreatment");
-    expect(publication.slice(manual, automatic)).not.toContain("allowStaff");
+    expect(publication.slice(manual, publication.indexOf("export async function autoPublishCompletedMemberTreatment"))).not.toContain("allowStaff");
   });
 
   it("does not open the legacy completed-treatment migration panel", () => {

@@ -3,6 +3,12 @@
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { DEFAULT_CONSULTATION_FIELDS } from "@/lib/consultation-settings";
+import {
+  commitAutomaticPublication,
+  memberVisiblePhotos,
+  type ExistingPublication,
+} from "@/lib/treatments/member-publication-guard";
+import { assertPublicationDatabasesAlign } from "@/lib/treatments/publication-database";
 
 const allowedRoles = new Set(["OWNER","MANAGER"]);
 type PublicValue = string | string[] | number | boolean | Array<{label:string;value:string}> | Array<{area:string;conditions:string[];note:string|null}>;
@@ -23,16 +29,20 @@ async function context(organizationId:string,treatmentId:string, allowStaff=fals
  if(!db)throw Error("資料庫尚未設定");
  const {data:org,error:orgError}=await db.from("organizations").select("id").eq("app_id",organizationId).maybeSingle();
  if(orgError||!org)throw Error("找不到此店家的正式資料，無法公開");
- const {data:matches,error}=await db.from("treatments").select("id,organization_id,customer_id,completed_at,status,staff_id,professional_note,assessment,body_markers,body_map_note,discomfort_note,client_feeling,products,follow_up,suggested_tracking_areas")
+ const {data:matches,error}=await db.from("treatments").select("id,organization_id,customer_id,completed_at,status,staff_id,professional_note,assessment,body_markers,body_map_note,discomfort_note,client_feeling,products,follow_up,suggested_tracking_areas,photo_meta")
   .eq("app_id",treatmentId).eq("organization_id",org.id).eq("status","COMPLETED").not("completed_at","is",null).limit(2);
  const t=matches?.length===1?matches[0]:null;
  if(error||!t)throw Error("只有正式資料庫中已完成的療程可以公開");
+ const {data:storedPhotos,error:photoError}=await db.from("treatment_photos").select("storage_path,photo_type,sort_order")
+  .eq("treatment_id",t.id).eq("organization_id",org.id).order("sort_order").limit(12);
+ if(photoError)throw Error("無法確認療程照片，請稍後重試");
+ const treatment={...t,treatment_photos:storedPhotos??[]};
  const {data:settings,error:settingsError}=await db.from("staff_consultation_settings").select("fields").eq("organization_id",organizationId).maybeSingle();
  if(settingsError)throw Error("無法讀取諮詢欄位設定，請稍後重試");
  const consultationFields=Array.isArray(settings?.fields)?settings.fields:DEFAULT_CONSULTATION_FIELDS;
- const {data:customer}=await db.from("customers").select("id").eq("id",t.customer_id).eq("organization_id",org.id).eq("status","ACTIVE").maybeSingle();
+ const {data:customer}=await db.from("customers").select("id").eq("id",treatment.customer_id).eq("organization_id",org.id).eq("status","ACTIVE").maybeSingle();
  if(!customer)throw Error("顧客資料無效");
- return {db,t,auth,org,consultationFields};
+ return {db,t:treatment,auth,org,consultationFields};
 }
 function makeSnapshot(t:Record<string,unknown>,consultationFields:unknown):PublicFields {
  const a=obj(t.assessment),f=obj(t.follow_up),fields:PublicFields={};
@@ -66,6 +76,10 @@ function makeSnapshot(t:Record<string,unknown>,consultationFields:unknown):Publi
  add(fields,"suggest_next_booking",typeof f.suggestNextBooking==="boolean"?f.suggestNextBooking:null);
  add(fields,"suggested_date",str(f.suggestedDate));add(fields,"suggested_tracking_areas",arr(t.suggested_tracking_areas));
  return fields;
+}
+function withMemberPhotos(t:Record<string,unknown>,fields:PublicFields):Record<string,unknown>{
+ const photos=memberVisiblePhotos([...(Array.isArray(t.photo_meta)?t.photo_meta:[]),...(Array.isArray(t.treatment_photos)?t.treatment_photos:[])]);
+ return photos.length?{...fields,photos}:fields;
 }
 export async function previewMemberTreatmentPublication(organizationId:string,treatmentId:string):Promise<Preview>{
  const {db,t,org,consultationFields}=await context(organizationId,treatmentId);
@@ -105,41 +119,37 @@ export async function revokeMemberTreatment(organizationId:string,treatmentId:st
  * The treatment and customer must already exist in the authoritative database.
  * The snapshot is generated server-side; callers cannot supply public fields.
  */
+async function readPublication(db:ReturnType<typeof createServiceRoleClient>,treatmentDbId:string,organizationDbId:string):Promise<ExistingPublication>{
+ if(!db)throw Error("資料庫尚未設定");
+ const {data,error}=await db.from("member_treatment_publications")
+  .select("customer_id,approved_fields,revoked_at")
+  .eq("treatment_id",treatmentDbId).eq("organization_id",organizationDbId).maybeSingle();
+ if(error)throw Error("無法確認會員公開狀態，請稍後重試");
+ return data??null;
+}
 export async function autoPublishCompletedMemberTreatment(organizationId:string,treatmentId:string){
+ // The member reader uses the finance project. Refuse before any publication
+ // write when this server would use the booking project or a different URL.
+ assertPublicationDatabasesAlign();
  const {db,t,auth,consultationFields}=await context(organizationId,treatmentId,true);
- const fields=makeSnapshot(t,consultationFields);
- // Never undo an explicit member-publication revocation during a retry.
- const {data:existing,error:readError}=await db.from("member_treatment_publications")
-  .select("treatment_id,revoked_at").eq("treatment_id",t.id).eq("organization_id",t.organization_id).maybeSingle();
- if(readError)throw Error("無法確認會員公開狀態，請稍後重試");
- if(existing?.revoked_at)throw Error("此療程已撤銷會員公開，無法自動重新公開");
- if(existing){
-  // A retry must verify the already-published snapshot rather than treating
-  // the mere existence of a row as proof of a successful publication.
-  const {data:published,error:publishedError}=await db.from("member_treatment_publications")
-   .select("customer_id,approved_fields,revoked_at")
-   .eq("treatment_id",t.id).eq("organization_id",t.organization_id).maybeSingle();
-  if(publishedError||!published||published.revoked_at||
-     published.customer_id!==t.customer_id||
-     Object.keys(fields).some(key=>JSON.stringify(obj(published.approved_fields)[key])!==JSON.stringify(fields[key]))){
-   throw Error("療程已完成，但既有會員公開紀錄與最新內容不一致，請聯絡管理員確認，勿重複建立療程");
-  }
-  return {ok:true};
- }
- const {error}=await db.from("member_treatment_publications").upsert({
-  treatment_id:t.id,organization_id:t.organization_id,customer_id:t.customer_id,
-  approved_fields:fields,approved_by:auth.membership.userId,
-  approved_at:new Date().toISOString(),revoked_at:null,updated_at:new Date().toISOString()
- },{onConflict:"treatment_id"});
- if(error)throw Error("療程已儲存，但會員身體紀錄公開失敗，請勿重複建立療程");
- // Verify the exact persisted publication before reporting success to the therapist.
- const {data:verified,error:verifyError}=await db.from("member_treatment_publications")
-  .select("treatment_id,organization_id,customer_id,approved_fields,revoked_at")
-  .eq("treatment_id",t.id).eq("organization_id",t.organization_id).maybeSingle();
- if(verifyError||!verified||verified.revoked_at||
-    verified.customer_id!==t.customer_id||
-    Object.keys(fields).some(key=>JSON.stringify(obj(verified.approved_fields)[key])!==JSON.stringify(fields[key]))){
-  throw Error("療程已儲存，但會員公開資料回讀驗證失敗，請勿重複建立療程");
- }
+ const fields=withMemberPhotos(t,makeSnapshot(t,consultationFields));
+ // The completed treatment row stays completed when publication fails.
+ // A later press inserts the missing publication or verifies the existing one.
+ // It does not create another treatment and does not clear revoked_at.
+ await commitAutomaticPublication({
+  customerId:t.customer_id,
+  fields,
+  read:()=>readPublication(db,t.id,t.organization_id),
+  insert:async()=>{
+   const {error}=await db.from("member_treatment_publications").insert({
+    treatment_id:t.id,organization_id:t.organization_id,customer_id:t.customer_id,
+    approved_fields:fields,approved_by:auth.membership.userId,
+    approved_at:new Date().toISOString(),revoked_at:null,updated_at:new Date().toISOString()
+   });
+   if(!error)return "ok";
+   if(error.code==="23505")return "conflict";
+   return "error";
+  },
+ });
  return {ok:true};
 }
