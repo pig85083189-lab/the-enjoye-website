@@ -193,6 +193,7 @@ async function insertPublicationOnce(
  if(data==="inserted")return "ok";
  if(data==="already")return "conflict";
  if(data==="revoked"||data==="mismatch")return data;
+ if(data==="unauthorized")return "error";
  return "error";
 }
 export async function autoPublishCompletedMemberTreatment(organizationId:string,treatmentId:string){

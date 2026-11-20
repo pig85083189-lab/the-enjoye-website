@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  MEMBER_TREATMENT_PHOTO_BUCKET,
   preparePrivateTreatmentPhotos,
   privatePhotoRefsFromMeta,
   privateTreatmentPhotoKey,
@@ -52,6 +54,20 @@ describe("private treatment photo storage", () => {
       { photoId: "photo-right-bbb", side: "right", label: "右側", access: "private" },
     ]);
     expect(JSON.stringify(stored.photos)).not.toMatch(/blob:|storage|supabase|https:/);
+  });
+
+  it("uses the same private bucket, size, and image types as the review SQL", () => {
+    const sql = readFileSync("supabase/review/member_treatment_photo_bucket.sql", "utf8");
+    const upload = readFileSync("app/staff/(app)/treatments/[id]/member-photo-actions.ts", "utf8");
+    expect(sql).toContain(`'${MEMBER_TREATMENT_PHOTO_BUCKET}'`);
+    expect(sql).toContain("false");
+    expect(sql).toContain("1500000");
+    expect(sql).toContain("image/jpeg");
+    expect(sql).toContain("image/png");
+    expect(sql).toContain("image/webp");
+    expect(sql).not.toMatch(/create policy/i);
+    expect(upload).toContain("MEMBER_TREATMENT_PHOTO_BUCKET");
+    expect(upload).toContain("upsert: false");
   });
 
   it("refuses to publish a browser preview that was never stored", () => {

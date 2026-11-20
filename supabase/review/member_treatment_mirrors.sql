@@ -5,6 +5,8 @@
 -- treatment id. It has no appointment, checkout, wallet, or stored-value keys.
 -- Service role may select and insert. It cannot update or delete, so a retry
 -- cannot rewrite a row onto another member.
+-- The live preflight reported customers_id_org_unique = 1, which is the
+-- foreign key required below. RLS is enabled. This file is still not applied.
 
 do $$
 begin

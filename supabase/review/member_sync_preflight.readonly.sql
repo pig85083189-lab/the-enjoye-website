@@ -5,15 +5,15 @@
 --
 -- How to read the result. A count of 0 is not the same as a missing table.
 -- publications_table_exists false means the publications table is absent.
--- Before the unique index is created, publications_unique_exact = 0 together
--- with duplicate_treatment_ids = 0 can be a valid precondition. Also require
--- same_name_index_count = 0, and read publication_index_definitions: there
--- must be no index of this name and no other unique index on a different
--- column set. If publications_unique_exact = 1, the definition must be
--- exactly UNIQUE (treatment_id) with no predicate.
+-- Observed on finance bfzquejrtgqzzarhkiya before the function exists:
+-- publications_unique_exact = 1 because member_treatment_publications_pkey
+-- is already UNIQUE (treatment_id) with no predicate. That is a valid apply
+-- precondition together with duplicate_treatment_ids = 0 and
+-- same_name_index_count = 0. Do not add member_treatment_publications_treatment_id_key.
+-- The partial scope index on (organization_id, customer_id) is not that key.
 -- approved_by_type comes from information_schema.columns.data_type.
--- The expected column type is uuid. Null means the column is missing.
--- It is never a count of publication rows.
+-- The live column is text. Null means the column is missing.
+-- Do not read it as a row count and do not change it to uuid.
 -- customers_id_org_unique = 1 is required before the mirror foreign key.
 -- mirror_table_exists and publication_function_exists are false until the
 -- review SQL has been applied.
@@ -99,7 +99,7 @@ select
       and column_name = 'approved_by'
   ) as approved_by_udt,
   (to_regclass('public.member_treatment_mirrors') is not null) as mirror_table_exists,
-  (to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)') is not null) as publication_function_exists,
+  (to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,text)') is not null) as publication_function_exists,
   coalesce((
     select table_rel.relrowsecurity
     from pg_class table_rel
@@ -123,10 +123,10 @@ select
     else has_table_privilege('service_role', 'public.member_treatment_mirrors', 'insert')
   end as mirror_service_insert,
   case
-    when to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)') is null then false
-    else has_function_privilege('anon', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)', 'execute')
+    when to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,text)') is null then false
+    else has_function_privilege('anon', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,text)', 'execute')
   end as publication_function_anon_execute,
   case
-    when to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)') is null then false
-    else has_function_privilege('service_role', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)', 'execute')
+    when to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,text)') is null then false
+    else has_function_privilege('service_role', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,text)', 'execute')
   end as publication_function_service_execute;

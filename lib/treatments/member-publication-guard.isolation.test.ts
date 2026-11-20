@@ -197,7 +197,9 @@ describe("publication sql and retry wiring", () => {
 
   it("inserts once and never updates a conflicting or revoked publication", () => {
     expect(sql).toContain("on conflict (treatment_id) do nothing");
-    expect(sql).toContain("member_treatment_publications_treatment_id_key");
+    expect(sql).not.toContain("create unique index");
+    expect(sql).toContain("approved_by must stay text");
+    expect(sql).toContain("p_approved_by text");
     expect(sql).not.toMatch(/on conflict[\s\S]*do update/i);
     expect(sql).toContain("revoke all on function");
     const automatic = publication.slice(publication.indexOf("export async function autoPublishCompletedMemberTreatment"));
@@ -216,7 +218,9 @@ describe("publication sql and retry wiring", () => {
     expect(automatic).toContain('error.code==="23505"');
     expect(writer).toContain('rpc("insert_member_treatment_publication_once"');
     expect(sql).toContain("if not found then");
-    expect(sql).toContain("approved_by must be uuid");
+    expect(sql).toContain("return 'unauthorized'");
+    expect(publication).toContain("publicationApprover(auth.membership.authUserId)");
+    expect(publication).not.toContain("publicationApprover(auth.membership.userId)");
   });
 
   it("returns the completed treatment before any second remote write", () => {

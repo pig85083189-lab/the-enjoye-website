@@ -38,15 +38,19 @@ async function readyDatabase() {
       primary key (id, organization_id)
     );
     create table public.member_treatment_publications (
-      treatment_id uuid not null,
+      treatment_id uuid primary key,
       organization_id uuid not null,
       customer_id uuid not null,
       approved_fields jsonb not null,
-      approved_by uuid,
+      approved_by text,
       approved_at timestamptz,
       revoked_at timestamptz,
       updated_at timestamptz
     );
+    create index member_treatment_publications_scope_idx
+      on public.member_treatment_publications (organization_id, customer_id)
+      where revoked_at is null;
+    alter table public.member_treatment_publications enable row level security;
     insert into public.customers (id, organization_id, status) values
       ('${member}', '${org}', 'ACTIVE'),
       ('${other}', '${org}', 'ACTIVE');
@@ -70,12 +74,13 @@ describe("isolated finance schema apply", () => {
     const preflight = await db.query<Record<string, unknown>>(preflightSql);
     expect(preflight.rows[0]).toMatchObject({
       publications_table_exists: true,
-      same_name_index_count: 1,
+      same_name_index_count: 0,
       publications_unique_exact: 1,
       duplicate_treatment_ids: 0,
       customers_id_org_unique: 1,
-      approved_by_type: "uuid",
-      approved_by_udt: "uuid",
+      approved_by_type: "text",
+      approved_by_udt: "text",
+      publications_rls_enabled: true,
       mirror_table_exists: true,
       publication_function_exists: true,
       mirror_rls_enabled: true,
@@ -84,8 +89,9 @@ describe("isolated finance schema apply", () => {
       publication_function_anon_execute: false,
       publication_function_service_execute: true,
     });
-    expect(String(preflight.rows[0]?.publication_index_definitions)).toContain("UNIQUE INDEX");
+    expect(String(preflight.rows[0]?.publication_index_definitions)).toContain("member_treatment_publications_pkey");
     expect(String(preflight.rows[0]?.publication_index_definitions)).toContain("(treatment_id)");
+    expect(String(preflight.rows[0]?.publication_index_definitions)).not.toContain("member_treatment_publications_treatment_id_key");
     expect(publicationSql).toContain("notify pgrst, 'reload schema'");
     expect(mirrorSql).toContain("notify pgrst, 'reload schema'");
   });
@@ -134,8 +140,8 @@ describe("isolated finance schema apply", () => {
         has_table_privilege('service_role', 'public.member_treatment_mirrors', 'insert') as service_insert,
         has_table_privilege('service_role', 'public.member_treatment_mirrors', 'update') as service_update,
         has_table_privilege('service_role', 'public.member_treatment_mirrors', 'delete') as service_delete,
-        has_function_privilege('anon', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)', 'execute') as anon_execute,
-        has_function_privilege('service_role', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)', 'execute') as service_execute,
+        has_function_privilege('anon', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,text)', 'execute') as anon_execute,
+        has_function_privilege('service_role', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,text)', 'execute') as service_execute,
         (select relrowsecurity from pg_class where relname = 'member_treatment_mirrors') as rls
     `);
     expect(privileges.rows[0]).toEqual({
@@ -165,13 +171,25 @@ describe("isolated finance schema apply", () => {
         (select count(*)::int from public.member_treatment_publications) as publications,
         (select count(*)::int from public.customers) as customers,
         to_regclass('public.member_treatment_mirrors') as mirror,
-        to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)')::text as fn
+        to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,text)')::text as fn
     `);
     expect(left.rows[0]).toMatchObject({
       publications: 1,
       customers: 2,
       mirror: null,
       fn: null,
+    });
+    const kept = await db.query<{ pkey: string | null; approver: string | null; scope: string | null }>(`
+      select
+        to_regclass('public.member_treatment_publications_pkey') as pkey,
+        (select data_type from information_schema.columns
+          where table_schema = 'public' and table_name = 'member_treatment_publications' and column_name = 'approved_by') as approver,
+        to_regclass('public.member_treatment_publications_scope_idx') as scope
+    `);
+    expect(kept.rows[0]).toMatchObject({
+      pkey: "member_treatment_publications_pkey",
+      approver: "text",
+      scope: "member_treatment_publications_scope_idx",
     });
   });
 
@@ -187,7 +205,7 @@ describe("isolated finance schema apply", () => {
     const left = await db.query<{ count: number; fn: string | null }>(`
       select
         (select count(*)::int from public.member_treatment_mirrors) as count,
-        to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)')::text as fn
+        to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,text)')::text as fn
     `);
     expect(left.rows[0]?.count).toBe(1);
     expect(left.rows[0]?.fn).toBeTruthy();
@@ -239,7 +257,18 @@ describe("isolated finance schema apply", () => {
     expect(table.rows[0]?.mirror).toBeNull();
   });
 
-  it("refuses the publication function when duplicates or a non-uuid approver already exist", async () => {
+  it("rejects an operational staff id without inserting a publication", async () => {
+    const db = await readyDatabase();
+    const rejected = await db.query<{ result: string }>(
+      `select public.insert_member_treatment_publication_once($1,$2,$3,$4,$5) as result`,
+      [treatment, org, member, fields, "staff-001"],
+    );
+    expect(rejected.rows[0]?.result).toBe("unauthorized");
+    const count = await db.query<{ count: number }>("select count(*)::int as count from public.member_treatment_publications");
+    expect(count.rows[0]?.count).toBe(0);
+  });
+
+  it("refuses the publication function when duplicates, a uuid approver column, or no primary key already exist", async () => {
     const duplicates = await emptyDatabase();
     await duplicates.exec(`
       create table public.member_treatment_publications (
@@ -260,8 +289,23 @@ describe("isolated finance schema apply", () => {
     `);
     await expect(duplicates.exec(publicationSql)).rejects.toThrow("duplicate treatment_id");
 
-    const textApprover = await emptyDatabase();
-    await textApprover.exec(`
+    const uuidApprover = await emptyDatabase();
+    await uuidApprover.exec(`
+      create table public.member_treatment_publications (
+        treatment_id uuid primary key,
+        organization_id uuid not null,
+        customer_id uuid not null,
+        approved_fields jsonb not null,
+        approved_by uuid,
+        approved_at timestamptz,
+        revoked_at timestamptz,
+        updated_at timestamptz
+      );
+    `);
+    await expect(uuidApprover.exec(publicationSql)).rejects.toThrow("approved_by must stay text");
+
+    const noPrimaryKey = await emptyDatabase();
+    await noPrimaryKey.exec(`
       create table public.member_treatment_publications (
         treatment_id uuid not null,
         organization_id uuid not null,
@@ -273,6 +317,6 @@ describe("isolated finance schema apply", () => {
         updated_at timestamptz
       );
     `);
-    await expect(textApprover.exec(publicationSql)).rejects.toThrow("approved_by must be uuid");
+    await expect(noPrimaryKey.exec(publicationSql)).rejects.toThrow("created no index");
   });
 });
