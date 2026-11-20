@@ -74,6 +74,8 @@ export interface TreatmentPhotoMeta {
   type: PhotoType;
   createdAt: string;
   hadPreview: boolean;
+  /** True only after the image bytes are in private storage. Never a URL. */
+  privateObject?: boolean;
 }
 
 export interface TreatmentNote {

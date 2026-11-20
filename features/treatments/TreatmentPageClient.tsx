@@ -119,6 +119,18 @@ export function TreatmentPageClient({
     );
   }
 
+  // A treatment destined for the member portal must use identities actually
+  // resolved from the authoritative database, not merely enabled feature flags.
+  if (treatmentRemoteWritePilot &&
+      (customerIdentity.source !== "remote" || appointmentIdentity.source !== "remote")) {
+    return (
+      <ComingSoon
+        title="療程同步身分尚未驗證"
+        description="顧客與預約必須由正式資料庫確認後才能完成療程，原始資料未變更。"
+      />
+    );
+  }
+
   const appointment = appointmentIdentity.appointment;
   const canonicalStatus = appointmentIdentity.canonicalStatus;
 

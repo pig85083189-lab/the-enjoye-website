@@ -208,6 +208,7 @@ export class TreatmentRemoteAdapter {
         type: photo.type,
         createdAt: photo.createdAt,
         hadPreview: Boolean(photo.hadPreview),
+        ...(photo.privateObject === true ? { privateObject: true } : {}),
       })) : [],
       created_at: stamp,
       updated_at: stamp,

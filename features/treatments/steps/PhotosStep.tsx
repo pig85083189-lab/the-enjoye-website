@@ -8,6 +8,7 @@ import { StepFooter } from "@/features/treatments/StepFooter";
 import type { PhotoType, TreatmentPhoto, TreatmentPhotoMeta } from "@/types/treatment";
 import type { TreatmentTemplate } from "@/types/treatment-template";
 import { createId } from "@/lib/treatment-draft";
+import { forgetTreatmentPhotoFile, rememberTreatmentPhotoFile } from "@/lib/treatments/treatment-photo-files";
 
 interface PhotosStepProps {
   template: TreatmentTemplate;
@@ -46,8 +47,10 @@ function PhotoSection({
     Array.from(files).forEach((file) => {
       if (!file.type.startsWith("image/")) return;
       const previewUrl = URL.createObjectURL(file);
+      const id = createId("photo");
+      rememberTreatmentPhotoFile(id, file);
       onAdd({
-        id: createId("photo"),
+        id,
         treatmentId,
         type,
         previewUrl,
@@ -118,6 +121,7 @@ function PhotoSection({
                 aria-label="刪除照片"
                 onClick={() => {
                   URL.revokeObjectURL(photo.previewUrl);
+                  forgetTreatmentPhotoFile(photo.id);
                   onRemove(photo.id);
                 }}
               >

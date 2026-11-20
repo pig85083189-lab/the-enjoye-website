@@ -118,6 +118,7 @@ export function photoMetaFromDraft(photos: TreatmentPhotoMeta[]): Array<{
   type: TreatmentPhotoMeta["type"];
   createdAt: string;
   hadPreview: boolean;
+  privateObject?: boolean;
 }> {
   return photos.map((photo) => ({
     id: photo.id,
@@ -125,6 +126,7 @@ export function photoMetaFromDraft(photos: TreatmentPhotoMeta[]): Array<{
     type: photo.type,
     createdAt: photo.createdAt,
     hadPreview: Boolean(photo.hadPreview),
+    ...(photo.privateObject === true ? { privateObject: true } : {}),
   }));
 }
 
