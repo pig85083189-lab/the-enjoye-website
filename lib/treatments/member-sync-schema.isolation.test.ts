@@ -68,7 +68,32 @@ async function publicationResult(db: PGlite, customerId: string, payload: unknow
   return result.rows[0]?.result;
 }
 
+function sqlStatements(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n");
+}
+
 describe("isolated finance schema apply", () => {
+  it("keeps the live text approver and primary key, and does not rewrite existing records", () => {
+    const publication = sqlStatements(publicationSql);
+    const mirror = sqlStatements(mirrorSql);
+    const rollback = sqlStatements(rollbackSql);
+    expect(publication).toContain("approved_by must stay text");
+    expect(publication).toContain("p_approved_by text");
+    expect(publication).not.toMatch(/create\s+unique\s+index/i);
+    expect(publication).not.toMatch(/alter\s+table\s+public\.member_treatment_publications/i);
+    for (const script of [publication, mirror]) {
+      expect(script).not.toMatch(/\b(delete\s+from|truncate|drop\s+table|update\s+public)\b/i);
+      expect(script).not.toMatch(/\b(appointments|wallets|stored_value|treatment_photos)\b/i);
+    }
+    expect(rollback).toContain("drop table if exists public.member_treatment_mirrors");
+    expect(rollback).not.toMatch(/drop\s+index[\s\S]*member_treatment_publications_pkey/i);
+    expect(rollback).not.toMatch(/\b(delete\s+from|truncate)\b/i);
+  });
+
   it("applies both review scripts, reloads the schema notice, and passes the read-only preflight", async () => {
     const db = await readyDatabase();
     const preflight = await db.query<Record<string, unknown>>(preflightSql);
