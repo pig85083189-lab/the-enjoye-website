@@ -123,39 +123,11 @@ probedIds.push(await probeFields("snapshot", snapshot));
 probedIds.push(await probeFields("snapshot_status", { ...snapshot, status: "COMPLETED" }));
 const leftIds = `(${probedIds.join(",")})`;
 const leftRows = await fetch(`${url}/rest/v1/member_treatment_publications?treatment_id=in.${leftIds}&select=treatment_id`, { headers });
-const leftBody = leftRows.ok ? await leftRows.json() : [];
-console.log("[publication-schema] key_probe_left", Array.isArray(leftBody) ? leftBody.length : "unreadable");
-
-const probeId = "00000000-0000-4000-8000-00000000c141";
-const probe = await fetch(`${url}/rest/v1/member_treatment_publications`, {
-  method: "POST",
-  headers: {
-    ...headers,
-    "Content-Type": "application/json",
-    Prefer: "tx=rollback,return=minimal",
-  },
-  body: JSON.stringify({
-    treatment_id: probeId,
-    organization_id: "00000000-0000-4000-8000-00000000c142",
-    customer_id: "00000000-0000-4000-8000-00000000c143",
-    approved_fields: { status: "COMPLETED" },
-    approved_by: "00000000-0000-4000-8000-00000000c144",
-    approved_at: "2026-11-20T00:00:00.000Z",
-    revoked_at: null,
-    updated_at: "2026-11-20T00:00:00.000Z",
-  }),
-});
-const applied = probe.headers.get("preference-applied") ?? "";
-let probeBody = null;
-try { probeBody = await probe.json(); } catch { probeBody = null; }
-console.log("[publication-schema] probe", probe.status, applied.includes("rollback") ? "rollback" : "no_rollback", JSON.stringify(safeError(probeBody)));
-
-const left = await fetch(`${url}/rest/v1/member_treatment_publications?treatment_id=eq.${probeId}&select=treatment_id`, { headers });
-const leftBody = left.ok ? await left.json() : [];
-const leftover = Array.isArray(leftBody) && leftBody.length > 0;
-console.log("[publication-schema] probe_left", leftover ? "yes" : "no");
-if (leftover) {
-  const removed = await fetch(`${url}/rest/v1/member_treatment_publications?treatment_id=eq.${probeId}`, {
+const leftRowsBody = leftRows.ok ? await leftRows.json() : [];
+const leftover = Array.isArray(leftRowsBody) ? leftRowsBody.length : -1;
+console.log("[publication-schema] key_probe_left", leftover);
+if (leftover > 0) {
+  const removed = await fetch(`${url}/rest/v1/member_treatment_publications?treatment_id=in.${leftIds}`, {
     method: "DELETE",
     headers: { ...headers, Prefer: "return=minimal" },
   });
