@@ -3,16 +3,40 @@
 -- Do not add INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, or GRANT.
 -- This pull request does not execute this file.
 --
--- Expected before a safe apply:
--- publications_unique_exact = 1
--- duplicate_treatment_ids = 0
--- customers_id_org_unique = 1
--- approved_by_type = uuid
--- approved_by_udt = uuid
--- mirror_table_exists = 0 until the review SQL is applied, then 1
--- publication_function_exists = 0 until the review SQL is applied, then 1
+-- How to read the result. A count of 0 is not the same as a missing table.
+-- publications_table_exists false means the publications table is absent.
+-- Before the unique index is created, publications_unique_exact = 0 together
+-- with duplicate_treatment_ids = 0 can be a valid precondition. Also require
+-- same_name_index_count = 0, and read publication_index_definitions: there
+-- must be no index of this name and no other unique index on a different
+-- column set. If publications_unique_exact = 1, the definition must be
+-- exactly UNIQUE (treatment_id) with no predicate.
+-- approved_by_type comes from information_schema.columns.data_type.
+-- The expected column type is uuid. Null means the column is missing.
+-- It is never a count of publication rows.
+-- customers_id_org_unique = 1 is required before the mirror foreign key.
+-- mirror_table_exists and publication_function_exists are false until the
+-- review SQL has been applied.
 
 select
+  (to_regclass('public.member_treatment_publications') is not null) as publications_table_exists,
+  (
+    select count(*)
+    from pg_class index_rel
+    join pg_namespace namespace on namespace.oid = index_rel.relnamespace
+    where namespace.nspname = 'public'
+      and index_rel.relkind = 'i'
+      and index_rel.relname = 'member_treatment_publications_treatment_id_key'
+  ) as same_name_index_count,
+  (
+    select coalesce(string_agg(pg_get_indexdef(index_rel.oid), ' | ' order by index_rel.relname), '')
+    from pg_index indexed
+    join pg_class index_rel on index_rel.oid = indexed.indexrelid
+    join pg_class table_rel on table_rel.oid = indexed.indrelid
+    join pg_namespace namespace on namespace.oid = table_rel.relnamespace
+    where namespace.nspname = 'public'
+      and table_rel.relname = 'member_treatment_publications'
+  ) as publication_index_definitions,
   (
     select count(*)
     from pg_index indexed

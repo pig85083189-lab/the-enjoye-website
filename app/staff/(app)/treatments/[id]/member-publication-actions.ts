@@ -15,6 +15,7 @@ import {
   MEMBER_IDENTITY_UNVERIFIED,
   type MirrorRecord,
 } from "@/lib/treatments/member-treatment-sync";
+import { memberSyncCustomerAllowed } from "@/lib/treatments/member-sync-allowlist";
 import { assertMemberPublicationTarget } from "@/lib/treatments/publication-database";
 
 const allowedRoles = new Set(["OWNER","MANAGER"]);
@@ -199,6 +200,7 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
  // A refused pairing writes nothing and does not create another treatment.
  const mode=assertMemberPublicationTarget();
  const {db,t,auth,org,consultationFields}=await context(organizationId,treatmentId,true);
+ if(!memberSyncCustomerAllowed(t.customer_id))throw Error("這位顧客不在會員同步允許名單，未公開給任何會員。");
  const approvedBy=publicationApprover(auth.membership.authUserId);
  const labels=await memberLabels(db,t,organizationId);
  const fields={...withMemberPhotos(t,makeSnapshot(t,consultationFields)),status:"COMPLETED",completed_at:t.completed_at,...(labels.serviceName?{service_name:labels.serviceName}:{}),...(labels.staffName?{staff_name:labels.staffName}:{})};

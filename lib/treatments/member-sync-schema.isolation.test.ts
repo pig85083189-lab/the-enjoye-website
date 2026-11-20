@@ -69,6 +69,8 @@ describe("isolated finance schema apply", () => {
     const db = await readyDatabase();
     const preflight = await db.query<Record<string, unknown>>(preflightSql);
     expect(preflight.rows[0]).toMatchObject({
+      publications_table_exists: true,
+      same_name_index_count: 1,
       publications_unique_exact: 1,
       duplicate_treatment_ids: 0,
       customers_id_org_unique: 1,
@@ -77,6 +79,8 @@ describe("isolated finance schema apply", () => {
       mirror_table_exists: true,
       publication_function_exists: true,
     });
+    expect(String(preflight.rows[0]?.publication_index_definitions)).toContain("UNIQUE INDEX");
+    expect(String(preflight.rows[0]?.publication_index_definitions)).toContain("(treatment_id)");
     expect(publicationSql).toContain("notify pgrst, 'reload schema'");
     expect(mirrorSql).toContain("notify pgrst, 'reload schema'");
   });
@@ -163,6 +167,49 @@ describe("isolated finance schema apply", () => {
       customers: 2,
       mirror: null,
       fn: null,
+    });
+  });
+
+  it("refuses to drop a mirror table that already holds a member copy", async () => {
+    const db = await readyDatabase();
+    await db.query(
+      `insert into public.member_treatment_mirrors
+        (treatment_id, organization_id, customer_id, booking_customer_id, completed_at)
+       values ($1, $2, $3, $4, now())`,
+      [treatment, org, member, other],
+    );
+    await expect(db.exec(rollbackSql)).rejects.toThrow("refusing to drop them");
+    const left = await db.query<{ count: number; fn: string | null }>(`
+      select
+        (select count(*)::int from public.member_treatment_mirrors) as count,
+        to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)')::text as fn
+    `);
+    expect(left.rows[0]?.count).toBe(1);
+    expect(left.rows[0]?.fn).toBeTruthy();
+  });
+
+  it("treats a missing exact index as a count, not as a missing publications table", async () => {
+    const db = await emptyDatabase();
+    await db.exec(`
+      create table public.member_treatment_publications (
+        treatment_id uuid not null,
+        organization_id uuid not null,
+        customer_id uuid not null,
+        approved_fields jsonb not null,
+        approved_by uuid,
+        approved_at timestamptz,
+        revoked_at timestamptz,
+        updated_at timestamptz
+      );
+    `);
+    const preflight = await db.query<Record<string, unknown>>(preflightSql);
+    expect(preflight.rows[0]).toMatchObject({
+      publications_table_exists: true,
+      same_name_index_count: 0,
+      publications_unique_exact: 0,
+      duplicate_treatment_ids: 0,
+      approved_by_type: "uuid",
+      publication_index_definitions: "",
     });
   });
 

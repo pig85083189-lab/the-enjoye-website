@@ -29,6 +29,8 @@ describe("automatic member treatment publication", () => {
     const automatic = publication.slice(publication.indexOf("export async function autoPublishCompletedMemberTreatment"));
     expect(automatic).not.toContain("onConflict");
     expect(automatic).toContain("insertPublicationOnce");
+    expect(automatic.indexOf("memberSyncCustomerAllowed")).toBeGreaterThan(-1);
+    expect(automatic.indexOf("memberSyncCustomerAllowed")).toBeLessThan(automatic.indexOf("createBeautyOsFinanceClient"));
     expect(automatic).not.toContain('from("member_treatment_publications").insert');
     expect(publication).toContain('rpc("insert_member_treatment_publication_once"');
     expect(publication).not.toMatch(/from\("treatments"\)[\s\S]{0,120}\.delete\(/);
