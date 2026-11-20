@@ -109,6 +109,15 @@ function seedToSchedule(item: Appointment, day: Date): ScheduleAppointment {
 }
 
 /** Merged seed + persisted overrides + legacy status map. organizationId required. */
+/** Browser-created appointments only. Demo seeds stay out of the Supabase union. */
+export function listPersistedScheduleAppointments(
+  query: Pick<AppointmentListQuery, "organizationId" | "locationId">,
+): ScheduleAppointment[] {
+  let list = readOverrides(query.organizationId);
+  if (query.locationId) list = list.filter((item) => item.locationId === query.locationId);
+  return list;
+}
+
 export function listAppointments(
   query: AppointmentListQuery,
   anchorDay: Date = new Date(),

@@ -28,7 +28,8 @@ import {
   getAppointmentStatusRaw,
   subscribeAppointments,
 } from "@/lib/appointment-store";
-import { listAppointments } from "@/lib/appointments/store";
+import { combineLocalAndRemoteAppointments } from "@/lib/appointments/local-remote-coexistence";
+import { listAppointments, listPersistedScheduleAppointments } from "@/lib/appointments/store";
 import {
   getCommerceRevision,
   subscribeCommerce,
@@ -38,6 +39,7 @@ import {
   useCustomerRemoteList,
 } from "@/features/customers/use-customer-remote-read";
 import { listCompletedTreatmentsForOrganization } from "@/lib/repositories/local-treatment-repository";
+import { combineLocalAndRemoteTreatments } from "@/lib/treatments/local-remote-coexistence";
 import { localCustomerRepository } from "@/lib/repositories/local-customer-repository";
 import { useCrmJson, useIsClient } from "@/lib/repositories/use-crm-store";
 import { getMembership, listMemberships } from "@/lib/tenant/organization-store";
@@ -57,6 +59,7 @@ import { completedTransactionIdsByAppointment } from "@/lib/commerce/commerce-re
 import {
   getTreatmentDraftRevision,
   listOpenTreatmentDrafts,
+  listStoredCompletedTreatments,
   subscribeTreatmentDrafts,
 } from "@/lib/treatment-draft";
 import { resolveCanonicalStaffDisplayName } from "@/lib/treatments/treatment-display";
@@ -184,15 +187,33 @@ export function TreatmentsListPageClient({
     organization.id,
     treatmentRemoteReadPilot,
   );
-  const appointments = useMemo(() => {
+  const appointmentCoexistence = useMemo(() => {
     void appointmentRev;
-    if (!isClient) return [];
-    if (treatmentRemoteReadPilot) {
-      return appointmentsFromRemoteListState(remoteAppointments);
+    if (!isClient) {
+      return { records: [], conflicts: [], remoteIncluded: false };
     }
-    return listAppointments({
-      organizationId: organization.id,
-      locationId: currentLocation?.id,
+    if (!treatmentRemoteReadPilot) {
+      return combineLocalAndRemoteAppointments({
+        remoteReadEnabled: false,
+        remoteReady: false,
+        localAppointments: listAppointments({
+          organizationId: organization.id,
+          locationId: currentLocation?.id,
+        }),
+        remoteAppointments: [],
+      });
+    }
+    const remoteReady = remoteAppointments.status === "data";
+    return combineLocalAndRemoteAppointments({
+      remoteReadEnabled: true,
+      remoteReady,
+      localAppointments: listPersistedScheduleAppointments({
+        organizationId: organization.id,
+        locationId: currentLocation?.id,
+      }),
+      remoteAppointments: remoteReady
+        ? appointmentsFromRemoteListState(remoteAppointments)
+        : [],
     });
   }, [
     appointmentRev,
@@ -202,20 +223,37 @@ export function TreatmentsListPageClient({
     remoteAppointments,
     treatmentRemoteReadPilot,
   ]);
+  const appointments = appointmentCoexistence.records;
+
+  const treatmentCoexistence = useMemo(() => {
+    void draftRev;
+    if (!isClient) {
+      return { records: [], conflicts: [], remoteIncluded: false };
+    }
+    const remoteReady = treatmentRemoteReadPilot && remoteTreatments.status === "data";
+    const remoteRows = remoteReady ? treatmentsFromRemoteListState(remoteTreatments) : [];
+    return combineLocalAndRemoteTreatments({
+      remoteReadEnabled: treatmentRemoteReadPilot,
+      remoteReady,
+      localTreatments: treatmentRemoteReadPilot
+        ? listStoredCompletedTreatments(organization.id)
+        : listCompletedTreatmentsForOrganization(organization.id),
+      remoteTreatments: remoteRows.filter((item) => item.status === "completed"),
+    });
+  }, [draftRev, isClient, organization.id, remoteTreatments, treatmentRemoteReadPilot]);
 
   const items = useMemo(() => {
     void draftRev;
     if (!isClient) return [];
-    if (treatmentRemoteReadPilot && remoteTreatments.status === "loading") {
-      return [];
-    }
-    const remoteRows = treatmentsFromRemoteListState(remoteTreatments);
-    const openDrafts = treatmentRemoteReadPilot
-      ? remoteRows.filter((item) => item.status === "draft")
-      : listOpenTreatmentDrafts(organization.id);
-    const completedTreatments = treatmentRemoteReadPilot
-      ? remoteRows.filter((item) => item.status === "completed")
-      : listCompletedTreatmentsForOrganization(organization.id);
+    const remoteReady = treatmentRemoteReadPilot && remoteTreatments.status === "data";
+    const remoteRows = remoteReady ? treatmentsFromRemoteListState(remoteTreatments) : [];
+    const openDrafts = combineLocalAndRemoteTreatments({
+      remoteReadEnabled: treatmentRemoteReadPilot,
+      remoteReady,
+      localTreatments: listOpenTreatmentDrafts(organization.id),
+      remoteTreatments: remoteRows.filter((item) => item.status === "draft"),
+    }).records;
+    const completedTreatments = treatmentCoexistence.records;
     const roster = listMemberships(organization.id);
     const staffNames: Record<string, string> = {};
     for (const appointment of appointments) {
@@ -251,20 +289,11 @@ export function TreatmentsListPageClient({
     now,
     organization.id,
     remoteTreatments,
+    treatmentCoexistence,
     treatmentRemoteReadPilot,
   ]);
 
-  const completedTreatments = useMemo(() => {
-    void draftRev;
-    if (treatmentRemoteReadPilot) {
-      return treatmentsFromRemoteListState(remoteTreatments).filter(
-        (item) => item.status === "completed",
-      );
-    }
-    return isClient
-      ? listCompletedTreatmentsForOrganization(organization.id)
-      : [];
-  }, [draftRev, isClient, organization.id, remoteTreatments, treatmentRemoteReadPilot]);
+  const completedTreatments = treatmentCoexistence.records;
 
   const visible = useMemo(
     () => filterTreatmentItems(items, filter, query, dateFilter, now),
@@ -347,6 +376,11 @@ export function TreatmentsListPageClient({
     ? customers.find((item) => item.id === selectedTreatment.customerId) ?? null
     : null;
 
+  const remoteReadFailed = treatmentRemoteReadPilot &&
+    (remoteTreatments.status === "error" || remoteAppointments.status === "error");
+  const remoteReadLoading = treatmentRemoteReadPilot &&
+    (remoteTreatments.status === "loading" || remoteAppointments.status === "loading");
+
   return (
     <div
       data-treatment-workspace
@@ -354,6 +388,8 @@ export function TreatmentsListPageClient({
       data-customer-identity-source={customerRemoteReadPilot ? "remote-pilot" : "local"}
       data-appointment-identity-source={appointmentRemoteReadPilot ? "remote-pilot" : "local"}
       data-treatment-record-source={treatmentRemoteReadPilot ? "remote-pilot" : "local"}
+      data-local-remote-conflicts={treatmentCoexistence.conflicts.length}
+      data-remote-treatments-included={treatmentCoexistence.remoteIncluded ? "true" : "false"}
       className="min-w-0"
     >
       <header className="mb-4 flex items-start justify-between gap-4">
@@ -471,26 +507,22 @@ export function TreatmentsListPageClient({
             </div>
           </div>
 
-          {!isClient ||
-          (treatmentRemoteReadPilot &&
-            (remoteTreatments.status === "loading" ||
-              remoteAppointments.status === "loading")) ? (
-            <ListSkeleton />
-          ) : treatmentRemoteReadPilot &&
-            (remoteTreatments.status === "error" ||
-              remoteAppointments.status === "error") ? (
+          {remoteReadFailed ? (
             <Card padding="lg" className="text-center">
               <p className="text-[15px] font-medium text-text">無法載入療程紀錄</p>
               <p className="mt-1 text-sm text-secondary-text">
                 請稍後再試。
               </p>
             </Card>
-          ) : visible.length === 0 ? (
+          ) : null}
+          {!isClient || (remoteReadLoading && visible.length === 0) ? (
+            <ListSkeleton />
+          ) : visible.length === 0 && !remoteReadFailed ? (
             <TreatmentEmptyState
               emptyState={emptyState}
               onShowCompleted={() => applyFilters("completed", dateFilter, "")}
             />
-          ) : (
+          ) : visible.length === 0 ? null : (
             <>
               <div
                 data-treatment-table

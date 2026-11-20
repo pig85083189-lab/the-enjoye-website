@@ -504,8 +504,10 @@ export function buildTreatmentWorkspaceItems(input: {
       staffNames,
       now: input.now,
     });
-    if (draft.appointmentId) byAppointment.set(draft.appointmentId, item);
-    else extras.push(item);
+    if (draft.appointmentId) {
+      if (byAppointment.has(draft.appointmentId)) extras.push(item);
+      else byAppointment.set(draft.appointmentId, item);
+    } else extras.push(item);
   }
 
   for (const draft of input.openDrafts) {

@@ -73,9 +73,11 @@ import {
   formatYmd,
   type ScheduleAppointment,
 } from "@/lib/appointments/domain";
+import { combineLocalAndRemoteAppointments } from "@/lib/appointments/local-remote-coexistence";
 import {
   createAppointment,
   listAppointments,
+  listPersistedScheduleAppointments,
   staffOptionsForLocation,
   transitionAppointmentStatus,
   updateAppointment,
@@ -295,12 +297,28 @@ export function CalendarPage({
   const paidAppointmentIds = completedTransactionIdsByAppointment(
     transactionsFromRemoteCommerceState(remoteTransactions),
   );
+  const storedAppointments = listPersistedScheduleAppointments({
+    organizationId: organization.id,
+    locationId,
+  });
   const localAppointments = calendarRemoteReadPilot
-    ? []
+    ? storedAppointments
     : listAppointments({
         organizationId: organization.id,
         locationId,
       });
+  const dayAppointments = combineLocalAndRemoteAppointments({
+    remoteReadEnabled: calendarRemoteReadPilot,
+    remoteReady: calendarRemoteReadPilot && remoteState.status === "data",
+    localAppointments,
+    remoteAppointments: remoteState.status === "data" ? remoteState.value : [],
+  });
+  const monthAppointments = combineLocalAndRemoteAppointments({
+    remoteReadEnabled: calendarRemoteReadPilot,
+    remoteReady: calendarRemoteReadPilot && monthRemoteState.status === "data",
+    localAppointments,
+    remoteAppointments: monthRemoteState.status === "data" ? monthRemoteState.value : [],
+  });
   const remoteTreatments = useTreatmentRemoteList(
     organization.id,
     treatmentRemoteReadPilot,
@@ -309,9 +327,7 @@ export function CalendarPage({
     treatmentsFromRemoteListState(remoteTreatments),
   );
   const appointments = applyRosterStaffDisplayNames(
-    calendarRemoteReadPilot && remoteState.status === "data"
-      ? remoteState.value
-      : localAppointments,
+    dayAppointments.records,
     staffRoster,
   ).map((item) => {
     if (!treatmentRemoteReadPilot) return item;
@@ -469,7 +485,11 @@ export function CalendarPage({
     : null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 min-[720px]:gap-5">
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-3 min-[720px]:gap-5"
+      data-local-remote-conflicts={dayAppointments.conflicts.length}
+      data-remote-appointments-included={dayAppointments.remoteIncluded ? "true" : "false"}
+    >
       <div
         data-calendar-chrome
         className="hidden shrink-0 flex-col gap-3 min-[720px]:flex min-[720px]:flex-row min-[720px]:items-start min-[720px]:justify-between min-[720px]:gap-4"
@@ -653,14 +673,14 @@ export function CalendarPage({
                 const date = new Date(mobileDay.getFullYear(),mobileDay.getMonth(),index-monthStart.getDay()+1);
                 const inMonth = date.getMonth()===mobileDay.getMonth();
                 const dateKey = formatYmd(date);
-                const rows = (calendarRemoteReadPilot && monthRemoteState.status==="data" ? monthRemoteState.value : localAppointments)
+                const rows = monthAppointments.records
                   .filter(item => calendarAppointmentYmd(item.startAt, calendarRemoteReadPilot)===dateKey && item.status!=="CANCELLED" && item.status!=="NO_SHOW")
                   .filter(item => staffFilter.length===0 || staffFilter.includes(item.staffId));
                 return <button key={dateKey} type="button" disabled={!inMonth} onClick={() => { goToDay(date); setMobileMonthMode(false); }}
                   className={cn("flex h-full min-h-[112px] min-w-0 flex-col items-stretch justify-start overflow-hidden border-b border-r border-border px-0.5 pb-1 pt-1 text-left",!inMonth&&"bg-background/50 opacity-40",dateKey===formatYmd(mobileDay)&&"bg-primary/10")}
                   aria-label={`${dateKey}，${rows.length}筆預約`}>
                   <span className="mb-1 block shrink-0 text-center text-sm font-semibold leading-5 text-text">{date.getDate()}</span>
-                  {rows.slice(0,2).map(item=><span key={item.id} className="mt-0.5 block w-full truncate rounded-sm bg-[#F5E4E7] px-0.5 text-[10px] leading-4 text-[#8E4359]">{item.customerName}</span>)}
+                  {rows.slice(0,2).map(item=><span key={`${item.id}:${item.customerId}:${item.startAt}`} className="mt-0.5 block w-full truncate rounded-sm bg-[#F5E4E7] px-0.5 text-[10px] leading-4 text-[#8E4359]">{item.customerName}</span>)}
                   {rows.length>2?<span className="block text-center text-[10px] text-secondary-text">+${rows.length-2}筆</span>:null}
                 </button>;
               })}
