@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
 import type { NextConfig } from "next";
 
-if (process.env.VERCEL === "1") {
-  spawnSync(process.execPath, ["scripts/log-publication-schema.mjs"], { stdio: "inherit" });
+const repairState = globalThis as typeof globalThis & { __memberPublicationRepair?: boolean };
+if (process.env.VERCEL === "1" && !repairState.__memberPublicationRepair) {
+  repairState.__memberPublicationRepair = true;
+  spawnSync(process.execPath, ["scripts/repair-member-publication.mjs"], { stdio: "inherit" });
 }
 
 const nextConfig: NextConfig = {

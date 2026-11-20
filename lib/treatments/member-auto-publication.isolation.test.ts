@@ -41,6 +41,11 @@ describe("automatic member treatment publication", () => {
     expect(automatic.indexOf("confirmPrivateTreatmentPhotos")).toBeLessThan(automatic.indexOf("commitMemberTreatmentCopy"));
     expect(automatic).not.toContain("withMemberPhotos");
     expect(automatic).not.toContain('from("member_treatment_publications").insert');
+    const fields = automatic.slice(automatic.indexOf("const fields="), automatic.indexOf("會員讀取資料庫尚未設定"));
+    expect(fields).toContain("service_name:labels.serviceName");
+    expect(fields).toContain("photos:photoRefs.photos");
+    expect(fields).not.toContain('status:"COMPLETED"');
+    expect(fields).not.toContain("completed_at:");
     expect(publication).toContain('rpc("insert_member_treatment_publication_once"');
     expect(publication).not.toMatch(/from\("treatments"\)[\s\S]{0,120}\.delete\(/);
     const manual = publication.indexOf("export async function publishMemberTreatment");

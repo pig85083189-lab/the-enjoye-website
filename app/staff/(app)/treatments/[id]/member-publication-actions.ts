@@ -27,6 +27,7 @@ import {
   privatePhotoRefsFromMeta,
 } from "@/lib/treatments/member-photo-storage";
 import { assertMemberPublicationTarget } from "@/lib/treatments/publication-database";
+import { memberPublicationFields } from "@/lib/treatments/member-publication-fields.mjs";
 
 const allowedRoles = new Set(["OWNER","MANAGER"]);
 type PublicValue = string | string[] | number | boolean | Array<{label:string;value:string}> | Array<{area:string;conditions:string[];note:string|null}>;
@@ -36,9 +37,6 @@ type Preview = { status:"draft"|"published"; fields:PublicFields; publishedKeys:
 function str(v:unknown):string|null {return typeof v==="string"&&v.trim()?v.trim().slice(0,500):null;}
 function arr(v:unknown):string[]{return Array.isArray(v)?v.map(str).filter((x):x is string=>!!x).slice(0,20):[];}
 function obj(v:unknown):Record<string,unknown>{return v&&typeof v==="object"&&!Array.isArray(v)?v as Record<string,unknown>:{};}
-function add(target:PublicFields,key:string,value:PublicValue|null) {
- if(value!==null&&(!Array.isArray(value)||value.length>0))target[key]=value;
-}
 async function context(organizationId:string,treatmentId:string, allowStaff=false){
  if(!organizationId||organizationId.length>160||!treatmentId||treatmentId.length>160)throw Error("無效的療程資料");
  const auth=await getAuthenticatedStaffMembership({organizationId});
@@ -63,37 +61,7 @@ async function context(organizationId:string,treatmentId:string, allowStaff=fals
  return {db,t:treatment,auth,org,consultationFields};
 }
 function makeSnapshot(t:Record<string,unknown>,consultationFields:unknown):PublicFields {
- const a=obj(t.assessment),f=obj(t.follow_up),fields:PublicFields={};
- // Publish only explicitly reviewed data. Labels come from the organization's configured field definitions.
- const answers=obj(a.consultationAnswers);
- const definitions=Array.isArray(consultationFields)?consultationFields:DEFAULT_CONSULTATION_FIELDS;
- const approvedAnswers=definitions.slice(0,30).flatMap((raw:unknown)=>{
-  const definition=obj(raw),id=str(definition.id),label=str(definition.label);
-  if(!id||!label)return [];
-  const rawAnswer=answers[id];
-  const value=Array.isArray(rawAnswer)?arr(rawAnswer).join("、"):typeof rawAnswer==="number"||typeof rawAnswer==="boolean"?String(rawAnswer):str(rawAnswer);
-  return value?[{label,value}]:[];
- });
- if(approvedAnswers.length)fields.consultation_answers=approvedAnswers;
- // Internal professional notes are opt-in only and must be explicitly approved by a manager.
- add(fields,"professional_note",typeof t.professional_note==="string"&&t.professional_note.trim()?t.professional_note.trim().slice(0,4000):null);
- const markerDetails=Array.isArray(t.body_markers)?t.body_markers.slice(0,40).flatMap((raw:unknown)=>{
-  const marker=obj(raw),area=str(marker.area);
-  return area?[{area,conditions:arr(marker.conditions),note:str(marker.note)}]:[];
- }):[];
- if(markerDetails.length)fields.body_marker_details=markerDetails;
- // Staff display name is omitted until the canonical staff roster has been resolved.
- add(fields,"concerns",arr(a.concerns));add(fields,"client_focus",str(a.clientFocus));
- add(fields,"comparison_to_last",str(a.comparisonToLast));
- add(fields,"sensitivity_level",typeof a.sensitivityLevel==="number"&&Number.isFinite(a.sensitivityLevel)?a.sensitivityLevel:null);
- add(fields,"body_markers",Array.isArray(t.body_markers)?t.body_markers.map((v:unknown)=>{const m=obj(v);return str(m.area)}).filter((v):v is string=>!!v).slice(0,20):[]);
- add(fields,"body_map_note",str(t.body_map_note));add(fields,"discomfort_note",str(t.discomfort_note));
- add(fields,"client_feeling",str(t.client_feeling));
- add(fields,"products",Array.isArray(t.products)?t.products.map((v:unknown)=>{const p=obj(v);return str(p.label)??str(v)}).filter((v):v is string=>!!v).slice(0,20):[]);
- add(fields,"follow_up_note",str(f.note));add(fields,"follow_up_tags",arr(f.tags));
- add(fields,"suggest_next_booking",typeof f.suggestNextBooking==="boolean"?f.suggestNextBooking:null);
- add(fields,"suggested_date",str(f.suggestedDate));add(fields,"suggested_tracking_areas",arr(t.suggested_tracking_areas));
- return fields;
+ return memberPublicationFields(t,consultationFields) as unknown as PublicFields;
 }
 export async function previewMemberTreatmentPublication(organizationId:string,treatmentId:string):Promise<Preview>{
  const {db,t,org,consultationFields}=await context(organizationId,treatmentId);
@@ -259,7 +227,7 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
   });
   if(!confirmed.ok)throw Error(confirmed.error);
  }
- const fields={...makeSnapshot(t,consultationFields),...(photoRefs.photos.length?{photos:photoRefs.photos}:{}),status:"COMPLETED",completed_at:t.completed_at,...(labels.serviceName?{service_name:labels.serviceName}:{}),...(labels.staffName?{staff_name:labels.staffName}:{})};
+ const fields={...makeSnapshot(t,consultationFields),...(photoRefs.photos.length?{photos:photoRefs.photos}:{}),...(labels.serviceName?{service_name:labels.serviceName}:{}),...(labels.staffName?{staff_name:labels.staffName}:{})};
  if(!publicationTarget)throw Error("會員讀取資料庫尚未設定，未另建療程。");
  let financeOrganizationId=org.id;
  let financeCustomerId=t.customer_id;
