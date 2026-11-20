@@ -501,7 +501,7 @@ function StaffColumn({
         if (!layout.visible) return null;
         return (
           <AppointmentBlock
-            key={item.id}
+            key={`${item.id}:${item.customerId}:${item.startAt}`}
             item={item}
             useTaipeiTime={useTaipeiTime}
             top={layout.topPx}
@@ -795,7 +795,7 @@ export function WeekGrid({
                     if (!layout.visible) return null;
                     return (
                       <AppointmentBlock
-                        key={item.id}
+                        key={`${item.id}:${item.customerId}:${item.startAt}`}
                         item={item}
                         top={layout.topPx}
                         height={layout.heightPx}

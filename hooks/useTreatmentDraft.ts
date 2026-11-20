@@ -20,7 +20,9 @@ import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-ide
 import { TREATMENT_REMOTE_READ_PILOT_ENV } from "@/lib/treatments/treatment-remote-read-flag";
 import { getRemotePilotTreatmentByAppointment } from "@/lib/treatments/treatment-remote-read-pilot";
 import { TreatmentDuplicateError } from "@/lib/treatments/treatment-write-errors";
+import { LOCAL_REMOTE_WRITE_STOPPED_MESSAGE } from "@/lib/appointments/local-remote-coexistence";
 import { completedTreatmentClinicalFieldsMatch, preflightCompletedTreatmentMigration } from "@/lib/treatments/completed-treatment-migration-preflight";
+import { remoteTreatmentWriteStoppedByStoredLocal } from "@/lib/treatments/local-remote-coexistence";
 
 function treatmentReadPilotEnv(): NodeJS.Dict<string> {
   return {
@@ -33,6 +35,7 @@ import {
   createEmptyDraft,
   draftHasContent,
   loadDraft,
+  listOpenTreatmentDrafts,
   listStoredCompletedTreatments,
   saveCompletedTreatment,
   saveDraft,
@@ -390,6 +393,12 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
       }
       if (next.status === "completed" && draftRef.current.status === "completed") {
         return draftRef.current;
+      }
+      if (remoteTreatmentWriteStoppedByStoredLocal(next, [
+        ...listStoredCompletedTreatments(args.organizationId),
+        ...listOpenTreatmentDrafts(args.organizationId),
+      ])) {
+        throw new Error(LOCAL_REMOTE_WRITE_STOPPED_MESSAGE);
       }
       const completed = await submitTreatmentRemoteComplete({
                 organizationId: args.organizationId,
