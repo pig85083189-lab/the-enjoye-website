@@ -129,7 +129,7 @@ const UNVERIFIED = "療程已儲存，但會員公開資料回讀驗證失敗。
  */
 export async function commitAutomaticPublication(input: {
   read: () => Promise<ExistingPublication>;
-  insert: () => Promise<"ok" | "conflict" | "error">;
+  insert: () => Promise<"ok" | "conflict" | "error" | "revoked" | "mismatch">;
   customerId: string;
   fields: Record<string, unknown>;
 }): Promise<"inserted" | "already"> {
@@ -139,9 +139,12 @@ export async function commitAutomaticPublication(input: {
   if (current === "mismatch") throw new Error(MISMATCH);
   if (current === "already") return "already";
   const inserted = await input.insert();
+  if (inserted === "revoked") throw new Error(REVOKED);
+  if (inserted === "mismatch") throw new Error(MISMATCH);
   if (inserted === "error") throw new Error(FAILED);
   const verified = classifyExistingPublication(await input.read(), expected);
   if (verified === "revoked") throw new Error(REVOKED);
+  if (verified === "mismatch") throw new Error(MISMATCH);
   if (verified !== "already") throw new Error(UNVERIFIED);
   return inserted === "conflict" ? "already" : "inserted";
 }

@@ -101,6 +101,53 @@ describe("automatic publication commit", () => {
     expect(classifyExistingPublication(stored, { customerId: "customer-1", fields })).toBe("revoked");
   });
 
+  it("one treatment id accepts a single writer when two completions race", async () => {
+    const box: { row: { customer_id: string; approved_fields: typeof fields; revoked_at: null } | null } = { row: null };
+    let queue = Promise.resolve();
+    const insert = () => {
+      const previous = queue;
+      let release = () => {};
+      queue = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return previous.then(() => {
+        try {
+          if (box.row) return "conflict" as const;
+          box.row = row;
+          return "ok" as const;
+        } finally {
+          release();
+        }
+      });
+    };
+    const [first, second] = await Promise.all([
+      commitAutomaticPublication({ customerId: "customer-1", fields, read: async () => box.row, insert }),
+      commitAutomaticPublication({ customerId: "customer-1", fields, read: async () => box.row, insert }),
+    ]);
+    expect([first, second].sort()).toEqual(["already", "inserted"]);
+    expect(box.row?.customer_id).toBe("customer-1");
+  });
+
+  it("a revoke returned by the atomic write stays revoked", async () => {
+    await expect(commitAutomaticPublication({
+      customerId: "customer-1",
+      fields,
+      read: async () => null,
+      insert: async () => "revoked",
+    })).rejects.toThrow("無法自動重新公開");
+  });
+
+  it("a different owner returned by the atomic write does not replace the row", async () => {
+    const stored = { ...row, customer_id: "customer-2" };
+    await expect(commitAutomaticPublication({
+      customerId: "customer-1",
+      fields,
+      read: async () => null,
+      insert: async () => "mismatch",
+    })).rejects.toThrow("勿重複建立療程");
+    expect(stored.customer_id).toBe("customer-2");
+  });
+
   it("rejects an existing snapshot with an extra key", () => {
     expect(classifyExistingPublication(
       { customer_id: "customer-1", approved_fields: { ...fields, stale: true }, revoked_at: null },
@@ -154,13 +201,22 @@ describe("publication sql and retry wiring", () => {
     expect(sql).not.toMatch(/on conflict[\s\S]*do update/i);
     expect(sql).toContain("revoke all on function");
     const automatic = publication.slice(publication.indexOf("export async function autoPublishCompletedMemberTreatment"));
+    const writer = publication.slice(
+      publication.indexOf("async function insertPublicationOnce"),
+      publication.indexOf("export async function autoPublishCompletedMemberTreatment"),
+    );
     expect(automatic).toContain("assertMemberPublicationTarget");
     expect(automatic).toContain("member_treatment_mirrors");
     expect(automatic).toContain("member_booking_finance_identity_links");
+    expect(automatic).toContain("insertPublicationOnce");
+    expect(automatic).toContain("publicationApprover");
     expect(automatic).not.toMatch(/full_name|phone/);
-    expect(automatic).toContain(".insert(");
+    expect(automatic).not.toContain('from("member_treatment_publications").insert');
     expect(automatic).not.toContain(".upsert(");
     expect(automatic).toContain('error.code==="23505"');
+    expect(writer).toContain('rpc("insert_member_treatment_publication_once"');
+    expect(sql).toContain("if not found then");
+    expect(sql).toContain("approved_by must be uuid");
   });
 
   it("returns the completed treatment before any second remote write", () => {

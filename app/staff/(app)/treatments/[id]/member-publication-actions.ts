@@ -171,11 +171,35 @@ function mirrorFromTreatment(t:Record<string,unknown>,financeOrganizationId:stri
  };
 }
 const MIRROR_READ_FAILED="療程已儲存，但無法確認會員同步狀態，請稍後重試。";
+const APPROVER_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function publicationApprover(authUserId:string|null|undefined){
+ const id=authUserId?.trim()??"";
+ if(!APPROVER_UUID.test(id))throw Error("無法確認操作人員身分，未公開給會員。");
+ return id;
+}
+async function insertPublicationOnce(
+ db:NonNullable<ReturnType<typeof createServiceRoleClient>>,
+ row:{treatmentId:string;organizationId:string;customerId:string;fields:Record<string,unknown>;approvedBy:string},
+):Promise<"ok"|"conflict"|"error"|"revoked"|"mismatch">{
+ const {data,error}=await db.rpc("insert_member_treatment_publication_once",{
+  p_treatment_id:row.treatmentId,
+  p_organization_id:row.organizationId,
+  p_customer_id:row.customerId,
+  p_approved_fields:row.fields,
+  p_approved_by:row.approvedBy,
+ });
+ if(error||typeof data!=="string")return "error";
+ if(data==="inserted")return "ok";
+ if(data==="already")return "conflict";
+ if(data==="revoked"||data==="mismatch")return data;
+ return "error";
+}
 export async function autoPublishCompletedMemberTreatment(organizationId:string,treatmentId:string){
  // Booking stays the Beauty OS writer. Finance stays the member reader.
  // A refused pairing writes nothing and does not create another treatment.
  const mode=assertMemberPublicationTarget();
  const {db,t,auth,org,consultationFields}=await context(organizationId,treatmentId,true);
+ const approvedBy=publicationApprover(auth.membership.authUserId);
  const labels=await memberLabels(db,t,organizationId);
  const fields={...withMemberPhotos(t,makeSnapshot(t,consultationFields)),status:"COMPLETED",completed_at:t.completed_at,...(labels.serviceName?{service_name:labels.serviceName}:{}),...(labels.staffName?{staff_name:labels.staffName}:{})};
  const publicationTarget=mode==="same-finance"?db:createBeautyOsFinanceClient();
@@ -233,16 +257,9 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
     return "error";
    },
    readPublication:()=>readPublication(publicationTarget,t.id,financeOrganizationId),
-   insertPublication:async()=>{
-    const {error}=await publicationTarget.from("member_treatment_publications").insert({
-     treatment_id:t.id,organization_id:financeOrganizationId,customer_id:financeCustomerId,
-     approved_fields:fields,approved_by:auth.membership.userId,
-     approved_at:new Date().toISOString(),revoked_at:null,updated_at:new Date().toISOString()
-    });
-    if(!error)return "ok";
-    if(error.code==="23505")return "conflict";
-    return "error";
-   },
+   insertPublication:()=>insertPublicationOnce(publicationTarget,{
+    treatmentId:t.id,organizationId:financeOrganizationId,customerId:financeCustomerId,fields,approvedBy,
+   }),
   });
   return {ok:true};
  }
@@ -253,16 +270,9 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
   customerId:financeCustomerId,
   fields,
   read:()=>readPublication(publicationTarget,t.id,financeOrganizationId),
-  insert:async()=>{
-   const {error}=await publicationTarget.from("member_treatment_publications").insert({
-    treatment_id:t.id,organization_id:financeOrganizationId,customer_id:financeCustomerId,
-    approved_fields:fields,approved_by:auth.membership.userId,
-    approved_at:new Date().toISOString(),revoked_at:null,updated_at:new Date().toISOString()
-   });
-   if(!error)return "ok";
-   if(error.code==="23505")return "conflict";
-   return "error";
-  },
+  insert:()=>insertPublicationOnce(publicationTarget,{
+   treatmentId:t.id,organizationId:financeOrganizationId,customerId:financeCustomerId,fields,approvedBy,
+  }),
  });
  return {ok:true};
 }

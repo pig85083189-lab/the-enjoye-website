@@ -1,0 +1,219 @@
+// @vitest-environment node
+import { readFileSync } from "node:fs";
+import { PGlite } from "@electric-sql/pglite";
+import { describe, expect, it } from "vitest";
+
+const publicationSql = readFileSync("supabase/review/member_publication_insert_once.sql", "utf8");
+const mirrorSql = readFileSync("supabase/review/member_treatment_mirrors.sql", "utf8");
+const preflightSql = readFileSync("supabase/review/member_sync_preflight.readonly.sql", "utf8");
+const rollbackSql = readFileSync("supabase/review/member_sync_rollback.sql", "utf8");
+
+const org = "62bd49b6-a4c3-4da1-b53e-4746923685f1";
+const member = "11111111-1111-4111-8111-111111111111";
+const other = "33333333-3333-4333-8333-333333333333";
+const treatment = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const approver = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+const fields = { professional_note: "今天以淋巴引流為主", status: "COMPLETED" };
+
+async function emptyDatabase() {
+  const db = new PGlite();
+  await db.exec(`
+    create role anon nologin;
+    create role authenticated nologin;
+    create role service_role nologin bypassrls;
+    create role mirror_reader nologin;
+    create table public.organizations (id uuid primary key);
+    insert into public.organizations (id) values ('${org}');
+  `);
+  return db;
+}
+
+async function readyDatabase() {
+  const db = await emptyDatabase();
+  await db.exec(`
+    create table public.customers (
+      id uuid not null,
+      organization_id uuid not null references public.organizations (id),
+      status text not null,
+      primary key (id, organization_id)
+    );
+    create table public.member_treatment_publications (
+      treatment_id uuid not null,
+      organization_id uuid not null,
+      customer_id uuid not null,
+      approved_fields jsonb not null,
+      approved_by uuid,
+      approved_at timestamptz,
+      revoked_at timestamptz,
+      updated_at timestamptz
+    );
+    insert into public.customers (id, organization_id, status) values
+      ('${member}', '${org}', 'ACTIVE'),
+      ('${other}', '${org}', 'ACTIVE');
+  `);
+  await db.exec(publicationSql);
+  await db.exec(mirrorSql);
+  return db;
+}
+
+async function publicationResult(db: PGlite, customerId: string, payload: unknown = fields) {
+  const result = await db.query<{ result: string }>(
+    `select public.insert_member_treatment_publication_once($1,$2,$3,$4,$5) as result`,
+    [treatment, org, customerId, payload, approver],
+  );
+  return result.rows[0]?.result;
+}
+
+describe("isolated finance schema apply", () => {
+  it("applies both review scripts, reloads the schema notice, and passes the read-only preflight", async () => {
+    const db = await readyDatabase();
+    const preflight = await db.query<Record<string, unknown>>(preflightSql);
+    expect(preflight.rows[0]).toMatchObject({
+      publications_unique_exact: 1,
+      duplicate_treatment_ids: 0,
+      customers_id_org_unique: 1,
+      approved_by_type: "uuid",
+      approved_by_udt: "uuid",
+      mirror_table_exists: true,
+      publication_function_exists: true,
+    });
+    expect(publicationSql).toContain("notify pgrst, 'reload schema'");
+    expect(mirrorSql).toContain("notify pgrst, 'reload schema'");
+  });
+
+  it("keeps one publication for concurrent writers, a revoke, and a different owner", async () => {
+    const db = await readyDatabase();
+    expect(await publicationResult(db, member)).toBe("inserted");
+    expect(await publicationResult(db, member)).toBe("already");
+    const count = await db.query<{ count: number }>(
+      "select count(*)::int as count from public.member_treatment_publications where treatment_id = $1",
+      [treatment],
+    );
+    expect(count.rows[0]?.count).toBe(1);
+
+    await db.query(
+      "update public.member_treatment_publications set revoked_at = now() where treatment_id = $1",
+      [treatment],
+    );
+    expect(await publicationResult(db, member)).toBe("revoked");
+    const revoked = await db.query<{ revoked_at: string | null; customer_id: string }>(
+      "select revoked_at, customer_id from public.member_treatment_publications where treatment_id = $1",
+      [treatment],
+    );
+    expect(revoked.rows[0]?.revoked_at).toBeTruthy();
+    expect(revoked.rows[0]?.customer_id).toBe(member);
+
+    await db.exec("delete from public.member_treatment_publications");
+    expect(await publicationResult(db, member)).toBe("inserted");
+    expect(await publicationResult(db, other, { professional_note: "他人的紀錄" })).toBe("mismatch");
+    const owner = await db.query<{ customer_id: string; approved_fields: { professional_note?: string } }>(
+      "select customer_id, approved_fields from public.member_treatment_publications where treatment_id = $1",
+      [treatment],
+    );
+    expect(owner.rows).toHaveLength(1);
+    expect(owner.rows[0]?.customer_id).toBe(member);
+    expect(owner.rows[0]?.approved_fields.professional_note).toBe("今天以淋巴引流為主");
+  });
+
+  it("does not grant the mirror or the function to anonymous clients", async () => {
+    const db = await readyDatabase();
+    const privileges = await db.query<Record<string, boolean>>(`
+      select
+        has_table_privilege('anon', 'public.member_treatment_mirrors', 'select') as anon_select,
+        has_table_privilege('authenticated', 'public.member_treatment_mirrors', 'select') as authenticated_select,
+        has_table_privilege('service_role', 'public.member_treatment_mirrors', 'select') as service_select,
+        has_table_privilege('service_role', 'public.member_treatment_mirrors', 'insert') as service_insert,
+        has_table_privilege('service_role', 'public.member_treatment_mirrors', 'update') as service_update,
+        has_table_privilege('service_role', 'public.member_treatment_mirrors', 'delete') as service_delete,
+        has_function_privilege('anon', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)', 'execute') as anon_execute,
+        has_function_privilege('service_role', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)', 'execute') as service_execute,
+        (select relrowsecurity from pg_class where relname = 'member_treatment_mirrors') as rls
+    `);
+    expect(privileges.rows[0]).toEqual({
+      anon_select: false,
+      authenticated_select: false,
+      service_select: true,
+      service_insert: true,
+      service_update: false,
+      service_delete: false,
+      anon_execute: false,
+      service_execute: true,
+      rls: true,
+    });
+    await db.exec("grant select on public.member_treatment_mirrors to mirror_reader");
+    await db.exec("set role mirror_reader");
+    const visible = await db.query<{ count: number }>("select count(*)::int as count from public.member_treatment_mirrors");
+    expect(visible.rows[0]?.count).toBe(0);
+    await db.exec("reset role");
+  });
+
+  it("rolls the schema back without dropping customers or publications", async () => {
+    const db = await readyDatabase();
+    await publicationResult(db, member);
+    await db.exec(rollbackSql);
+    const left = await db.query<{ publications: number; customers: number; mirror: string | null; fn: string | null }>(`
+      select
+        (select count(*)::int from public.member_treatment_publications) as publications,
+        (select count(*)::int from public.customers) as customers,
+        to_regclass('public.member_treatment_mirrors') as mirror,
+        to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)')::text as fn
+    `);
+    expect(left.rows[0]).toMatchObject({
+      publications: 1,
+      customers: 2,
+      mirror: null,
+      fn: null,
+    });
+  });
+
+  it("refuses the mirror table when the customer organization key is absent", async () => {
+    const db = await emptyDatabase();
+    await db.exec(`
+      create table public.customers (
+        id uuid primary key,
+        organization_id uuid not null references public.organizations (id),
+        status text not null
+      );
+    `);
+    await expect(db.exec(mirrorSql)).rejects.toThrow("customers(id, organization_id)");
+    const table = await db.query<{ mirror: string | null }>("select to_regclass('public.member_treatment_mirrors') as mirror");
+    expect(table.rows[0]?.mirror).toBeNull();
+  });
+
+  it("refuses the publication function when duplicates or a non-uuid approver already exist", async () => {
+    const duplicates = await emptyDatabase();
+    await duplicates.exec(`
+      create table public.member_treatment_publications (
+        treatment_id uuid not null,
+        organization_id uuid not null,
+        customer_id uuid not null,
+        approved_fields jsonb not null,
+        approved_by uuid,
+        approved_at timestamptz,
+        revoked_at timestamptz,
+        updated_at timestamptz
+      );
+      insert into public.member_treatment_publications
+        (treatment_id, organization_id, customer_id, approved_fields)
+      values
+        ('${treatment}', '${org}', '${member}', '{}'::jsonb),
+        ('${treatment}', '${org}', '${other}', '{}'::jsonb);
+    `);
+    await expect(duplicates.exec(publicationSql)).rejects.toThrow("duplicate treatment_id");
+
+    const textApprover = await emptyDatabase();
+    await textApprover.exec(`
+      create table public.member_treatment_publications (
+        treatment_id uuid not null,
+        organization_id uuid not null,
+        customer_id uuid not null,
+        approved_fields jsonb not null,
+        approved_by text,
+        approved_at timestamptz,
+        revoked_at timestamptz,
+        updated_at timestamptz
+      );
+    `);
+    await expect(textApprover.exec(publicationSql)).rejects.toThrow("approved_by must be uuid");
+  });
+});

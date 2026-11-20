@@ -94,7 +94,7 @@ export async function commitMemberTreatmentCopy(input: {
   readMirror: () => Promise<MirrorRecord | null>;
   insertMirror: () => Promise<"ok" | "conflict" | "error">;
   readPublication: () => Promise<ExistingPublication>;
-  insertPublication: () => Promise<"ok" | "conflict" | "error">;
+  insertPublication: () => Promise<"ok" | "conflict" | "error" | "revoked" | "mismatch">;
 }): Promise<"inserted" | "already"> {
   const expected = input.mirror;
   if (expected.status !== "COMPLETED" || !expected.completed_at || !expected.treatment_id) {
