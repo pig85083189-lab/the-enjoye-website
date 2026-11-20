@@ -3,6 +3,7 @@ import type { TreatmentDraft } from "@/types/treatment";
 import {
   completedTreatmentClinicalFieldsMatch,
   preflightCompletedTreatmentMigration,
+  treatmentClinicalFieldsMatch,
 } from "./completed-treatment-migration-preflight";
 
 const org = "org-real";
@@ -119,6 +120,12 @@ describe("completed treatment migration preflight", () => {
       createdAt: "2026-11-19T01:00:00.000Z", hadPreview: true,
     }] });
     expect(completedTreatmentClinicalFieldsMatch(local, record())).toBe(false);
+  });
+
+  it("compares draft clinical fields without treating a draft as already completed", () => {
+    const draft = record({ status: "draft" });
+    expect(treatmentClinicalFieldsMatch(draft, draft)).toBe(true);
+    expect(completedTreatmentClinicalFieldsMatch(draft, draft)).toBe(false);
   });
 
 });

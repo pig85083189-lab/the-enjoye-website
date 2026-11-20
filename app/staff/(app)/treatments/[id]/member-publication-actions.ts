@@ -15,10 +15,10 @@ function obj(v:unknown):Record<string,unknown>{return v&&typeof v==="object"&&!A
 function add(target:PublicFields,key:string,value:PublicValue|null) {
  if(value!==null&&(!Array.isArray(value)||value.length>0))target[key]=value;
 }
-async function context(organizationId:string,treatmentId:string){
+async function context(organizationId:string,treatmentId:string, allowStaff=false){
  if(!organizationId||organizationId.length>160||!treatmentId||treatmentId.length>160)throw Error("無效的療程資料");
  const auth=await getAuthenticatedStaffMembership({organizationId});
- if(auth.status!=="ok"||!allowedRoles.has(auth.membership.role))throw Error("僅店長或主管可以審核公開");
+ if(auth.status!=="ok"||(!allowedRoles.has(auth.membership.role)&&!(allowStaff&&["STAFF","RECEPTIONIST"].includes(auth.membership.role))))throw Error("沒有權限公開療程");
  const db=createServiceRoleClient();
  if(!db)throw Error("資料庫尚未設定");
  const {data:org,error:orgError}=await db.from("organizations").select("id").eq("app_id",organizationId).maybeSingle();
@@ -98,5 +98,48 @@ export async function revokeMemberTreatment(organizationId:string,treatmentId:st
  const {error}=await db.from("member_treatment_publications").update({revoked_at:new Date().toISOString(),updated_at:new Date().toISOString()})
  .eq("treatment_id",t.id).eq("organization_id",t.organization_id).is("revoked_at",null);
  if(error)throw Error("撤銷失敗");
+ return {ok:true};
+}
+
+/** Automatically publish an authenticated staff member's completed remote treatment.
+ * The treatment and customer must already exist in the authoritative database.
+ * The snapshot is generated server-side; callers cannot supply public fields.
+ */
+export async function autoPublishCompletedMemberTreatment(organizationId:string,treatmentId:string){
+ const {db,t,auth,consultationFields}=await context(organizationId,treatmentId,true);
+ const fields=makeSnapshot(t,consultationFields);
+ // Never undo an explicit member-publication revocation during a retry.
+ const {data:existing,error:readError}=await db.from("member_treatment_publications")
+  .select("treatment_id,revoked_at").eq("treatment_id",t.id).eq("organization_id",t.organization_id).maybeSingle();
+ if(readError)throw Error("無法確認會員公開狀態，請稍後重試");
+ if(existing?.revoked_at)throw Error("此療程已撤銷會員公開，無法自動重新公開");
+ if(existing){
+  // A retry must verify the already-published snapshot rather than treating
+  // the mere existence of a row as proof of a successful publication.
+  const {data:published,error:publishedError}=await db.from("member_treatment_publications")
+   .select("customer_id,approved_fields,revoked_at")
+   .eq("treatment_id",t.id).eq("organization_id",t.organization_id).maybeSingle();
+  if(publishedError||!published||published.revoked_at||
+     published.customer_id!==t.customer_id||
+     Object.keys(fields).some(key=>JSON.stringify(obj(published.approved_fields)[key])!==JSON.stringify(fields[key]))){
+   throw Error("療程已完成，但既有會員公開紀錄與最新內容不一致，請聯絡管理員確認，勿重複建立療程");
+  }
+  return {ok:true};
+ }
+ const {error}=await db.from("member_treatment_publications").upsert({
+  treatment_id:t.id,organization_id:t.organization_id,customer_id:t.customer_id,
+  approved_fields:fields,approved_by:auth.membership.userId,
+  approved_at:new Date().toISOString(),revoked_at:null,updated_at:new Date().toISOString()
+ },{onConflict:"treatment_id"});
+ if(error)throw Error("療程已儲存，但會員身體紀錄公開失敗，請勿重複建立療程");
+ // Verify the exact persisted publication before reporting success to the therapist.
+ const {data:verified,error:verifyError}=await db.from("member_treatment_publications")
+  .select("treatment_id,organization_id,customer_id,approved_fields,revoked_at")
+  .eq("treatment_id",t.id).eq("organization_id",t.organization_id).maybeSingle();
+ if(verifyError||!verified||verified.revoked_at||
+    verified.customer_id!==t.customer_id||
+    Object.keys(fields).some(key=>JSON.stringify(obj(verified.approved_fields)[key])!==JSON.stringify(fields[key]))){
+  throw Error("療程已儲存，但會員公開資料回讀驗證失敗，請勿重複建立療程");
+ }
  return {ok:true};
 }

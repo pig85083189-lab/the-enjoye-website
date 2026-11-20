@@ -20,7 +20,7 @@ import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-ide
 import { TREATMENT_REMOTE_READ_PILOT_ENV } from "@/lib/treatments/treatment-remote-read-flag";
 import { getRemotePilotTreatmentByAppointment } from "@/lib/treatments/treatment-remote-read-pilot";
 import { TreatmentDuplicateError } from "@/lib/treatments/treatment-write-errors";
-import { completedTreatmentClinicalFieldsMatch, preflightCompletedTreatmentMigration } from "@/lib/treatments/completed-treatment-migration-preflight";
+import { treatmentClinicalFieldsMatch, completedTreatmentClinicalFieldsMatch, preflightCompletedTreatmentMigration } from "@/lib/treatments/completed-treatment-migration-preflight";
 
 function treatmentReadPilotEnv(): NodeJS.Dict<string> {
   return {
@@ -155,9 +155,52 @@ export function useTreatmentDraft(args: UseTreatmentDraftArgs): UseTreatmentDraf
           // must remain accessible even when an old local draft is present.
           const legacyDraft = loadDraft(args.organizationId, args.appointmentId);
           if (!existing && legacyDraft && draftHasContent(legacyDraft)) {
-            throw new Error(
-              "偵測到尚未同步的本機療程草稿，已保留原始資料並暫停建立空白遠端紀錄。請先確認資料轉移。",
+            // Preserve the browser copy as a recovery source. Transfer the actual
+            // clinical content, never create an empty remote record over it.
+            if (!remoteWrite) {
+              throw new Error("偵測到尚未同步的本機療程草稿，已保留原始資料並暫停切換。");
+            }
+            if (!shouldCreateTreatmentForAppointment(args.appointmentStatus)) {
+              throw new Error("目前預約狀態不允許建立療程，已保留本機草稿並停止同步。");
+            }
+            if (legacyDraft.status !== "draft" || !legacyDraft.id.startsWith("trt-")) {
+              throw new Error("本機療程草稿狀態或編號無效，已保留資料並停止同步。");
+            }
+            if (
+              legacyDraft.organizationId !== args.organizationId ||
+              legacyDraft.appointmentId !== args.appointmentId ||
+              legacyDraft.customerId !== args.customerId ||
+              legacyDraft.staffId !== args.staffId ||
+              legacyDraft.serviceId !== args.serviceId ||
+              legacyDraft.locationId !== args.locationId
+            ) {
+              throw new Error("本機療程身分與正式預約不一致，已保留草稿並停止同步。");
+            }
+            try {
+              await submitTreatmentRemoteCreate({
+                organizationId: args.organizationId,
+                locationId: args.locationId ?? "",
+                customerId: args.customerId,
+                serviceId: args.serviceId,
+                staffId: args.staffId,
+                appointmentId: args.appointmentId,
+                id: legacyDraft.id,
+                draft: photoMetaOnly(legacyDraft),
+              });
+            } catch (error: unknown) {
+              if (!(error instanceof TreatmentDuplicateError)) throw error;
+            }
+            existing = await getRemotePilotTreatmentByAppointment(
+              args.organizationId,
+              args.appointmentId,
+              client,
+              treatmentReadPilotEnv(),
             );
+            if (!existing ||
+                existing.id !== legacyDraft.id ||
+                !(existing.status === "draft" && treatmentClinicalFieldsMatch(legacyDraft, existing))) {
+              throw new Error("本機療程草稿同步後驗證不一致，已保留原始草稿並停止完成。");
+            }
           }
           // Never create a blank remote draft over a completed browser-only
           // treatment. Its clinical contents require an explicit, verified
