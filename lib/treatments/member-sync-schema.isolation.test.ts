@@ -78,6 +78,11 @@ describe("isolated finance schema apply", () => {
       approved_by_udt: "uuid",
       mirror_table_exists: true,
       publication_function_exists: true,
+      mirror_rls_enabled: true,
+      mirror_anon_select: false,
+      mirror_service_insert: true,
+      publication_function_anon_execute: false,
+      publication_function_service_execute: true,
     });
     expect(String(preflight.rows[0]?.publication_index_definitions)).toContain("UNIQUE INDEX");
     expect(String(preflight.rows[0]?.publication_index_definitions)).toContain("(treatment_id)");
@@ -210,6 +215,13 @@ describe("isolated finance schema apply", () => {
       duplicate_treatment_ids: 0,
       approved_by_type: "uuid",
       publication_index_definitions: "",
+      publications_rls_enabled: false,
+      mirror_table_exists: false,
+      mirror_rls_enabled: false,
+      mirror_anon_select: false,
+      publication_function_exists: false,
+      publication_function_anon_execute: false,
+      publication_function_service_execute: false,
     });
   });
 

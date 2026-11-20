@@ -18,6 +18,8 @@ import { FollowUpStep } from "@/features/treatments/steps/FollowUpStep";
 import { PhotosStep } from "@/features/treatments/steps/PhotosStep";
 import { useTreatmentDraft } from "@/hooks/useTreatmentDraft";
 import { autoPublishCompletedMemberTreatment } from "@/app/staff/(app)/treatments/[id]/member-publication-actions";
+import { storeMemberTreatmentPhotos } from "@/app/staff/(app)/treatments/[id]/member-photo-actions";
+import { treatmentPhotoBase64, treatmentPhotoFile } from "@/lib/treatments/treatment-photo-files";
 import { getTreatmentTemplateForService } from "@/data/treatment-templates";
 import { resolveTreatmentTemplateLabel } from "@/lib/treatments/treatment-display";
 import type { CanonicalAppointmentStatus } from "@/lib/appointments/domain";
@@ -277,6 +279,24 @@ export function TreatmentWorkspace({
     };
 
     try {
+      if (treatmentRemoteWritePilot) {
+        const pending = mergedPhotos.filter((photo) => photo.hadPreview && photo.privateObject !== true);
+        if (pending.length) {
+          const uploads = [];
+          for (const photo of pending) {
+            const file = treatmentPhotoFile(photo.id);
+            if (!file) throw new Error("療程照片不在這次瀏覽器工作階段，尚未完成同步。請重新加入照片後再按完成，勿另建療程。");
+            uploads.push({
+              photoId: photo.id,
+              type: photo.type,
+              contentType: file.type,
+              bytesBase64: await treatmentPhotoBase64(file),
+            });
+          }
+          await storeMemberTreatmentPhotos(appointment.organizationId, next.id, uploads);
+          for (const photo of pending) photo.privateObject = true;
+        }
+      }
       const persisted = await completeTreatment(next);
       if (treatmentRemoteWritePilot && (persisted.status !== "completed" || persisted.appointmentId !== appointment.id || persisted.customerId !== customer.id || persisted.organizationId !== appointment.organizationId)) {
         throw new Error("正式療程同步驗證失敗，尚未標記完成。請保留目前畫面並聯絡管理員。");

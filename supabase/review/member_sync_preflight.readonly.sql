@@ -17,6 +17,10 @@
 -- customers_id_org_unique = 1 is required before the mirror foreign key.
 -- mirror_table_exists and publication_function_exists are false until the
 -- review SQL has been applied.
+-- The privilege columns are booleans, not row counts. false can mean the
+-- object is absent or the role has no grant. Read the matching *_exists
+-- column before interpreting a privilege. RLS false does not mean the
+-- table is missing.
 
 select
   (to_regclass('public.member_treatment_publications') is not null) as publications_table_exists,
@@ -95,4 +99,34 @@ select
       and column_name = 'approved_by'
   ) as approved_by_udt,
   (to_regclass('public.member_treatment_mirrors') is not null) as mirror_table_exists,
-  (to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)') is not null) as publication_function_exists;
+  (to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)') is not null) as publication_function_exists,
+  coalesce((
+    select table_rel.relrowsecurity
+    from pg_class table_rel
+    join pg_namespace namespace on namespace.oid = table_rel.relnamespace
+    where namespace.nspname = 'public'
+      and table_rel.relname = 'member_treatment_publications'
+  ), false) as publications_rls_enabled,
+  coalesce((
+    select table_rel.relrowsecurity
+    from pg_class table_rel
+    join pg_namespace namespace on namespace.oid = table_rel.relnamespace
+    where namespace.nspname = 'public'
+      and table_rel.relname = 'member_treatment_mirrors'
+  ), false) as mirror_rls_enabled,
+  case
+    when to_regclass('public.member_treatment_mirrors') is null then false
+    else has_table_privilege('anon', 'public.member_treatment_mirrors', 'select')
+  end as mirror_anon_select,
+  case
+    when to_regclass('public.member_treatment_mirrors') is null then false
+    else has_table_privilege('service_role', 'public.member_treatment_mirrors', 'insert')
+  end as mirror_service_insert,
+  case
+    when to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)') is null then false
+    else has_function_privilege('anon', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)', 'execute')
+  end as publication_function_anon_execute,
+  case
+    when to_regprocedure('public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)') is null then false
+    else has_function_privilege('service_role', 'public.insert_member_treatment_publication_once(uuid,uuid,uuid,jsonb,uuid)', 'execute')
+  end as publication_function_service_execute;

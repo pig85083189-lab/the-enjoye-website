@@ -13,9 +13,13 @@ const page = readFileSync("app/staff/(app)/treatments/page.tsx", "utf8");
 describe("automatic member treatment publication", () => {
   it("publishes only after the completed remote treatment is verified", () => {
     const verify = workspace.indexOf("正式療程同步驗證失敗");
+    const upload = workspace.indexOf("await storeMemberTreatmentPhotos");
+    const complete = workspace.indexOf("await completeTreatment");
     const publish = workspace.indexOf("await autoPublishCompletedMemberTreatment");
     const finished = workspace.indexOf("setFinished(true)");
     expect(verify).toBeGreaterThan(-1);
+    expect(upload).toBeGreaterThan(-1);
+    expect(upload).toBeLessThan(complete);
     expect(publish).toBeGreaterThan(verify);
     expect(finished).toBeGreaterThan(publish);
     expect(workspace).toContain("setCompleteError");
@@ -31,6 +35,9 @@ describe("automatic member treatment publication", () => {
     expect(automatic).toContain("insertPublicationOnce");
     expect(automatic.indexOf("memberSyncCustomerAllowed")).toBeGreaterThan(-1);
     expect(automatic.indexOf("memberSyncCustomerAllowed")).toBeLessThan(automatic.indexOf("createBeautyOsFinanceClient"));
+    expect(automatic.indexOf("privatePhotoRefsFromMeta")).toBeLessThan(automatic.indexOf("commitMemberTreatmentCopy"));
+    expect(automatic.indexOf("confirmPrivateTreatmentPhotos")).toBeLessThan(automatic.indexOf("commitMemberTreatmentCopy"));
+    expect(automatic).not.toContain("withMemberPhotos");
     expect(automatic).not.toContain('from("member_treatment_publications").insert');
     expect(publication).toContain('rpc("insert_member_treatment_publication_once"');
     expect(publication).not.toMatch(/from\("treatments"\)[\s\S]{0,120}\.delete\(/);

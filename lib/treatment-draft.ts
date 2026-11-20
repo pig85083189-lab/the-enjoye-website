@@ -142,6 +142,7 @@ export function normalizeTreatmentDraft(
           createdAt:
             typeof p.createdAt === "string" ? p.createdAt : new Date().toISOString(),
           hadPreview: Boolean(p.hadPreview),
+          privateObject: p.privateObject === true,
         };
       })
     : [];

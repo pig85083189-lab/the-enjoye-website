@@ -5,7 +5,6 @@ import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { DEFAULT_CONSULTATION_FIELDS } from "@/lib/consultation-settings";
 import {
   commitAutomaticPublication,
-  memberVisiblePhotos,
   type ExistingPublication,
 } from "@/lib/treatments/member-publication-guard";
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
@@ -16,6 +15,11 @@ import {
   type MirrorRecord,
 } from "@/lib/treatments/member-treatment-sync";
 import { memberSyncCustomerAllowed } from "@/lib/treatments/member-sync-allowlist";
+import {
+  MEMBER_TREATMENT_PHOTO_BUCKET,
+  confirmPrivateTreatmentPhotos,
+  privatePhotoRefsFromMeta,
+} from "@/lib/treatments/member-photo-storage";
 import { assertMemberPublicationTarget } from "@/lib/treatments/publication-database";
 
 const allowedRoles = new Set(["OWNER","MANAGER"]);
@@ -84,10 +88,6 @@ function makeSnapshot(t:Record<string,unknown>,consultationFields:unknown):Publi
  add(fields,"suggest_next_booking",typeof f.suggestNextBooking==="boolean"?f.suggestNextBooking:null);
  add(fields,"suggested_date",str(f.suggestedDate));add(fields,"suggested_tracking_areas",arr(t.suggested_tracking_areas));
  return fields;
-}
-function withMemberPhotos(t:Record<string,unknown>,fields:PublicFields):Record<string,unknown>{
- const photos=memberVisiblePhotos([...(Array.isArray(t.photo_meta)?t.photo_meta:[]),...(Array.isArray(t.treatment_photos)?t.treatment_photos:[])]);
- return photos.length?{...fields,photos}:fields;
 }
 export async function previewMemberTreatmentPublication(organizationId:string,treatmentId:string):Promise<Preview>{
  const {db,t,org,consultationFields}=await context(organizationId,treatmentId);
@@ -203,8 +203,23 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
  if(!memberSyncCustomerAllowed(t.customer_id))throw Error("這位顧客不在會員同步允許名單，未公開給任何會員。");
  const approvedBy=publicationApprover(auth.membership.authUserId);
  const labels=await memberLabels(db,t,organizationId);
- const fields={...withMemberPhotos(t,makeSnapshot(t,consultationFields)),status:"COMPLETED",completed_at:t.completed_at,...(labels.serviceName?{service_name:labels.serviceName}:{}),...(labels.staffName?{staff_name:labels.staffName}:{})};
+ const photoRefs=privatePhotoRefsFromMeta(t.id,t.photo_meta);
+ if(!photoRefs.ok)throw Error(photoRefs.error);
  const publicationTarget=mode==="same-finance"?db:createBeautyOsFinanceClient();
+ if(photoRefs.photos.length){
+  if(!publicationTarget)throw Error("會員照片儲存尚未設定，尚未同步。");
+  const confirmed=await confirmPrivateTreatmentPhotos(t.id,photoRefs.photos,{
+   async stat(key){
+    const folder=key.slice(0,key.lastIndexOf("/"));
+    const name=key.slice(folder.length+1);
+    const listed=await publicationTarget.storage.from(MEMBER_TREATMENT_PHOTO_BUCKET).list(folder,{limit:10,search:name});
+    if(listed.error)return "error";
+    return listed.data?.some((file)=>file.name===name)?"present":"missing";
+   },
+  });
+  if(!confirmed.ok)throw Error(confirmed.error);
+ }
+ const fields={...makeSnapshot(t,consultationFields),...(photoRefs.photos.length?{photos:photoRefs.photos}:{}),status:"COMPLETED",completed_at:t.completed_at,...(labels.serviceName?{service_name:labels.serviceName}:{}),...(labels.staffName?{staff_name:labels.staffName}:{})};
  if(!publicationTarget)throw Error("會員讀取資料庫尚未設定，未另建療程。");
  let financeOrganizationId=org.id;
  let financeCustomerId=t.customer_id;

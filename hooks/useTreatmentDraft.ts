@@ -87,6 +87,7 @@ function photoMetaOnly(draft: TreatmentDraft): TreatmentDraft {
       type: photo.type,
       createdAt: photo.createdAt,
       hadPreview: Boolean(photo.hadPreview),
+      privateObject: photo.privateObject === true,
     })),
   };
 }
