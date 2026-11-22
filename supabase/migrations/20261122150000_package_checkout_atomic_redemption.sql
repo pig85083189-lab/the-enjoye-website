@@ -42,6 +42,13 @@ begin
   if v_service.id is null or not (v_service.app_id = any(v_package.included_service_ids_snapshot))
   then raise exception '套票不適用此療程'; end if;
 
+  if v_draft.package_redemption is null or
+     v_draft.package_redemption->>'customerPackageId' is distinct from v_package.app_id or
+     v_draft.package_redemption->>'serviceId' is distinct from v_service.app_id or
+     (v_draft.package_redemption->>'sessions')::integer is distinct from 1 then
+    raise exception '套票扣堂選擇與資料庫不一致';
+  end if;
+
   -- Explicit zero-value service checkout, never treat a normal paid
   -- checkout as a session redemption. Forbid mixed carts until supported.
   select count(*) into v_service_items from public.checkout_items i
@@ -60,11 +67,15 @@ begin
 
   -- PostgreSQL function calls share the outer statement transaction.
   -- Any redemption error rolls back the settlement insert/update.
+  perform set_config('beauty_os.atomic_package_redemption',v_draft.id::text,true);
+  perform set_config('beauty_os.atomic_customer_package',v_package.id::text,true);
+  perform set_config('beauty_os.atomic_service',v_service.id::text,true);
   v_bundle := public.settle_checkout_draft(p_checkout_app_id,p_expected_updated_at);
   select * into v_tx from public.transactions
     where checkout_draft_id=v_draft.id and organization_id=v_draft.organization_id
       and status='COMPLETED' for update;
-  if v_tx.id is null then raise exception '找不到已完成結帳交易'; end if;
+  if v_tx.id is null or v_tx.package_redemption is distinct from v_draft.package_redemption
+  then raise exception '套票扣堂交易快照未正確建立'; end if;
   v_entry := public.atomic_redeem_customer_package(
     v_package.id,v_tx.id,v_service.id,'checkout-redemption:'||v_draft.id::text
   );
