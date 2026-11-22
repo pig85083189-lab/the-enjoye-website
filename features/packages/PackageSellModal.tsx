@@ -365,7 +365,7 @@ export function PackageSellModal({
                 </p>
                 <p className="mt-1 truncate text-[12px] text-secondary-text">
                   {definition.includedServices
-                    .map((row) => (remoteServiceNames[row.serviceId] ?? row.serviceId)
+                    .map((row) => remoteServiceNames[row.serviceId] ?? row.serviceId)
                     .join("、")}
                 </p>
                 <button
