@@ -140,7 +140,36 @@ export async function GET(request: Request) {
     }];
   });
 
+  // Include every wallet movement, including top-ups and manual adjustments.
+  // Exclude wallet PAYMENT rows already represented by a completed checkout.
+  const { data: allWalletEntries, error: walletHistoryError } = await db
+    .from("stored_value_ledger_entries")
+    .select("id,type,amount_delta_minor,transaction_id,reason,created_at")
+    .eq("organization_id", organization[0]!.id)
+    .eq("account_id", account[0]!.id)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (walletHistoryError) return fail(503, "無法讀取儲值異動紀錄");
+  const completedIds = new Set(financeTransactions.map((tx) => tx.id));
+  const financeActivity = [
+    ...financeTransactions.map((tx) => ({
+      id: "checkout:" + tx.id, kind: "CHECKOUT", label: "消費結帳",
+      amountMinor: -tx.total, occurredAt: tx.completedAt, transactionId: tx.id,
+    })),
+    ...(allWalletEntries ?? [])
+      .filter((entry) => !entry.transaction_id || !completedIds.has(entry.transaction_id))
+      .map((entry) => ({
+        id: "wallet:" + entry.id, kind: String(entry.type),
+        label: entry.type === "TOP_UP" ? "儲值入帳"
+          : entry.type === "PAYMENT" ? "儲值金扣款"
+          : entry.type === "REFUND" ? "儲值金退款" : "儲值金調整",
+        amountMinor: Number(entry.amount_delta_minor), occurredAt: entry.created_at,
+        transactionId: entry.transaction_id,
+      })),
+  ].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+
   return NextResponse.json({
+    financeActivity,
     financeTransactions,
     customer: { ...customerFromRemoteRow(organizationId, customerRow), id: customerId },
     storedValueBalanceMinor,
