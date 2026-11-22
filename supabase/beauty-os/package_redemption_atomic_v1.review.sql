@@ -69,4 +69,5 @@ begin
 end;
 $$;
 revoke all on function public.redeem_customer_package_v1(uuid,uuid,uuid,uuid,text) from public, anon, authenticated;
--- Grant execute only to service_role after review and integration testing.
+-- Service-role execution is only enabled when this reviewed migration is explicitly applied.
+grant execute on function public.redeem_customer_package_v1(uuid,uuid,uuid,uuid,text) to service_role;
