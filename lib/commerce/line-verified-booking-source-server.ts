@@ -160,6 +160,57 @@ export async function linkVerifiedLineBookingSource(input: {
     .eq("booking_customer_id", customer.data.id)
     .is("revoked_at", null).limit(2);
   if (pairs.error) return { outcome: "unavailable", reasonCode: "FINANCE_PAIR_QUERY" };
+  if (pairs.data?.length === 0) {
+    // First-time LINE-only member: no historical cross-database pair.
+    // Refuse any legacy binding, revoked pair, duplicate subject, or
+    // pre-existing checkout source. Never infer identity from name/phone.
+    const [bookingOwners,financeOwners,legacy,allPairs,sourceLinks] = await Promise.all([
+      booking.from("member_line_customer_links").select("customer_id,verified_at")
+        .eq("organization_id",organization.data.id).eq("line_subject_hash",decision.hash).limit(2),
+      finance.from("member_line_customer_links").select("customer_id,verified_at")
+        .eq("organization_id",financeOrg).eq("line_subject_hash",decision.hash).limit(2),
+      finance.from("line_customer_bindings").select("id")
+        .eq("organization_id",organizationAppId).eq("line_user_id_hash",decision.hash).limit(2),
+      finance.from("member_booking_finance_identity_links").select("id")
+        .eq("organization_id",financeOrg).eq("booking_customer_id",customer.data.id).limit(2),
+      finance.from("booking_source_customer_links").select("id")
+        .eq("organization_id",financeOrg).eq("source_customer_key",sourceCustomerKey).limit(2),
+    ]);
+    if (bookingOwners.error||financeOwners.error||legacy.error||allPairs.error||sourceLinks.error)
+      return {outcome:"unavailable",reasonCode:"FIRST_TIME_IDENTITY_QUERY"};
+    if (bookingOwners.data?.length!==1||bookingOwners.data[0].customer_id!==customer.data.id||
+        !bookingOwners.data[0].verified_at||financeOwners.data?.length!==1||
+        !financeOwners.data[0].verified_at||legacy.data?.length!==0||
+        allPairs.data?.length!==0||sourceLinks.data?.length!==0)
+      return review("NO_TRUSTED_ASSOCIATION");
+    const financeCustomerId=financeOwners.data[0].customer_id;
+    const [financeCustomer,otherPairs,challenges,wallet] = await Promise.all([
+      finance.from("customers").select("id,status").eq("organization_id",financeOrg).eq("id",financeCustomerId).maybeSingle(),
+      finance.from("member_booking_finance_identity_links").select("id")
+        .eq("organization_id",financeOrg).eq("finance_customer_id",financeCustomerId).limit(2),
+      finance.from("member_finance_binding_challenges").select("id")
+        .eq("organization_id",financeOrg).eq("line_subject_hash",decision.hash).limit(2),
+      finance.from("customer_wallet_identities").select("id")
+        .eq("organization_id",financeOrg).or(`booking_customer_id.eq.${financeCustomerId},wallet_customer_id.eq.${financeCustomerId}`).limit(2),
+    ]);
+    if(financeCustomer.error||otherPairs.error||challenges.error||wallet.error)
+      return {outcome:"unavailable",reasonCode:"FIRST_TIME_FINANCE_QUERY"};
+    if(financeCustomer.data?.status!=="ACTIVE"||otherPairs.data?.length!==0||
+       challenges.data?.length!==0||wallet.data?.length!==0)
+      return review("NO_TRUSTED_ASSOCIATION");
+    const linked=await finance.rpc(LINK_RPC,{
+      p_organization_app_id:organizationAppId,
+      p_source_customer_key:sourceCustomerKey,
+      p_line_subject_hash:decision.hash,
+      p_auth_user_id:authUserId,
+    });
+    if(linked.error||!linked.data||typeof linked.data!=="object")
+      return {outcome:"unavailable",reasonCode:"FINANCE_LINK_RPC"};
+    const outcome=String((linked.data as {outcome?:unknown}).outcome??"");
+    return outcome==="linked"||outcome==="already_linked"
+      ? {outcome,reasonCode:"FIRST_TIME_VERIFIED_LINE"}
+      : review("NO_TRUSTED_ASSOCIATION");
+  }
   if (pairs.data?.length !== 1) return review("NO_TRUSTED_ASSOCIATION");
   const pair = pairs.data[0];
   const confirmation = await finance.from("member_finance_binding_challenges")
