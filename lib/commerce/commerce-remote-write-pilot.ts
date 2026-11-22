@@ -306,3 +306,26 @@ export async function runAuthenticatedPackageRedemptionByAppId(
     });
   } catch (error) { mapWriteError(error); }
 }
+
+/** Resolve organization-owned IDs through the authenticated RPC.
+ * The database checks staff permission and re-reads authoritative prices.
+ */
+export async function runAuthenticatedOpenPackagePurchaseDraft(
+  client: CommerceWriteClient,
+  input: {
+    checkoutAppId: string;
+    customerAppId: string;
+    locationAppId: string;
+    packageDefinitionAppId: string;
+  },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    return await persistence.commerce.openPackagePurchaseDraft(input);
+  } catch (error) {
+    mapWriteError(error);
+  }
+}
