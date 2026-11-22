@@ -23,6 +23,7 @@ import {
   submitCommerceRemoteSaveDraft,
   submitCommerceRemoteSettle,
   submitCommerceRemotePackagePurchaseByAppId,
+  submitCommerceRemotePackageRedemptionByAppId,
 } from "@/features/checkout/use-commerce-remote-write";
 import { REMOTE_DISABLED_PAYMENT_METHODS } from "@/lib/commerce/commerce-remote-payments";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
@@ -35,6 +36,7 @@ import {
 } from "@/lib/commerce/domain";
 import { formatTwd, parseMoneyInput } from "@/lib/commerce/money";
 import { validateAtomicPackagePurchaseDraft } from "@/lib/commerce/package-checkout-guard";
+import { validateAtomicPackageRedemptionDraft } from "@/lib/commerce/package-redemption-guard";
 import { checkoutConfirmCtaLabel } from "@/lib/commerce/transaction-tender-presentation";
 import {
   CHECKOUT_PANEL_WIDTH_PX,
@@ -1207,7 +1209,25 @@ export function CheckoutPanel({
                     return;
                   }
                   if (liveDraft.packageRedemption) {
-                    setError("套票扣堂尚未完成零元療程驗證，為避免漏扣堂，已暫停此筆結帳。");
+                    const redemptionError = validateAtomicPackageRedemptionDraft(liveDraft);
+                    if (redemptionError || !liveDraft.customerId) {
+                      setError(redemptionError ?? "顧客識別碼無效");
+                      return;
+                    }
+                    setError("");
+                    void submitCommerceRemotePackageRedemptionByAppId({
+                      draftId: liveDraft.id,
+                      expectedUpdatedAt: liveDraft.updatedAt,
+                      customerAppId: liveDraft.customerId,
+                      customerPackageAppId: liveDraft.packageRedemption.customerPackageId,
+                      serviceAppId: liveDraft.packageRedemption.serviceId,
+                    }).then(
+                      (bundle) => {
+                        setEditedRemoteDraft(bundle.draft);
+                        if (bundle.transaction) onCompleted?.(bundle.transaction.id);
+                      },
+                      (err: unknown) => setError(toCommerceUserMessage(err)),
+                    );
                     return;
                   }
                   void submitCommerceRemoteSettle({
