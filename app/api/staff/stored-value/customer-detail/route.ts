@@ -45,6 +45,7 @@ export async function GET(request: Request) {
     .eq("app_id", customerId)
     .limit(2);
   if (customerError) return fail(503, "無法讀取顧客資料");
+  let resolvedCustomers = customers;
   // Normal customer management may use the booking-system UUID rather than
   // the finance customer's app_id. Resolve only an active, verified source link.
   if (!customers?.length) {
@@ -67,11 +68,11 @@ export async function GET(request: Request) {
       .limit(2);
     if (mappedError) return fail(503, "無法讀取對應顧客");
     if (mapped?.length !== 1) return fail(404, "找不到此客戶");
-    customers.splice(0, customers.length, ...mapped);
+    resolvedCustomers = mapped;
   }
-  if (customers?.length !== 1) return fail(404, "找不到此客戶");
+  if (resolvedCustomers?.length !== 1) return fail(404, "找不到此客戶");
 
-  const customerRow = dbCustomerFromUnknown(customers[0] as Record<string, unknown>);
+  const customerRow = dbCustomerFromUnknown(resolvedCustomers[0] as Record<string, unknown>);
   // This endpoint is deliberately restricted to customers in stored-value
   // management; other customer profiles continue using their existing path.
   const { data: account, error: accountError } = await db
