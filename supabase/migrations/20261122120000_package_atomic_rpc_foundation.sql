@@ -127,5 +127,8 @@ end; $$;
 
 revoke all on function public.atomic_purchase_customer_package(uuid,uuid,text) from public,anon;
 revoke all on function public.atomic_redeem_customer_package(uuid,uuid,uuid,text) from public,anon;
-grant execute on function public.atomic_purchase_customer_package(uuid,uuid,text) to authenticated;
-grant execute on function public.atomic_redeem_customer_package(uuid,uuid,uuid,text) to authenticated;
+-- Internal helpers must never be callable directly by staff. Only the vetted
+-- orchestration RPC may invoke them, preventing ledger posting after an
+-- unrelated completed checkout.
+revoke all on function public.atomic_purchase_customer_package(uuid,uuid,text) from authenticated;
+revoke all on function public.atomic_redeem_customer_package(uuid,uuid,uuid,text) from authenticated;
