@@ -128,6 +128,13 @@ begin
     'pled-'||replace(gen_random_uuid()::text,'-',''),'REDEMPTION',-1,
     p_service_id,v_tx.appointment_id,v_tx.treatment_id,v_tx.id,v_tx.location_id,p_effect_key,v_actor
   ) returning id into v_entry;
+  -- The balance is authoritative, but keep the status snapshot consistent
+  -- for existing screens that filter on ACTIVE/EXHAUSTED.
+  if v_balance=1 then
+    update public.customer_packages set status='EXHAUSTED' where id=v_pkg.id;
+  elsif v_pkg.status='EXHAUSTED' then
+    update public.customer_packages set status='ACTIVE' where id=v_pkg.id;
+  end if;
   return v_entry;
 end; $$;
 
