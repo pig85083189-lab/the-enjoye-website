@@ -12,6 +12,8 @@ import {
   runAuthenticatedPackageRedemptionVoid,
   runAuthenticatedPackageDefinitionCatalog,
   runAuthenticatedCustomerPackageCatalog,
+  runAuthenticatedPackagePurchaseByAppId,
+  runAuthenticatedPackageRedemptionByAppId,
   type CommerceWriteClient,
 } from "@/lib/commerce/commerce-remote-write-pilot";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
@@ -142,4 +144,24 @@ export async function loadCommerceRemotePackageDefinitions() {
 /** Customer ID must be a verified DB UUID, not an app/local ID. */
 export async function loadCommerceRemoteCustomerPackages(customerDbId: string) {
   return runAuthenticatedCustomerPackageCatalog(requireClient(), customerDbId, commerceWritePilotEnv());
+}
+
+/** Resolve the selected package app ID to the database ID before settlement. */
+export async function submitCommerceRemotePackagePurchaseByAppId(input: {
+  draftId: string;
+  expectedUpdatedAt: string;
+  packageDefinitionAppId: string;
+}) {
+  return runAuthenticatedPackagePurchaseByAppId(requireClient(), input, commerceWritePilotEnv());
+}
+
+/** Never accept a customer/package UUID supplied by a local draft. */
+export async function submitCommerceRemotePackageRedemptionByAppId(input: {
+  draftId: string;
+  expectedUpdatedAt: string;
+  customerAppId: string;
+  customerPackageAppId: string;
+  serviceAppId: string;
+}) {
+  return runAuthenticatedPackageRedemptionByAppId(requireClient(), input, commerceWritePilotEnv());
 }
