@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
+import { lineMembershipIsCurrent, type VerifiedLineBinding } from "@/lib/commerce/line-verified-booking-source";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,43 @@ export async function POST(request: Request) {
   if (staffError || locationError || customerError || definitionError) return fail(503, "無法確認正式套票結帳資格");
   if (staff?.length !== 1 || location?.length !== 1) return fail(403, "沒有此分店的結帳權限");
   if (customer?.length !== 1) return fail(409, "顧客尚未同步至正式財務資料庫");
+  // Re-check LINE status on the server at the moment of purchase.
+  // A browser-visible eligible-customer list is not authorization.
+  const financeCustomerId = customer[0]!.id;
+  const [{ data: memberLinks, error: memberError }, { data: bindings, error: bindingError }] = await Promise.all([
+    db.from("member_line_customer_links").select("customer_id,line_subject_hash,verified_at")
+      .eq("organization_id", orgId).eq("customer_id", financeCustomerId),
+    db.from("line_customer_bindings").select("customer_uuid,line_user_id_hash,status,verified,confirmed_at,bound_at,unbound_at,blocked_at")
+      .eq("organization_id", organizationId).eq("customer_uuid", financeCustomerId),
+  ]);
+  if (memberError || bindingError) return fail(503, "目前無法確認 LINE 會員資格");
+  const evidence: VerifiedLineBinding[] = [];
+  for (const row of bindings ?? []) {
+    evidence.push({
+      source: "binding",
+      hash: typeof row.line_user_id_hash === "string" ? row.line_user_id_hash : null,
+      verified: row.verified === true,
+      status: String(row.status ?? ""),
+      confirmedAt: row.confirmed_at,
+      boundAt: row.bound_at,
+      unboundAt: row.unbound_at,
+      blockedAt: row.blocked_at,
+    });
+  }
+  const hasCanonical = (memberLinks ?? []).some(row => Boolean(row.verified_at));
+  for (const row of memberLinks ?? []) {
+    evidence.push({
+      source: "member_link",
+      hash: typeof row.line_subject_hash === "string" ? row.line_subject_hash : null,
+      verified: Boolean(row.verified_at),
+      status: row.verified_at ? "active" : "pending",
+      confirmedAt: row.verified_at,
+      boundAt: row.verified_at,
+      unboundAt: null,
+      blockedAt: null,
+    });
+  }
+  if (!lineMembershipIsCurrent(evidence, hasCanonical)) return fail(403, "僅限已完成 LINE 綁定的會員購買套票");
   if (definition?.length !== 1 || !Number.isSafeInteger(definition[0]?.price_minor) || definition[0]!.price_minor <= 0 || !Number.isSafeInteger(definition[0]?.session_count) || definition[0]!.session_count < 1 || !Array.isArray(definition[0]?.included_services) || definition[0]!.included_services.length === 0) return fail(409, "套票方案無效");
   return NextResponse.json({ readyForWrite: false, reason: "FINANCE_AUTH_BRIDGE_REQUIRED", amountMinor: definition[0]!.price_minor, sessionCount: definition[0]!.session_count }, { headers });
 }
