@@ -103,8 +103,7 @@ export async function POST(request: Request) {
   const validRules = serviceRules.every(rule => {
     if (!rule || typeof rule !== "object" || !("sessionsPerRedemption" in rule)) return false;
     const sessions = rule.sessionsPerRedemption;
-    return typeof sessions === "number" && Number.isSafeInteger(sessions) &&
-      sessions >= 1 && sessions <= definition[0]!.session_count;
+    return sessions === 1;
   });
   if (!validRules) return fail(409, "套票療程扣堂設定無效");
   if (serviceIds.some(id => !id || id.length > 128) || new Set(serviceIds).size !== serviceIds.length) {
