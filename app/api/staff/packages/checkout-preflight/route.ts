@@ -56,6 +56,17 @@ export async function POST(request: Request) {
   if (staff?.[0]?.role !== identity.membership.role || staff?.[0]?.user_id !== identity.membership.userId) {
     return fail(403, "員工身分與財務資料庫不一致");
   }
+  // Mirror the finance RPC's location-scope rule instead of relying solely
+  // on the booking-side membership's branch list.
+  const { data: financeLocations, error: financeLocationsError } = await db
+    .from("staff_auth_membership_locations")
+    .select("location_id")
+    .eq("membership_id", staff[0]!.id);
+  if (financeLocationsError) return fail(503, "無法確認財務分店權限");
+  if ((financeLocations ?? []).length > 0 &&
+      !(financeLocations ?? []).some(row => row.location_id === locationId)) {
+    return fail(403, "財務資料庫未授權此分店結帳");
+  }
   if (customer?.length !== 1) return fail(409, "顧客尚未同步至正式財務資料庫");
   // Re-check LINE status on the server at the moment of purchase.
   // A browser-visible eligible-customer list is not authorization.
