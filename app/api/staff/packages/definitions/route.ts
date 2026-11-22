@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
 
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
   if (serviceError || services?.length !== serviceIds.length) return fail(409, "指定療程不存在或未啟用");
   const { data, error } = await db.from("package_definitions").insert({
     organization_id: org[0]!.id,
+    app_id: `pkgdef-${randomUUID()}`,
     name: name.trim(),
     description: typeof description === "string" ? description.trim() : null,
     included_services: (serviceIds as string[]).map(serviceId => ({ serviceId, sessionsPerRedemption: 1 })),
