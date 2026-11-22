@@ -42,13 +42,16 @@ export async function POST(request: Request) {
   if (orgError || org?.length !== 1) return fail(404, "找不到店家");
   const orgId = org[0]!.id;
   const [{ data: staff, error: staffError }, { data: location, error: locationError }, { data: customer, error: customerError }, { data: definition, error: definitionError }] = await Promise.all([
-    db.from("staff_auth_memberships").select("id").eq("organization_id", organizationId).eq("auth_user_id", actor.id).eq("is_active", true).limit(2),
+    db.from("staff_auth_memberships").select("id,role,user_id").eq("organization_id", organizationId).eq("auth_user_id", actor.id).eq("is_active", true).limit(2),
     db.from("locations").select("id").eq("organization_id", orgId).eq("app_id", locationId).eq("is_active", true).limit(2),
     db.from("customers").select("id").eq("organization_id", orgId).eq("app_id", customerId).eq("status", "ACTIVE").limit(2),
     db.from("package_definitions").select("id,price_minor,session_count,included_services").eq("organization_id", orgId).eq("app_id", packageDefinitionId).eq("is_active", true).limit(2),
   ]);
   if (staffError || locationError || customerError || definitionError) return fail(503, "無法確認正式套票結帳資格");
   if (staff?.length !== 1 || location?.length !== 1) return fail(403, "沒有此分店的結帳權限");
+  if (staff?.[0]?.role !== identity.membership.role || staff?.[0]?.user_id !== identity.membership.userId) {
+    return fail(403, "員工身分與財務資料庫不一致");
+  }
   if (customer?.length !== 1) return fail(409, "顧客尚未同步至正式財務資料庫");
   // Re-check LINE status on the server at the moment of purchase.
   // A browser-visible eligible-customer list is not authorization.
