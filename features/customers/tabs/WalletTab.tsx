@@ -137,6 +137,33 @@ export function WalletTab({
   const [selectedPkg, setSelectedPkg] = useState<string | null>(null);
   const [topUp, setTopUp] = useState("");
   const [remoteTopUpOpen, setRemoteTopUpOpen] = useState(false);
+  const [remotePackages, setRemotePackages] = useState<{
+    definitions: Array<{ id: string; name: string; session_count: number; price_minor: number; is_active: boolean }>;
+    purchases: Array<{ id: string; name_snapshot: string; session_count_snapshot: number; expires_at: string | null; status: string }>;
+    balances: Array<{ customer_package_id: string; ledger_balance: number }>;
+  } | null>(null);
+  const [remotePackagesError, setRemotePackagesError] = useState(false);
+  useEffect(() => {
+    if (!commerceRemoteRead) return;
+    const controller = new AbortController();
+    setRemotePackages(null);
+    setRemotePackagesError(false);
+    const params = new URLSearchParams({ organizationId: organization.id, customerId });
+    void (async () => {
+      try {
+        const response = await fetch("/api/staff/packages/overview?" + params, {
+          credentials: "same-origin", cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("Package overview unavailable");
+        const data = await response.json();
+        if (!Array.isArray(data.definitions) || !Array.isArray(data.purchases) || !Array.isArray(data.balances)) throw new Error("Invalid package response");
+        if (!controller.signal.aborted) setRemotePackages(data);
+      } catch {
+        if (!controller.signal.aborted) setRemotePackagesError(true);
+      }
+    })();
+    return () => controller.abort();
+  }, [commerceRemoteRead, organization.id, customerId]);
   const [adjReason, setAdjReason] = useState("");
   const [adjAmount, setAdjAmount] = useState("");
   const [pkgAdjDelta, setPkgAdjDelta] = useState("1");
@@ -219,7 +246,7 @@ export function WalletTab({
         <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
           <div>
             <dt className="text-xs text-secondary-text">套票</dt>
-            <dd className="mt-0.5 text-[15px] tabular-nums text-text">{packages.length} 張</dd>
+            <dd className="mt-0.5 text-[15px] tabular-nums text-text">{commerceRemoteRead ? (remotePackages?.purchases.length ?? "—") : packages.length} 張</dd>
           </div>
           <div>
             <dt className="text-xs text-secondary-text">儲值</dt>
@@ -240,7 +267,7 @@ export function WalletTab({
         <div className="flex items-baseline justify-between gap-2">
           <h3 className="text-[15px] font-semibold text-text">套票</h3>
           {commerceRemoteRead ? (
-            <span className="text-xs text-secondary-text">尚未開放</span>
+            <span className="text-xs text-secondary-text">正式套票紀錄</span>
           ) : (
             <Link
               href="/staff/packages"
@@ -250,7 +277,29 @@ export function WalletTab({
             </Link>
           )}
         </div>
-        {packages.length === 0 ? (
+        {commerceRemoteRead ? (
+          remotePackagesError ? (
+            <p className="text-sm text-secondary-text">目前無法讀取正式套票，請稍後重試</p>
+          ) : !remotePackages ? (
+            <p className="text-sm text-secondary-text">正在讀取正式套票…</p>
+          ) : remotePackages.purchases.length === 0 ? (
+            <p className="text-sm text-secondary-text">尚無已購套票</p>
+          ) : (
+            <ul className="space-y-2">
+              {remotePackages.purchases.map(pkg => {
+                const balance = remotePackages.balances.find(row => row.customer_package_id === pkg.id)?.ledger_balance;
+                return <li key={pkg.id} className="rounded-2xl border border-border bg-surface px-4 py-3">
+                  <p className="text-[14px] font-medium text-text">{pkg.name_snapshot}</p>
+                  <p className="mt-1 text-xs text-secondary-text">
+                    剩餘 {balance ?? "待確認"} / {pkg.session_count_snapshot} 堂
+                    {pkg.expires_at ? ` · 至 ${formatYmd(new Date(pkg.expires_at))}` : ""}
+                    {" · "}{pkg.status}
+                  </p>
+                </li>;
+              })}
+            </ul>
+          )
+        ) : packages.length === 0 ? (
           <p className="text-sm text-secondary-text">尚無套票</p>
         ) : (
           <ul className="space-y-2">
@@ -279,7 +328,7 @@ export function WalletTab({
           </ul>
         )}
         {commerceRemoteRead ? (
-          <p className="text-sm text-secondary-text">套票尚未開放</p>
+          <p className="text-sm text-secondary-text">套票購買與扣堂數尚待正式交易驗證，暫不開放寫入</p>
         ) : definitions.length > 0 ? (
           <details className="rounded-2xl border border-border/80 bg-[#FBF4F3]/40 px-3">
             <summary className="flex min-h-11 cursor-pointer list-none items-center text-sm text-secondary-text [&::-webkit-details-marker]:hidden">
