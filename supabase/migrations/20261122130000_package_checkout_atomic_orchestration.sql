@@ -20,6 +20,15 @@ begin
     where app_id=p_checkout_app_id for update;
   if v_draft.id is null then raise exception '找不到結帳資料'; end if;
   perform public.assert_commerce_checkout_actor(v_draft.organization_id,v_draft.location_id);
+  if v_draft.status not in ('OPEN','READY') or
+     v_draft.updated_at is distinct from p_expected_updated_at then
+    raise exception '結帳資料已更新或無法購買套票，請重新整理';
+  end if;
+  if v_draft.customer_id is null then raise exception '購買套票必須指定顧客'; end if;
+  if v_draft.package_redemption is not null and
+     v_draft.package_redemption <> 'null'::jsonb then
+    raise exception '購買套票不可同時扣堂';
+  end if;
 
   select * into v_def from public.package_definitions
     where id=p_package_definition_id and organization_id=v_draft.organization_id
@@ -46,6 +55,11 @@ begin
   if v_items<>1 or
     (select count(*) from public.checkout_items where checkout_draft_id=v_draft.id)<>1
     or exists (select 1 from public.checkout_discounts where checkout_draft_id=v_draft.id)
+    or v_draft.subtotal_minor is distinct from v_def.price_minor
+    or v_draft.discount_total_minor is distinct from 0
+    or v_draft.total_minor is distinct from v_def.price_minor
+    or coalesce((select sum(amount_minor) from public.checkout_payments
+                 where checkout_draft_id=v_draft.id),0) is distinct from v_def.price_minor
   then raise exception '結帳套票項目不符'; end if;
 
   -- Trigger rejects generic PACKAGE_PURCHASE checkout without this context.
