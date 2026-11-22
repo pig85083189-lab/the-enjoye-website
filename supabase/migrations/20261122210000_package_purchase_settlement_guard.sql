@@ -33,8 +33,12 @@ begin
   if v_def.id is null or v_item.reference_id is distinct from v_def.app_id
      or v_item.quantity<>1 or v_item.session_count_snapshot is distinct from v_def.session_count
      or v_item.unit_price_minor is distinct from v_def.price_minor
+     or v_item.line_subtotal_minor is distinct from v_def.price_minor
      or v_item.line_total_minor is distinct from v_def.price_minor
-     or v_item.discount_amount_minor<>0
+     or v_item.discount_amount_minor is distinct from 0
+     or v_draft.subtotal_minor is distinct from v_def.price_minor
+     or v_draft.discount_total_minor is distinct from 0
+     or v_draft.total_minor is distinct from v_def.price_minor
      or new.customer_id is distinct from v_draft.customer_id
   then raise exception '套票購買交易資料不一致'; end if;
   return new;
