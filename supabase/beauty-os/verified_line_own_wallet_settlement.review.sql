@@ -37,14 +37,46 @@ begin
     and identity_row.booking_customer_id = v_booking
     and identity_row.status = 'ACTIVE'
   for update;
-  -- Existing wallet mappings remain authoritative. No synthetic identity rows.
+  -- Preserve legacy wallet mapping. Only unique current LINE subjects can self-pay.
   if v_wallet is null then
     select min(lower(btrim(ml.line_subject_hash))) into v_line_hash
     from public.member_line_customer_links ml
     where ml.organization_id = v_org and ml.customer_id = v_booking
       and ml.verified_at is not null
-      and lower(btrim(ml.line_subject_hash)) ~ '^[0-9a-f]{64}
-
+      and length(btrim(ml.line_subject_hash)) = 64;
+    if v_line_hash is not null
+      and (select count(*) from public.member_line_customer_links ml
+           where ml.organization_id = v_org and ml.customer_id = v_booking) = 1
+      and (select count(*) from public.member_line_customer_links ml
+           where ml.organization_id = v_org and lower(btrim(ml.line_subject_hash)) = v_line_hash) = 1
+      and exists (
+        select 1 from public.booking_source_customer_links l
+        where l.organization_id = v_org and l.source_customer_key = btrim(p_source_customer_key)
+          and l.finance_booking_customer_id = v_booking and l.status = 'ACTIVE'
+          and l.revoked_at is null and l.evidence_kind = 'LINE_VERIFIED_SESSION'
+      )
+      and not exists (
+        select 1 from public.customer_wallet_identities i
+        where i.organization_id = v_org
+          and (i.booking_customer_id = v_booking or i.wallet_customer_id = v_booking)
+      )
+      and not exists (
+        select 1 from public.booking_source_customer_links l
+        where l.organization_id = v_org and l.finance_booking_customer_id = v_booking
+          and l.source_customer_key <> btrim(p_source_customer_key)
+      )
+      and public.customer_line_membership_is_current(v_org, v_booking)
+    then
+      select count(*), min(subject.customer_id) into v_line_count, v_line_customer
+      from public.current_line_subject_customers(v_org, p_organization_app_id, v_line_hash) subject;
+      if v_line_count = 1 and v_line_customer = v_booking then
+        v_wallet := v_booking;
+      end if;
+    end if;
+  end if;
+  if v_wallet is null then
+    raise exception '必須先完成顧客身分對應';
+  end if;
   if (select status from public.customers where id = v_wallet and organization_id = v_org) is distinct from 'ACTIVE' then
     raise exception '顧客帳號無效';
   end if;
