@@ -162,5 +162,4 @@ begin
     'replayed', false
   );
 end;
-$function$
-
+$function$;
