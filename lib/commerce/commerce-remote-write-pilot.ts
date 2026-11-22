@@ -329,3 +329,19 @@ export async function runAuthenticatedOpenPackagePurchaseDraft(
     mapWriteError(error);
   }
 }
+
+/** Fetch only a package-sale draft after authenticated staff authorization. */
+export async function runAuthenticatedGetPackagePurchaseDraft(
+  client: CommerceWriteClient,
+  checkoutAppId: string,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    return await persistence.commerce.getPackagePurchaseDraft(checkoutAppId);
+  } catch (error) {
+    mapWriteError(error);
+  }
+}
