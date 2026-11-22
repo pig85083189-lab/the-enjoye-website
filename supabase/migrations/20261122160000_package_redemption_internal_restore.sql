@@ -54,6 +54,11 @@ begin
     v_redemption.transaction_id,v_redemption.location_id,
     p_reason,p_effect_key,v_redemption.id,v_actor
   ) returning id into v_new_id;
+  -- Re-open exhausted packages after a valid reversal, unless expired or voided.
+  if v_package.status='EXHAUSTED' and
+     (v_package.expires_at is null or v_package.expires_at>now()) then
+    update public.customer_packages set status='ACTIVE' where id=v_package.id;
+  end if;
   return v_new_id;
 end; $$;
 
