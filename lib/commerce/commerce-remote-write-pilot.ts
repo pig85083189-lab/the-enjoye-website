@@ -168,3 +168,52 @@ export async function runAuthenticatedCommerceListTransactions(
   const rows = await persistence.commerce.listTransactions();
   return rows.filter((row) => row.organizationId === organizationId);
 }
+
+/** Explicit package operations. Kept separate from legacy settlement. */
+export async function runAuthenticatedPackagePurchaseSettle(
+  client: CommerceWriteClient,
+  input: { draftId: string; expectedUpdatedAt: string; packageDefinitionDbId: string },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    return await persistence.commerce.settlePackagePurchase({
+      checkoutAppId: input.draftId,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      packageDefinitionDbId: input.packageDefinitionDbId,
+    });
+  } catch (error) { mapWriteError(error); }
+}
+
+export async function runAuthenticatedPackageRedemptionSettle(
+  client: CommerceWriteClient,
+  input: { draftId: string; expectedUpdatedAt: string; customerPackageDbId: string; serviceDbId: string },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    return await persistence.commerce.settlePackageRedemption({
+      checkoutAppId: input.draftId,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      customerPackageDbId: input.customerPackageDbId,
+      serviceDbId: input.serviceDbId,
+    });
+  } catch (error) { mapWriteError(error); }
+}
+
+export async function runAuthenticatedPackageRedemptionVoid(
+  client: CommerceWriteClient,
+  input: { transactionDbId: string; reason: string },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try { return await persistence.commerce.voidPackageRedemption(input); }
+  catch (error) { mapWriteError(error); }
+}
+
