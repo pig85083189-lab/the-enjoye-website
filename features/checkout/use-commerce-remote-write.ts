@@ -14,6 +14,7 @@ import {
   runAuthenticatedCustomerPackageCatalog,
   runAuthenticatedPackagePurchaseByAppId,
   runAuthenticatedPackageRedemptionByAppId,
+  runAuthenticatedOpenPackagePurchaseDraft,
   type CommerceWriteClient,
 } from "@/lib/commerce/commerce-remote-write-pilot";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
@@ -164,4 +165,14 @@ export async function submitCommerceRemotePackageRedemptionByAppId(input: {
   serviceAppId: string;
 }) {
   return runAuthenticatedPackageRedemptionByAppId(requireClient(), input, commerceWritePilotEnv());
+}
+
+/** Create a real Supabase checkout draft before navigating to payment. */
+export async function openCommerceRemotePackagePurchaseDraft(input: {
+  checkoutAppId: string;
+  customerAppId: string;
+  locationAppId: string;
+  packageDefinitionAppId: string;
+}) {
+  return runAuthenticatedOpenPackagePurchaseDraft(requireClient(), input, commerceWritePilotEnv());
 }
