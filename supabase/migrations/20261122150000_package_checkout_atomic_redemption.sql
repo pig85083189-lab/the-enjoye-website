@@ -23,6 +23,11 @@ begin
     where app_id=p_checkout_app_id for update;
   if v_draft.id is null then raise exception '找不到結帳資料'; end if;
   perform public.assert_commerce_checkout_actor(v_draft.organization_id,v_draft.location_id);
+  if v_draft.status not in ('OPEN','READY') or
+     v_draft.updated_at is distinct from p_expected_updated_at then
+    raise exception '結帳資料已更新或無法扣堂，請重新整理';
+  end if;
+  if v_draft.customer_id is null then raise exception '扣堂必須指定顧客'; end if;
 
   -- Keep lock order aligned with atomic_redeem_customer_package:
   -- transaction first, package second. Prevents cross-checkout deadlocks.
@@ -43,11 +48,14 @@ begin
     where i.checkout_draft_id=v_draft.id and i.type='SERVICE'
       and i.reference_id=v_service.app_id
       and i.quantity=1 and i.line_total_minor=0
-      and i.line_subtotal_minor=0;
+      and i.line_subtotal_minor=0
+      and i.unit_price_minor=0 and i.discount_amount_minor=0;
   if v_service_items<>1
     or (select count(*) from public.checkout_items where checkout_draft_id=v_draft.id)<>1
     or exists (select 1 from public.checkout_payments where checkout_draft_id=v_draft.id)
     or exists (select 1 from public.checkout_discounts where checkout_draft_id=v_draft.id)
+    or v_draft.subtotal_minor<>0 or v_draft.discount_total_minor<>0
+    or v_draft.total_minor<>0
   then raise exception '套票扣堂結帳必須只有一筆零元指定療程'; end if;
 
   -- PostgreSQL function calls share the outer statement transaction.
