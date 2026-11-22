@@ -73,7 +73,7 @@ export async function readConfirmedFinanceLineBinding(customerKey:string,organiz
      || sources.data[0].finance_booking_customer_id!==financeCustomer.id)return "not_verified";
   const [current,owners]=await Promise.all([
    db.rpc("customer_line_membership_is_current",{p_organization_id:FINANCE_ORG,p_customer_id:financeCustomer.id}),
-   db.rpc("current_line_subject_customers",{p_organization_id:FINANCE_ORG,p_organization_app_id:APP_ORG,p_line_subject_hash:hash})
+   db.from("member_line_customer_links").select("customer_id").eq("organization_id",FINANCE_ORG).eq("line_subject_hash",hash).limit(2)
   ]);
   if(current.error||owners.error)return "unavailable";
   if(current.data!==true || !Array.isArray(owners.data) || owners.data.length!==1
