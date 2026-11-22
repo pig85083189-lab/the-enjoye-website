@@ -649,7 +649,13 @@ export function completeCheckout(
     throw new Error("Checkout draft not found");
   }
 
-  // Fail closed: package purchases and redemptions must settle atomically in Supabase.\n  // Never create a local transaction or mutate package balances for these drafts.\n  if (draft.items.some((item) => item.type === "PACKAGE_PURCHASE") || draft.packageRedemption) {\n    throw new Error("套票購買與扣堂必須透過正式資料庫原子結帳，目前尚未啟用，請勿使用本機結帳");\n  }\n\n  // Already completed — return linked transaction (UI double-submit)
+  // Fail closed: package purchases and redemptions must settle atomically in Supabase.
+  // Never create a local transaction or mutate package balances for these drafts.
+  if (draft.items.some((item) => item.type === "PACKAGE_PURCHASE") || draft.packageRedemption) {
+    throw new Error("套票購買與扣堂必須透過正式資料庫原子結帳，目前尚未啟用，請勿使用本機結帳");
+  }
+
+  // Already completed — return linked transaction (UI double-submit)
   if (draft.status === "COMPLETED") {
     const existing =
       getTransactionByCheckoutDraftId(organizationId, draftId) ??
@@ -675,7 +681,9 @@ export function completeCheckout(
     return orphan;
   }
 
-  // Package redemption is rejected before any local transaction is created.\n  // Validate remaining tenders before financial writes.\n  for (const pay of draft.payments) {
+  // Package redemption is rejected before any local transaction is created.
+  // Validate remaining tenders before financial writes.
+  for (const pay of draft.payments) {
     if (pay.method === "STORED_VALUE") {
       const bal = getCustomerStoredValueBalance(organizationId, draft.customerId);
       if (pay.amount > bal) throw new Error("insufficient stored value balance");
