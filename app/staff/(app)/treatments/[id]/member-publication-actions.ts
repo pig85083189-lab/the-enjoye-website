@@ -260,7 +260,40 @@ export async function autoPublishCompletedMemberTreatment(organizationId:string,
     verifiedLineSubjects:lineRows.length===1&&lineRows[0].verified_at?1:0,
    });
   }
-  const member=financeMemberFromEvidence(evidence);
+  let member=financeMemberFromEvidence(evidence);
+  if(!member && (links.data??[]).length===0){
+   // New LINE-only customers have no legacy in-store confirmation. Match
+   // independently verified subject hashes, never names or phone numbers.
+   // Any existing or revoked finance pairing blocks this first-time path.
+   const bookingLine=await db.from("member_line_customer_links")
+    .select("line_subject_hash,verified_at")
+    .eq("organization_id",org.id).eq("customer_id",t.customer_id).limit(2);
+   if(bookingLine.error||bookingLine.data?.length!==1||!bookingLine.data[0].verified_at)
+    throw Error(MEMBER_IDENTITY_UNVERIFIED);
+   const hash=bookingLine.data[0].line_subject_hash;
+   if(typeof hash!=="string"||!hash)throw Error(MEMBER_IDENTITY_UNVERIFIED);
+   const [bookingOwners,financeOwners,financeLegacy,financePairs]=await Promise.all([
+    db.from("member_line_customer_links").select("customer_id").eq("organization_id",org.id).eq("line_subject_hash",hash).limit(2),
+    publicationTarget.from("member_line_customer_links").select("customer_id,verified_at").eq("organization_id",financeOrganizationId).eq("line_subject_hash",hash).limit(2),
+    publicationTarget.from("line_customer_bindings").select("id").eq("organization_id",financeOrganizationId).eq("line_user_id_hash",hash).limit(2),
+    publicationTarget.from("member_booking_finance_identity_links").select("id").eq("booking_organization_id",org.id).eq("booking_customer_id",t.customer_id).limit(2),
+   ]);
+   if(bookingOwners.error||financeOwners.error||financeLegacy.error||financePairs.error||
+      bookingOwners.data?.length!==1||bookingOwners.data[0].customer_id!==t.customer_id||
+      financeOwners.data?.length!==1||!financeOwners.data[0].verified_at||
+      financeLegacy.data?.length!==0||financePairs.data?.length!==0)
+    throw Error(MEMBER_IDENTITY_UNVERIFIED);
+   const financeId=financeOwners.data[0].customer_id;
+   const [financeCustomer,otherPairs,financeChallenges]=await Promise.all([
+    publicationTarget.from("customers").select("id,status").eq("id",financeId).eq("organization_id",financeOrganizationId).maybeSingle(),
+    publicationTarget.from("member_booking_finance_identity_links").select("id").eq("organization_id",financeOrganizationId).eq("finance_customer_id",financeId).limit(2),
+    publicationTarget.from("member_finance_binding_challenges").select("id").eq("organization_id",financeOrganizationId).eq("line_subject_hash",hash).limit(2),
+   ]);
+   if(financeCustomer.error||otherPairs.error||financeChallenges.error||
+      financeCustomer.data?.status!=="ACTIVE"||otherPairs.data?.length!==0||financeChallenges.data?.length!==0)
+    throw Error(MEMBER_IDENTITY_UNVERIFIED);
+   member={customerId:financeId};
+  }
   if(!member)throw Error(MEMBER_IDENTITY_UNVERIFIED);
   financeCustomerId=member.customerId;
   const mirror=mirrorFromTreatment(t,financeOrganizationId,financeCustomerId,labels);
