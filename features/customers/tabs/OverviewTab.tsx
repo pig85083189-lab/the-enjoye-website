@@ -24,6 +24,7 @@ import {
   TEMPERATURE_LABEL,
 } from "@/types/customer";
 import type { Customer } from "@/types";
+import type { FinanceActivityRow } from "@/features/customers/use-customer-remote-read";
 
 const CONDITION_DISPLAY_LIMIT = 5;
 
@@ -32,9 +33,10 @@ interface OverviewTabProps {
   snapshot: Customer360Snapshot;
   onOpenTab: (tab: Customer360TabId, section?: Customer360WalletSection) => void;
   financeBalanceOverride?: number;
+  financeActivity?: FinanceActivityRow[];
 }
 
-export function OverviewTab({ customer, snapshot, onOpenTab, financeBalanceOverride }: OverviewTabProps) {
+export function OverviewTab({ customer, snapshot, onOpenTab, financeBalanceOverride, financeActivity }: OverviewTabProps) {
   const [showAllTimeline, setShowAllTimeline] = useState(false);
   const { organization } = useOrganization();
   const [finance, setFinance] = useState<{
@@ -165,7 +167,7 @@ export function OverviewTab({ customer, snapshot, onOpenTab, financeBalanceOverr
       </div>
 
       <div className="order-6 min-[768px]:order-5">
-        <FinancialSummary snapshot={snapshot} onOpenTab={onOpenTab} financeLabel={financeLabel} financeDescription={financeDescription} />
+        <FinancialSummary snapshot={snapshot} onOpenTab={onOpenTab} financeLabel={financeLabel} financeDescription={financeDescription} financeActivity={financeActivity} />
       </div>
 
       <div className="order-7 max-[767px]:hidden min-[768px]:order-6">
@@ -461,11 +463,13 @@ function FinancialSummary({
   onOpenTab,
   financeLabel,
   financeDescription,
+  financeActivity,
 }: {
   snapshot: Customer360Snapshot;
   onOpenTab: (tab: Customer360TabId, section?: Customer360WalletSection) => void;
   financeLabel: string;
   financeDescription: string;
+  financeActivity?: FinanceActivityRow[];
 }) {
   const pkg = snapshot.packagePreview[0];
 
@@ -541,7 +545,18 @@ function FinancialSummary({
             查看
           </button>
         </div>
-        {snapshot.recentTx.length > 0 ? (
+        {financeActivity ? (
+          financeActivity.length ? (
+            <ul className="mt-2 space-y-1.5">
+              {financeActivity.slice(0, 5).map((row) => (
+                <li key={row.id} className="flex justify-between gap-2 text-sm">
+                  <span className="min-w-0 truncate text-text">{row.label} · {row.occurredAt.slice(0, 10)}</span>
+                  <span className="shrink-0 tabular-nums">{row.amountMinor > 0 ? "+" : ""}{formatTwd(row.amountMinor)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="mt-2 text-sm text-secondary-text">尚無交易</p>
+        ) : snapshot.recentTx.length > 0 ? (
           <ul
             className="mt-2 space-y-1.5"
             data-recent-tx-source={snapshot.commerceRemoteRead ? "remote-pilot" : "local"}
