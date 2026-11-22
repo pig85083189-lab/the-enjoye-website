@@ -89,6 +89,22 @@ export class AuthenticatedCommerceStore {
     return commerceBundleFromRemoteJson(await requireRpc(result, "settle checkout"));
   }
 
+  /** Create a canonical package-sale draft, without charging or crediting sessions. */
+  async openPackagePurchaseDraft(input: {
+    checkoutAppId: string;
+    customerAppId: string;
+    locationAppId: string;
+    packageDefinitionAppId: string;
+  }) {
+    const result = await this.client.rpc("open_package_purchase_checkout", {
+      p_checkout_app_id: input.checkoutAppId,
+      p_customer_app_id: input.customerAppId,
+      p_location_app_id: input.locationAppId,
+      p_package_definition_app_id: input.packageDefinitionAppId,
+    });
+    return commerceBundleFromRemoteJson(await requireRpc(result, "open package checkout"));
+  }
+
   /** Read-only identity catalog; never seed package definitions in production. */
   async listPackageDefinitionsForCheckout(): Promise<Array<{
     organizationDbId: string;
