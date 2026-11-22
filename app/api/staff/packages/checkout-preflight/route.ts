@@ -100,6 +100,13 @@ export async function POST(request: Request) {
     rule && typeof rule === "object" && "serviceId" in rule &&
     typeof rule.serviceId === "string" ? rule.serviceId.trim() : "",
   );
+  const validRules = serviceRules.every(rule => {
+    if (!rule || typeof rule !== "object" || !("sessionsPerRedemption" in rule)) return false;
+    const sessions = rule.sessionsPerRedemption;
+    return typeof sessions === "number" && Number.isSafeInteger(sessions) &&
+      sessions >= 1 && sessions <= definition[0]!.session_count;
+  });
+  if (!validRules) return fail(409, "套票療程扣堂設定無效");
   if (serviceIds.some(id => !id || id.length > 128) || new Set(serviceIds).size !== serviceIds.length) {
     return fail(409, "套票指定療程設定無效");
   }
