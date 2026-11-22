@@ -89,6 +89,53 @@ export class AuthenticatedCommerceStore {
     return commerceBundleFromRemoteJson(await requireRpc(result, "settle checkout"));
   }
 
+  /** Opt-in only. Does not alter the existing settleDraft flow. */
+  async settlePackagePurchase(input: {
+    checkoutAppId: string;
+    expectedUpdatedAt: string;
+    packageDefinitionDbId: string;
+  }) {
+    const result = await this.client.rpc("settle_checkout_with_package_purchase", {
+      p_checkout_app_id: input.checkoutAppId,
+      p_expected_updated_at: input.expectedUpdatedAt,
+      p_package_definition_id: input.packageDefinitionDbId,
+    });
+    const payload = await requireRpc(result, "settle package purchase");
+    const bundle = commerceBundleFromRemoteJson(payload);
+    const packageId = (payload as Record<string, unknown>).customerPackageDbId;
+    if (typeof packageId !== "string") throw new Error("套票入帳結果缺少識別碼");
+    return { ...bundle, customerPackageDbId: packageId };
+  }
+
+  /** Opt-in zero-value service redemption, never used for paid checkouts. */
+  async settlePackageRedemption(input: {
+    checkoutAppId: string;
+    expectedUpdatedAt: string;
+    customerPackageDbId: string;
+    serviceDbId: string;
+  }) {
+    const result = await this.client.rpc("settle_checkout_with_package_redemption", {
+      p_checkout_app_id: input.checkoutAppId,
+      p_expected_updated_at: input.expectedUpdatedAt,
+      p_customer_package_id: input.customerPackageDbId,
+      p_service_id: input.serviceDbId,
+    });
+    const payload = await requireRpc(result, "redeem package session");
+    const bundle = commerceBundleFromRemoteJson(payload);
+    const entryId = (payload as Record<string, unknown>).packageRedemptionLedgerId;
+    if (typeof entryId !== "string") throw new Error("套票扣堂結果缺少識別碼");
+    return { ...bundle, packageRedemptionLedgerId: entryId };
+  }
+
+  /** Only zero-value package redemptions can be voided through this RPC. */
+  async voidPackageRedemption(input: { transactionDbId: string; reason: string }) {
+    const result = await this.client.rpc("void_package_redemption_checkout", {
+      p_transaction_id: input.transactionDbId,
+      p_reason: input.reason,
+    });
+    return requireRpc(result, "void package redemption");
+  }
+
   async listTransactions() {
     const result = await this.client.rpc("commerce_list_transactions");
     const rows = await requireRpc(result, "list transactions");
