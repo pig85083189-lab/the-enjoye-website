@@ -34,6 +34,7 @@ import {
   type PaymentMethod,
 } from "@/lib/commerce/domain";
 import { formatTwd, parseMoneyInput } from "@/lib/commerce/money";
+import { validateAtomicPackagePurchaseDraft } from "@/lib/commerce/package-checkout-guard";
 import { checkoutConfirmCtaLabel } from "@/lib/commerce/transaction-tender-presentation";
 import {
   CHECKOUT_PANEL_WIDTH_PX,
@@ -1186,12 +1187,9 @@ export function CheckoutPanel({
                   const packageItems = liveDraft.items.filter((line) => line.type === "PACKAGE_PURCHASE");
                   if (packageItems.length > 0) {
                     const packageItem = packageItems[0];
-                    if (
-                      packageItems.length !== 1 || liveDraft.items.length !== 1 ||
-                      !packageItem?.referenceId || packageItem.quantity !== 1 ||
-                      liveDraft.discounts.length > 0 || Boolean(liveDraft.packageRedemption)
-                    ) {
-                      setError("套票購買目前僅支援單一方案，請移除其他項目或折扣。");
+                    const purchaseError = validateAtomicPackagePurchaseDraft(liveDraft);
+                    if (purchaseError || !packageItem?.referenceId) {
+                      setError(purchaseError ?? "套票方案識別碼無效");
                       return;
                     }
                     setError("");
