@@ -9,6 +9,7 @@ declare
   v_tx public.transactions;
   v_entry public.package_ledger_entries;
   v_reversal uuid;
+  v_actor text;
 begin
   if auth.uid() is null then raise exception '沒有權限取消結帳'; end if;
   if nullif(trim(coalesce(p_reason,'')),'') is null then
@@ -16,7 +17,7 @@ begin
   select * into v_tx from public.transactions
     where id=p_transaction_id for update;
   if v_tx.id is null then raise exception '找不到交易'; end if;
-  perform public.assert_commerce_checkout_actor(v_tx.organization_id,v_tx.location_id);
+  v_actor := public.assert_commerce_checkout_actor(v_tx.organization_id,v_tx.location_id);
   if v_tx.status='VOIDED' then
     select e.* into v_entry from public.package_ledger_entries e
       where e.transaction_id=v_tx.id and e.organization_id=v_tx.organization_id
@@ -53,7 +54,7 @@ begin
   update public.transactions
     set status='VOIDED',
         voided_at=now(),
-        voided_by=public.current_operational_staff_id(v_tx.organization_id),
+        voided_by=v_actor,
         void_reason=trim(p_reason)
     where id=v_tx.id;
   -- Keep the checkout status aligned with its voided transaction.
