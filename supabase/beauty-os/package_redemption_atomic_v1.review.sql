@@ -44,7 +44,7 @@ begin
      (v_package.expires_at is not null and v_package.expires_at <= now()) then
     raise exception 'PACKAGE_INACTIVE';
   end if;
-  -- The settled transaction must explicitly name this package and service.\n  -- A generic completed sale must never authorize a package debit.\n  if v_transaction.package_redemption is null\n     or v_transaction.package_redemption->>'customerPackageId' <> p_customer_package_id::text\n     or v_transaction.package_redemption->>'serviceId' <> p_service_id::text then\n    raise exception 'TRANSACTION_REDEMPTION_MISMATCH';\n  end if;\n  if not (p_service_id::text = any(v_package.included_service_ids_snapshot)) then
+  -- The settled transaction must explicitly name this package and service.\n  -- A generic completed sale must never authorize a package debit.\n  if v_transaction.package_redemption is null\n     or v_transaction.package_redemption->>'customerPackageId' <> p_customer_package_id::text\n     or v_transaction.package_redemption->>'serviceId' <> p_service_id::text then\n    raise exception 'TRANSACTION_REDEMPTION_MISMATCH';\n  end if;\n  if v_transaction.treatment_id is null or not exists (\n    select 1 from public.treatments t\n    where t.id=v_transaction.treatment_id\n      and t.organization_id=p_organization_id\n      and t.customer_id=v_package.customer_id\n      and t.service_id=p_service_id\n      and t.status='COMPLETED'\n  ) then\n    raise exception 'REDEMPTION_TREATMENT_MISMATCH';\n  end if;\n  if not (p_service_id::text = any(v_package.included_service_ids_snapshot)) then
     raise exception 'SERVICE_NOT_INCLUDED';
   end if;
   if not exists (select 1 from public.services
