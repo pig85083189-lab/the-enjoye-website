@@ -86,8 +86,11 @@ export function PackageSellModal({
           organizationId,
           name: row.name as string,
           includedServices: (row.included_services as Array<{serviceId:string; sessionsPerRedemption?:number}>)
-            .filter(item => typeof item.serviceId === "string")
-            .map(item => ({ serviceId: item.serviceId, sessionsPerRedemption: 1 as const })),
+            .filter(item => typeof item.serviceId === "string" &&
+              Number.isSafeInteger(item.sessionsPerRedemption) &&
+              (item.sessionsPerRedemption ?? 0) >= 1 &&
+              (item.sessionsPerRedemption ?? 0) <= (row.session_count as number))
+            .map(item => ({ serviceId: item.serviceId, sessionsPerRedemption: item.sessionsPerRedemption! })),
           sessionCount: row.session_count as number,
           priceMinor: row.price_minor as number,
           currency: typeof row.currency === "string" ? row.currency : "TWD",
