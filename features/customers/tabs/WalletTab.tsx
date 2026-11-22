@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { StoredValueTopUpModal } from "@/features/stored-value/StoredValueTopUpModal";
 import { Card } from "@/components/ui/Card";
 import {
   addCheckoutItem,
@@ -135,6 +136,7 @@ export function WalletTab({
 
   const [selectedPkg, setSelectedPkg] = useState<string | null>(null);
   const [topUp, setTopUp] = useState("");
+  const [remoteTopUpOpen, setRemoteTopUpOpen] = useState(false);
   const [adjReason, setAdjReason] = useState("");
   const [adjAmount, setAdjAmount] = useState("");
   const [pkgAdjDelta, setPkgAdjDelta] = useState("1");
@@ -424,7 +426,7 @@ export function WalletTab({
         ) : null}
 
         {commerceRemoteRead ? (
-          <p className="text-sm text-secondary-text">儲值尚未開放</p>
+          <Button className="min-h-11" onClick={() => setRemoteTopUpOpen(true)}>＋ 新增儲值</Button>
         ) : (
         <div className="flex flex-wrap items-end gap-2">
           <label className="text-xs text-secondary-text">
@@ -495,6 +497,20 @@ export function WalletTab({
           </details>
         ) : null}
       </Card>
+
+      {remoteTopUpOpen ? (
+        <StoredValueTopUpModal
+          open={remoteTopUpOpen}
+          organizationId={organization.id}
+          locationId={locationId}
+          staffId={staffId}
+          customers={[]}
+          onClose={() => {
+            setRemoteTopUpOpen(false);
+            window.location.reload();
+          }}
+        />
+      ) : null}
 
       <Card padding="md">
         <div className="flex items-baseline justify-between gap-2">
