@@ -138,6 +138,53 @@ export async function GET(request: Request) {
         }
       }
     }
+    if (!resolvedFinanceId) {
+      // First-time LINE members do not have the legacy in-store confirmation.
+      // Read-only identity resolution; no linking or wallet mutation in GET.
+      const booking = createServiceRoleClient();
+      if (!booking) return fail(503, "CONFIG_MISSING");
+      const bookingOrg = await booking.from("organizations").select("id")
+        .eq("app_id", organizationId).maybeSingle();
+      if (bookingOrg.error || !bookingOrg.data?.id) return fail(503, "IDENTITY_LOOKUP_FAILED");
+      const bookingCustomer = checkoutCustomerKeyIsDbId(customerId)
+        ? await booking.from("customers").select("id,status").eq("organization_id",bookingOrg.data.id).eq("id",customerId).maybeSingle()
+        : await booking.from("customers").select("id,status").eq("organization_id",bookingOrg.data.id).eq("app_id",customerId).maybeSingle();
+      if (bookingCustomer.error) return fail(503, "IDENTITY_LOOKUP_FAILED");
+      if (bookingCustomer.data?.status === "ACTIVE") {
+        const line = await booking.from("member_line_customer_links")
+          .select("line_subject_hash,verified_at").eq("organization_id",bookingOrg.data.id)
+          .eq("customer_id",bookingCustomer.data.id).limit(2);
+        if (line.error) return fail(503, "IDENTITY_LOOKUP_FAILED");
+        if (line.data?.length === 1 && line.data[0].verified_at) {
+          const hash=line.data[0].line_subject_hash;
+          const [bookingOwners,financeOwners,legacy,bookingPairs,sourceLinks,challenges] = await Promise.all([
+            booking.from("member_line_customer_links").select("customer_id").eq("organization_id",bookingOrg.data.id).eq("line_subject_hash",hash).limit(2),
+            db.from("member_line_customer_links").select("customer_id,verified_at").eq("organization_id",org.id).eq("line_subject_hash",hash).limit(2),
+            db.from("line_customer_bindings").select("id").eq("organization_id",organizationId).eq("line_user_id_hash",hash).limit(2),
+            db.from("member_booking_finance_identity_links").select("id").eq("organization_id",org.id).eq("booking_customer_id",bookingCustomer.data.id).limit(2),
+            db.from("booking_source_customer_links").select("id").eq("organization_id",org.id).eq("source_customer_key",customerId.trim()).limit(2),
+            db.from("member_finance_binding_challenges").select("id").eq("organization_id",org.id).eq("line_subject_hash",hash).limit(2),
+          ]);
+          if (bookingOwners.error||financeOwners.error||legacy.error||bookingPairs.error||sourceLinks.error||challenges.error)
+            return fail(503, "IDENTITY_LOOKUP_FAILED");
+          if (bookingOwners.data?.length===1 && bookingOwners.data[0].customer_id===bookingCustomer.data.id &&
+              financeOwners.data?.length===1 && financeOwners.data[0].verified_at &&
+              legacy.data?.length===0 && bookingPairs.data?.length===0 &&
+              sourceLinks.data?.length===0 && challenges.data?.length===0) {
+            const financeId=financeOwners.data[0].customer_id;
+            const [financeCustomer,otherPairs,walletIdentity]=await Promise.all([
+              db.from("customers").select("id,status").eq("organization_id",org.id).eq("id",financeId).maybeSingle(),
+              db.from("member_booking_finance_identity_links").select("id").eq("organization_id",org.id).eq("finance_customer_id",financeId).limit(2),
+              db.from("customer_wallet_identities").select("id").eq("organization_id",org.id)
+                .or(`booking_customer_id.eq.${financeId},wallet_customer_id.eq.${financeId}`).limit(2),
+            ]);
+            if (financeCustomer.error||otherPairs.error||walletIdentity.error) return fail(503,"IDENTITY_LOOKUP_FAILED");
+            if (financeCustomer.data?.status==="ACTIVE" && otherPairs.data?.length===0 &&
+                walletIdentity.data?.length===0) resolvedFinanceId=financeId;
+          }
+        }
+      }
+    }
     if (!resolvedFinanceId) return fail(404, "CUSTOMER_NOT_FOUND");
     const { data: linked, error: linkedError } = await db.from("customers")
       .select("id, app_id, status")
