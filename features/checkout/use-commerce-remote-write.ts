@@ -182,3 +182,47 @@ export async function openCommerceRemotePackagePurchaseDraft(input: {
 export async function getCommerceRemotePackagePurchaseDraft(checkoutAppId: string) {
   return runAuthenticatedGetPackagePurchaseDraft(requireClient(), checkoutAppId, commerceWritePilotEnv());
 }
+
+/**
+ * Appointment-free package-sale checkout hydration.
+ * Unlike useCommerceRemoteDraft, this works with a canonical checkout app ID.
+ * Keeps the previous draft out of view when navigating between different IDs.
+ */
+export function useCommerceRemotePackagePurchaseDraft(input: {
+  checkoutAppId: string | null;
+  enabled: boolean;
+}): CommerceRemoteDraftState {
+  const [result, setResult] = useState<{
+    key: string;
+    state: { status: "data"; draft: CheckoutDraft; transaction: Transaction | null }
+      | { status: "error"; message: string };
+  } | null>(null);
+
+  useEffect(() => {
+    if (!input.enabled || !input.checkoutAppId) return;
+    let cancelled = false;
+    const checkoutAppId = input.checkoutAppId;
+    void getCommerceRemotePackagePurchaseDraft(checkoutAppId).then(
+      (bundle) => {
+        if (cancelled) return;
+        setResult({
+          key: checkoutAppId,
+          state: { status: "data", draft: bundle.draft, transaction: bundle.transaction },
+        });
+      },
+      (error: unknown) => {
+        if (cancelled) return;
+        setResult({
+          key: checkoutAppId,
+          state: { status: "error", message: toCommerceUserMessage(error) },
+        });
+      },
+    );
+    return () => { cancelled = true; };
+  }, [input.enabled, input.checkoutAppId]);
+
+  if (!input.enabled) return { status: "off" };
+  if (!input.checkoutAppId) return { status: "idle" };
+  if (!result || result.key !== input.checkoutAppId) return { status: "loading" };
+  return result.state;
+}
