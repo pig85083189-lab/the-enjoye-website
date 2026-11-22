@@ -89,6 +89,159 @@ export class AuthenticatedCommerceStore {
     return commerceBundleFromRemoteJson(await requireRpc(result, "settle checkout"));
   }
 
+  /** Fetch a previously opened canonical package-sale draft by its app ID. */
+  async getPackagePurchaseDraft(checkoutAppId: string) {
+    const result = await this.client.rpc("get_package_purchase_checkout", {
+      p_checkout_app_id: checkoutAppId,
+    });
+    return commerceBundleFromRemoteJson(await requireRpc(result, "load package checkout"));
+  }
+
+  /** Create a canonical package-sale draft, without charging or crediting sessions. */
+  async openPackagePurchaseDraft(input: {
+    checkoutAppId: string;
+    customerAppId: string;
+    locationAppId: string;
+    packageDefinitionAppId: string;
+  }) {
+    const result = await this.client.rpc("open_package_purchase_checkout", {
+      p_checkout_app_id: input.checkoutAppId,
+      p_customer_app_id: input.customerAppId,
+      p_location_app_id: input.locationAppId,
+      p_package_definition_app_id: input.packageDefinitionAppId,
+    });
+    return commerceBundleFromRemoteJson(await requireRpc(result, "open package checkout"));
+  }
+
+  /** Read-only identity catalog; never seed package definitions in production. */
+  async listPackageDefinitionsForCheckout(): Promise<Array<{
+    organizationDbId: string;
+    packageDefinitionDbId: string;
+    packageDefinitionAppId: string | null;
+    name: string;
+    sessionCount: number;
+    priceMinor: number;
+    includedServices: unknown;
+  }>> {
+    const result = await this.client.rpc("commerce_package_catalog");
+    const rows = await requireRpc(result, "load package catalog");
+    if (!Array.isArray(rows)) throw new Error("套票方案資料格式不正確");
+    return rows.map((row: unknown) => {
+      if (!row || typeof row !== "object") throw new Error("套票方案資料格式不正確");
+      const item = row as Record<string, unknown>;
+      if (typeof item.organizationDbId !== "string" ||
+          typeof item.packageDefinitionDbId !== "string" ||
+          typeof item.name !== "string" ||
+          typeof item.sessionCount !== "number" ||
+          typeof item.priceMinor !== "number") {
+        throw new Error("套票方案缺少必要欄位");
+      }
+      return {
+        organizationDbId: item.organizationDbId,
+        packageDefinitionDbId: item.packageDefinitionDbId,
+        packageDefinitionAppId: typeof item.packageDefinitionAppId === "string" ? item.packageDefinitionAppId : null,
+        name: item.name,
+        sessionCount: item.sessionCount,
+        priceMinor: item.priceMinor,
+        includedServices: item.includedServices,
+      };
+    });
+  }
+
+  /** Read-only balances for one verified database customer UUID. */
+  async listCustomerPackagesForCheckout(customerDbId: string): Promise<Array<{
+    customerPackageDbId: string;
+    customerPackageAppId: string | null;
+    customerDbId: string;
+    packageDefinitionDbId: string;
+    name: string;
+    status: string;
+    expiresAt: string | null;
+    remainingSessions: number;
+    includedServiceAppIds: string[];
+  }>> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerDbId)) {
+      throw new Error("顧客資料庫識別碼不正確");
+    }
+    const result = await this.client.rpc("commerce_customer_package_catalog", {
+      p_customer_id: customerDbId,
+    });
+    const rows = await requireRpc(result, "load customer packages");
+    if (!Array.isArray(rows)) throw new Error("顧客套票資料格式不正確");
+    return rows.map((row: unknown) => {
+      if (!row || typeof row !== "object") throw new Error("顧客套票資料格式不正確");
+      const item = row as Record<string, unknown>;
+      if (typeof item.customerPackageDbId !== "string" ||
+          typeof item.customerDbId !== "string" ||
+          typeof item.packageDefinitionDbId !== "string" ||
+          typeof item.name !== "string" ||
+          typeof item.status !== "string" ||
+          typeof item.remainingSessions !== "number" ||
+          !Array.isArray(item.includedServiceAppIds) ||
+          !item.includedServiceAppIds.every((id) => typeof id === "string")) {
+        throw new Error("顧客套票缺少必要欄位");
+      }
+      return {
+        customerPackageDbId: item.customerPackageDbId,
+        customerPackageAppId: typeof item.customerPackageAppId === "string" ? item.customerPackageAppId : null,
+        customerDbId: item.customerDbId,
+        packageDefinitionDbId: item.packageDefinitionDbId,
+        name: item.name,
+        status: item.status,
+        expiresAt: typeof item.expiresAt === "string" ? item.expiresAt : null,
+        remainingSessions: item.remainingSessions,
+        includedServiceAppIds: item.includedServiceAppIds as string[],
+      };
+    });
+  }
+
+  /** Opt-in only. Does not alter the existing settleDraft flow. */
+  async settlePackagePurchase(input: {
+    checkoutAppId: string;
+    expectedUpdatedAt: string;
+    packageDefinitionDbId: string;
+  }) {
+    const result = await this.client.rpc("settle_checkout_with_package_purchase", {
+      p_checkout_app_id: input.checkoutAppId,
+      p_expected_updated_at: input.expectedUpdatedAt,
+      p_package_definition_id: input.packageDefinitionDbId,
+    });
+    const payload = await requireRpc(result, "settle package purchase");
+    const bundle = commerceBundleFromRemoteJson(payload);
+    const packageId = (payload as Record<string, unknown>).customerPackageDbId;
+    if (typeof packageId !== "string") throw new Error("套票入帳結果缺少識別碼");
+    return { ...bundle, customerPackageDbId: packageId };
+  }
+
+  /** Opt-in zero-value service redemption, never used for paid checkouts. */
+  async settlePackageRedemption(input: {
+    checkoutAppId: string;
+    expectedUpdatedAt: string;
+    customerPackageDbId: string;
+    serviceDbId: string;
+  }) {
+    const result = await this.client.rpc("settle_checkout_with_package_redemption", {
+      p_checkout_app_id: input.checkoutAppId,
+      p_expected_updated_at: input.expectedUpdatedAt,
+      p_customer_package_id: input.customerPackageDbId,
+      p_service_id: input.serviceDbId,
+    });
+    const payload = await requireRpc(result, "redeem package session");
+    const bundle = commerceBundleFromRemoteJson(payload);
+    const entryId = (payload as Record<string, unknown>).packageRedemptionLedgerId;
+    if (typeof entryId !== "string") throw new Error("套票扣堂結果缺少識別碼");
+    return { ...bundle, packageRedemptionLedgerId: entryId };
+  }
+
+  /** Only zero-value package redemptions can be voided through this RPC. */
+  async voidPackageRedemption(input: { transactionDbId: string; reason: string }) {
+    const result = await this.client.rpc("void_package_redemption_checkout", {
+      p_transaction_id: input.transactionDbId,
+      p_reason: input.reason,
+    });
+    return requireRpc(result, "void package redemption");
+  }
+
   async listTransactions() {
     const result = await this.client.rpc("commerce_list_transactions");
     const rows = await requireRpc(result, "list transactions");
