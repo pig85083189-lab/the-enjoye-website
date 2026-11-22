@@ -9,6 +9,7 @@ import {
 } from "@/lib/commerce/checkout-store";
 import { TRANSACTION_STATUS_LABEL } from "@/lib/commerce/domain";
 import type { Transaction } from "@/lib/commerce/domain";
+import type { FinanceActivityRow } from "@/features/customers/use-customer-remote-read";
 import { formatTwd } from "@/lib/commerce/money";
 import {
   presentTransactionTender,
@@ -29,6 +30,7 @@ interface TransactionsTabProps {
   customerId: string;
   commerceRemoteRead?: boolean;
   remoteTransactions?: Transaction[] | null;
+  financeActivity?: FinanceActivityRow[];
   packageCatalog?: PackageNameHint[];
 }
 
@@ -36,6 +38,7 @@ export function TransactionsTab({
   customerId,
   commerceRemoteRead = false,
   remoteTransactions = null,
+  financeActivity,
   packageCatalog,
 }: TransactionsTabProps) {
   const { organization } = useOrganization();
@@ -45,6 +48,22 @@ export function TransactionsTab({
     commerceRemoteRead ? (remoteTransactions ?? []) : null,
     listTransactions(organization.id, { customerId }),
   );
+
+  if (financeActivity) {
+    return financeActivity.length ? (
+      <ul className="space-y-2">
+        {financeActivity.map((entry) => (
+          <li key={entry.id} className="rounded-2xl border border-border bg-surface px-4 py-3">
+            <div className="flex justify-between gap-2">
+              <p className="font-medium text-text">{entry.label}</p>
+              <p className="tabular-nums">{entry.amountMinor > 0 ? "+" : ""}{formatTwd(entry.amountMinor)}</p>
+            </div>
+            <p className="mt-1 text-xs text-secondary-text">{formatCompletedAtTaipei(entry.occurredAt)}</p>
+          </li>
+        ))}
+      </ul>
+    ) : <Card padding="lg" className="text-center"><p>尚無交易</p></Card>;
+  }
 
   if (rows.length === 0) {
     return (
