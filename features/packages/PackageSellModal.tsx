@@ -1,15 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { openCommerceRemotePackagePurchaseDraft } from "@/features/checkout/use-commerce-remote-write";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Search, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
-import {
-  addCheckoutItem,
-  createEmptyCheckoutDraft,
-} from "@/lib/commerce/checkout-store";
+
 import { formatTwd } from "@/lib/commerce/money";
 import type { PackageDefinition } from "@/lib/packages/domain";
 import { planValidityLabel } from "@/lib/packages/package-plans-derived";
@@ -50,6 +48,7 @@ export function PackageSellModal({
   const [customerId, setCustomerId] = useState<string | null>(initialCustomerId);
   const [definitionId, setDefinitionId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const selected = customers.find((row) => row.id === customerId) ?? null;
   const definition = definitions.find((row) => row.id === definitionId) ?? null;
@@ -73,7 +72,8 @@ export function PackageSellModal({
     onClose();
   }
 
-  function goToCheckout() {
+  async function goToCheckout() {
+    if (creating) return;
     if (!selected || !definition) {
       setError("請選擇客戶與套票商品");
       return;
@@ -82,21 +82,30 @@ export function PackageSellModal({
       setError("請先選擇可存取的分店");
       return;
     }
+    setCreating(true);
+    setError("");
     try {
-      const draft = createEmptyCheckoutDraft(organizationId, {
-        locationId,
-        customerId: selected.id,
-        createdByStaffId: staffId,
+      // Never create a local-only checkout for a financial package sale.
+      // The RPC revalidates organization ownership, package pricing and staff role.
+      const checkoutAppId = `package-sale-${crypto.randomUUID()}`;
+      const bundle = await openCommerceRemotePackagePurchaseDraft({
+        checkoutAppId,
+        customerAppId: selected.id,
+        locationAppId: locationId,
+        packageDefinitionAppId: definition.id,
       });
-      addCheckoutItem(organizationId, draft.id, {
-        type: "PACKAGE_PURCHASE",
-        referenceId: definition.id,
-        name: definition.name,
-        unitPrice: definition.priceMinor,
-      });
-      router.push(`/staff/checkout?draft=${draft.id}`);
+      if (bundle.draft.id !== checkoutAppId ||
+          bundle.draft.customerId !== selected.id ||
+          bundle.draft.items.length !== 1 ||
+          bundle.draft.items[0]?.type !== "PACKAGE_PURCHASE" ||
+          bundle.draft.items[0]?.referenceId !== definition.id) {
+        throw new Error("正式結帳單資料不一致，請重新整理後再試");
+      }
+      router.push(`/staff/checkout?draft=${encodeURIComponent(bundle.draft.id)}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "無法建立套票結帳");
+      setError(err instanceof Error ? err.message : "無法建立正式套票結帳單");
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -319,7 +328,7 @@ export function PackageSellModal({
           <Button
             data-package-sell-confirm
             className={cn("mt-4 h-[50px] min-h-[50px] w-full rounded-2xl text-[15px]")}
-            disabled={!canGo}
+            disabled={!canGo || creating}
             onClick={goToCheckout}
           >
             前往結帳
