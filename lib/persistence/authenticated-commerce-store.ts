@@ -124,6 +124,53 @@ export class AuthenticatedCommerceStore {
     });
   }
 
+  /** Read-only balances for one verified database customer UUID. */
+  async listCustomerPackagesForCheckout(customerDbId: string): Promise<Array<{
+    customerPackageDbId: string;
+    customerPackageAppId: string | null;
+    customerDbId: string;
+    packageDefinitionDbId: string;
+    name: string;
+    status: string;
+    expiresAt: string | null;
+    remainingSessions: number;
+    includedServiceAppIds: string[];
+  }>> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerDbId)) {
+      throw new Error("顧客資料庫識別碼不正確");
+    }
+    const result = await this.client.rpc("commerce_customer_package_catalog", {
+      p_customer_id: customerDbId,
+    });
+    const rows = await requireRpc(result, "load customer packages");
+    if (!Array.isArray(rows)) throw new Error("顧客套票資料格式不正確");
+    return rows.map((row: unknown) => {
+      if (!row || typeof row !== "object") throw new Error("顧客套票資料格式不正確");
+      const item = row as Record<string, unknown>;
+      if (typeof item.customerPackageDbId !== "string" ||
+          typeof item.customerDbId !== "string" ||
+          typeof item.packageDefinitionDbId !== "string" ||
+          typeof item.name !== "string" ||
+          typeof item.status !== "string" ||
+          typeof item.remainingSessions !== "number" ||
+          !Array.isArray(item.includedServiceAppIds) ||
+          !item.includedServiceAppIds.every((id) => typeof id === "string")) {
+        throw new Error("顧客套票缺少必要欄位");
+      }
+      return {
+        customerPackageDbId: item.customerPackageDbId,
+        customerPackageAppId: typeof item.customerPackageAppId === "string" ? item.customerPackageAppId : null,
+        customerDbId: item.customerDbId,
+        packageDefinitionDbId: item.packageDefinitionDbId,
+        name: item.name,
+        status: item.status,
+        expiresAt: typeof item.expiresAt === "string" ? item.expiresAt : null,
+        remainingSessions: item.remainingSessions,
+        includedServiceAppIds: item.includedServiceAppIds as string[],
+      };
+    });
+  }
+
   /** Opt-in only. Does not alter the existing settleDraft flow. */
   async settlePackagePurchase(input: {
     checkoutAppId: string;
