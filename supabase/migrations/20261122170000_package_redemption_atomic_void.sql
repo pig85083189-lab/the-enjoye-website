@@ -50,7 +50,17 @@ begin
   v_reversal := public.restore_package_redemption_internal(
     v_entry.id,p_reason,'void-package-redemption:'||v_entry.id::text
   );
-  update public.transactions set status='VOIDED' where id=v_tx.id;
+  update public.transactions
+    set status='VOIDED',
+        voided_at=now(),
+        voided_by=public.current_operational_staff_id(v_tx.organization_id),
+        void_reason=trim(p_reason)
+    where id=v_tx.id;
+  -- Keep the checkout status aligned with its voided transaction.
+  update public.checkout_drafts
+    set status='VOIDED', updated_at=now()
+    where id=v_tx.checkout_draft_id and organization_id=v_tx.organization_id
+      and status='COMPLETED';
   return jsonb_build_object('transactionId',v_tx.id::text,'reversalId',v_reversal::text,'alreadyVoided',false);
 end; $$;
 
