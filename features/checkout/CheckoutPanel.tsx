@@ -123,6 +123,9 @@ export function CheckoutPanel({
     remoteDraft ?? (packageCheckout.status === "data" ? packageCheckout.draft : null);
   const canonicalRemoteTransaction =
     remoteTransaction ?? (packageCheckout.status === "data" ? packageCheckout.transaction : null);
+  const packageCheckoutLoading = packageCheckout.status === "loading";
+  const packageCheckoutError =
+    packageCheckout.status === "error" ? packageCheckout.message : "";
   const [editedRemoteDraft, setEditedRemoteDraft] = useState<CheckoutDraft | null>(
     null,
   );
@@ -1165,9 +1168,9 @@ export function CheckoutPanel({
               )
             ) : null}
 
-            {error ? (
+            {error || packageCheckoutError ? (
               <p className="mt-3 text-[12px] text-[#B07A4A]" role="alert">
-                {error}
+                {error || packageCheckoutError}
               </p>
             ) : null}
           </div>
@@ -1189,10 +1192,10 @@ export function CheckoutPanel({
             <button
               type="button"
               data-checkout-confirm
-              disabled={!canConfirm}
+              disabled={!canConfirm || packageCheckoutLoading || Boolean(packageCheckoutError)}
               className="flex h-[50px] w-full items-center justify-center rounded-2xl bg-[#C56B70] text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               onClick={() => {
-                if (!liveDraft || !canConfirm) return;
+                if (!liveDraft || !canConfirm || packageCheckoutLoading || packageCheckoutError) return;
                 if (commerceRemoteWrite) {
                   // Never mark a package sale or redemption paid via the legacy
                   // settlement RPC. That RPC does not post package ledger rows.
