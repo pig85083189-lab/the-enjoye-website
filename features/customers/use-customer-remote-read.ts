@@ -10,10 +10,12 @@ import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import type { Customer } from "@/types";
 import type { Transaction } from "@/lib/commerce/domain";
 
+export interface FinanceActivityRow { id: string; kind: string; label: string; amountMinor: number; occurredAt: string; transactionId?: string | null }
+
 export type CustomerRemoteReadState<T> =
   | { status: "off" }
   | { status: "loading" }
-  | { status: "data"; value: T; storedValueBalanceMinor?: number; financeTransactions?: Transaction[] }
+  | { status: "data"; value: T; storedValueBalanceMinor?: number; financeTransactions?: Transaction[]; financeActivity?: FinanceActivityRow[] }
   | { status: "empty" }
   | { status: "error"; message: string };
 
@@ -92,6 +94,7 @@ export function useCustomerRemoteDetail(
         let row: Customer | undefined;
         let storedValueBalanceMinor: number | undefined;
         let financeTransactions: Transaction[] | undefined;
+        let financeActivity: FinanceActivityRow[] | undefined;
         if (source === "stored-value") {
           const params = new URLSearchParams({ organizationId, customerId });
           const response = await fetch(`/api/staff/stored-value/customer-detail?${params}`, {
@@ -106,6 +109,7 @@ export function useCustomerRemoteDetail(
               customer?: Customer;
               storedValueBalanceMinor?: number;
               financeTransactions?: Transaction[];
+              financeActivity?: FinanceActivityRow[];
             };
             if (!result.customer || result.customer.id !== customerId || result.customer.organizationId !== organizationId) {
               throw new Error("Stored-value customer identity mismatch");
@@ -116,6 +120,7 @@ export function useCustomerRemoteDetail(
             row = result.customer;
             storedValueBalanceMinor = result.storedValueBalanceMinor;
             financeTransactions = Array.isArray(result.financeTransactions) ? result.financeTransactions : [];
+            financeActivity = Array.isArray(result.financeActivity) ? result.financeActivity : [];
           }
         } else {
           const client = createBrowserClientOrNull() as IdentitySupabaseClient | null;
@@ -127,7 +132,7 @@ export function useCustomerRemoteDetail(
         if (cancelled) return;
         setResult({
           key: requestKey,
-          state: row ? { status: "data", value: row, storedValueBalanceMinor, financeTransactions } : { status: "empty" },
+          state: row ? { status: "data", value: row, storedValueBalanceMinor, financeTransactions, financeActivity } : { status: "empty" },
         });
       } catch (error: unknown) {
         if (cancelled) return;
