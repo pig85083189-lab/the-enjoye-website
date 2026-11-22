@@ -592,6 +592,7 @@ function Customer360Workspace({
                 commerceRemoteRead={commerceRemoteReadPilot || financeProfileReadOnly}
                 balanceMinorOverride={financeStoredValueBalanceMinor}
                 remoteTransactions={remoteTransactions}
+                financeActivity={financeActivity}
               />
             ) : null}
             {tab === "transactions" ? (
