@@ -16,9 +16,10 @@ export async function POST(request: Request) {
   const headers = { "Cache-Control": "private, no-store" };
   const fail = (status: number, error: string) => NextResponse.json({ error }, { status, headers });
   const origin = request.headers.get("origin");
-  const url = new URL(request.url);
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  if (!origin || origin !== (host ? `${url.protocol}//${host}` : url.origin)) return fail(403, "無效請求來源");
+  // The request URL is supplied by the hosting runtime. Do not trust a
+  // client-controlled Host / X-Forwarded-Host header as the CSRF authority.
+  const expectedOrigin = new URL(request.url).origin;
+  if (!origin || origin !== expectedOrigin) return fail(403, "無效請求來源");
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return fail(415, "請使用 JSON");
   let body: Record<string, unknown>;
   try {
