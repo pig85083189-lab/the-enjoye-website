@@ -79,4 +79,5 @@ begin
 end;
 $$;
 revoke all on function public.issue_customer_package_v1(uuid,uuid,text) from public,anon,authenticated;
--- Grant only to service_role after schema review and test verification.
+-- Service-role execution is only enabled when this reviewed migration is explicitly applied.
+grant execute on function public.issue_customer_package_v1(uuid,uuid,text) to service_role;
