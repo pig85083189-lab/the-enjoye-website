@@ -22,6 +22,7 @@ import {
 import {
   submitCommerceRemoteSaveDraft,
   submitCommerceRemoteSettle,
+  submitCommerceRemotePackagePurchaseByAppId,
 } from "@/features/checkout/use-commerce-remote-write";
 import { REMOTE_DISABLED_PAYMENT_METHODS } from "@/lib/commerce/commerce-remote-payments";
 import {
@@ -1263,10 +1264,19 @@ export function CheckoutPanel({
                     return;
                   }
                   setSubmitting(true);
-                  void submitCommerceRemoteSettle({
-                    draftId: liveDraft.id,
-                    expectedUpdatedAt: liveDraft.updatedAt,
-                  })
+                  const packagePurchase = liveDraft.items.length === 1 &&
+                    liveDraft.items[0]?.type === "PACKAGE_PURCHASE"
+                    ? liveDraft.items[0] : null;
+                  void (packagePurchase
+                    ? submitCommerceRemotePackagePurchaseByAppId({
+                        draftId: liveDraft.id,
+                        expectedUpdatedAt: liveDraft.updatedAt,
+                        packageDefinitionAppId: packagePurchase.referenceId ?? "",
+                      })
+                    : submitCommerceRemoteSettle({
+                        draftId: liveDraft.id,
+                        expectedUpdatedAt: liveDraft.updatedAt,
+                      }))
                     .then(
                       (bundle) => {
                         setEditedRemoteDraft(bundle.draft);
