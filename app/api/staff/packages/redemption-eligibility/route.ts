@@ -42,6 +42,9 @@ export async function GET(request: Request) {
   const remaining = balance?.ledger_balance ?? 0;
   let reason: string | null = null;
   if (pkg.status === "VOIDED") reason = "套票已作廢";
+  else if (pkg.status === "EXPIRED") reason = "套票已過期";
+  else if (pkg.status === "EXHAUSTED") reason = "套票堂數已用完";
+  else if (pkg.status !== "ACTIVE") reason = "套票目前不可使用";
   else if (pkg.expires_at && Date.parse(pkg.expires_at) <= Date.now()) reason = "套票已過期";
   else if (remaining <= 0) reason = "套票剩餘堂數不足";
   else if (!service?.is_active) reason = "療程不存在或已停用";
