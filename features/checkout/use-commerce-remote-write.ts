@@ -15,6 +15,7 @@ import {
   runAuthenticatedPackagePurchaseByAppId,
   runAuthenticatedPackageRedemptionByAppId,
   runAuthenticatedOpenPackagePurchaseDraft,
+  runAuthenticatedGetPackagePurchaseDraft,
   type CommerceWriteClient,
 } from "@/lib/commerce/commerce-remote-write-pilot";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
@@ -175,4 +176,9 @@ export async function openCommerceRemotePackagePurchaseDraft(input: {
   packageDefinitionAppId: string;
 }) {
   return runAuthenticatedOpenPackagePurchaseDraft(requireClient(), input, commerceWritePilotEnv());
+}
+
+/** Read the canonical checkout draft after navigating from package sale. */
+export async function getCommerceRemotePackagePurchaseDraft(checkoutAppId: string) {
+  return runAuthenticatedGetPackagePurchaseDraft(requireClient(), checkoutAppId, commerceWritePilotEnv());
 }
