@@ -47,12 +47,41 @@ begin
   if not found then raise exception 'PACKAGE_DEFINITION_NOT_FOUND'; end if;
   if v_item.session_count_snapshot <> v_definition.session_count
      or v_item.unit_price_minor <> v_definition.price_minor
-     or v_item.line_total_minor < 0 then
+     or v_item.line_total_minor <> v_definition.price_minor\n     or v_tx.total_minor < v_item.line_total_minor then
     raise exception 'PACKAGE_PRICE_OR_SESSIONS_MISMATCH';
   end if;
   select array_agg(x->>'serviceId' order by ordinality) into v_service_ids
   from jsonb_array_elements(v_definition.included_services) with ordinality as j(x,ordinality);
-  if coalesce(array_length(v_service_ids,1),0)=0 or exists (
+  if coalesce(array_length(v_service_ids,1),0)=0\n     or exists (select 1 from unnest(v_service_ids) s where s is null or s !~* '^[0-9a-f-]{36}
+    select 1 from unnest(v_service_ids) s
+    where not exists (select 1 from public.services
+      where id::text=s and organization_id=p_organization_id and is_active)
+  ) then raise exception 'PACKAGE_ENTITLEMENTS_INVALID'; end if;
+  insert into public.customer_packages (
+    organization_id,customer_id,package_definition_id,purchase_transaction_id,
+    name_snapshot,session_count_snapshot,price_snapshot_minor,
+    included_service_ids_snapshot,purchased_at,activated_at,expires_at,status
+  ) values (
+    p_organization_id,v_tx.customer_id,v_definition.id,v_tx.id,
+    v_definition.name,v_definition.session_count,v_item.line_total_minor,
+    v_service_ids,v_now,v_now,
+    case when v_definition.validity_days is null then null
+         else v_now + make_interval(days => v_definition.validity_days) end,'ACTIVE'
+  ) returning id into v_package_id;
+  insert into public.package_ledger_entries (
+    organization_id,customer_package_id,customer_id,type,session_delta,
+    transaction_id,effect_key,created_by_staff_id
+  ) values (
+    p_organization_id,v_package_id,v_tx.customer_id,'PURCHASE',
+    v_definition.session_count,v_tx.id,v_key,p_staff_id
+  );
+  return v_package_id;
+end;
+$$;
+revoke all on function public.issue_customer_package_v1(uuid,uuid,text) from public,anon,authenticated;
+-- Service-role execution is only enabled when this reviewed migration is explicitly applied.
+grant execute on function public.issue_customer_package_v1(uuid,uuid,text) to service_role;
+)\n     or exists (
     select 1 from unnest(v_service_ids) s
     where not exists (select 1 from public.services
       where id::text=s and organization_id=p_organization_id and is_active)
