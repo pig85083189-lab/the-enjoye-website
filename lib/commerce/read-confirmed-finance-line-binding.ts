@@ -7,7 +7,7 @@ export async function readConfirmedFinanceLineBinding(customerKey:string,organiz
  if(organizationId!==APP_ORG||typeof customerKey!=="string"||customerKey.length>100)return "unavailable";
  const member=await getAuthenticatedStaffMembership({organizationId:APP_ORG});
  const actor=await getServerStaffAuthUser();
- if(member.status!=="ok"||!member.membership.isActive||!["OWNER","MANAGER"].includes(member.membership.role)||!actor||actor.id!==member.membership.authUserId)return "unavailable";
+ if(member.status!=="ok"||!member.membership.isActive||!actor||actor.id!==member.membership.authUserId)return "unavailable";
  const db=createBeautyOsFinanceClient();if(!db)return "unavailable";
  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerKey);
  const customerQuery=db.from("customers").select("id,status").eq("organization_id",FINANCE_ORG);
