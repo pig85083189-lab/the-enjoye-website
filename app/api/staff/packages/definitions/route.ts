@@ -11,7 +11,13 @@ export async function POST(request: Request) {
   const origin = request.headers.get("origin");
   const requestUrl = new URL(request.url);
   const forwardedHost = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  const expectedOrigin = forwardedHost ? `${requestUrl.protocol}//${forwardedHost}` : requestUrl.origin;
+  // Vercel's internal request URL may be HTTP even when the browser uses HTTPS.
+  // Validate against the public forwarded protocol and host, never a client-supplied body URL.
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const publicProtocol = forwardedProto === "https" || forwardedProto === "http"
+    ? `${forwardedProto}:`
+    : requestUrl.protocol;
+  const expectedOrigin = forwardedHost ? `${publicProtocol}//${forwardedHost.split(",")[0]!.trim()}` : requestUrl.origin;
   if (!origin || origin !== expectedOrigin) return fail(403, "無效請求來源");
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return fail(415, "請使用 JSON");
   let body: Record<string, unknown>;
