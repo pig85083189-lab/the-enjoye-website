@@ -33,17 +33,25 @@ begin
      or jsonb_array_length(v_def.included_services)=0
   then raise exception '套票方案尚未同步或無效'; end if;
 
+  -- Serialize concurrent requests for the same app-level checkout ID.
+  perform pg_advisory_xact_lock(hashtextextended(v_org::text||':'||p_checkout_app_id,0));
   select * into v_draft from public.checkout_drafts
     where organization_id=v_org and app_id=p_checkout_app_id for update;
   if v_draft.id is not null then
     if v_draft.customer_id is distinct from v_customer.id
        or v_draft.location_id is distinct from v_location.id
        or v_draft.status not in ('OPEN','READY')
+       or v_draft.subtotal_minor is distinct from v_def.price_minor
+       or v_draft.discount_total_minor is distinct from 0
+       or v_draft.total_minor is distinct from v_def.price_minor
        or (select count(*) from public.checkout_items where checkout_draft_id=v_draft.id)<>1
        or not exists (select 1 from public.checkout_items
            where checkout_draft_id=v_draft.id and type='PACKAGE_PURCHASE'
              and reference_id=v_def.app_id and quantity=1
              and unit_price_minor=v_def.price_minor
+             and line_subtotal_minor=v_def.price_minor
+             and discount_amount_minor=0
+             and line_total_minor=v_def.price_minor
              and session_count_snapshot=v_def.session_count)
        or exists (select 1 from public.checkout_payments where checkout_draft_id=v_draft.id)
        or exists (select 1 from public.checkout_discounts where checkout_draft_id=v_draft.id)
