@@ -15,6 +15,22 @@ export async function readConfirmedFinanceLineBinding(customerKey:string,organiz
  if(customer.error)return "unavailable";
  let financeCustomer=customer.data;
  if(!financeCustomer && uuid){
+  // First-party verified LINE booking links do not require manager approval.
+  // Fail closed for ambiguous, revoked or non-LINE source links.
+  const sources=await db.from("booking_source_customer_links")
+   .select("finance_booking_customer_id,evidence_kind,status,revoked_at")
+   .eq("organization_id",FINANCE_ORG).eq("source_customer_key",customerKey).limit(3);
+  if(sources.error)return "unavailable";
+  if(sources.data?.length===1 && sources.data[0].status==="ACTIVE"
+    && !sources.data[0].revoked_at && sources.data[0].evidence_kind==="LINE_VERIFIED_SESSION"){
+   const financeRow=await db.from("customers").select("id,status")
+    .eq("organization_id",FINANCE_ORG)
+    .eq("id",sources.data[0].finance_booking_customer_id).maybeSingle();
+   if(financeRow.error)return "unavailable";
+   financeCustomer=financeRow.data;
+  }
+ }
+ if(!financeCustomer && uuid){
   // A booking customer has a different UUID from its finance customer.
   // Only the server-approved, non-revoked identity pair may bridge them.
   const pairs=await db.from("member_booking_finance_identity_links")
@@ -44,7 +60,27 @@ export async function readConfirmedFinanceLineBinding(customerKey:string,organiz
  const legacy=await db.from("line_customer_bindings").select("status,verified,bound_at,unbound_at,blocked_at").eq("line_user_id_hash",hash).limit(20);
  if(confirmations.error||legacy.error)return "unavailable";
  const proof=confirmations.data?.[0]?.confirmed_at;
- if(!proof)return "not_verified";
+ if(!proof){
+  // Auto-verified LINE login + unique booking source link is sufficient.
+  // Manual challenges remain a fallback for older customer identities.
+  if(!uuid)return "not_verified";
+  const sources=await db.from("booking_source_customer_links")
+   .select("finance_booking_customer_id,evidence_kind,status,revoked_at")
+   .eq("organization_id",FINANCE_ORG).eq("source_customer_key",customerKey).limit(3);
+  if(sources.error)return "unavailable";
+  if(sources.data?.length!==1 || sources.data[0].status!=="ACTIVE"
+     || sources.data[0].revoked_at || sources.data[0].evidence_kind!=="LINE_VERIFIED_SESSION"
+     || sources.data[0].finance_booking_customer_id!==financeCustomer.id)return "not_verified";
+  const [current,owners]=await Promise.all([
+   db.rpc("customer_line_membership_is_current",{p_organization_id:FINANCE_ORG,p_customer_id:financeCustomer.id}),
+   db.rpc("current_line_subject_customers",{p_organization_id:FINANCE_ORG,p_organization_app_id:APP_ORG,p_line_subject_hash:hash})
+  ]);
+  if(current.error||owners.error)return "unavailable";
+  if(current.data!==true || !Array.isArray(owners.data) || owners.data.length!==1
+     || owners.data[0]?.customer_id!==financeCustomer.id)return "not_verified";
+  if(legacy.data?.some(row=>row.blocked_at || (row.unbound_at && (!row.bound_at || Date.parse(row.unbound_at)>=Date.parse(row.bound_at)))))return "not_verified";
+  return "verified";
+ }
  const proofTime=Date.parse(proof);
  if(!Number.isFinite(proofTime))return "not_verified";
  if(legacy.data?.some(row=>{
