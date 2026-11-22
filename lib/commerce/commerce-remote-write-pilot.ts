@@ -217,3 +217,25 @@ export async function runAuthenticatedPackageRedemptionVoid(
   catch (error) { mapWriteError(error); }
 }
 
+
+/** Read-only package catalogs, with the same checkout role gate. */
+export async function runAuthenticatedPackageDefinitionCatalog(
+  client: CommerceWriteClient,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  return persistence.commerce.listPackageDefinitionsForCheckout();
+}
+
+export async function runAuthenticatedCustomerPackageCatalog(
+  client: CommerceWriteClient,
+  customerDbId: string,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  return persistence.commerce.listCustomerPackagesForCheckout(customerDbId);
+}
