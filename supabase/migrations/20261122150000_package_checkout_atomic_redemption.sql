@@ -24,9 +24,12 @@ begin
   if v_draft.id is null then raise exception '找不到結帳資料'; end if;
   perform public.assert_commerce_checkout_actor(v_draft.organization_id,v_draft.location_id);
 
+  -- Keep lock order aligned with atomic_redeem_customer_package:
+  -- transaction first, package second. Prevents cross-checkout deadlocks.
+  -- No transaction exists yet for a new draft, so avoid pre-locking the
+  -- package here; the atomic ledger helper will lock it after settlement.
   select * into v_package from public.customer_packages
-    where id=p_customer_package_id and organization_id=v_draft.organization_id
-    for update;
+    where id=p_customer_package_id and organization_id=v_draft.organization_id;
   if v_package.id is null or v_package.customer_id is distinct from v_draft.customer_id
   then raise exception '套票與結帳顧客不符'; end if;
   select * into v_service from public.services
