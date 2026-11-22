@@ -51,6 +51,51 @@ export function PackageSellModal({
   const [opening, setOpening] = useState(false);
   const [purchaseCheckout, setPurchaseCheckout] = useState<{ draft: CheckoutDraft; transaction: Transaction | null } | null>(null);
 
+  const [remoteDefinitions, setRemoteDefinitions] = useState<PackageDefinition[]>([]);
+  const [catalogError, setCatalogError] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setRemoteDefinitions([]);
+    setCatalogError(false);
+    void (async () => {
+      try {
+        const response = await fetch("/api/staff/packages/overview?" + new URLSearchParams({ organizationId }), {
+          credentials: "same-origin", cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("Package catalog unavailable");
+        const data: unknown = await response.json();
+        if (!data || typeof data !== "object" || !("definitions" in data) || !Array.isArray(data.definitions)) {
+          throw new Error("Invalid package catalog");
+        }
+        const rows = data.definitions as Array<Record<string, unknown>>;
+        const mapped: PackageDefinition[] = rows.filter(row =>
+          typeof row.app_id === "string" && row.app_id.length > 0 &&
+          typeof row.name === "string" && row.is_active === true &&
+          typeof row.session_count === "number" && typeof row.price_minor === "number" &&
+          Array.isArray(row.included_services)
+        ).map(row => ({
+          id: row.app_id as string,
+          organizationId,
+          name: row.name as string,
+          includedServices: (row.included_services as Array<{serviceId:string; sessionsPerRedemption?:number}>)
+            .filter(item => typeof item.serviceId === "string")
+            .map(item => ({ serviceId: item.serviceId, sessionsPerRedemption: 1 as const })),
+          sessionCount: row.session_count as number,
+          priceMinor: row.price_minor as number,
+          currency: typeof row.currency === "string" ? row.currency : "TWD",
+          validityDays: typeof row.validity_days === "number" ? row.validity_days : undefined,
+          isActive: true,
+          createdAt: "",
+          updatedAt: "",
+        })).filter(row => row.includedServices.length > 0);
+        if (!controller.signal.aborted) setRemoteDefinitions(mapped);
+      } catch {
+        if (!controller.signal.aborted) setCatalogError(true);
+      }
+    })();
+    return () => controller.abort();
+  }, [open, organizationId]);
   const [eligibleIds, setEligibleIds] = useState<Set<string> | null>(null);
   const [verifiedCustomers, setVerifiedCustomers] = useState<Array<{ id: string; name: string; phone: string }>>([]);
   const [eligibilityError, setEligibilityError] = useState(false);
@@ -88,15 +133,15 @@ export function PackageSellModal({
   }, [open, organizationId]);
   const eligibleCustomers = verifiedCustomers.filter(row => eligibleIds?.has(row.id));
   const selected = eligibleCustomers.find(row => row.id === customerId) ?? null;
-  const definition = definitions.find((row) => row.id === definitionId) ?? null;
+  const definition = remoteDefinitions.find((row) => row.id === definitionId) ?? null;
   const canGo = Boolean(selected && eligibleIds?.has(selected.id)) && canStartPackageSale({ customerId, definitionId });
   const hits = useMemo(
     () => eligibleCustomers.filter(row => (row.name + " " + row.phone).toLowerCase().includes(query.trim().toLowerCase())).slice(0, 8),
     [eligibleCustomers, query],
   );
   const defHits = useMemo(
-    () => filterDefinitionsForPackagePicker(definitions, defQuery).slice(0, 8),
-    [definitions, defQuery],
+    () => filterDefinitionsForPackagePicker(remoteDefinitions, defQuery).slice(0, 8),
+    [remoteDefinitions, defQuery],
   );
 
   if (!open) return null;
@@ -278,6 +323,7 @@ export function PackageSellModal({
           <p className="mt-3 text-[12px] leading-relaxed text-[#986B58]">僅限已透過 LINE 登入會員中心、完成顧客綁定且驗證成功的會員購買套票。</p>
           <section className="mt-4">
             <p className="text-[13px] font-semibold text-text">選擇套票商品</p>
+            {catalogError ? <p role="alert" className="mt-2 text-sm text-[#986B58]">無法讀取正式套票商品，請重新開啟販售視窗。</p> : null}
             {definition ? (
               <div className="mt-2 rounded-2xl border border-border bg-[#FAF7F5] px-3 py-2.5">
                 <p className="text-[14px] font-semibold text-text">{definition.name}</p>
