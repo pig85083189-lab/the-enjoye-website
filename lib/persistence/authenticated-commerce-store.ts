@@ -89,6 +89,14 @@ export class AuthenticatedCommerceStore {
     return commerceBundleFromRemoteJson(await requireRpc(result, "settle checkout"));
   }
 
+  /** Fetch a previously opened canonical package-sale draft by its app ID. */
+  async getPackagePurchaseDraft(checkoutAppId: string) {
+    const result = await this.client.rpc("get_package_purchase_checkout", {
+      p_checkout_app_id: checkoutAppId,
+    });
+    return commerceBundleFromRemoteJson(await requireRpc(result, "load package checkout"));
+  }
+
   /** Create a canonical package-sale draft, without charging or crediting sessions. */
   async openPackagePurchaseDraft(input: {
     checkoutAppId: string;
