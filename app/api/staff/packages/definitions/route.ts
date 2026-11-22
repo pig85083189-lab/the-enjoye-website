@@ -9,7 +9,10 @@ const fail = (status: number, error: string) =>
 /** Only owner/manager may create package products. Selling is a separate staff checkout permission. */
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
-  if (!origin || origin !== new URL(request.url).origin) return fail(403, "無效請求來源");
+  const requestUrl = new URL(request.url);
+  const forwardedHost = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const expectedOrigin = forwardedHost ? `${requestUrl.protocol}//${forwardedHost}` : requestUrl.origin;
+  if (!origin || origin !== expectedOrigin) return fail(403, "無效請求來源");
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return fail(415, "請使用 JSON");
   let body: Record<string, unknown>;
   try {
