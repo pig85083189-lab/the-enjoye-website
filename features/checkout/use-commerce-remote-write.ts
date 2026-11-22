@@ -7,6 +7,9 @@ import {
   runAuthenticatedCommerceHydrate,
   runAuthenticatedCommerceSaveDraft,
   runAuthenticatedCommerceSettle,
+  runAuthenticatedPackagePurchaseSettle,
+  runAuthenticatedPackageRedemptionSettle,
+  runAuthenticatedPackageRedemptionVoid,
   type CommerceWriteClient,
 } from "@/lib/commerce/commerce-remote-write-pilot";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
@@ -102,4 +105,29 @@ export async function submitCommerceRemoteSettle(input: {
   expectedUpdatedAt: string;
 }) {
   return runAuthenticatedCommerceSettle(requireClient(), input, commerceWritePilotEnv());
+}
+
+/** Dedicated opt-in package checkout actions. Legacy settle is unchanged. */
+export async function submitCommerceRemotePackagePurchase(input: {
+  draftId: string;
+  expectedUpdatedAt: string;
+  packageDefinitionDbId: string;
+}) {
+  return runAuthenticatedPackagePurchaseSettle(requireClient(), input, commerceWritePilotEnv());
+}
+
+export async function submitCommerceRemotePackageRedemption(input: {
+  draftId: string;
+  expectedUpdatedAt: string;
+  customerPackageDbId: string;
+  serviceDbId: string;
+}) {
+  return runAuthenticatedPackageRedemptionSettle(requireClient(), input, commerceWritePilotEnv());
+}
+
+export async function submitCommerceRemotePackageVoid(input: {
+  transactionDbId: string;
+  reason: string;
+}) {
+  return runAuthenticatedPackageRedemptionVoid(requireClient(), input, commerceWritePilotEnv());
 }
