@@ -102,6 +102,14 @@ export function CustomerProfilePage({
     useRemoteCustomer,
     fromStoredValue ? "stored-value" : "authenticated",
   );
+  // Finance history must also load when entering from the normal customer list.
+  // This read-only endpoint checks the staff membership and exact finance customer identity.
+  const financeHistory = useCustomerRemoteDetail(
+    organization.id,
+    customerId,
+    isClient && !fromStoredValue,
+    "stored-value",
+  );
   const customer = useRemoteCustomer
     ? remote.status === "data"
       ? remote.value
@@ -201,7 +209,9 @@ export function CustomerProfilePage({
       remoteReadPilot={remoteReadPilot || fromStoredValue}
       financeProfileReadOnly={fromStoredValue}
       financeStoredValueBalanceMinor={financeStoredValueBalanceMinor}
-      financeTransactions={fromStoredValue && remote.status === "data" ? remote.financeTransactions : undefined}
+      financeTransactions={fromStoredValue
+        ? (remote.status === "data" ? remote.financeTransactions : undefined)
+        : (financeHistory.status === "data" ? financeHistory.financeTransactions : undefined)}
       appointmentRemoteReadPilot={appointmentRemoteReadPilot}
       appointmentRemoteWritePilot={appointmentRemoteWritePilot}
       treatmentRemoteReadPilot={treatmentRemoteReadPilot}
