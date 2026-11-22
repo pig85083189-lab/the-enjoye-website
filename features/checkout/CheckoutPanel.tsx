@@ -1178,6 +1178,17 @@ export function CheckoutPanel({
               onClick={() => {
                 if (!liveDraft || !canConfirm) return;
                 if (commerceRemoteWrite) {
+                  // Never mark a package sale or redemption paid via the legacy
+                  // settlement RPC. That RPC does not post package ledger rows.
+                  // The dedicated atomic RPCs require verified DB UUID mapping
+                  // before this screen can safely invoke them.
+                  if (
+                    liveDraft.items.some((line) => line.type === "PACKAGE_PURCHASE") ||
+                    liveDraft.packageRedemption
+                  ) {
+                    setError("套票交易尚未完成正式資料庫串接，為避免付款後漏入帳或漏扣堂，已暫停此筆結帳。");
+                    return;
+                  }
                   void submitCommerceRemoteSettle({
                     draftId: liveDraft.id,
                     expectedUpdatedAt: liveDraft.updatedAt,
