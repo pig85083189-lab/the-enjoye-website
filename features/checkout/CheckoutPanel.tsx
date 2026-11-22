@@ -24,6 +24,7 @@ import {
   submitCommerceRemoteSettle,
   submitCommerceRemotePackagePurchaseByAppId,
   submitCommerceRemotePackageRedemptionByAppId,
+  useCommerceRemotePackagePurchaseDraft,
 } from "@/features/checkout/use-commerce-remote-write";
 import { REMOTE_DISABLED_PAYMENT_METHODS } from "@/lib/commerce/commerce-remote-payments";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
@@ -111,18 +112,29 @@ export function CheckoutPanel({
       ? getOpenDraftForAppointment(organizationId, item.appointmentId)
       : undefined) ??
     item.draft;
+  const packageCheckout = useCommerceRemotePackagePurchaseDraft({
+    checkoutAppId:
+      commerceRemoteWrite && item.kind !== "appointment" && !item.appointmentId
+        ? item.draftId ?? null
+        : null,
+    enabled: commerceRemoteWrite && item.kind !== "appointment" && !item.appointmentId && !remoteDraft,
+  });
+  const canonicalRemoteDraft =
+    remoteDraft ?? (packageCheckout.status === "data" ? packageCheckout.draft : null);
+  const canonicalRemoteTransaction =
+    remoteTransaction ?? (packageCheckout.status === "data" ? packageCheckout.transaction : null);
   const [editedRemoteDraft, setEditedRemoteDraft] = useState<CheckoutDraft | null>(
     null,
   );
   const liveDraft = commerceRemoteWrite
     ? editedRemoteDraft &&
-      editedRemoteDraft.id === remoteDraft?.id &&
-      editedRemoteDraft.updatedAt >= (remoteDraft?.updatedAt ?? "")
+      editedRemoteDraft.id === canonicalRemoteDraft?.id &&
+      editedRemoteDraft.updatedAt >= (canonicalRemoteDraft?.updatedAt ?? "")
       ? editedRemoteDraft
-      : remoteDraft
+      : canonicalRemoteDraft
     : localDraft;
   const transaction = commerceRemoteWrite
-    ? remoteTransaction ?? item.transaction
+    ? canonicalRemoteTransaction ?? item.transaction
     : item.transaction;
   const readOnly =
     item.paid ||
