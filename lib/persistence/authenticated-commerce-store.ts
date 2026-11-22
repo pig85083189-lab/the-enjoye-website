@@ -89,6 +89,41 @@ export class AuthenticatedCommerceStore {
     return commerceBundleFromRemoteJson(await requireRpc(result, "settle checkout"));
   }
 
+  /** Read-only identity catalog; never seed package definitions in production. */
+  async listPackageDefinitionsForCheckout(): Promise<Array<{
+    organizationDbId: string;
+    packageDefinitionDbId: string;
+    packageDefinitionAppId: string | null;
+    name: string;
+    sessionCount: number;
+    priceMinor: number;
+    includedServices: unknown;
+  }>> {
+    const result = await this.client.rpc("commerce_package_catalog");
+    const rows = await requireRpc(result, "load package catalog");
+    if (!Array.isArray(rows)) throw new Error("套票方案資料格式不正確");
+    return rows.map((row: unknown) => {
+      if (!row || typeof row !== "object") throw new Error("套票方案資料格式不正確");
+      const item = row as Record<string, unknown>;
+      if (typeof item.organizationDbId !== "string" ||
+          typeof item.packageDefinitionDbId !== "string" ||
+          typeof item.name !== "string" ||
+          typeof item.sessionCount !== "number" ||
+          typeof item.priceMinor !== "number") {
+        throw new Error("套票方案缺少必要欄位");
+      }
+      return {
+        organizationDbId: item.organizationDbId,
+        packageDefinitionDbId: item.packageDefinitionDbId,
+        packageDefinitionAppId: typeof item.packageDefinitionAppId === "string" ? item.packageDefinitionAppId : null,
+        name: item.name,
+        sessionCount: item.sessionCount,
+        priceMinor: item.priceMinor,
+        includedServices: item.includedServices,
+      };
+    });
+  }
+
   /** Opt-in only. Does not alter the existing settleDraft flow. */
   async settlePackagePurchase(input: {
     checkoutAppId: string;
