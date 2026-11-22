@@ -38,7 +38,6 @@ export function PackageSellModal({
   locationId,
   staffId,
   customers,
-  definitions,
   serviceNames = {},
   initialCustomerId = null,
   onClose,
