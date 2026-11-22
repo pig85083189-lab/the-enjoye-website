@@ -1,4 +1,4 @@
--- REVIEW ONLY: not applied to any database.
+-- REVIEW ONLY. Not applied to any database. Requires isolated tests.
 CREATE OR REPLACE FUNCTION public.settle_booking_source_checkout(p_organization_app_id text, p_source_customer_key text, p_checkout_app_id text, p_location_app_id text, p_amount bigint, p_staff_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -37,10 +37,9 @@ begin
     and identity_row.booking_customer_id = v_booking
     and identity_row.status = 'ACTIVE'
   for update;
-  -- Preserve legacy two-customer wallet mappings. A first-time verified
-  -- LINE member can use their own wallet only with unambiguous current proof.
+  -- Existing wallet mappings remain authoritative. No synthetic identity rows.
   if v_wallet is null then
-    select lower(btrim(ml.line_subject_hash)) into v_line_hash
+    select min(lower(btrim(ml.line_subject_hash))) into v_line_hash
     from public.member_line_customer_links ml
     where ml.organization_id = v_org and ml.customer_id = v_booking
       and ml.verified_at is not null
@@ -134,25 +133,24 @@ $function$
 ;
     if v_line_hash is not null
       and (select count(*) from public.member_line_customer_links ml
-           where ml.organization_id = v_org and ml.customer_id = v_booking
-             and ml.verified_at is not null) = 1
+           where ml.organization_id = v_org and ml.customer_id = v_booking) = 1
       and (select count(*) from public.member_line_customer_links ml
            where ml.organization_id = v_org and lower(btrim(ml.line_subject_hash)) = v_line_hash) = 1
       and exists (
         select 1 from public.booking_source_customer_links l
         where l.organization_id = v_org and l.source_customer_key = btrim(p_source_customer_key)
-          and l.finance_booking_customer_id = v_booking and l.status = 'ACTIVE'
-          and l.revoked_at is null and l.evidence_kind = 'LINE_VERIFIED_SESSION'
+          and l.finance_booking_customer_id = v_booking
+          and l.status = 'ACTIVE' and l.revoked_at is null
+          and l.evidence_kind = 'LINE_VERIFIED_SESSION'
       )
       and not exists (
         select 1 from public.customer_wallet_identities i
-        where i.organization_id = v_org and i.status = 'ACTIVE'
+        where i.organization_id = v_org
           and (i.booking_customer_id = v_booking or i.wallet_customer_id = v_booking)
       )
       and not exists (
         select 1 from public.booking_source_customer_links l
         where l.organization_id = v_org and l.finance_booking_customer_id = v_booking
-          and l.status = 'ACTIVE' and l.revoked_at is null
           and l.source_customer_key <> btrim(p_source_customer_key)
       )
       and public.customer_line_membership_is_current(v_org, v_booking)
