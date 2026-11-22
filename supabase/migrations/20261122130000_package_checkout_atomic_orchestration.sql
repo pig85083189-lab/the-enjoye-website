@@ -48,6 +48,9 @@ begin
     or exists (select 1 from public.checkout_discounts where checkout_draft_id=v_draft.id)
   then raise exception '結帳套票項目不符'; end if;
 
+  -- Trigger rejects generic PACKAGE_PURCHASE checkout without this context.
+  perform set_config('beauty_os.atomic_package_purchase',v_draft.id::text,true);
+  perform set_config('beauty_os.atomic_package_definition',v_def.id::text,true);
   v_bundle := public.settle_checkout_draft(p_checkout_app_id,p_expected_updated_at);
   select * into v_tx from public.transactions
     where checkout_draft_id=v_draft.id and organization_id=v_draft.organization_id
