@@ -8,11 +8,12 @@ import {
 import type { IdentitySupabaseClient } from "@/lib/persistence/authenticated-identity-catalog";
 import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import type { Customer } from "@/types";
+import type { Transaction } from "@/lib/commerce/domain";
 
 export type CustomerRemoteReadState<T> =
   | { status: "off" }
   | { status: "loading" }
-  | { status: "data"; value: T; storedValueBalanceMinor?: number }
+  | { status: "data"; value: T; storedValueBalanceMinor?: number; financeTransactions?: Transaction[] }
   | { status: "empty" }
   | { status: "error"; message: string };
 
@@ -90,6 +91,7 @@ export function useCustomerRemoteDetail(
       try {
         let row: Customer | undefined;
         let storedValueBalanceMinor: number | undefined;
+        let financeTransactions: Transaction[] | undefined;
         if (source === "stored-value") {
           const params = new URLSearchParams({ organizationId, customerId });
           const response = await fetch(`/api/staff/stored-value/customer-detail?${params}`, {
@@ -103,6 +105,7 @@ export function useCustomerRemoteDetail(
             const result = (await response.json()) as {
               customer?: Customer;
               storedValueBalanceMinor?: number;
+              financeTransactions?: Transaction[];
             };
             if (!result.customer || result.customer.id !== customerId || result.customer.organizationId !== organizationId) {
               throw new Error("Stored-value customer identity mismatch");
@@ -112,6 +115,7 @@ export function useCustomerRemoteDetail(
             }
             row = result.customer;
             storedValueBalanceMinor = result.storedValueBalanceMinor;
+            financeTransactions = Array.isArray(result.financeTransactions) ? result.financeTransactions : [];
           }
         } else {
           const client = createBrowserClientOrNull() as IdentitySupabaseClient | null;
@@ -123,7 +127,7 @@ export function useCustomerRemoteDetail(
         if (cancelled) return;
         setResult({
           key: requestKey,
-          state: row ? { status: "data", value: row, storedValueBalanceMinor } : { status: "empty" },
+          state: row ? { status: "data", value: row, storedValueBalanceMinor, financeTransactions } : { status: "empty" },
         });
       } catch (error: unknown) {
         if (cancelled) return;
