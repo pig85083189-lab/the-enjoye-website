@@ -80,7 +80,11 @@ export function PackageSellModal({
           typeof row.app_id === "string" && row.app_id.length > 0 &&
           typeof row.name === "string" && row.is_active === true &&
           typeof row.session_count === "number" && typeof row.price_minor === "number" &&
-          Array.isArray(row.included_services)
+          Array.isArray(row.included_services) && row.included_services.length > 0 &&
+          row.included_services.every((item: unknown) => item !== null &&
+            typeof item === "object" && "serviceId" in item &&
+            typeof item.serviceId === "string" && item.serviceId.length > 0 &&
+            "sessionsPerRedemption" in item && item.sessionsPerRedemption === 1)
         ).map(row => ({
           id: row.app_id as string,
           organizationId,
@@ -96,13 +100,7 @@ export function PackageSellModal({
           isActive: true,
           createdAt: "",
           updatedAt: "",
-        })).filter((row, index) => row.includedServices.length > 0 &&
-          row.includedServices.length === (rows.filter(candidate =>
-            typeof candidate.app_id === "string" && candidate.app_id.length > 0 &&
-            typeof candidate.name === "string" && candidate.is_active === true &&
-            typeof candidate.session_count === "number" && typeof candidate.price_minor === "number" &&
-            Array.isArray(candidate.included_services)
-          )[index]?.included_services as unknown[])?.length);
+        }));
         if (!controller.signal.aborted) {
           setRemoteDefinitions(mapped);
           setRemoteServiceNames(names);
