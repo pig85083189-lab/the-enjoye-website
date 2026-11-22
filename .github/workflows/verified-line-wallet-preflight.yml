@@ -1,0 +1,24 @@
+name: Verified LINE wallet preflight
+on:
+  push:
+    branches:
+      - chatgpt/verified-line-own-wallet-settlement-20261122
+  workflow_dispatch:
+jobs:
+  build-and-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: TypeScript check
+        run: npx tsc --noEmit
+      - name: Customer identity isolation tests
+        run: npx vitest run lib/customers/customer-360-remote-identity.isolation.test.ts lib/customers/customer-profile-runtime.isolation.test.ts app/api/staff/stored-value/customer-detail/route.isolation.test.ts
+      - name: Production build
+        run: npm run build
