@@ -53,7 +53,7 @@ export async function GET(request: Request) {
     if (!financeCustomerId) return fail(404, "找不到已驗證顧客");
   }
   const [{ data: definitions, error: definitionError }, { data: purchases, error: purchaseError }] = await Promise.all([
-    db.from("package_definitions").select("id,name,description,included_services,session_count,price_minor,currency,validity_days,is_active").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(500),
+    db.from("package_definitions").select("id,app_id,name,description,included_services,session_count,price_minor,currency,validity_days,is_active").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(500),
     db.from("customer_packages").select("id,customer_id,package_definition_id,name_snapshot,session_count_snapshot,price_snapshot_minor,included_service_ids_snapshot,purchased_at,expires_at,status").eq("organization_id", orgId).match(financeCustomerId ? { customer_id: financeCustomerId } : {}).order("purchased_at", { ascending: false }).limit(1000),
   ]);
   if (definitionError || purchaseError) return fail(503, "無法讀取正式套票");
