@@ -37,6 +37,13 @@ begin
     where organization_id=v_tx.organization_id and transaction_id=v_tx.id
       and type='REDEMPTION' for update;
   if v_entry.id is null then raise exception '找不到套票扣堂紀錄'; end if;
+  if v_tx.package_redemption is null or
+     v_tx.package_redemption->>'customerPackageId' is distinct from
+       (select app_id from public.customer_packages where id=v_entry.customer_package_id) or
+     v_tx.package_redemption->>'serviceId' is distinct from
+       (select app_id from public.services where id=v_entry.service_id) or
+     (v_tx.package_redemption->>'sessions')::integer is distinct from 1
+  then raise exception '交易套票快照與扣堂紀錄不符'; end if;
   if (select count(*) from public.package_ledger_entries
       where organization_id=v_tx.organization_id and transaction_id=v_tx.id
         and type='REDEMPTION')<>1 then raise exception '扣堂紀錄數量異常'; end if;
