@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CheckoutPanel } from "@/features/checkout/CheckoutPanel";
+import { openCommerceRemotePackagePurchaseDraft } from "@/features/checkout/use-commerce-remote-write";
+import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
+import type { CheckoutDraft, Transaction } from "@/lib/commerce/domain";
+import type { CheckoutWorkspaceItem } from "@/lib/commerce/checkout-workspace-derived";
 import Link from "next/link";
 import { Search, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
@@ -43,6 +48,8 @@ export function PackageSellModal({
   const [customerId, setCustomerId] = useState<string | null>(initialCustomerId);
   const [definitionId, setDefinitionId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [opening, setOpening] = useState(false);
+  const [purchaseCheckout, setPurchaseCheckout] = useState<{ draft: CheckoutDraft; transaction: Transaction | null } | null>(null);
 
   const [eligibleIds, setEligibleIds] = useState<Set<string> | null>(null);
   const [verifiedCustomers, setVerifiedCustomers] = useState<Array<{ id: string; name: string; phone: string }>>([]);
@@ -99,10 +106,12 @@ export function PackageSellModal({
     setDefQuery("");
     setError("");
     setDefinitionId(null);
+    setPurchaseCheckout(null);
     onClose();
   }
 
-  function goToCheckout() {
+  async function goToCheckout() {
+    if (opening) return;
     if (!selected || !eligibleIds?.has(selected.id) || !definition) {
       setError("請選擇客戶與套票商品");
       return;
@@ -111,9 +120,63 @@ export function PackageSellModal({
       setError("請先選擇可存取的分店");
       return;
     }
-    setError("LINE 會員已驗證；套票正式結帳尚未啟用，暫不可建立本機交易。");
-    return;
+    setOpening(true);
+    setError("");
+    try {
+      const bundle = await openCommerceRemotePackagePurchaseDraft({
+        checkoutAppId: `chk-package-${crypto.randomUUID()}`,
+        customerAppId: selected.id,
+        locationAppId: locationId,
+        packageDefinitionAppId: definition.id,
+      });
+      setPurchaseCheckout({ draft: bundle.draft, transaction: bundle.transaction });
+    } catch (err) {
+      setError(toCommerceUserMessage(err));
+    } finally {
+      setOpening(false);
+    }
+  }
 
+  const checkoutItem: CheckoutWorkspaceItem | null = purchaseCheckout && selected && definition ? {
+    id: `draft:${purchaseCheckout.draft.id}`,
+    kind: "draft",
+    appointmentId: "",
+    draftId: purchaseCheckout.draft.id,
+    transactionId: purchaseCheckout.transaction?.id ?? "",
+    customerId: selected.id,
+    customerName: selected.name,
+    customerPhone: selected.phone,
+    customerInitials: selected.name.slice(0, 1),
+    membership: null,
+    serviceName: definition.name,
+    serviceCategory: "套票",
+    durationMinutes: null,
+    staffName: "",
+    staffInitials: "",
+    startAt: null,
+    amountMinor: purchaseCheckout.draft.total,
+    paid: Boolean(purchaseCheckout.transaction),
+    status: { kind: purchaseCheckout.transaction ? "paid" : "pending", title: purchaseCheckout.transaction ? "已結帳" : "待結帳" },
+    appointment: null,
+    draft: purchaseCheckout.draft,
+    transaction: purchaseCheckout.transaction,
+  } : null;
+
+  if (checkoutItem && purchaseCheckout) {
+    return (
+      <CheckoutPanel
+        item={checkoutItem}
+        customer={null}
+        organizationId={organizationId}
+        staffId={staffId}
+        commerceRemoteRead
+        commerceRemoteWrite
+        remoteDraft={purchaseCheckout.draft}
+        remoteTransaction={purchaseCheckout.transaction}
+        onClose={close}
+        onCompleted={() => close()}
+      />
+    );
   }
 
   return (
@@ -338,10 +401,10 @@ export function PackageSellModal({
           <Button
             data-package-sell-confirm
             className={cn("mt-4 h-[50px] min-h-[50px] w-full rounded-2xl text-[15px]")}
-            disabled={!canGo}
-            onClick={goToCheckout}
+            disabled={!canGo || opening}
+            onClick={() => { void goToCheckout(); }}
           >
-            前往結帳
+            {opening ? "正在建立結帳單…" : "前往結帳"}
           </Button>
           <p className="mt-2 text-center text-[12px] text-secondary-text">
             付款與套票建立走既有結帳流程，此處不會直接扣款。
