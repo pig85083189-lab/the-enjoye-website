@@ -59,12 +59,48 @@ export async function GET(request: Request) {
       .is("revoked_at", null)
       .limit(2);
     if (linkError) return fail(503, "無法確認預約顧客對應");
-    if (links?.length !== 1) return fail(404, "找不到此客戶");
+    // The booking-facing customer can point to a non-wallet finance profile.
+    // Prefer the independently confirmed, non-revoked LINE member identity
+    // when available. Never match customers by name or phone.
+    const { data: identityPairs, error: pairError } = await db
+      .from("member_booking_finance_identity_links")
+      .select("finance_customer_id,finance_confirmation_id")
+      .eq("organization_id", organization[0]!.id)
+      .eq("booking_customer_id", customerId)
+      .is("revoked_at", null)
+      .limit(2);
+    if (pairError) return fail(503, "無法確認 LINE 會員對應");
+    let resolvedFinanceCustomerId: string | null = null;
+    if (identityPairs?.length === 1) {
+      const pair = identityPairs[0]!;
+      const { data: confirmed, error: confirmationError } = await db
+        .from("member_finance_binding_challenges")
+        .select("id")
+        .eq("organization_id", organization[0]!.id)
+        .eq("id", pair.finance_confirmation_id)
+        .eq("confirmed_customer_id", pair.finance_customer_id)
+        .eq("status", "CONFIRMED")
+        .not("confirmed_at", "is", null)
+        .maybeSingle();
+      if (confirmationError) return fail(503, "無法確認會員綁定");
+      if (confirmed) {
+        const { data: wallets, error: walletError } = await db
+          .from("customer_wallet_identities")
+          .select("wallet_customer_id")
+          .eq("organization_id", organization[0]!.id)
+          .eq("wallet_customer_id", pair.finance_customer_id)
+          .eq("status", "ACTIVE")
+          .limit(2);
+        if (walletError) return fail(503, "無法確認儲值身分");
+        if (wallets?.length === 1) resolvedFinanceCustomerId = pair.finance_customer_id;
+      }
+    }
+    if (!resolvedFinanceCustomerId && links?.length !== 1) return fail(404, "找不到此客戶");
     const { data: mapped, error: mappedError } = await db
       .from("customers")
       .select("id,organization_id,app_id,full_name,phone,email,birthday,gender,line_user_id,source,membership_tier,is_vip,primary_staff_id,status,notes,created_at,updated_at")
       .eq("organization_id", organization[0]!.id)
-      .eq("id", links[0]!.finance_booking_customer_id)
+      .eq("id", resolvedFinanceCustomerId ?? links![0]!.finance_booking_customer_id)
       .limit(2);
     if (mappedError) return fail(503, "無法讀取對應顧客");
     if (mapped?.length !== 1) return fail(404, "找不到此客戶");
