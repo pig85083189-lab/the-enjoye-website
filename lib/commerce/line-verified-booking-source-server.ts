@@ -173,7 +173,7 @@ export async function linkVerifiedLineBookingSource(input: {
         .eq("organization_id",organizationAppId).eq("line_user_id_hash",decision.hash).limit(2),
       finance.from("member_booking_finance_identity_links").select("id")
         .eq("organization_id",financeOrg).eq("booking_customer_id",customer.data.id).limit(2),
-      finance.from("booking_source_customer_links").select("id")
+      finance.from("booking_source_customer_links").select("id,finance_booking_customer_id,status,evidence_kind")
         .eq("organization_id",financeOrg).eq("source_customer_key",sourceCustomerKey).limit(2),
     ]);
     if (bookingOwners.error||financeOwners.error||legacy.error||allPairs.error||sourceLinks.error)
@@ -181,9 +181,19 @@ export async function linkVerifiedLineBookingSource(input: {
     if (bookingOwners.data?.length!==1||bookingOwners.data[0].customer_id!==customer.data.id||
         !bookingOwners.data[0].verified_at||financeOwners.data?.length!==1||
         !financeOwners.data[0].verified_at||legacy.data?.length!==0||
-        allPairs.data?.length!==0||sourceLinks.data?.length!==0)
+        allPairs.data?.length!==0||sourceLinks.data?.length>1)
       return review("NO_TRUSTED_ASSOCIATION");
     const financeCustomerId=financeOwners.data[0].customer_id;
+    // An existing active link to this exact verified finance customer is
+    // idempotent. Never accept a link to another customer or a revoked link.
+    if(sourceLinks.data?.length===1){
+      const existing=sourceLinks.data[0];
+      if(existing.finance_booking_customer_id!==financeCustomerId||
+         existing.status!=="ACTIVE"||
+         existing.evidence_kind!=="LINE_VERIFIED_SESSION")
+        return review("NO_TRUSTED_ASSOCIATION");
+    }
+
     const [financeCustomer,otherPairs,challenges,wallet] = await Promise.all([
       finance.from("customers").select("id,status").eq("organization_id",financeOrg).eq("id",financeCustomerId).maybeSingle(),
       finance.from("member_booking_finance_identity_links").select("id")
@@ -198,6 +208,8 @@ export async function linkVerifiedLineBookingSource(input: {
     if(financeCustomer.data?.status!=="ACTIVE"||otherPairs.data?.length!==0||
        challenges.data?.length!==0||wallet.data?.length!==0)
       return review("NO_TRUSTED_ASSOCIATION");
+    if(sourceLinks.data?.length===1)
+      return {outcome:"already_linked",reasonCode:"FIRST_TIME_VERIFIED_LINE"};
     const linked=await finance.rpc(LINK_RPC,{
       p_organization_app_id:organizationAppId,
       p_source_customer_key:sourceCustomerKey,
