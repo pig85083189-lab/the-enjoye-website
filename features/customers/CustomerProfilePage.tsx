@@ -290,7 +290,9 @@ function Customer360Workspace({
   });
   const commerceTxReady =
     !commerceRemoteReadPilot || isCommerceRemoteTransactionListReady(remoteCommerce);
-  const remoteTransactions = commerceRemoteReadPilot
+  const remoteTransactions = fromStoredValue && remote.status === "data"
+    ? (remote.financeTransactions ?? [])
+    : commerceRemoteReadPilot
     ? filterCommerceTransactionsByCustomerId(
         transactionsFromRemoteCommerceState(remoteCommerce),
         customer.id,
@@ -575,7 +577,7 @@ function Customer360Workspace({
             {tab === "transactions" ? (
               <TransactionsTab
                 customerId={customer.id}
-                commerceRemoteRead={commerceRemoteReadPilot}
+                commerceRemoteRead={commerceRemoteReadPilot || fromStoredValue}
                 remoteTransactions={remoteTransactions}
                 packageCatalog={snapshot.packageCards.map((pkg) => ({
                   id: pkg.customerPackageId,
