@@ -64,5 +64,10 @@ export async function GET(request: Request) {
     if (error) return fail(503, "無法讀取套票堂數");
     balances = data ?? [];
   }
-  return NextResponse.json({ definitions: definitions ?? [], purchases: purchases ?? [], balances }, { headers });
+  const { data: services, error: serviceError } = await db.from("services")
+    .select("id,app_id,name,is_active")
+    .eq("organization_id", orgId)
+    .order("name", { ascending: true }).limit(500);
+  if (serviceError) return fail(503, "無法確認指定療程");
+  return NextResponse.json({ definitions: definitions ?? [], purchases: purchases ?? [], balances, services: services ?? [] }, { headers });
 }
