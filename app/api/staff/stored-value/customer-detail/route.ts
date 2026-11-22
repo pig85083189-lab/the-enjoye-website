@@ -77,7 +77,46 @@ export async function GET(request: Request) {
     return fail(503, "正式儲值餘額格式異常");
   }
 
+  // Read only this verified finance customer's settled wallet payments.
+  const { data: payments, error: paymentError } = await db
+    .from("stored_value_ledger_entries")
+    .select("transaction_id,amount_delta_minor,created_at")
+    .eq("organization_id", organization[0]!.id)
+    .eq("account_id", account[0]!.id)
+    .eq("type", "PAYMENT")
+    .not("transaction_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (paymentError) return fail(503, "無法讀取正式交易紀錄");
+  const transactionIds = [...new Set((payments ?? []).map((p) => p.transaction_id).filter((id): id is string => typeof id === "string"))];
+  const { data: settled, error: transactionError } = transactionIds.length
+    ? await db.from("transactions")
+        .select("id,location_id,transaction_number,status,subtotal_minor,discount_total_minor,total_minor,currency,created_by_staff_id,completed_at")
+        .eq("organization_id", organization[0]!.id)
+        .eq("customer_id", customerRow.id)
+        .eq("status", "COMPLETED")
+        .in("id", transactionIds)
+    : { data: [], error: null };
+  if (transactionError) return fail(503, "無法讀取正式交易紀錄");
+  const settledById = new Map((settled ?? []).map((tx) => [tx.id, tx]));
+  const financeTransactions = (payments ?? []).flatMap((payment) => {
+    const tx = settledById.get(payment.transaction_id);
+    if (!tx) return [];
+    const amount = -Number(payment.amount_delta_minor);
+    if (!Number.isSafeInteger(amount) || amount <= 0) return [];
+    return [{
+      id: tx.id, organizationId, locationId: tx.location_id,
+      customerId, transactionNumber: tx.transaction_number, status: "COMPLETED" as const,
+      items: [], discounts: [],
+      payments: [{ id: tx.id + ":wallet", method: "STORED_VALUE" as const, amount, paidAt: tx.completed_at }],
+      subtotal: Number(tx.subtotal_minor), discountTotal: Number(tx.discount_total_minor),
+      total: Number(tx.total_minor), currency: tx.currency,
+      createdByStaffId: tx.created_by_staff_id, completedAt: tx.completed_at,
+    }];
+  });
+
   return NextResponse.json({
+    financeTransactions,
     customer: customerFromRemoteRow(organizationId, customerRow),
     storedValueBalanceMinor,
   }, { headers });
