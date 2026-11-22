@@ -10,6 +10,8 @@ import {
   runAuthenticatedPackagePurchaseSettle,
   runAuthenticatedPackageRedemptionSettle,
   runAuthenticatedPackageRedemptionVoid,
+  runAuthenticatedPackageDefinitionCatalog,
+  runAuthenticatedCustomerPackageCatalog,
   type CommerceWriteClient,
 } from "@/lib/commerce/commerce-remote-write-pilot";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
@@ -130,4 +132,14 @@ export async function submitCommerceRemotePackageVoid(input: {
   reason: string;
 }) {
   return runAuthenticatedPackageRedemptionVoid(requireClient(), input, commerceWritePilotEnv());
+}
+
+/** Load the real DB package catalog; never rely on localStorage definitions. */
+export async function loadCommerceRemotePackageDefinitions() {
+  return runAuthenticatedPackageDefinitionCatalog(requireClient(), commerceWritePilotEnv());
+}
+
+/** Customer ID must be a verified DB UUID, not an app/local ID. */
+export async function loadCommerceRemoteCustomerPackages(customerDbId: string) {
+  return runAuthenticatedCustomerPackageCatalog(requireClient(), customerDbId, commerceWritePilotEnv());
 }
