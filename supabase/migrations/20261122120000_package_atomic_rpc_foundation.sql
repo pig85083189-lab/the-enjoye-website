@@ -34,6 +34,8 @@ begin
       and i.organization_id=v_tx.organization_id and i.type='PACKAGE_PURCHASE'
       and i.reference_id=v_def.app_id and i.quantity=1
       and i.session_count_snapshot=v_def.session_count
+      and i.unit_price_minor=v_def.price_minor
+      and i.line_subtotal_minor=v_def.price_minor
   ) then raise exception '交易中找不到對應套票購買項目'; end if;
   if exists (
     select 1 from public.customer_packages c
@@ -95,6 +97,11 @@ begin
   select * into v_service from public.services where id=p_service_id and organization_id=v_tx.organization_id;
   if v_service.id is null or not (v_service.app_id = any(v_pkg.included_service_ids_snapshot))
   then raise exception '此療程不適用該套票'; end if;
+  if not exists (
+    select 1 from public.transaction_items i where i.transaction_id=v_tx.id
+      and i.organization_id=v_tx.organization_id and i.type='SERVICE'
+      and i.reference_id=v_service.app_id
+  ) then raise exception '交易未包含指定療程'; end if;
   if v_tx.treatment_id is not null and not exists (
     select 1 from public.treatments t where t.id=v_tx.treatment_id
       and t.organization_id=v_tx.organization_id and t.service_id=p_service_id
