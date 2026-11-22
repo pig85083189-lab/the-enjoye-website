@@ -12,6 +12,7 @@ import {
   subscribeCommerce,
 } from "@/lib/commerce/checkout-store";
 import type { Transaction } from "@/lib/commerce/domain";
+import type { FinanceActivityRow } from "@/features/customers/use-customer-remote-read";
 import { formatTwd, parseMoneyInput } from "@/lib/commerce/money";
 import { listTransactions } from "@/lib/commerce/transaction-store";
 import {
@@ -47,6 +48,7 @@ interface WalletTabProps {
   onOpenTransactions?: () => void;
   commerceRemoteRead?: boolean;
   remoteTransactions?: Transaction[] | null;
+  financeActivity?: FinanceActivityRow[];
   balanceMinorOverride?: number;
 }
 
@@ -56,6 +58,7 @@ export function WalletTab({
   onOpenTransactions,
   commerceRemoteRead = false,
   remoteTransactions = null,
+  financeActivity,
   balanceMinorOverride,
 }: WalletTabProps) {
   const router = useRouter();
@@ -513,7 +516,25 @@ export function WalletTab({
             </Link>
           )}
         </div>
-        {recentTx.length === 0 ? (
+        {financeActivity ? (
+          financeActivity.length === 0 ? (
+            <p className="mt-3 text-sm text-secondary-text">尚無交易</p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {financeActivity.slice(0, 5).map((entry) => (
+                <li key={entry.id} className="flex items-baseline justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-[14px] text-text">{entry.label}</p>
+                    <p className="text-xs text-secondary-text">{entry.occurredAt.slice(0, 10)}</p>
+                  </div>
+                  <p className="shrink-0 text-right text-[14px] tabular-nums text-text">
+                    {entry.amountMinor > 0 ? "+" : ""}{formatTwd(entry.amountMinor)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : recentTx.length === 0 ? (
           <p className="mt-3 text-sm text-secondary-text">尚無交易</p>
         ) : (
           <ul className="mt-3 space-y-2">
