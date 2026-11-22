@@ -95,5 +95,31 @@ export async function POST(request: Request) {
   }
   if (!lineMembershipIsCurrent(evidence, hasCanonical)) return fail(403, "僅限已完成 LINE 綁定的會員購買套票");
   if (definition?.length !== 1 || !Number.isSafeInteger(definition[0]?.price_minor) || definition[0]!.price_minor <= 0 || !Number.isSafeInteger(definition[0]?.session_count) || definition[0]!.session_count < 1 || !Array.isArray(definition[0]?.included_services) || definition[0]!.included_services.length === 0) return fail(409, "套票方案無效");
+  const serviceRules = definition[0]!.included_services as unknown[];
+  const serviceIds = serviceRules.map(rule =>
+    rule && typeof rule === "object" && "serviceId" in rule &&
+    typeof rule.serviceId === "string" ? rule.serviceId.trim() : "",
+  );
+  if (serviceIds.some(id => !id || id.length > 128) || new Set(serviceIds).size !== serviceIds.length) {
+    return fail(409, "套票指定療程設定無效");
+  }
+  // Catalog records may reference either the finance UUID or its app_id.
+  // Every designated treatment must still exist and be active in this organization.
+  const uuidIds = serviceIds.filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+  const appIds = serviceIds.filter(id => !uuidIds.includes(id));
+  const serviceQueries = [
+    ...(uuidIds.length ? [db.from("services").select("id,app_id").eq("organization_id", orgId).eq("is_active", true).in("id", uuidIds)] : []),
+    ...(appIds.length ? [db.from("services").select("id,app_id").eq("organization_id", orgId).eq("is_active", true).in("app_id", appIds)] : []),
+  ];
+  const serviceResults = await Promise.all(serviceQueries);
+  if (serviceResults.some(result => result.error)) return fail(503, "無法確認指定療程");
+  const found = new Set<string>();
+  for (const result of serviceResults) {
+    for (const row of result.data ?? []) {
+      if (typeof row.id === "string") found.add(row.id);
+      if (typeof row.app_id === "string") found.add(row.app_id);
+    }
+  }
+  if (serviceIds.some(id => !found.has(id))) return fail(409, "套票包含已停用或不存在的指定療程");
   return NextResponse.json({ readyForWrite: false, reason: "FINANCE_AUTH_BRIDGE_REQUIRED", amountMinor: definition[0]!.price_minor, sessionCount: definition[0]!.session_count }, { headers });
 }
