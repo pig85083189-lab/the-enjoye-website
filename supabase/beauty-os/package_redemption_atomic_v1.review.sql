@@ -44,7 +44,7 @@ begin
      (v_package.expires_at is not null and v_package.expires_at <= now()) then
     raise exception 'PACKAGE_INACTIVE';
   end if;
-  if not (p_service_id = any(v_package.included_service_ids_snapshot)) then
+  if not (p_service_id::text = any(v_package.included_service_ids_snapshot)) then
     raise exception 'SERVICE_NOT_INCLUDED';
   end if;
   if not exists (select 1 from public.services
