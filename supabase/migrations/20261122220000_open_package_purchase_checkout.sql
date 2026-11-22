@@ -39,9 +39,14 @@ begin
     if v_draft.customer_id is distinct from v_customer.id
        or v_draft.location_id is distinct from v_location.id
        or v_draft.status not in ('OPEN','READY')
-       or (select count(*) from public.checkout_items
+       or (select count(*) from public.checkout_items where checkout_draft_id=v_draft.id)<>1
+       or not exists (select 1 from public.checkout_items
            where checkout_draft_id=v_draft.id and type='PACKAGE_PURCHASE'
-             and reference_id=v_def.app_id)=0
+             and reference_id=v_def.app_id and quantity=1
+             and unit_price_minor=v_def.price_minor
+             and session_count_snapshot=v_def.session_count)
+       or exists (select 1 from public.checkout_payments where checkout_draft_id=v_draft.id)
+       or exists (select 1 from public.checkout_discounts where checkout_draft_id=v_draft.id)
     then raise exception '結帳識別碼已被使用'; end if;
     return public.commerce_checkout_bundle(v_draft);
   end if;
