@@ -51,6 +51,7 @@ import {
 import { resolveCustomer360AppointmentCreateSurface } from "@/lib/customers/customer-360-appointment-create-surface";
 import type { Customer } from "@/types";
 import type { Transaction } from "@/lib/commerce/domain";
+import type { FinanceActivityRow } from "@/features/customers/use-customer-remote-read";
 
 function isWalletSection(value: string | null): value is Customer360WalletSection {
   return value === "packages" || value === "stored-value";
@@ -209,6 +210,9 @@ export function CustomerProfilePage({
       remoteReadPilot={remoteReadPilot || fromStoredValue}
       financeProfileReadOnly={fromStoredValue}
       financeStoredValueBalanceMinor={financeStoredValueBalanceMinor}
+      financeActivity={fromStoredValue
+        ? (remote.status === "data" ? remote.financeActivity : undefined)
+        : (financeHistory.status === "data" ? financeHistory.financeActivity : undefined)}
       financeTransactions={fromStoredValue
         ? (remote.status === "data" ? remote.financeTransactions : undefined)
         : (financeHistory.status === "data" ? financeHistory.financeTransactions : undefined)}
@@ -246,6 +250,7 @@ function Customer360Workspace({
   financeProfileReadOnly = false,
   financeStoredValueBalanceMinor,
   financeTransactions,
+  financeActivity,
   appointmentRemoteReadPilot = false,
   appointmentRemoteWritePilot = false,
   treatmentRemoteReadPilot = false,
@@ -266,6 +271,7 @@ function Customer360Workspace({
   financeProfileReadOnly?: boolean;
   financeStoredValueBalanceMinor?: number;
   financeTransactions?: Transaction[];
+  financeActivity?: FinanceActivityRow[];
   appointmentRemoteReadPilot?: boolean;
   appointmentRemoteWritePilot?: boolean;
   treatmentRemoteReadPilot?: boolean;
@@ -552,7 +558,7 @@ function Customer360Workspace({
             aria-labelledby={`customer-tab-${tab === "wallet" || tab === "transactions" ? "financial" : tab}`}
           >
             {tab === "overview" ? (
-              <OverviewTab customer={customerForView} snapshot={snapshot} onOpenTab={onSelectTab} financeBalanceOverride={financeStoredValueBalanceMinor} />
+              <OverviewTab customer={customerForView} snapshot={snapshot} onOpenTab={onSelectTab} financeBalanceOverride={financeStoredValueBalanceMinor} financeActivity={financeActivity} />
             ) : null}
             {tab === "consultation" ? <ConsultationsTab customerId={customer.id} /> : null}
             {tab === "treatments" ? (
@@ -593,6 +599,7 @@ function Customer360Workspace({
                 customerId={customer.id}
                 commerceRemoteRead={commerceRemoteReadPilot || financeTransactions != null}
                 remoteTransactions={remoteTransactions}
+                financeActivity={financeActivity}
                 packageCatalog={snapshot.packageCards.map((pkg) => ({
                   id: pkg.customerPackageId,
                   nameSnapshot: pkg.name,
