@@ -683,22 +683,8 @@ export function completeCheckout(
     return orphan;
   }
 
-  // Pre-validate tenders / redemptions before creating transaction (no financial writes yet)
-  if (draft.packageRedemption) {
-    const red = draft.packageRedemption;
-    const bal = getPackageUsableBalance(organizationId, red.customerPackageId);
-    if (bal.status === "EXPIRED") throw new Error("Package expired");
-    if (bal.status === "VOIDED") throw new Error("Package voided");
-    if (bal.usableBalance < 1) throw new Error("insufficient package sessions");
-    const usable = listUsablePackagesForService(
-      organizationId,
-      draft.customerId,
-      red.serviceId,
-    );
-    if (!usable.some((p) => p.id === red.customerPackageId)) {
-      throw new Error("Package not usable for this service");
-    }
-  }
+  // Package redemption is rejected above: never post local-only session effects.
+  // Pre-validate other tenders before creating the transaction.
   for (const pay of draft.payments) {
     if (pay.method === "STORED_VALUE") {
       const bal = getCustomerStoredValueBalance(organizationId, draft.customerId);
