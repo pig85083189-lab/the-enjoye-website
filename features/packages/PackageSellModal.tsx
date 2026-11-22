@@ -1,21 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
-import {
-  addCheckoutItem,
-  createEmptyCheckoutDraft,
-} from "@/lib/commerce/checkout-store";
 import { formatTwd } from "@/lib/commerce/money";
 import type { PackageDefinition } from "@/lib/packages/domain";
 import { planValidityLabel } from "@/lib/packages/package-plans-derived";
 import {
   canStartPackageSale,
-  filterCustomersForPackagePicker,
   filterDefinitionsForPackagePicker,
 } from "@/lib/packages/packages-workspace-derived";
 import { cn } from "@/lib/utils";
@@ -44,19 +38,54 @@ export function PackageSellModal({
   initialCustomerId = null,
   onClose,
 }: PackageSellModalProps) {
-  const router = useRouter();
   const [query, setQuery] = useState("");
   const [defQuery, setDefQuery] = useState("");
   const [customerId, setCustomerId] = useState<string | null>(initialCustomerId);
   const [definitionId, setDefinitionId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const selected = customers.find((row) => row.id === customerId) ?? null;
+  const [eligibleIds, setEligibleIds] = useState<Set<string> | null>(null);
+  const [verifiedCustomers, setVerifiedCustomers] = useState<Array<{ id: string; name: string; phone: string }>>([]);
+  const [eligibilityError, setEligibilityError] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setEligibleIds(null);
+    setVerifiedCustomers([]);
+    setEligibilityError(false);
+    setCustomerId(null);
+    void (async () => {
+      try {
+        const response = await fetch("/api/staff/stored-value/eligible-customers?organizationId=" + encodeURIComponent(organizationId), {
+          credentials: "same-origin", cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("LINE eligibility unavailable");
+        const result: unknown = await response.json();
+        if (!result || typeof result !== "object" || !("customerIds" in result) ||
+            !Array.isArray(result.customerIds) ||
+            !result.customerIds.every((id: unknown) => typeof id === "string")) throw new Error("Invalid eligibility response");
+        const rows = "eligibleCustomers" in result ? result.eligibleCustomers : null;
+        if (!Array.isArray(rows) || !rows.every((row: unknown) =>
+          row && typeof row === "object" && "id" in row && typeof row.id === "string" &&
+          "name" in row && typeof row.name === "string" &&
+          "phone" in row && typeof row.phone === "string")) throw new Error("Invalid verified customer list");
+        if (!controller.signal.aborted) {
+          setEligibleIds(new Set(result.customerIds as string[]));
+          setVerifiedCustomers(rows as Array<{ id: string; name: string; phone: string }>);
+        }
+      } catch {
+        if (!controller.signal.aborted) setEligibilityError(true);
+      }
+    })();
+    return () => controller.abort();
+  }, [open, organizationId]);
+  const eligibleCustomers = verifiedCustomers.filter(row => eligibleIds?.has(row.id));
+  const selected = eligibleCustomers.find(row => row.id === customerId) ?? null;
   const definition = definitions.find((row) => row.id === definitionId) ?? null;
-  const canGo = canStartPackageSale({ customerId, definitionId });
+  const canGo = Boolean(selected && eligibleIds?.has(selected.id)) && canStartPackageSale({ customerId, definitionId });
   const hits = useMemo(
-    () => filterCustomersForPackagePicker(customers, query).slice(0, 8),
-    [customers, query],
+    () => eligibleCustomers.filter(row => (row.name + " " + row.phone).toLowerCase().includes(query.trim().toLowerCase())).slice(0, 8),
+    [eligibleCustomers, query],
   );
   const defHits = useMemo(
     () => filterDefinitionsForPackagePicker(definitions, defQuery).slice(0, 8),
@@ -74,7 +103,7 @@ export function PackageSellModal({
   }
 
   function goToCheckout() {
-    if (!selected || !definition) {
+    if (!selected || !eligibleIds?.has(selected.id) || !definition) {
       setError("請選擇客戶與套票商品");
       return;
     }
@@ -82,22 +111,9 @@ export function PackageSellModal({
       setError("請先選擇可存取的分店");
       return;
     }
-    try {
-      const draft = createEmptyCheckoutDraft(organizationId, {
-        locationId,
-        customerId: selected.id,
-        createdByStaffId: staffId,
-      });
-      addCheckoutItem(organizationId, draft.id, {
-        type: "PACKAGE_PURCHASE",
-        referenceId: definition.id,
-        name: definition.name,
-        unitPrice: definition.priceMinor,
-      });
-      router.push(`/staff/checkout?draft=${draft.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "無法建立套票結帳");
-    }
+    setError("LINE 會員已驗證；套票正式結帳尚未啟用，暫不可建立本機交易。");
+    return;
+
   }
 
   return (
@@ -130,7 +146,7 @@ export function PackageSellModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
           <section>
-            <p className="text-[13px] font-semibold text-text">選擇客戶</p>
+            <p className="text-[13px] font-semibold text-text">選擇已綁定 LINE 會員</p>
             {selected ? (
               <div className="mt-2 flex items-center gap-3 rounded-2xl border border-border bg-[#FAF7F5] px-3 py-2.5">
                 <Avatar initials={selected.name.slice(0, 1)} size="sm" className="gap-0" />
@@ -160,14 +176,16 @@ export function PackageSellModal({
                     type="search"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="搜尋姓名 / 電話"
+                    placeholder="搜尋已綁定會員姓名 / 電話"
                     className="h-10 min-h-10 w-full rounded-xl border border-border bg-surface pl-9 pr-3 text-[14px] outline-none ring-primary/30 focus:ring-2"
                     aria-label="搜尋客戶姓名或電話"
                   />
                 </div>
+                {!eligibleIds && !eligibilityError ? <p className="mt-2 text-xs text-secondary-text">正在驗證 LINE 會員綁定…</p> : null}
+                {eligibilityError ? <p className="mt-2 text-xs text-[#986B58]" role="alert">LINE 會員資格查詢失敗，暫時無法販售套票。</p> : null}
                 <ul className="mt-2 max-h-48 overflow-y-auto">
                   {hits.length === 0 ? (
-                    <li className="px-1 py-3 text-sm text-secondary-text">尚無符合的客戶</li>
+                    <li className="px-1 py-3 text-sm text-secondary-text">尚無符合的已綁定 LINE 會員</li>
                   ) : (
                     hits.map((row) => (
                       <li key={row.id}>
@@ -194,6 +212,7 @@ export function PackageSellModal({
             )}
           </section>
 
+          <p className="mt-3 text-[12px] leading-relaxed text-[#986B58]">僅限已透過 LINE 登入會員中心、完成顧客綁定且驗證成功的會員購買套票。</p>
           <section className="mt-4">
             <p className="text-[13px] font-semibold text-text">選擇套票商品</p>
             {definition ? (
