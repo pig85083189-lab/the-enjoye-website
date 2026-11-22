@@ -22,6 +22,7 @@ import {
 import {
   submitCommerceRemoteSaveDraft,
   submitCommerceRemoteSettle,
+  submitCommerceRemotePackagePurchaseByAppId,
 } from "@/features/checkout/use-commerce-remote-write";
 import { REMOTE_DISABLED_PAYMENT_METHODS } from "@/lib/commerce/commerce-remote-payments";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
@@ -1182,11 +1183,33 @@ export function CheckoutPanel({
                   // settlement RPC. That RPC does not post package ledger rows.
                   // The dedicated atomic RPCs require verified DB UUID mapping
                   // before this screen can safely invoke them.
-                  if (
-                    liveDraft.items.some((line) => line.type === "PACKAGE_PURCHASE") ||
-                    liveDraft.packageRedemption
-                  ) {
-                    setError("套票交易尚未完成正式資料庫串接，為避免付款後漏入帳或漏扣堂，已暫停此筆結帳。");
+                  const packageItems = liveDraft.items.filter((line) => line.type === "PACKAGE_PURCHASE");
+                  if (packageItems.length > 0) {
+                    const packageItem = packageItems[0];
+                    if (
+                      packageItems.length !== 1 || liveDraft.items.length !== 1 ||
+                      !packageItem?.referenceId || packageItem.quantity !== 1 ||
+                      liveDraft.discounts.length > 0 || Boolean(liveDraft.packageRedemption)
+                    ) {
+                      setError("套票購買目前僅支援單一方案，請移除其他項目或折扣。");
+                      return;
+                    }
+                    setError("");
+                    void submitCommerceRemotePackagePurchaseByAppId({
+                      draftId: liveDraft.id,
+                      expectedUpdatedAt: liveDraft.updatedAt,
+                      packageDefinitionAppId: packageItem.referenceId,
+                    }).then(
+                      (bundle) => {
+                        setEditedRemoteDraft(bundle.draft);
+                        if (bundle.transaction) onCompleted?.(bundle.transaction.id);
+                      },
+                      (err: unknown) => setError(toCommerceUserMessage(err)),
+                    );
+                    return;
+                  }
+                  if (liveDraft.packageRedemption) {
+                    setError("套票扣堂尚未完成零元療程驗證，為避免漏扣堂，已暫停此筆結帳。");
                     return;
                   }
                   void submitCommerceRemoteSettle({
