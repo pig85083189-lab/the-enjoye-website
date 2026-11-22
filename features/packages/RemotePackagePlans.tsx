@@ -42,7 +42,7 @@ export function RemotePackagePlans({ organizationId }: { organizationId: string 
       const response = await fetch("/api/staff/packages/definitions", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId, name: name.trim(), serviceIds: selected, sessionCount: Number(sessions),
-          priceMinor: Number(price) * 100, validityDays: days ? Number(days) : null }),
+          priceMinor: Number(price), validityDays: days ? Number(days) : null }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "建立失敗");
