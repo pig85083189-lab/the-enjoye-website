@@ -56,6 +56,7 @@ export async function POST(request: Request) {
   }
   if (FORBIDDEN_FIELDS.some((field) => field in body)) return fail(400, "目前無法完成結帳，請稍後再試");
   const action = body.action;
+  let checkoutStage = "request";
   try {
     if (action === "hydrate") {
       const appointmentId = typeof body.appointmentId === "string" ? body.appointmentId.trim() : "";
@@ -71,7 +72,8 @@ export async function POST(request: Request) {
         const identity = await getAuthenticatedStaffMembership({ organizationId: source.organizationAppId });
         if (identity.status === "ok" && canCheckout(identity.membership)) {
           try {
-            await callBookingSourceCheckout("open_booking_source_checkout", {
+            checkoutStage = "open_finance_checkout";
+        await callBookingSourceCheckout("open_booking_source_checkout", {
               organizationAppId: source.organizationAppId,
               sourceCustomerKey: source.sourceCustomerKey,
               checkoutAppId: source.checkoutAppId,
@@ -112,6 +114,7 @@ export async function POST(request: Request) {
         // link. Create it only when staff intentionally chooses stored value.
         // This helper independently verifies the active booking customer,
         // confirmed cross-database pair, matching LINE identity and wallet.
+        checkoutStage = "verify_line_identity";
         const link = await linkVerifiedLineBookingSource({
           organizationAppId: source.organizationAppId,
           sourceCustomerKey: source.sourceCustomerKey,
@@ -132,6 +135,7 @@ export async function POST(request: Request) {
           amount: stored,
           staffId: identity.membership.userId,
         });
+        checkoutStage = "save_finance_checkout";
         await callBookingSourceCheckout("save_booking_source_checkout", {
           organizationAppId: source.organizationAppId,
           sourceCustomerKey: source.sourceCustomerKey,
@@ -143,6 +147,7 @@ export async function POST(request: Request) {
       }
       // Four arguments keep the draft's package redemption. Stored value can
       // settle only after the finance debit posts a receipt.
+      checkoutStage = "save_booking_checkout";
       const bundle = await proxyRpc(COMMERCE_SAVE_RPC, {
         p_checkout_app_id: draftId,
         p_expected_updated_at: expectedUpdatedAt,
@@ -188,6 +193,7 @@ export async function POST(request: Request) {
           p_amount_minor: stored,
           p_effect_key: effectKey,
         };
+        checkoutStage = "settle_stored_value";
         await completeStoredValueDebit({
           expectedEffectKey: effectKey,
           claim: async () => {
@@ -230,6 +236,14 @@ export async function POST(request: Request) {
     return fail(400, "目前無法完成結帳，請稍後再試");
   } catch (error: unknown) {
     const message = toCommerceUserMessage(error);
+    // Diagnostics contain only the action/stage and a fixed error category.
+    // Never log customer identifiers, payment payloads or raw RPC messages.
+    const category = error instanceof Error && error.message.includes("必須先完成顧客身分對應")
+      ? "source_link_not_resolved"
+      : error instanceof Error && error.message.includes("顧客帳號無效")
+        ? "finance_customer_mismatch"
+        : "other_checkout_failure";
+    console.error("[commerce/checkout] failed", { action: action === "save" || action === "settle" || action === "hydrate" ? action : "unknown", stage: checkoutStage, category });
     const status = message === "沒有權限結帳" ? 403 : message === "找不到結帳資料" ? 404 : 409;
     return fail(status, message);
   }
