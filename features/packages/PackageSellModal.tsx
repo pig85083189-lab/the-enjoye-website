@@ -178,6 +178,28 @@ export function PackageSellModal({
     setOpening(true);
     setError("");
     try {
+      const preflight = await fetch("/api/staff/packages/checkout-preflight", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          locationId,
+          customerId: selected.id,
+          packageDefinitionId: definition.id,
+        }),
+      });
+      const result: unknown = await preflight.json();
+      if (!result || typeof result !== "object") throw new Error("目前無法確認套票結帳資格");
+      const response = result as { readyForWrite?: boolean; error?: string; amountMinor?: number; sessionCount?: number };
+      if (!preflight.ok) throw new Error(response.error ?? "目前無法確認套票結帳資格");
+      if (response.amountMinor !== definition.priceMinor || response.sessionCount !== definition.sessionCount) {
+        throw new Error("套票內容已更新，請關閉視窗重新選擇");
+      }
+      if (response.readyForWrite !== true) {
+        throw new Error("套票付款安全串接尚未完成，目前暫停結帳，請勿收款");
+      }
       const bundle = await openCommerceRemotePackagePurchaseDraft({
         checkoutAppId: `chk-package-${crypto.randomUUID()}`,
         customerAppId: selected.id,
