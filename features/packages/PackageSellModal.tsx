@@ -87,10 +87,8 @@ export function PackageSellModal({
           name: row.name as string,
           includedServices: (row.included_services as Array<{serviceId:string; sessionsPerRedemption?:number}>)
             .filter(item => typeof item.serviceId === "string" &&
-              Number.isSafeInteger(item.sessionsPerRedemption) &&
-              (item.sessionsPerRedemption ?? 0) >= 1 &&
-              (item.sessionsPerRedemption ?? 0) <= (row.session_count as number))
-            .map(item => ({ serviceId: item.serviceId, sessionsPerRedemption: item.sessionsPerRedemption! })),
+              item.sessionsPerRedemption === 1)
+            .map(item => ({ serviceId: item.serviceId, sessionsPerRedemption: 1 as const })),
           sessionCount: row.session_count as number,
           priceMinor: row.price_minor as number,
           currency: typeof row.currency === "string" ? row.currency : "TWD",
@@ -98,7 +96,13 @@ export function PackageSellModal({
           isActive: true,
           createdAt: "",
           updatedAt: "",
-        })).filter(row => row.includedServices.length > 0);
+        })).filter((row, index) => row.includedServices.length > 0 &&
+          row.includedServices.length === (rows.filter(candidate =>
+            typeof candidate.app_id === "string" && candidate.app_id.length > 0 &&
+            typeof candidate.name === "string" && candidate.is_active === true &&
+            typeof candidate.session_count === "number" && typeof candidate.price_minor === "number" &&
+            Array.isArray(candidate.included_services)
+          )[index]?.included_services as unknown[])?.length);
         if (!controller.signal.aborted) {
           setRemoteDefinitions(mapped);
           setRemoteServiceNames(names);
