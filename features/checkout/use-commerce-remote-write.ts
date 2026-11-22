@@ -7,6 +7,15 @@ import {
   runAuthenticatedCommerceHydrate,
   runAuthenticatedCommerceSaveDraft,
   runAuthenticatedCommerceSettle,
+  runAuthenticatedPackagePurchaseSettle,
+  runAuthenticatedPackageRedemptionSettle,
+  runAuthenticatedPackageRedemptionVoid,
+  runAuthenticatedPackageDefinitionCatalog,
+  runAuthenticatedCustomerPackageCatalog,
+  runAuthenticatedPackagePurchaseByAppId,
+  runAuthenticatedPackageRedemptionByAppId,
+  runAuthenticatedOpenPackagePurchaseDraft,
+  runAuthenticatedGetPackagePurchaseDraft,
   type CommerceWriteClient,
 } from "@/lib/commerce/commerce-remote-write-pilot";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
@@ -102,4 +111,118 @@ export async function submitCommerceRemoteSettle(input: {
   expectedUpdatedAt: string;
 }) {
   return runAuthenticatedCommerceSettle(requireClient(), input, commerceWritePilotEnv());
+}
+
+/** Dedicated opt-in package checkout actions. Legacy settle is unchanged. */
+export async function submitCommerceRemotePackagePurchase(input: {
+  draftId: string;
+  expectedUpdatedAt: string;
+  packageDefinitionDbId: string;
+}) {
+  return runAuthenticatedPackagePurchaseSettle(requireClient(), input, commerceWritePilotEnv());
+}
+
+export async function submitCommerceRemotePackageRedemption(input: {
+  draftId: string;
+  expectedUpdatedAt: string;
+  customerPackageDbId: string;
+  serviceDbId: string;
+}) {
+  return runAuthenticatedPackageRedemptionSettle(requireClient(), input, commerceWritePilotEnv());
+}
+
+export async function submitCommerceRemotePackageVoid(input: {
+  transactionDbId: string;
+  reason: string;
+}) {
+  return runAuthenticatedPackageRedemptionVoid(requireClient(), input, commerceWritePilotEnv());
+}
+
+/** Load the real DB package catalog; never rely on localStorage definitions. */
+export async function loadCommerceRemotePackageDefinitions() {
+  return runAuthenticatedPackageDefinitionCatalog(requireClient(), commerceWritePilotEnv());
+}
+
+/** Customer ID must be a verified DB UUID, not an app/local ID. */
+export async function loadCommerceRemoteCustomerPackages(customerDbId: string) {
+  return runAuthenticatedCustomerPackageCatalog(requireClient(), customerDbId, commerceWritePilotEnv());
+}
+
+/** Resolve the selected package app ID to the database ID before settlement. */
+export async function submitCommerceRemotePackagePurchaseByAppId(input: {
+  draftId: string;
+  expectedUpdatedAt: string;
+  packageDefinitionAppId: string;
+}) {
+  return runAuthenticatedPackagePurchaseByAppId(requireClient(), input, commerceWritePilotEnv());
+}
+
+/** Never accept a customer/package UUID supplied by a local draft. */
+export async function submitCommerceRemotePackageRedemptionByAppId(input: {
+  draftId: string;
+  expectedUpdatedAt: string;
+  customerAppId: string;
+  customerPackageAppId: string;
+  serviceAppId: string;
+}) {
+  return runAuthenticatedPackageRedemptionByAppId(requireClient(), input, commerceWritePilotEnv());
+}
+
+/** Create a real Supabase checkout draft before navigating to payment. */
+export async function openCommerceRemotePackagePurchaseDraft(input: {
+  checkoutAppId: string;
+  customerAppId: string;
+  locationAppId: string;
+  packageDefinitionAppId: string;
+}) {
+  return runAuthenticatedOpenPackagePurchaseDraft(requireClient(), input, commerceWritePilotEnv());
+}
+
+/** Read the canonical checkout draft after navigating from package sale. */
+export async function getCommerceRemotePackagePurchaseDraft(checkoutAppId: string) {
+  return runAuthenticatedGetPackagePurchaseDraft(requireClient(), checkoutAppId, commerceWritePilotEnv());
+}
+
+/**
+ * Appointment-free package-sale checkout hydration.
+ * Unlike useCommerceRemoteDraft, this works with a canonical checkout app ID.
+ * Keeps the previous draft out of view when navigating between different IDs.
+ */
+export function useCommerceRemotePackagePurchaseDraft(input: {
+  checkoutAppId: string | null;
+  enabled: boolean;
+}): CommerceRemoteDraftState {
+  const [result, setResult] = useState<{
+    key: string;
+    state: { status: "data"; draft: CheckoutDraft; transaction: Transaction | null }
+      | { status: "error"; message: string };
+  } | null>(null);
+
+  useEffect(() => {
+    if (!input.enabled || !input.checkoutAppId) return;
+    let cancelled = false;
+    const checkoutAppId = input.checkoutAppId;
+    void getCommerceRemotePackagePurchaseDraft(checkoutAppId).then(
+      (bundle) => {
+        if (cancelled) return;
+        setResult({
+          key: checkoutAppId,
+          state: { status: "data", draft: bundle.draft, transaction: bundle.transaction },
+        });
+      },
+      (error: unknown) => {
+        if (cancelled) return;
+        setResult({
+          key: checkoutAppId,
+          state: { status: "error", message: toCommerceUserMessage(error) },
+        });
+      },
+    );
+    return () => { cancelled = true; };
+  }, [input.enabled, input.checkoutAppId]);
+
+  if (!input.enabled) return { status: "off" };
+  if (!input.checkoutAppId) return { status: "idle" };
+  if (!result || result.key !== input.checkoutAppId) return { status: "loading" };
+  return result.state;
 }

@@ -22,6 +22,9 @@ import {
 import {
   submitCommerceRemoteSaveDraft,
   submitCommerceRemoteSettle,
+  submitCommerceRemotePackagePurchaseByAppId,
+  submitCommerceRemotePackageRedemptionByAppId,
+  useCommerceRemotePackagePurchaseDraft,
 } from "@/features/checkout/use-commerce-remote-write";
 import { REMOTE_DISABLED_PAYMENT_METHODS } from "@/lib/commerce/commerce-remote-payments";
 import { toCommerceUserMessage } from "@/lib/commerce/commerce-remote-write-errors";
@@ -33,6 +36,8 @@ import {
   type PaymentMethod,
 } from "@/lib/commerce/domain";
 import { formatTwd, parseMoneyInput } from "@/lib/commerce/money";
+import { validateAtomicPackagePurchaseDraft } from "@/lib/commerce/package-checkout-guard";
+import { validateAtomicPackageRedemptionDraft } from "@/lib/commerce/package-redemption-guard";
 import { checkoutConfirmCtaLabel } from "@/lib/commerce/transaction-tender-presentation";
 import {
   CHECKOUT_PANEL_WIDTH_PX,
@@ -107,18 +112,32 @@ export function CheckoutPanel({
       ? getOpenDraftForAppointment(organizationId, item.appointmentId)
       : undefined) ??
     item.draft;
+  const packageCheckout = useCommerceRemotePackagePurchaseDraft({
+    checkoutAppId:
+      commerceRemoteWrite && item.kind !== "appointment" && !item.appointmentId
+        ? item.draftId ?? null
+        : null,
+    enabled: commerceRemoteWrite && item.kind !== "appointment" && !item.appointmentId && !remoteDraft,
+  });
+  const canonicalRemoteDraft =
+    remoteDraft ?? (packageCheckout.status === "data" ? packageCheckout.draft : null);
+  const canonicalRemoteTransaction =
+    remoteTransaction ?? (packageCheckout.status === "data" ? packageCheckout.transaction : null);
+  const packageCheckoutLoading = packageCheckout.status === "loading";
+  const packageCheckoutError =
+    packageCheckout.status === "error" ? packageCheckout.message : "";
   const [editedRemoteDraft, setEditedRemoteDraft] = useState<CheckoutDraft | null>(
     null,
   );
   const liveDraft = commerceRemoteWrite
     ? editedRemoteDraft &&
-      editedRemoteDraft.id === remoteDraft?.id &&
-      editedRemoteDraft.updatedAt >= (remoteDraft?.updatedAt ?? "")
+      editedRemoteDraft.id === canonicalRemoteDraft?.id &&
+      editedRemoteDraft.updatedAt >= (canonicalRemoteDraft?.updatedAt ?? "")
       ? editedRemoteDraft
-      : remoteDraft
+      : canonicalRemoteDraft
     : localDraft;
   const transaction = commerceRemoteWrite
-    ? remoteTransaction ?? item.transaction
+    ? canonicalRemoteTransaction ?? item.transaction
     : item.transaction;
   const readOnly =
     item.paid ||
@@ -1149,9 +1168,9 @@ export function CheckoutPanel({
               )
             ) : null}
 
-            {error ? (
+            {error || packageCheckoutError ? (
               <p className="mt-3 text-[12px] text-[#B07A4A]" role="alert">
-                {error}
+                {error || packageCheckoutError}
               </p>
             ) : null}
           </div>
@@ -1173,11 +1192,59 @@ export function CheckoutPanel({
             <button
               type="button"
               data-checkout-confirm
-              disabled={!canConfirm}
+              disabled={!canConfirm || packageCheckoutLoading || Boolean(packageCheckoutError)}
               className="flex h-[50px] w-full items-center justify-center rounded-2xl bg-[#C56B70] text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               onClick={() => {
-                if (!liveDraft || !canConfirm) return;
+                if (!liveDraft || !canConfirm || packageCheckoutLoading || packageCheckoutError) return;
                 if (commerceRemoteWrite) {
+                  // Never mark a package sale or redemption paid via the legacy
+                  // settlement RPC. That RPC does not post package ledger rows.
+                  // The dedicated atomic RPCs require verified DB UUID mapping
+                  // before this screen can safely invoke them.
+                  const packageItems = liveDraft.items.filter((line) => line.type === "PACKAGE_PURCHASE");
+                  if (packageItems.length > 0) {
+                    const packageItem = packageItems[0];
+                    const purchaseError = validateAtomicPackagePurchaseDraft(liveDraft);
+                    if (purchaseError || !packageItem?.referenceId) {
+                      setError(purchaseError ?? "套票方案識別碼無效");
+                      return;
+                    }
+                    setError("");
+                    void submitCommerceRemotePackagePurchaseByAppId({
+                      draftId: liveDraft.id,
+                      expectedUpdatedAt: liveDraft.updatedAt,
+                      packageDefinitionAppId: packageItem.referenceId,
+                    }).then(
+                      (bundle) => {
+                        setEditedRemoteDraft(bundle.draft);
+                        if (bundle.transaction) onCompleted?.(bundle.transaction.id);
+                      },
+                      (err: unknown) => setError(toCommerceUserMessage(err)),
+                    );
+                    return;
+                  }
+                  if (liveDraft.packageRedemption) {
+                    const redemptionError = validateAtomicPackageRedemptionDraft(liveDraft);
+                    if (redemptionError || !liveDraft.customerId) {
+                      setError(redemptionError ?? "顧客識別碼無效");
+                      return;
+                    }
+                    setError("");
+                    void submitCommerceRemotePackageRedemptionByAppId({
+                      draftId: liveDraft.id,
+                      expectedUpdatedAt: liveDraft.updatedAt,
+                      customerAppId: liveDraft.customerId,
+                      customerPackageAppId: liveDraft.packageRedemption.customerPackageId,
+                      serviceAppId: liveDraft.packageRedemption.serviceId,
+                    }).then(
+                      (bundle) => {
+                        setEditedRemoteDraft(bundle.draft);
+                        if (bundle.transaction) onCompleted?.(bundle.transaction.id);
+                      },
+                      (err: unknown) => setError(toCommerceUserMessage(err)),
+                    );
+                    return;
+                  }
                   void submitCommerceRemoteSettle({
                     draftId: liveDraft.id,
                     expectedUpdatedAt: liveDraft.updatedAt,

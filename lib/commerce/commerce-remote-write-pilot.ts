@@ -168,3 +168,180 @@ export async function runAuthenticatedCommerceListTransactions(
   const rows = await persistence.commerce.listTransactions();
   return rows.filter((row) => row.organizationId === organizationId);
 }
+
+/** Explicit package operations. Kept separate from legacy settlement. */
+export async function runAuthenticatedPackagePurchaseSettle(
+  client: CommerceWriteClient,
+  input: { draftId: string; expectedUpdatedAt: string; packageDefinitionDbId: string },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    return await persistence.commerce.settlePackagePurchase({
+      checkoutAppId: input.draftId,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      packageDefinitionDbId: input.packageDefinitionDbId,
+    });
+  } catch (error) { mapWriteError(error); }
+}
+
+export async function runAuthenticatedPackageRedemptionSettle(
+  client: CommerceWriteClient,
+  input: { draftId: string; expectedUpdatedAt: string; customerPackageDbId: string; serviceDbId: string },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    return await persistence.commerce.settlePackageRedemption({
+      checkoutAppId: input.draftId,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      customerPackageDbId: input.customerPackageDbId,
+      serviceDbId: input.serviceDbId,
+    });
+  } catch (error) { mapWriteError(error); }
+}
+
+export async function runAuthenticatedPackageRedemptionVoid(
+  client: CommerceWriteClient,
+  input: { transactionDbId: string; reason: string },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try { return await persistence.commerce.voidPackageRedemption(input); }
+  catch (error) { mapWriteError(error); }
+}
+
+
+/** Read-only package catalogs, with the same checkout role gate. */
+export async function runAuthenticatedPackageDefinitionCatalog(
+  client: CommerceWriteClient,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  return persistence.commerce.listPackageDefinitionsForCheckout();
+}
+
+export async function runAuthenticatedCustomerPackageCatalog(
+  client: CommerceWriteClient,
+  customerDbId: string,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  return persistence.commerce.listCustomerPackagesForCheckout(customerDbId);
+}
+
+/**
+ * Resolve package app IDs through the authenticated catalog, not UUID guesses.
+ * Fail closed if the definition is missing, duplicated, or belongs to another org.
+ */
+export async function runAuthenticatedPackagePurchaseByAppId(
+  client: CommerceWriteClient,
+  input: { draftId: string; expectedUpdatedAt: string; packageDefinitionAppId: string },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  const definitions = await persistence.commerce.listPackageDefinitionsForCheckout();
+  const matches = definitions.filter((row) =>
+    row.organizationDbId === persistence.identity.organizationDbId &&
+    row.packageDefinitionAppId === input.packageDefinitionAppId
+  );
+  if (matches.length !== 1) throw new Error("套票方案尚未同步或對應不唯一，無法結帳");
+  try {
+    return await persistence.commerce.settlePackagePurchase({
+      checkoutAppId: input.draftId,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      packageDefinitionDbId: matches[0]!.packageDefinitionDbId,
+    });
+  } catch (error) { mapWriteError(error); }
+}
+
+/** Verify both customer and service belong to the authenticated organization. */
+export async function runAuthenticatedPackageRedemptionByAppId(
+  client: CommerceWriteClient,
+  input: {
+    draftId: string;
+    expectedUpdatedAt: string;
+    customerAppId: string;
+    customerPackageAppId: string;
+    serviceAppId: string;
+  },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  const { identity } = persistence;
+  const customerDbId = identity.mapper.resolveCustomerDbId(identity.organizationAppId, input.customerAppId);
+  const serviceDbId = identity.mapper.resolveServiceDbId(identity.organizationAppId, input.serviceAppId);
+  const packages = await persistence.commerce.listCustomerPackagesForCheckout(customerDbId);
+  const matches = packages.filter((row) =>
+    row.customerDbId === customerDbId &&
+    row.customerPackageAppId === input.customerPackageAppId
+  );
+  if (matches.length !== 1) throw new Error("顧客套票尚未同步或對應不唯一，無法扣堂");
+  const pkg = matches[0]!;
+  if (pkg.status !== "ACTIVE" || pkg.remainingSessions < 1 ||
+      (pkg.expiresAt && new Date(pkg.expiresAt).getTime() <= Date.now()) ||
+      !pkg.includedServiceAppIds.includes(input.serviceAppId)) {
+    throw new Error("套票堂數不足、已失效或不適用此療程");
+  }
+  try {
+    return await persistence.commerce.settlePackageRedemption({
+      checkoutAppId: input.draftId,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      customerPackageDbId: pkg.customerPackageDbId,
+      serviceDbId,
+    });
+  } catch (error) { mapWriteError(error); }
+}
+
+/** Resolve organization-owned IDs through the authenticated RPC.
+ * The database checks staff permission and re-reads authoritative prices.
+ */
+export async function runAuthenticatedOpenPackagePurchaseDraft(
+  client: CommerceWriteClient,
+  input: {
+    checkoutAppId: string;
+    customerAppId: string;
+    locationAppId: string;
+    packageDefinitionAppId: string;
+  },
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    return await persistence.commerce.openPackagePurchaseDraft(input);
+  } catch (error) {
+    mapWriteError(error);
+  }
+}
+
+/** Fetch only a package-sale draft after authenticated staff authorization. */
+export async function runAuthenticatedGetPackagePurchaseDraft(
+  client: CommerceWriteClient,
+  checkoutAppId: string,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+) {
+  requireWritePilot(env);
+  const persistence = await createAuthenticatedCommerceWritePersistence(client);
+  assertCommerceWriteRole(actorFromIdentity(persistence.identity));
+  try {
+    return await persistence.commerce.getPackagePurchaseDraft(checkoutAppId);
+  } catch (error) {
+    mapWriteError(error);
+  }
+}
