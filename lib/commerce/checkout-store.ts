@@ -649,6 +649,14 @@ export function completeCheckout(
     throw new Error("Checkout draft not found");
   }
 
+  // Package purchases/redemptions must be settled by the authenticated
+  // Supabase atomic RPC. A local-only transaction would appear paid without
+  // creating the canonical package ledger entry or consuming a session.
+  if (draft.items.some((item) => item.type === "PACKAGE_PURCHASE") ||
+      draft.packageRedemption) {
+    throw new Error("套票購買與扣堂必須透過正式資料庫結帳，目前尚未完成串接，請勿使用本機結帳");
+  }
+
   // Already completed — return linked transaction (UI double-submit)
   if (draft.status === "COMPLETED") {
     const existing =
