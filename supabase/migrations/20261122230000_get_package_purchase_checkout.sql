@@ -9,8 +9,16 @@ begin
   if nullif(trim(coalesce(p_checkout_app_id,'')),'') is null then
     raise exception '結帳識別碼無效';
   end if;
-  select * into v_draft from public.checkout_drafts
-    where app_id=p_checkout_app_id;
+  -- Scope the lookup to the signed-in staff member's organization before
+  -- disclosing whether the checkout exists. Reject ambiguous app IDs.
+  if (select count(*) from public.checkout_drafts d
+      where d.app_id=p_checkout_app_id
+        and public.user_has_org_membership(d.organization_id)) <> 1 then
+    raise exception '找不到可存取的結帳單';
+  end if;
+  select * into v_draft from public.checkout_drafts d
+    where d.app_id=p_checkout_app_id
+      and public.user_has_org_membership(d.organization_id);
   if v_draft.id is null then raise exception '找不到結帳單'; end if;
   perform public.assert_commerce_checkout_actor(v_draft.organization_id,v_draft.location_id);
   if (select count(*) from public.checkout_items
