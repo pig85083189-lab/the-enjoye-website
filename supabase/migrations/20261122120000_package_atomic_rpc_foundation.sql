@@ -28,7 +28,12 @@ begin
   end if;
   select * into v_def from public.package_definitions
     where id=p_definition_id and organization_id=v_tx.organization_id and is_active=true for share;
-  if v_def.id is null or v_def.session_count < 1 then raise exception '套票方案無效'; end if;
+  if v_def.id is null or v_def.session_count < 1
+    or jsonb_typeof(v_def.included_services)<>'array'
+    or jsonb_array_length(v_def.included_services)=0
+    or exists(select 1 from jsonb_array_elements(v_def.included_services) x
+      where nullif(trim(x->>'serviceId'),'') is null)
+  then raise exception '套票方案無效或未指定療程'; end if;
   if not exists (
     select 1 from public.transaction_items i where i.transaction_id=v_tx.id
       and i.organization_id=v_tx.organization_id and i.type='PACKAGE_PURCHASE'
@@ -36,6 +41,7 @@ begin
       and i.session_count_snapshot=v_def.session_count
       and i.unit_price_minor=v_def.price_minor
       and i.line_subtotal_minor=v_def.price_minor
+      and i.line_total_minor=v_def.price_minor and i.discount_amount_minor=0
   ) then raise exception '交易中找不到對應套票購買項目'; end if;
   if exists (
     select 1 from public.customer_packages c
@@ -92,7 +98,7 @@ begin
     then raise exception '套票扣堂識別碼衝突'; end if;
     return v_existing.id;
   end if;
-  if v_pkg.status <> 'ACTIVE' or (v_pkg.expires_at is not null and v_pkg.expires_at <= now())
+  if v_pkg.status not in ('ACTIVE','EXHAUSTED') or (v_pkg.expires_at is not null and v_pkg.expires_at <= now())
   then raise exception '套票已失效'; end if;
   select * into v_service from public.services where id=p_service_id and organization_id=v_tx.organization_id;
   if v_service.id is null or not (v_service.app_id = any(v_pkg.included_service_ids_snapshot))
