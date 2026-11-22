@@ -45,6 +45,30 @@ export async function GET(request: Request) {
     .eq("app_id", customerId)
     .limit(2);
   if (customerError) return fail(503, "無法讀取顧客資料");
+  // Normal customer management may use the booking-system UUID rather than
+  // the finance customer's app_id. Resolve only an active, verified source link.
+  if (!customers?.length) {
+    const { data: links, error: linkError } = await db
+      .from("booking_source_customer_links")
+      .select("finance_booking_customer_id")
+      .eq("organization_id", organization[0]!.id)
+      .eq("source_customer_key", customerId)
+      .eq("status", "ACTIVE")
+      .eq("evidence_kind", "LINE_VERIFIED_SESSION")
+      .is("revoked_at", null)
+      .limit(2);
+    if (linkError) return fail(503, "無法確認預約顧客對應");
+    if (links?.length !== 1) return fail(404, "找不到此客戶");
+    const { data: mapped, error: mappedError } = await db
+      .from("customers")
+      .select("id,organization_id,app_id,full_name,phone,email,birthday,gender,line_user_id,source,membership_tier,is_vip,primary_staff_id,status,notes,created_at,updated_at")
+      .eq("organization_id", organization[0]!.id)
+      .eq("id", links[0]!.finance_booking_customer_id)
+      .limit(2);
+    if (mappedError) return fail(503, "無法讀取對應顧客");
+    if (mapped?.length !== 1) return fail(404, "找不到此客戶");
+    customers.splice(0, customers.length, ...mapped);
+  }
   if (customers?.length !== 1) return fail(404, "找不到此客戶");
 
   const customerRow = dbCustomerFromUnknown(customers[0] as Record<string, unknown>);
@@ -117,7 +141,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     financeTransactions,
-    customer: customerFromRemoteRow(organizationId, customerRow),
+    customer: { ...customerFromRemoteRow(organizationId, customerRow), id: customerId },
     storedValueBalanceMinor,
   }, { headers });
 }
