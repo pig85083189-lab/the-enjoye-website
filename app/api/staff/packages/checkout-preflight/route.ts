@@ -34,6 +34,10 @@ export async function POST(request: Request) {
   const identity = await getAuthenticatedStaffMembership({ organizationId });
   if (identity.status === "unauthenticated") return fail(401, "請先登入");
   if (identity.status !== "ok" || !canCheckout(identity.membership)) return fail(403, "沒有結帳權限");
+  // Organization membership alone must not grant access to every branch.
+  if (!identity.membership.locationIds.includes(locationId)) {
+    return fail(403, "沒有此分店的結帳權限");
+  }
   const actor = await getServerStaffAuthUser();
   if (!actor || actor.id !== identity.membership.authUserId) return fail(403, "沒有結帳權限");
   const db = createBeautyOsFinanceClient();
