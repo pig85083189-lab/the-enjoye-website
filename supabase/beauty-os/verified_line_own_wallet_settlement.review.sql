@@ -67,7 +67,7 @@ begin
       )
       and public.customer_line_membership_is_current(v_org, v_booking)
     then
-      select count(*), min(subject.customer_id) into v_line_count, v_line_customer
+      select count(*), (array_agg(subject.customer_id))[1] into v_line_count, v_line_customer
       from public.current_line_subject_customers(v_org, p_organization_app_id, v_line_hash) subject;
       if v_line_count = 1 and v_line_customer = v_booking then
         v_wallet := v_booking;
