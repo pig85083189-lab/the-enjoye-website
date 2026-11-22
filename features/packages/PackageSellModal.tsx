@@ -51,11 +51,13 @@ export function PackageSellModal({
   const [purchaseCheckout, setPurchaseCheckout] = useState<{ draft: CheckoutDraft; transaction: Transaction | null } | null>(null);
 
   const [remoteDefinitions, setRemoteDefinitions] = useState<PackageDefinition[]>([]);
+  const [remoteServiceNames, setRemoteServiceNames] = useState<Record<string, string>>({});
   const [catalogError, setCatalogError] = useState(false);
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
     setRemoteDefinitions([]);
+    setRemoteServiceNames({});
     setCatalogError(false);
     void (async () => {
       try {
@@ -68,6 +70,12 @@ export function PackageSellModal({
           throw new Error("Invalid package catalog");
         }
         const rows = data.definitions as Array<Record<string, unknown>>;
+        const services = "services" in data && Array.isArray(data.services) ? data.services as Array<Record<string, unknown>> : [];
+        const names: Record<string, string> = {};
+        for (const service of services) {
+          if (typeof service.id === "string" && typeof service.name === "string") names[service.id] = service.name;
+          if (typeof service.app_id === "string" && typeof service.name === "string") names[service.app_id] = service.name;
+        }
         const mapped: PackageDefinition[] = rows.filter(row =>
           typeof row.app_id === "string" && row.app_id.length > 0 &&
           typeof row.name === "string" && row.is_active === true &&
@@ -88,7 +96,10 @@ export function PackageSellModal({
           createdAt: "",
           updatedAt: "",
         })).filter(row => row.includedServices.length > 0);
-        if (!controller.signal.aborted) setRemoteDefinitions(mapped);
+        if (!controller.signal.aborted) {
+          setRemoteDefinitions(mapped);
+          setRemoteServiceNames(names);
+        }
       } catch {
         if (!controller.signal.aborted) setCatalogError(true);
       }
@@ -332,7 +343,7 @@ export function PackageSellModal({
                 </p>
                 <p className="mt-1 truncate text-[12px] text-secondary-text">
                   {definition.includedServices
-                    .map((row) => serviceNames[row.serviceId] ?? row.serviceId)
+                    .map((row) => (remoteServiceNames[row.serviceId] ?? row.serviceId)
                     .join("、")}
                 </p>
                 <button
