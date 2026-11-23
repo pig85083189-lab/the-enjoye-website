@@ -182,6 +182,13 @@ export function PackageSellModal({
       setError("請先選擇可存取的分店");
       return;
     }
+    // Read-only preview uses the already authenticated catalogue and LINE
+    // eligibility endpoints. No finance checkout RPC is called.
+    // Full cross-database branch authorization remains mandatory for payment.
+    setError("");
+    setPreviewOnly(true);
+    return;
+    /*
     setOpening(true);
     setError("");
     try {
@@ -220,6 +227,7 @@ export function PackageSellModal({
     } finally {
       setOpening(false);
     }
+    */
   }
 
   if (previewOnly && selected && definition) {
@@ -238,7 +246,7 @@ export function PackageSellModal({
             <div className="flex justify-between"><span className="text-secondary-text">顧客</span><span>{selected.name}</span></div>
             <div className="flex justify-between"><span className="text-secondary-text">套票名稱</span><span>{definition.name}</span></div>
             <div className="flex justify-between"><span className="text-secondary-text">購買堂數</span><span>{definition.sessionCount} 堂</span></div>
-            <div><p className="text-secondary-text">指定療程</p><p className="mt-1">{definition.includedServices.map(row => remoteServiceNames[row.serviceId] ?? row.serviceId).join("、")}</p></div>
+            <div><p className="text-secondary-text">指定療程</p><p className="mt-1">{definition.includedServices.map(row => remoteServiceNames[row.serviceId] ?? serviceNames[row.serviceId] ?? "療程名稱待確認").join("、")}</p></div>
             <div className="flex justify-between"><span className="text-secondary-text">有效期限</span><span>{planValidityLabel(definition.validityDays)}</span></div>
             <div className="flex justify-between border-t border-border pt-3 font-semibold"><span>應付金額</span><span>{formatTwd(definition.priceMinor)}</span></div>
           </div>
@@ -489,7 +497,7 @@ export function PackageSellModal({
                 <span className="shrink-0 text-secondary-text">內容</span>
                 <span className="min-w-0 truncate text-right text-text">
                   {definition.includedServices
-                    .map((row) => serviceNames[row.serviceId] ?? row.serviceId)
+                    .map((row) => remoteServiceNames[row.serviceId] ?? serviceNames[row.serviceId] ?? "療程名稱待確認")
                     .join("、")}
                 </span>
               </div>
