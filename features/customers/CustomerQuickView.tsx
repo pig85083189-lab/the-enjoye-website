@@ -3,14 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
-import { useCustomerRemoteAppointments } from "@/features/customers/use-appointment-remote-read";
 import { AlertCircle, CalendarPlus, ChevronRight, Crown, Pencil, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
   collectCustomerAttentionNotes,
-  deriveLastService,
-  deriveNextAppointment,
   membershipBadge,
   serviceInterestTags,
   sourceLabel,
@@ -43,12 +40,6 @@ export function CustomerQuickView({
 }: CustomerQuickViewProps) {
   const [tab, setTab] = useState<"summary" | "full">("summary");
   const { organization } = useOrganization();
-  const remote = useCustomerRemoteAppointments(organization.id, customer.id, true);
-  const remoteHints: AppointmentHint[] = remote.status === "data"
-    ? remote.value.map(a => ({customerId:customer.id,status:a.status,serviceId:a.serviceId,
-      serviceName:a.serviceName,durationMinutes:a.durationMinutes,startAt:a.startAt,
-      endAt:a.endAt,staffName:a.staffName})) : [];
-  const linkedAppointments = remote.status === "data" ? remoteHints : remote.status === "empty" ? [] : appointments;
   const [packages,setPackages] = useState<{key:string;name?:string;remaining?:number;total?:number;usedAt?:string;error?:boolean}|null>(null);
   const packageKey = organization.id+":"+customer.id;
   useEffect(()=>{
@@ -70,8 +61,6 @@ export function CustomerQuickView({
   },[organization.id,customer.id,packageKey]);
   const membership = membershipBadge(customer);
   const interest = serviceInterestTags(customer);
-  const lastService = deriveLastService({ customer, appointments:linkedAppointments, catalog });
-  const nextAppointment = deriveNextAppointment({ customer, appointments:linkedAppointments, now });
   const attention = collectCustomerAttentionNotes(customer, extras);
   const source = sourceLabel(customer.source);
   const notes = customer.preferences?.notes?.trim() || "";
