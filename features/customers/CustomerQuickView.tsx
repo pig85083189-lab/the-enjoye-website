@@ -206,41 +206,16 @@ export function CustomerQuickView({
               服務紀錄
               <ChevronRight className="h-3.5 w-3.5 text-secondary-text" aria-hidden />
             </Link>
-            {lastService ? (
-              <div className="mt-2">
-                <p className="text-[11px] text-secondary-text">最近服務</p>
-                <p className="text-[13px] font-medium text-text">
-                  {lastService.serviceName}
-                </p>
-                <p className="text-[12px] text-secondary-text">
-                  {lastService.dateLabel ?? "—"}
-                  {lastService.durationMinutes
-                    ? ` · ${lastService.durationMinutes} 分鐘`
-                    : ""}
-                </p>
-              </div>
-            ) : (
-              <p className="mt-2 text-[13px] text-secondary-text">{remote.status==="loading" ? "正在讀取正式服務紀錄…" : remote.status==="error" ? "正式服務紀錄暫時無法讀取" : "尚無已完成服務紀錄"}</p>
-            )}
           </section>
 
           <section className="mt-3.5 rounded-2xl bg-[#FAF7F5] px-3.5 py-3">
-            <p className="text-[13px] font-semibold text-text">下次預約</p>
-            {nextAppointment ? (
-              <div className="mt-2">
-                <p className="text-[13px] font-medium text-text">
-                  {nextAppointment.dateLabel}
-                </p>
-                <p className="text-[12px] text-secondary-text">
-                  {nextAppointment.timeLabel}
-                  {nextAppointment.serviceName
-                    ? ` · ${nextAppointment.serviceName}`
-                    : ""}
-                </p>
-              </div>
-            ) : (
-              <p className="mt-2 text-[13px] text-secondary-text">{remote.status==="loading" ? "正在讀取正式預約…" : remote.status==="error" ? "正式預約暫時無法讀取" : "尚未預約"}</p>
-            )}
+            <Link
+              href={`${profileHref}?tab=appointments`}
+              className="flex items-center justify-between text-[13px] font-semibold text-text"
+            >
+              下次預約
+              <ChevronRight className="h-3.5 w-3.5 text-secondary-text" aria-hidden />
+            </Link>
             <Link
               href={createHref}
               className="mt-2.5 inline-flex min-h-9 items-center gap-1 text-[13px] font-medium text-[#C56B70]"
