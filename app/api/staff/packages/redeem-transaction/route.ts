@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
+import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/staff-auth/server";
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 
@@ -25,9 +26,9 @@ export async function POST(request: Request) {
     if (!body || typeof body !== "object" || Array.isArray(body)) return fail(400,"資料格式不正確");
     input = body as Record<string,unknown>;
   } catch { return fail(400,"資料格式不正確"); }
-  const allowed = ["organizationId","checkoutAppId","expectedUpdatedAt","customerPackageAppId","serviceAppId"];
+  const allowed = ["organizationId","checkoutAppId","expectedUpdatedAt","customerPackageAppId","serviceAppId","appointmentAppId"];
   if (Object.keys(input).some(k=>!allowed.includes(k)) ||
-      ![input.organizationId,input.checkoutAppId,input.customerPackageAppId,input.serviceAppId].every(id) ||
+      ![input.organizationId,input.checkoutAppId,input.customerPackageAppId,input.serviceAppId,input.appointmentAppId].every(id) ||
       !/^redemption:[a-zA-Z0-9_-]{12,90}$/.test(input.checkoutAppId as string) ||
       typeof input.expectedUpdatedAt !== "string" ||
       !Number.isFinite(Date.parse(input.expectedUpdatedAt))) return fail(400,"套票核銷資料不完整");
@@ -79,6 +80,32 @@ export async function POST(request: Request) {
     .select("session_delta").eq("organization_id",orgDbId).eq("customer_package_id",pkg.id);
   if (ledgerError || (entries??[]).reduce((sum,e)=>sum+Number(e.session_delta),0)<1)
     return fail(409,"套票剩餘堂數不足");
+  // Validate the actual booking source identity, never infer an appointment by name/time.
+  const booking = createServiceRoleClient();
+  if (!booking) return fail(503,"預約資料庫未設定");
+  const {data:bookingRows,error:bookingError} = await booking.from("appointments")
+    .select("id,organization_id,location_id,customer_id,service_id")
+    .eq("app_id",input.appointmentAppId).limit(2);
+  if (bookingError || bookingRows?.length !== 1) return fail(409,"找不到對應的預約");
+  const booked = bookingRows[0]!;
+  const [{data:bookingOrgs,error:bookingOrgError},{data:bookingLocations,error:bookingLocError},
+    {data:customerLinks,error:customerLinkError}] = await Promise.all([
+    booking.from("organizations").select("app_id").eq("id",booked.organization_id).limit(1),
+    booking.from("locations").select("app_id").eq("id",booked.location_id).limit(1),
+    db.from("booking_source_customer_links").select("source_customer_key")
+      .eq("organization_id",orgDbId).eq("finance_booking_customer_id",draft.customer_id)
+      .eq("source_customer_key",booked.customer_id).eq("status","ACTIVE").limit(2),
+  ]);
+  const {data:draftLocations,error:draftLocationError} = await db.from("checkout_drafts")
+    .select("location_id").eq("id",draft.id).limit(1);
+  const {data:financeLocations,error:financeLocationError} = draftLocations?.length===1
+    ? await db.from("locations").select("app_id").eq("id",draftLocations[0]!.location_id).limit(1)
+    : {data:null,error:null};
+  if (bookingOrgError || bookingLocError || customerLinkError || draftLocationError || financeLocationError ||
+      bookingOrgs?.[0]?.app_id !== organizationId ||
+      !bookingLocations?.[0]?.app_id || bookingLocations[0]!.app_id !== financeLocations?.[0]?.app_id ||
+      customerLinks?.length !== 1 || booked.service_id !== service.id)
+    return fail(409,"預約與套票核銷資料不符");
   // The RPC independently validates actor, branch, checkout, customer and
   // service and atomically settles and debits one session.
   const {data,error} = await db.rpc("finance_package_redemption_bridge",{
@@ -91,6 +118,28 @@ export async function POST(request: Request) {
   if (error) {
     console.error("[package-redemption] rejected",{code:error.code});
     return fail(error.code==="PGRST202" ? 503 : 409,"核銷未完成，請重新整理並確認交易狀態");
+  }
+  // Link only the completed transaction created by this checkout; never settle again.
+  const {data:completed,error:completedError} = await db.from("transactions")
+    .select("id,package_redemption,status").eq("checkout_draft_id",draft.id).limit(2);
+  if (completedError || completed?.length !== 1 || completed[0]!.status !== "COMPLETED" ||
+      completed[0]!.package_redemption?.customerPackageId !== pkg.app_id) {
+    console.error("[package-redemption] appointment link pending: transaction not found");
+    return NextResponse.json({bundle:data,appointmentLinkPending:true},{headers});
+  }
+  const tx = completed[0]!;
+  const existingLink = tx.package_redemption?.bookingAppointmentId;
+  if (existingLink && existingLink !== input.appointmentAppId)
+    return NextResponse.json({bundle:data,appointmentLinkPending:true},{headers});
+  if (!existingLink) {
+    const {error:linkError} = await db.from("transactions")
+      .update({package_redemption:{...tx.package_redemption,bookingAppointmentId:input.appointmentAppId}})
+      .eq("id",tx.id).eq("status","COMPLETED")
+      .is("package_redemption->>bookingAppointmentId",null);
+    if (linkError) {
+      console.error("[package-redemption] appointment link pending",{code:linkError.code});
+      return NextResponse.json({bundle:data,appointmentLinkPending:true},{headers});
+    }
   }
   return NextResponse.json({bundle:data},{headers});
 }
