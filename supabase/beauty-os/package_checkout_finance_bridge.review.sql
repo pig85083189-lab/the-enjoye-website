@@ -27,6 +27,7 @@ declare
   v_payment jsonb;
   v_payment_sum numeric := 0;
   v_payment_methods text[] := array[]::text[];
+  v_checkout_matches integer;
 begin
   -- Defense in depth: PostgREST must have authenticated the server key.
   if current_setting('request.jwt.claim.role', true) is distinct from 'service_role'
@@ -46,6 +47,11 @@ begin
     if p_customer_app_id is not null or p_location_app_id is not null
        or p_package_definition_app_id is not null or p_expected_updated_at is null
     then raise exception 'invalid update arguments'; end if;
+    -- Checkout app_id is unique per organization, not globally.
+    -- Refuse ambiguous IDs instead of choosing a different tenant's draft.
+    select count(*) into v_checkout_matches from public.checkout_drafts
+      where app_id=p_checkout_app_id;
+    if v_checkout_matches <> 1 then raise exception 'ambiguous or missing checkout identity'; end if;
     select * into v_checkout from public.checkout_drafts
       where app_id=p_checkout_app_id for update;
     v_org:=v_checkout.organization_id;
@@ -91,6 +97,14 @@ begin
     then raise exception 'invalid tender count'; end if;
     for v_payment in select value from jsonb_array_elements(p_payments) loop
       if jsonb_typeof(v_payment) <> 'object'
+         or exists (select 1 from jsonb_object_keys(v_payment) k
+                    where k not in ('method','amount','reference','id'))
+         or (v_payment ? 'reference' and (
+               jsonb_typeof(v_payment->'reference') <> 'string'
+               or length(v_payment->>'reference') > 128))
+         or (v_payment ? 'id' and (
+               jsonb_typeof(v_payment->'id') <> 'string'
+               or length(v_payment->>'id') > 128))
          or (v_payment->>'method') not in ('CASH','CARD','TRANSFER','OTHER')
          or jsonb_typeof(v_payment->'amount') <> 'number'
          or (v_payment->>'amount') !~ '^[0-9]+$'
