@@ -316,11 +316,13 @@ export function CheckoutPanel({
     if (!commerceRemoteWrite || !liveDraft || !selectedRemotePackageId ||
         !primaryServiceAppId || !checkoutCustomerId || submitting) return;
     if (liveDraft.items.length !== 1 || liveDraft.items[0]?.type !== "SERVICE" ||
-        liveDraft.items[0]?.quantity !== 1 || liveDraft.payments.length !== 0 ||
+        liveDraft.items[0]?.quantity !== 1 ||
         liveDraft.discounts.length !== 0) {
-      setError("套票核銷只支援單一指定療程，請先移除其他商品、付款及折扣");
+      setError("套票核銷只支援單一指定療程，請先移除其他商品及折扣");
       return;
     }
+    // Redemption creates its own zero-payment finance draft. Payments on the
+    // existing appointment draft are not sent, altered, or charged here.
     setSubmitting(true);
     setError("");
     // Reuse the same idempotency key for retries after an uncertain response.
