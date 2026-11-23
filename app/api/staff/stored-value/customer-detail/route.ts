@@ -187,11 +187,57 @@ export async function GET(request: Request) {
     .limit(500);
   if (walletHistoryError) return fail(503, "無法讀取儲值異動紀錄");
   const completedIds = new Set(financeTransactions.map((tx) => tx.id));
+  // Show purchases and actual session movements in the existing Recent
+  // Transactions panel. Only finance rows belonging to the resolved member.
+  const {data:ownedPackages,error:packageError}=await db.from("customer_packages")
+    .select("id,name_snapshot,session_count_snapshot,price_snapshot_minor,purchase_transaction_id,purchased_at")
+    .eq("organization_id",organization[0]!.id).eq("customer_id",customerRow.id)
+    .order("purchased_at",{ascending:false}).limit(501);
+  if(packageError || !ownedPackages || ownedPackages.length===501)
+    return fail(503,"無法讀取正式套票購買紀錄");
+  const ownedIds=ownedPackages.map(pkg=>pkg.id);
+  const {data:packageEntries,error:packageEntryError}=ownedIds.length
+    ? await db.from("package_ledger_entries")
+      .select("id,customer_package_id,type,session_delta,created_at,transaction_id")
+      .eq("organization_id",organization[0]!.id).eq("customer_id",customerRow.id)
+      .in("customer_package_id",ownedIds).order("created_at",{ascending:false}).limit(1001)
+    : {data:[],error:null};
+  if(packageEntryError || !packageEntries || packageEntries.length===1001)
+    return fail(503,"無法讀取正式套票核銷紀錄");
+  const purchaseTxIds=ownedPackages.map(pkg=>pkg.purchase_transaction_id)
+    .filter((id):id is string=>typeof id==="string");
+  const {data:purchaseTransactions,error:purchaseTxError}=purchaseTxIds.length
+    ? await db.from("transactions").select("id,total_minor,status")
+      .eq("organization_id",organization[0]!.id).eq("customer_id",customerRow.id)
+      .in("id",purchaseTxIds).limit(501)
+    : {data:[],error:null};
+  if(purchaseTxError)return fail(503,"無法確認套票購買金額");
+  const purchaseTxMap=new Map((purchaseTransactions??[]).map(tx=>[tx.id,tx]));
+  const packageNameMap=new Map(ownedPackages.map(pkg=>[pkg.id,pkg.name_snapshot]));
+  const packagePurchaseActivity=ownedPackages.map(pkg=>{
+    const tx=pkg.purchase_transaction_id ? purchaseTxMap.get(pkg.purchase_transaction_id) : null;
+    return {
+      id:"package-purchase:"+pkg.id,kind:"PACKAGE_PURCHASE",
+      label:"套票購買 · "+pkg.name_snapshot+"（"+pkg.session_count_snapshot+" 堂）",
+      amountMinor:-(tx?.status==="COMPLETED" ? Number(tx.total_minor) : Number(pkg.price_snapshot_minor)),
+      occurredAt:pkg.purchased_at,transactionId:pkg.purchase_transaction_id,
+    };
+  });
+  const packageUsageActivity=packageEntries.filter(entry=>entry.type!=="PURCHASE").map(entry=>({
+    id:"package-ledger:"+entry.id,kind:"PACKAGE_"+entry.type,
+    label:(entry.type==="REDEMPTION" ? "套票核銷" : "套票堂數異動")+
+      " · "+(packageNameMap.get(entry.customer_package_id)??"套票")+
+      "（"+(entry.session_delta>0?"+":"")+entry.session_delta+" 堂）",
+    amountMinor:0,occurredAt:entry.created_at,transactionId:entry.transaction_id,
+  }));
+  const packagePurchaseTxIds=new Set(purchaseTxIds);
   const financeActivity = [
-    ...financeTransactions.map((tx) => ({
+    ...financeTransactions.filter(tx=>!packagePurchaseTxIds.has(tx.id)).map((tx) => ({
       id: "checkout:" + tx.id, kind: "CHECKOUT", label: "消費結帳",
       amountMinor: -tx.total, occurredAt: tx.completedAt, transactionId: tx.id,
     })),
+    ...packagePurchaseActivity,
+    ...packageUsageActivity,
     ...(allWalletEntries ?? [])
       .filter((entry) => !entry.transaction_id || !completedIds.has(entry.transaction_id))
       .map((entry) => ({
