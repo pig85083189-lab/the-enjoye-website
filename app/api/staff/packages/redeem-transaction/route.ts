@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   const allowed = ["organizationId","checkoutAppId","expectedUpdatedAt","customerPackageAppId","serviceAppId"];
   if (Object.keys(input).some(k=>!allowed.includes(k)) ||
       ![input.organizationId,input.checkoutAppId,input.customerPackageAppId,input.serviceAppId].every(id) ||
-      !(input.checkoutAppId as string).startsWith("redemption:") ||
+      !/^redemption:[a-zA-Z0-9_-]{12,90}$/.test(input.checkoutAppId as string) ||
       typeof input.expectedUpdatedAt !== "string" ||
       !Number.isFinite(Date.parse(input.expectedUpdatedAt))) return fail(400,"套票核銷資料不完整");
   const organizationId = input.organizationId as string;
