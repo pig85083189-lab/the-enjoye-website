@@ -50,6 +50,7 @@ export function PackageSellModal({
   const [paymentStatus, setPaymentStatus] = useState<"idle"|"busy"|"ready"|"done">("idle");
   const [financeDraft, setFinanceDraft] = useState<{id:string;updatedAt:string}|null>(null);
   const [paymentError, setPaymentError] = useState("");
+  const [checkoutId, setCheckoutId] = useState<string | null>(null);
   const [purchaseCheckout, setPurchaseCheckout] = useState<{ draft: CheckoutDraft; transaction: Transaction | null } | null>(null);
 
   const [remoteDefinitions, setRemoteDefinitions] = useState<PackageDefinition[]>([]);
@@ -170,6 +171,7 @@ export function PackageSellModal({
     setDefinitionId(null);
     setPurchaseCheckout(null);
     setPreviewOnly(false);
+    setPaymentStatus("idle"); setFinanceDraft(null); setCheckoutId(null); setPaymentError("");
     onClose();
   }
 
@@ -203,7 +205,7 @@ export function PackageSellModal({
     setPaymentStatus("busy"); setPaymentError("");
     try {
       const opened = financeDraft ?? (await financeAction({
-        action:"OPEN", checkoutAppId:"package-sale-"+crypto.randomUUID(),
+        action:"OPEN", checkoutAppId:checkoutId ?? (() => { const id="package-sale-"+crypto.randomUUID(); setCheckoutId(id); return id; })(),
         organizationId,locationId,customerId:selected.id,packageDefinitionId:definition.id,
       })).draft;
       setFinanceDraft(opened);
