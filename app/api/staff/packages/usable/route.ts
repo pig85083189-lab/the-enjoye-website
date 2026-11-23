@@ -41,10 +41,23 @@ export async function GET(request: NextRequest) {
     db.from("services").select("id,app_id").eq("organization_id",orgDbId).eq("app_id",serviceId).eq("is_active",true).limit(2),
   ]);
   if (customerError || serviceError) return fail(503,"無法查詢套票");
-  if (customers?.length !== 1 || services?.length !== 1) return NextResponse.json({packages:[]},{headers:noStore});
+  let financeCustomer = customers?.length === 1 ? customers[0] : null;
+  if (!financeCustomer && /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(customerId)) {
+    const link = await db.from("booking_source_customer_links")
+      .select("finance_booking_customer_id").eq("organization_id",orgDbId)
+      .eq("source_customer_key",customerId).eq("status","ACTIVE").limit(2);
+    if (link.error) return fail(503,"無法核對顧客身分對應");
+    if (link.data?.length === 1) {
+      const mapped = await db.from("customers").select("id").eq("id",link.data[0]!.finance_booking_customer_id)
+        .eq("organization_id",orgDbId).limit(2);
+      if (mapped.error) return fail(503,"無法核對顧客身分對應");
+      if (mapped.data?.length === 1) financeCustomer = mapped.data[0]!;
+    }
+  }
+  if (!financeCustomer || services?.length !== 1) return NextResponse.json({packages:[]},{headers:noStore});
   const {data:packages,error:packageError} = await db.from("customer_packages")
     .select("id,app_id,name_snapshot,status,expires_at,included_service_ids_snapshot")
-    .eq("organization_id",orgDbId).eq("customer_id",customers[0]!.id).eq("status","ACTIVE");
+    .eq("organization_id",orgDbId).eq("customer_id",financeCustomer.id).eq("status","ACTIVE");
   if (packageError) return fail(503,"無法查詢套票");
   const eligible = (packages ?? []).filter(p => p.included_service_ids_snapshot?.includes(serviceId) &&
     (!p.expires_at || new Date(p.expires_at).getTime() > Date.now()));
