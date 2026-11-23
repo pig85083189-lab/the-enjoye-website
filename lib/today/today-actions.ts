@@ -91,6 +91,12 @@ export function resolveTodayPrimaryAction(
     return { kind: "none" };
   }
 
+  // A verified finance settlement takes precedence even when the legacy
+  // Commerce remote-read pilot is disabled for other checkout features.
+  if (isAppointmentSettledByTransaction(options?.paidAppointmentIds, appointment.id)) {
+    return settledRecordAction(appointment.id, options?.remoteTreatment ?? null, options?.paidAppointmentIds);
+  }
+
   if (options?.commerceRemoteRead) {
     return resolveRemoteCommerceTodayPrimaryAction(appointment, status, options);
   }
