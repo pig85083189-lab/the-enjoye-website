@@ -353,6 +353,7 @@ export function CheckoutPanel({
       await send("/api/staff/packages/redeem-transaction", {
         organizationId,checkoutAppId,expectedUpdatedAt:draft.expectedUpdatedAt,
         customerPackageAppId:selectedRemotePackageId,serviceAppId:primaryServiceAppId,
+        appointmentAppId:item.appointmentId,
       });
       setSelectedRemotePackageId(null);
       setRedemptionRequestId(null);
