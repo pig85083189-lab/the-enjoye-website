@@ -56,8 +56,19 @@ export async function POST(request: Request) {
     db.from("package_definitions").select("id,price_minor,session_count,included_services").eq("organization_id", orgId).eq("app_id", packageDefinitionId).eq("is_active", true).limit(2),
   ]);
   if (staffError || locationError || customerError || definitionError) return fail(503, "無法確認正式套票結帳資格");
-  if (staff?.length !== 1 || location?.length !== 1) return fail(403, "沒有此分店的結帳權限");
-  if (staff?.[0]?.role !== identity.membership.role || staff?.[0]?.user_id !== identity.membership.userId) {
+  let resolvedStaff = staff;
+  if (staff?.length === 0) {
+    const {data:links,error:linkError} = await db.from("finance_booking_actor_links")
+      .select("finance_membership_id").eq("booking_auth_user_id",actor.id).limit(2);
+    if (linkError || links?.length !== 1) return fail(403,"員工尚未完成財務授權對應");
+    const {data:mappedStaff,error:mappedError} = await db.from("staff_auth_memberships")
+      .select("id,role,user_id").eq("id",links[0]!.finance_membership_id)
+      .eq("organization_id",organizationId).eq("is_active",true).limit(2);
+    if (mappedError) return fail(503,"無法確認財務員工身分");
+    resolvedStaff = mappedStaff;
+  }
+  if (resolvedStaff?.length !== 1 || location?.length !== 1) return fail(403, "沒有此分店的結帳權限");
+  if (resolvedStaff?.[0]?.role !== identity.membership.role || resolvedStaff?.[0]?.user_id !== identity.membership.userId) {
     return fail(403, "員工身分與財務資料庫不一致");
   }
   // Mirror the finance RPC's location-scope rule instead of relying solely
@@ -65,7 +76,7 @@ export async function POST(request: Request) {
   const { data: financeLocations, error: financeLocationsError } = await db
     .from("staff_auth_membership_locations")
     .select("location_id")
-    .eq("membership_id", staff[0]!.id);
+    .eq("membership_id", resolvedStaff[0]!.id);
   if (financeLocationsError) return fail(503, "無法確認財務分店權限");
   if (!verifyPackageCheckoutActorScope({
     authenticatedUserId: actor.id,
@@ -78,8 +89,8 @@ export async function POST(request: Request) {
     },
     finance: {
       authUserId: actor.id,
-      userId: staff[0]!.user_id,
-      role: staff[0]!.role,
+      userId: resolvedStaff[0]!.user_id,
+      role: resolvedStaff[0]!.role,
       isActive: true,
       locationIds: (financeLocations ?? []).map(row => row.location_id),
     },
