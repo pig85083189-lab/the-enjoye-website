@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   CalendarDays,
   Check,
@@ -96,9 +96,38 @@ export function TodayDashboard({
     organizationId: organization.id,
     enabled: commerceRemoteReadPilot,
   });
-  const paidAppointmentIds = completedTransactionIdsByAppointment(
+  const remotePaidIds = completedTransactionIdsByAppointment(
     transactionsFromRemoteCommerceState(remoteTransactions),
   );
+  const [packageSettlements, setPackageSettlements] = useState<{
+    key:string; paid:ReadonlyMap<string,string>;
+  } | null>(null);
+  const scheduleSource = todayRemoteReadPilot && remoteState.status === "data"
+    ? remoteState.value : localSchedule;
+  const settlementKey = organization.id + ":" + scheduleSource.map(a=>a.id).sort().join(",");
+  useEffect(() => {
+    if (!checkoutAllowed || scheduleSource.length===0) return;
+    let cancelled = false;
+    void fetch("/api/staff/packages/settled-appointments",{
+      method:"POST",credentials:"same-origin",cache:"no-store",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({organizationId:organization.id,appointmentIds:scheduleSource.map(a=>a.id)}),
+    }).then(async response=>{
+      if (!response.ok) throw new Error("Settlement read unavailable");
+      return response.json() as Promise<{settled:Array<{appointmentId:string;transactionId:string}>}>;
+    }).then(result=>{
+      if (!cancelled) setPackageSettlements({
+        key:settlementKey,
+        paid:new Map(result.settled.map(row=>[row.appointmentId,row.transactionId])),
+      });
+    }).catch(()=>{ /* fail closed: never infer paid from appointment status */ });
+    return ()=>{cancelled=true};
+  },[checkoutAllowed,organization.id,settlementKey]);
+  const paidAppointmentIds = new Map(remotePaidIds);
+  if (packageSettlements?.key === settlementKey) {
+    for (const [appointmentId,transactionId] of packageSettlements.paid)
+      paidAppointmentIds.set(appointmentId,transactionId);
+  }
   const schedule = applyRosterStaffDisplayNames(
     todayRemoteReadPilot && remoteState.status === "data"
       ? remoteState.value
