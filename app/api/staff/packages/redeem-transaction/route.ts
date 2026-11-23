@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       (payments?.length ?? 0)>0 || (discounts?.length ?? 0)>0) return fail(409,"套票核銷資料不一致");
   const pkg = packages[0]!, service = services[0]!, line = items[0]!;
   if (pkg.status !== "ACTIVE" || (pkg.expires_at && Date.parse(pkg.expires_at)<=Date.now()) ||
-      !service.is_active || !pkg.included_service_ids_snapshot?.includes(service.app_id) ||
+      !service.is_active || !(pkg.included_service_ids_snapshot?.includes(service.app_id) || pkg.included_service_ids_snapshot?.includes(service.id)) ||
       line.type !== "SERVICE" || line.reference_id !== service.app_id || line.quantity !== 1 ||
       line.unit_price_minor !== 0 || line.line_total_minor !== 0 ||
       line.line_subtotal_minor !== 0 || line.discount_amount_minor !== 0 ||
