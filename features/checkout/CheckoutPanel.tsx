@@ -256,6 +256,7 @@ export function CheckoutPanel({
   const [remotePackages, setRemotePackages] = useState<Array<{id:string;name:string;remaining:number}>>([]);
   const [remotePackageError, setRemotePackageError] = useState("");
   const [selectedRemotePackageId, setSelectedRemotePackageId] = useState<string | null>(null);
+  const [redemptionRequestId, setRedemptionRequestId] = useState<string | null>(null);
   const primaryServiceAppId = primaryService?.referenceId ?? "";
   const checkoutCustomerId = item.customerId || liveDraft?.customerId || "";
   useEffect(() => {
@@ -266,6 +267,7 @@ export function CheckoutPanel({
     const controller = new AbortController();
     setRemotePackages([]);
     setSelectedRemotePackageId(null);
+    setRedemptionRequestId(null);
     setRemotePackageError("");
     const params = new URLSearchParams({organizationId,customerId:checkoutCustomerId,serviceId:primaryServiceAppId});
     void fetch(`/api/staff/packages/usable?${params.toString()}`,{credentials:"same-origin",cache:"no-store",signal:controller.signal})
@@ -309,6 +311,59 @@ export function CheckoutPanel({
       total,
       payments: liveDraft?.payments ?? [],
     });
+
+  async function redeemSelectedRemotePackage() {
+    if (!commerceRemoteWrite || !liveDraft || !selectedRemotePackageId ||
+        !primaryServiceAppId || !checkoutCustomerId || submitting) return;
+    if (liveDraft.items.length !== 1 || liveDraft.items[0]?.type !== "SERVICE" ||
+        liveDraft.items[0]?.quantity !== 1 || liveDraft.payments.length !== 0 ||
+        liveDraft.discounts.length !== 0) {
+      setError("套票核銷只支援單一指定療程，請先移除其他商品、付款及折扣");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    // Reuse the same idempotency key for retries after an uncertain response.
+    const checkoutAppId = redemptionRequestId ??
+      `redemption:${crypto.randomUUID().replace(/-/g, "")}`;
+    setRedemptionRequestId(checkoutAppId);
+    try {
+      const send = async (path: string, payload: Record<string,unknown>) => {
+        const response = await fetch(path, {
+          method:"POST",credentials:"same-origin",cache:"no-store",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify(payload),
+        });
+        const result: unknown = await response.json().catch(()=>null);
+        const data = result && typeof result === "object" ? result as Record<string,unknown> : {};
+        if (!response.ok) throw new Error(typeof data.error==="string" ? data.error : "套票核銷失敗");
+        return data;
+      };
+      const prepared = await send("/api/staff/packages/redeem-prepare", {
+        organizationId,locationId:liveDraft.locationId,customerId:checkoutCustomerId,
+        customerPackageAppId:selectedRemotePackageId,serviceAppId:primaryServiceAppId,
+        checkoutAppId,
+      });
+      const draft = prepared.draft && typeof prepared.draft === "object"
+        ? prepared.draft as Record<string,unknown> : null;
+      if (!draft || typeof draft.expectedUpdatedAt !== "string" ||
+          draft.status !== "OPEN") throw new Error("核銷結帳單狀態不正確，請重新確認");
+      await send("/api/staff/packages/redeem-transaction", {
+        organizationId,checkoutAppId,expectedUpdatedAt:draft.expectedUpdatedAt,
+        customerPackageAppId:selectedRemotePackageId,serviceAppId:primaryServiceAppId,
+      });
+      setSelectedRemotePackageId(null);
+      setRedemptionRequestId(null);
+      setWalletNonce(n=>n+1);
+      // The canonical transaction belongs to the finance checkout, not the
+      // local booking draft. Refresh instead of passing a misleading ID.
+      window.location.reload();
+    } catch(err:unknown) {
+      setError(toCommerceUserMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const productHits = productQuery.trim()
     ? searchProducts(organizationId, productQuery, { activeOnly: true }).slice(0, 8)
@@ -1128,7 +1183,7 @@ export function CheckoutPanel({
                           </label>
                         ))}
                         {selectedRemotePackageId ? (
-                          <p className="text-[12px] text-secondary-text">已選擇套票，正式扣堂交易尚未啟用。請勿按下方一般收款按鈕代替核銷。</p>
+                          <p className="text-[12px] text-secondary-text">已選擇套票，請按下方「確認使用 1 堂套票」。正式核銷功能未啟用時，系統會拒絕扣堂。</p>
                         ) : (
                           <p className="text-[12px] text-secondary-text">請選擇要使用的套票。正式扣堂交易尚未啟用。</p>
                         )}
@@ -1296,6 +1351,13 @@ export function CheckoutPanel({
             >
               已結帳 {formatTwd(total)}
             </Link>
+          ) : selectedRemotePackageId && commerceRemoteWrite ? (
+            <button type="button" data-checkout-redeem
+              disabled={submitting}
+              className="flex h-[50px] w-full items-center justify-center rounded-2xl bg-[#C56B70] text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => { void redeemSelectedRemotePackage(); }}>
+              {submitting ? "正在確認核銷…" : "確認使用 1 堂套票"}
+            </button>
           ) : (
             <button
               type="button"
