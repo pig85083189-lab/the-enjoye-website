@@ -40,6 +40,7 @@ export async function POST(request: Request) {
   let organizationId: string, locationId: string, customerId: string, packageDefinitionId: string;
   let definitionDbId: string | null = null;
   let draftTotalMinor: number | null = null;
+  let draftOrganizationDbId: string | null = null;
   let expectedUpdatedAt: string | null = null;
   if (action === "OPEN") {
     if (![body.organizationId,body.locationId,body.customerId,body.packageDefinitionId].every(validId)) {
@@ -63,10 +64,11 @@ export async function POST(request: Request) {
     if (draft.updated_at !== expectedUpdatedAt) return fail(409, "結帳資料已更新，請重新整理");
     if (!Number.isSafeInteger(draft.total_minor) || draft.total_minor <= 0) return fail(409, "結帳金額無效");
     draftTotalMinor = draft.total_minor;
+    draftOrganizationDbId = draft.organization_id;
     const [{ data: org },{ data: loc },{ data: customer },{ data: items }] = await Promise.all([
       db.from("organizations").select("app_id").eq("id", draft.organization_id).limit(2),
-      db.from("locations").select("app_id").eq("id", draft.location_id).limit(2),
-      db.from("customers").select("app_id").eq("id", draft.customer_id).limit(2),
+      db.from("locations").select("app_id").eq("id", draft.location_id).eq("organization_id", draft.organization_id).limit(2),
+      db.from("customers").select("app_id").eq("id", draft.customer_id).eq("organization_id", draft.organization_id).limit(2),
       db.from("checkout_items").select("type,reference_id,quantity").eq("checkout_draft_id",draft.id).limit(2),
     ]);
     if (org?.length !== 1 || loc?.length !== 1 || customer?.length !== 1 ||
@@ -96,8 +98,12 @@ export async function POST(request: Request) {
   const actor = await getServerStaffAuthUser();
   if (!actor) return fail(401, "請先登入");
   const { data: definitions, error: defError } = await db.from("package_definitions")
-    .select("id").eq("app_id",packageDefinitionId).eq("is_active",true).limit(2);
+    .select("id,organization_id,price_minor").eq("app_id",packageDefinitionId).eq("is_active",true).limit(2);
   if (defError || definitions?.length !== 1) return fail(409, "套票方案已失效");
+  if (definitions[0]!.price_minor !== check.amountMinor ||
+      (draftOrganizationDbId && definitions[0]!.organization_id !== draftOrganizationDbId)) {
+    return fail(409, "套票方案與結帳店家或金額不一致");
+  }
   definitionDbId = definitions[0]!.id;
   let payments: Array<{method:string;amount:number;id:string;reference?:string}> | null = null;
   if (action === "SAVE") {
