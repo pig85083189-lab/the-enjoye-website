@@ -48,7 +48,7 @@ export function CustomerQuickView({
     ? remote.value.map(a => ({customerId:customer.id,status:a.status,serviceId:a.serviceId,
       serviceName:a.serviceName,durationMinutes:a.durationMinutes,startAt:a.startAt,
       endAt:a.endAt,staffName:a.staffName})) : [];
-  const linkedAppointments = remote.status === "data" ? remoteHints : appointments;
+  const linkedAppointments = remote.status === "data" ? remoteHints : remote.status === "empty" ? [] : appointments;
   const [packages,setPackages] = useState<{key:string;name?:string;remaining?:number;total?:number;usedAt?:string;error?:boolean}|null>(null);
   const packageKey = organization.id+":"+customer.id;
   useEffect(()=>{
