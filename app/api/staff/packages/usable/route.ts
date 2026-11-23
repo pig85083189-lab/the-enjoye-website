@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     .select("id,app_id,name_snapshot,status,expires_at,included_service_ids_snapshot")
     .eq("organization_id",orgDbId).eq("customer_id",financeCustomer.id).eq("status","ACTIVE");
   if (packageError) return fail(503,"無法查詢套票");
-  const eligible = (packages ?? []).filter(p => p.included_service_ids_snapshot?.includes(serviceId) &&
+  const eligible = (packages ?? []).filter(p => (p.included_service_ids_snapshot?.includes(serviceId) || p.included_service_ids_snapshot?.includes(services[0]!.id)) &&
     (!p.expires_at || new Date(p.expires_at).getTime() > Date.now()));
   if (!eligible.length) return NextResponse.json({packages:[]},{headers:noStore});
   const {data:entries,error:ledgerError} = await db.from("package_ledger_entries")
