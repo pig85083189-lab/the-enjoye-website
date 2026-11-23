@@ -40,7 +40,7 @@ begin
        or p_expected_updated_at is not null or p_payments is not null
        or p_package_definition_id is not null
     then raise exception 'invalid open arguments'; end if;
-    select l.organization_id,l.id into v_org,v_location
+    select l.organization_id,l.id into strict v_org,v_location
       from public.locations l where l.app_id=p_location_app_id and l.is_active=true;
   elsif p_action in ('SAVE','SETTLE') then
     if p_customer_app_id is not null or p_location_app_id is not null
@@ -72,7 +72,7 @@ begin
        where x.membership_id=v_membership.id and l.id=v_location)
   then raise exception 'finance branch not authorized'; end if;
 
-  if p_action='SAVE' then
+  if p_action in ('SAVE','SETTLE') then
     -- A package purchase is exactly one package line, with no discounts.
     -- Prevent arbitrary checkout drafts from being modified through this bridge.
     if v_checkout.status not in ('OPEN','READY')
@@ -85,6 +85,8 @@ begin
        or exists (select 1 from public.checkout_discounts d
            where d.checkout_draft_id=v_checkout.id)
     then raise exception 'invalid package checkout state'; end if;
+  end if;
+  if p_action='SAVE' then
     if jsonb_array_length(p_payments) < 1 or jsonb_array_length(p_payments) > 4
     then raise exception 'invalid tender count'; end if;
     for v_payment in select value from jsonb_array_elements(p_payments) loop
@@ -104,6 +106,12 @@ begin
     if v_payment_sum is distinct from v_checkout.total_minor
     then raise exception 'package payment does not match total'; end if;
   end if;
+  -- Restrict transaction scope to the package definition's organization.
+  if p_action='SETTLE' and not exists (
+    select 1 from public.package_definitions d
+    where d.id=p_package_definition_id and d.organization_id=v_org and d.is_active=true
+  ) then raise exception 'invalid package definition scope'; end if;
+
   -- Transaction-local identity is used ONLY inside this privileged bridge.
   -- Existing finance RPCs re-check the actual finance membership and branch.
   perform set_config('request.jwt.claim.sub',p_actor_auth_user_id::text,true);
