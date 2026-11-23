@@ -39,6 +39,7 @@ export async function POST(request: Request) {
   if (!db) return fail(503, "財務資料庫未設定");
   let organizationId: string, locationId: string, customerId: string, packageDefinitionId: string;
   let definitionDbId: string | null = null;
+  let draftTotalMinor: number | null = null;
   let expectedUpdatedAt: string | null = null;
   if (action === "OPEN") {
     if (![body.organizationId,body.locationId,body.customerId,body.packageDefinitionId].every(validId)) {
@@ -60,6 +61,8 @@ export async function POST(request: Request) {
     const draft = drafts[0]!;
     if (!["OPEN","READY"].includes(draft.status)) return fail(409, "結帳已完成或不可修改");
     if (draft.updated_at !== expectedUpdatedAt) return fail(409, "結帳資料已更新，請重新整理");
+    if (!Number.isSafeInteger(draft.total_minor) || draft.total_minor <= 0) return fail(409, "結帳金額無效");
+    draftTotalMinor = draft.total_minor;
     const [{ data: org },{ data: loc },{ data: customer },{ data: items }] = await Promise.all([
       db.from("organizations").select("app_id").eq("id", draft.organization_id).limit(2),
       db.from("locations").select("app_id").eq("id", draft.location_id).limit(2),
@@ -86,6 +89,9 @@ export async function POST(request: Request) {
   if (!preflight.ok) return fail(preflight.status, check.error ?? "套票結帳授權失敗");
   if (check.reason !== "FINANCE_AUTH_BRIDGE_REQUIRED" || !Number.isSafeInteger(check.amountMinor)) {
     return fail(503, "套票交易資格無法確認");
+  }
+  if (action !== "OPEN" && draftTotalMinor !== check.amountMinor) {
+    return fail(409, "套票價格已變動，請重新建立結帳單");
   }
   const actor = await getServerStaffAuthUser();
   if (!actor) return fail(401, "請先登入");
