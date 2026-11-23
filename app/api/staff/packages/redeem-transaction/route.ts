@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   const organizationId = input.organizationId as string;
   const auth = await getAuthenticatedStaffMembership({ organizationId });
   if (auth.status === "unauthenticated") return fail(401,"請先登入");
-  if (auth.status !== "ok" || !canCheckout(auth.membership)) return fail(403,"沒有結帳權限");
+  if (auth.status !== "ok" || !canCheckout(auth.membership) || !["OWNER","MANAGER","STAFF"].includes(auth.membership.role)) return fail(403,"沒有套票核銷權限");
   const actor = await getServerStaffAuthUser();
   if (!actor || actor.id !== auth.membership.authUserId) return fail(403,"沒有結帳權限");
   const db = createBeautyOsFinanceClient();
