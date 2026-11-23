@@ -3,6 +3,7 @@ import { getAuthenticatedStaffMembership, getServerStaffAuthUser } from "@/lib/s
 import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
 import { lineMembershipIsCurrent, type VerifiedLineBinding } from "@/lib/commerce/line-verified-booking-source";
+import { verifyPackageCheckoutActorScope } from "@/lib/commerce/package-checkout-actor-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -66,10 +67,24 @@ export async function POST(request: Request) {
     .select("location_id")
     .eq("membership_id", staff[0]!.id);
   if (financeLocationsError) return fail(503, "無法確認財務分店權限");
-  if ((financeLocations ?? []).length > 0 &&
-      !(financeLocations ?? []).some(row => row.location_id === locationId)) {
-    return fail(403, "財務資料庫未授權此分店結帳");
-  }
+  if (!verifyPackageCheckoutActorScope({
+    authenticatedUserId: actor.id,
+    booking: {
+      authUserId: identity.membership.authUserId ?? "",
+      userId: identity.membership.userId,
+      role: identity.membership.role,
+      isActive: identity.membership.isActive,
+      locationIds: identity.membership.locationIds,
+    },
+    finance: {
+      authUserId: actor.id,
+      userId: staff[0]!.user_id,
+      role: staff[0]!.role,
+      isActive: true,
+      locationIds: (financeLocations ?? []).map(row => row.location_id),
+    },
+    locationId,
+  })) return fail(403, "員工身分或分店結帳權限不一致");
   if (customer?.length !== 1) return fail(409, "顧客尚未同步至正式財務資料庫");
   // Re-check LINE status on the server at the moment of purchase.
   // A browser-visible eligible-customer list is not authorization.
