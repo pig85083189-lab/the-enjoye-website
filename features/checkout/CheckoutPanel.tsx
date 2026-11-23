@@ -256,9 +256,9 @@ export function CheckoutPanel({
   const [remotePackages, setRemotePackages] = useState<Array<{id:string;name:string;remaining:number}>>([]);
   const [remotePackageError, setRemotePackageError] = useState("");
   const primaryServiceAppId = primaryService?.referenceId ?? "";
-  const checkoutCustomerId = liveDraft?.customerId ?? "";
+  const checkoutCustomerId = item.customerId || liveDraft?.customerId || "";
   useEffect(() => {
-    if (!commerceRemoteWrite || readOnly || !checkoutCustomerId || !primaryServiceAppId) {
+    if (readOnly || !checkoutCustomerId || !primaryServiceAppId) {
       setRemotePackages([]);
       return;
     }
@@ -1109,7 +1109,7 @@ export function CheckoutPanel({
                     可使用下方套票折抵本次服務
                   </p>
                 </div>
-                {commerceRemoteWrite ? (
+                {commerceRemoteWrite || remotePackages.length > 0 || remotePackageError ? (
                   <div className="rounded-xl border border-border px-3 py-2.5">
                     {remotePackageError ? (
                       <p className="text-[13px] text-secondary-text">{remotePackageError}</p>
