@@ -1176,7 +1176,7 @@ export function CheckoutPanel({
                           <label key={pkg.id} className="flex cursor-pointer items-center gap-2 text-[13px]">
                             <input type="radio" name="remote-package-redemption" value={pkg.id}
                               checked={selectedRemotePackageId === pkg.id}
-                              onChange={() => setSelectedRemotePackageId(pkg.id)}
+                              onChange={() => { setSelectedRemotePackageId(pkg.id); setRedemptionRequestId(null); }}
                               disabled={readOnly || submitting}
                               className="accent-[#C56B70]" />
                             <span className="font-medium text-text">{pkg.name} · 剩餘 {pkg.remaining} 堂</span>
