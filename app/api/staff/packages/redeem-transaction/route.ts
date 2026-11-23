@@ -106,6 +106,12 @@ export async function POST(request: Request) {
       !bookingLocations?.[0]?.app_id || bookingLocations[0]!.app_id !== financeLocations?.[0]?.app_id ||
       customerLinks?.length !== 1 || booked.service_id !== service.id)
     return fail(409,"預約與套票核銷資料不符");
+  // A booking may have only one completed package-redemption checkout.
+  const {data:alreadyLinked,error:alreadyLinkedError} = await db
+    .from("package_redemption_booking_links").select("transaction_id")
+    .eq("organization_id",orgDbId).eq("booking_appointment_app_id",input.appointmentAppId).limit(1);
+  if (alreadyLinkedError) return fail(503,"無法確認預約核銷狀態");
+  if (alreadyLinked?.length) return fail(409,"此預約已完成套票核銷，請重新整理");
   // The RPC independently validates actor, branch, checkout, customer and
   // service and atomically settles and debits one session.
   const {data,error} = await db.rpc("finance_package_redemption_bridge",{
