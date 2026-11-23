@@ -56,8 +56,9 @@ export async function GET(request: NextRequest) {
   }
   if (!financeCustomer || services?.length !== 1) return NextResponse.json({packages:[]},{headers:noStore});
   const {data:packages,error:packageError} = await db.from("customer_packages")
-    .select("id,app_id,name_snapshot,status,expires_at,included_service_ids_snapshot")
-    .eq("organization_id",orgDbId).eq("customer_id",financeCustomer.id).eq("status","ACTIVE");
+    .select("id,app_id,name_snapshot,status,expires_at,purchased_at,included_service_ids_snapshot")
+    .eq("organization_id",orgDbId).eq("customer_id",financeCustomer.id).eq("status","ACTIVE")
+    .order("purchased_at",{ascending:true}).order("id",{ascending:true});
   if (packageError) return fail(503,"無法查詢套票");
   const eligible = (packages ?? []).filter(p => (p.included_service_ids_snapshot?.includes(serviceId) || p.included_service_ids_snapshot?.includes(services[0]!.id)) &&
     (!p.expires_at || new Date(p.expires_at).getTime() > Date.now()));
