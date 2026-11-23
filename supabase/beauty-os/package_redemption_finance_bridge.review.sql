@@ -60,6 +60,7 @@ begin
   -- Only the existing atomic settlement function may create the ledger debit.
   -- It verifies a single zero-value service item, no payments, matching
   -- package selection and service, then settles and redeems in one transaction.
+  perform set_config('request.jwt.claim.role','authenticated',true);
   perform set_config('request.jwt.claim.sub',v_membership.auth_user_id::text,true);
   perform set_config('request.jwt.claims',
     jsonb_build_object('sub',v_membership.auth_user_id::text,'role','authenticated')::text,true);
@@ -144,6 +145,15 @@ begin
        or v_draft.package_redemption <> jsonb_build_object(
           'customerPackageId',v_package.app_id,'serviceId',v_service.app_id,'sessions',1)
     then raise exception 'checkout id already in use'; end if;
+    if v_draft.status not in ('OPEN','READY') then
+      raise exception 'checkout already settled'; end if;
+    if (select count(*) from public.checkout_items where checkout_draft_id=v_draft.id)<>1
+       or not exists(select 1 from public.checkout_items where checkout_draft_id=v_draft.id
+         and type='SERVICE' and reference_id=v_service.app_id and quantity=1
+         and unit_price_minor=0 and line_subtotal_minor=0 and line_total_minor=0)
+       or exists(select 1 from public.checkout_payments where checkout_draft_id=v_draft.id)
+       or exists(select 1 from public.checkout_discounts where checkout_draft_id=v_draft.id)
+       or v_draft.total_minor<>0 then raise exception 'checkout shape changed'; end if;
     return jsonb_build_object('checkoutAppId',v_draft.app_id,
       'expectedUpdatedAt',v_draft.updated_at,'status',v_draft.status);
   end if;
