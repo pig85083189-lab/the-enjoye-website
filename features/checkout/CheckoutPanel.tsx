@@ -1300,10 +1300,10 @@ export function CheckoutPanel({
             <button
               type="button"
               data-checkout-confirm
-              disabled={!canConfirm || submitting}
+              disabled={!canConfirm || submitting || Boolean(selectedRemotePackageId)}
               className="flex h-[50px] w-full items-center justify-center rounded-2xl bg-[#C56B70] text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               onClick={() => {
-                if (!liveDraft || !canConfirm || submitting) return;
+                if (!liveDraft || !canConfirm || submitting || selectedRemotePackageId) return;
                 if (commerceRemoteWrite) {
                   const blocked = remoteStoredValueBlockReason(
                     remoteWallet,
