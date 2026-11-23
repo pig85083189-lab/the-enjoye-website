@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     packageDefinitionId = items[0]!.reference_id;
   }
   // Reuse the same authorization gate for every write, not just opening.
-  const preflightRequest = new Request(new URL("../checkout-preflight",request.url), {
+  const preflightRequest = new Request(new URL("checkout-preflight",request.url), {
     method: "POST",
     headers: { "origin": new URL(request.url).origin, "content-type": "application/json" },
     body: JSON.stringify({ organizationId,locationId,customerId,packageDefinitionId }),
