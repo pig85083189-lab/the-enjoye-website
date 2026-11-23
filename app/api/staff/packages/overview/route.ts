@@ -54,7 +54,7 @@ export async function GET(request: Request) {
   }
   const [{ data: definitions, error: definitionError }, { data: purchases, error: purchaseError }] = await Promise.all([
     db.from("package_definitions").select("id,app_id,name,description,included_services,session_count,price_minor,currency,validity_days,is_active").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(500),
-    db.from("customer_packages").select("id,customer_id,package_definition_id,name_snapshot,session_count_snapshot,price_snapshot_minor,included_service_ids_snapshot,purchased_at,expires_at,status").eq("organization_id", orgId).match(financeCustomerId ? { customer_id: financeCustomerId } : {}).order("purchased_at", { ascending: false }).limit(1000),
+    db.from("customer_packages").select("id,customer_id,package_definition_id,name_snapshot,session_count_snapshot,price_snapshot_minor,included_service_ids_snapshot,purchase_transaction_id,purchased_at,expires_at,status").eq("organization_id", orgId).match(financeCustomerId ? { customer_id: financeCustomerId } : {}).order("purchased_at", { ascending: false }).limit(1000),
   ]);
   if (definitionError || purchaseError) return fail(503, "無法讀取正式套票");
   const ids = (purchases ?? []).map(row => row.id);
@@ -64,10 +64,33 @@ export async function GET(request: Request) {
     if (error) return fail(503, "無法讀取套票堂數");
     balances = data ?? [];
   }
+  // Immutable finance-ledger history. Keep the same verified customer scope as
+  // the package list; never join records by name or telephone.
+  let ledger: Array<{ id:string;customer_package_id:string;type:string;session_delta:number;service_id:string|null;transaction_id:string|null;created_at:string;reason:string|null }> = [];
+  if (ids.length) {
+    const {data,error} = await db.from("package_ledger_entries")
+      .select("id,customer_package_id,type,session_delta,service_id,transaction_id,created_at,reason")
+      .eq("organization_id",orgId).eq("customer_id",financeCustomerId!)
+      .in("customer_package_id",ids).order("created_at",{ascending:false}).limit(1001);
+    if(error || !data || data.length===1001)return fail(503,"套票異動紀錄過多或無法確認");
+    ledger=data;
+  }
+  const txIds=[...new Set([
+    ...(purchases??[]).map(row=>row.purchase_transaction_id),
+    ...ledger.map(row=>row.transaction_id),
+  ].filter((id):id is string=>typeof id==="string"))];
+  const {data:historyTransactions,error:historyError}=txIds.length
+    ? await db.from("transactions")
+      .select("id,app_id,transaction_number,status,total_minor,completed_at")
+      .eq("organization_id",orgId).eq("customer_id",financeCustomerId!)
+      .in("id",txIds).limit(1001)
+    : {data:[],error:null};
+  if(historyError || !historyTransactions || historyTransactions.length===1001)
+    return fail(503,"無法確認套票交易紀錄");
   const { data: services, error: serviceError } = await db.from("services")
     .select("id,app_id,name,is_active")
     .eq("organization_id", orgId)
     .order("name", { ascending: true }).limit(500);
   if (serviceError) return fail(503, "無法確認指定療程");
-  return NextResponse.json({ definitions: definitions ?? [], purchases: purchases ?? [], balances, services: services ?? [] }, { headers });
+  return NextResponse.json({ definitions: definitions ?? [], purchases: purchases ?? [], balances, services: services ?? [], ledger, historyTransactions }, { headers });
 }
