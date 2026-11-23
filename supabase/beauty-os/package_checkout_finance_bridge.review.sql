@@ -24,6 +24,9 @@ declare
   v_checkout public.checkout_drafts;
   v_membership public.staff_auth_memberships;
   v_result jsonb;
+  v_payment jsonb;
+  v_payment_sum bigint := 0;
+  v_payment_methods text[] := array[]::text[];
 begin
   -- Defense in depth: PostgREST must have authenticated the server key.
   if current_setting('request.jwt.claim.role', true) is distinct from 'service_role'
@@ -69,6 +72,63 @@ begin
        where x.membership_id=v_membership.id and l.id=v_location)
   then raise exception 'finance branch not authorized'; end if;
 
+  if p_action='SAVE' then
+    -- A package purchase is exactly one package line, with no discounts.
+    -- Prevent arbitrary checkout drafts from being modified through this bridge.
+    if v_checkout.status not in ('OPEN','READY')
+       or v_checkout.updated_at is distinct from p_expected_updated_at
+       or (select count(*) from public.checkout_items i
+           where i.checkout_draft_id=v_checkout.id) <> 1
+       or not exists (select 1 from public.checkout_items i
+           where i.checkout_draft_id=v_checkout.id
+             and i.type='PACKAGE_PURCHASE' and i.quantity=1)
+       or exists (select 1 from public.checkout_discounts d
+           where d.checkout_draft_id=v_checkout.id)
+    then raise exception 'invalid package checkout state'; end if;
+    if jsonb_array_length(p_payments) < 1 or jsonb_array_length(p_payments) > 4
+    then raise exception 'invalid tender count'; end if;
+    for v_payment in select value from jsonb_array_elements(p_payments) loop
+      if jsonb_typeof(v_payment) <> 'object'
+         or (v_payment->>'method') not in ('CASH','CARD','TRANSFER','OTHER')
+         or jsonb_typeof(v_payment->'amount') <> 'number'
+         or (v_payment->>'amount') !~ '^[0-9]+
+  -- Existing finance RPCs re-check the actual finance membership and branch.
+  perform set_config('request.jwt.claim.sub',p_actor_auth_user_id::text,true);
+  perform set_config('request.jwt.claims',
+    jsonb_build_object('sub',p_actor_auth_user_id::text,'role','authenticated')::text,true);
+  if p_action='OPEN' then
+    v_result:=public.open_package_purchase_checkout(
+      p_checkout_app_id,p_customer_app_id,p_location_app_id,p_package_definition_app_id);
+  elsif p_action='SAVE' then
+    v_result:=public.save_checkout_draft(
+      p_checkout_app_id,p_expected_updated_at,p_payments,'[]'::jsonb);
+  else
+    v_result:=public.settle_checkout_with_package_purchase(
+      p_checkout_app_id,p_expected_updated_at,p_package_definition_id);
+  end if;
+  return v_result;
+end;
+$$;
+revoke all on function public.finance_package_checkout_bridge(
+  text,uuid,text,text,text,text,timestamptz,jsonb,uuid
+) from public, anon, authenticated;
+grant execute on function public.finance_package_checkout_bridge(
+  text,uuid,text,text,text,text,timestamptz,jsonb,uuid
+) to service_role;
+commit;
+
+         or (v_payment->>'amount')::numeric <= 0
+         or (v_payment->>'amount')::numeric > 9223372036854775807
+         or (v_payment->>'method') = any(v_payment_methods)
+      then raise exception 'invalid package payment'; end if;
+      v_payment_methods := array_append(v_payment_methods,v_payment->>'method');
+      v_payment_sum := v_payment_sum + (v_payment->>'amount')::bigint;
+      if v_payment_sum > v_checkout.total_minor
+      then raise exception 'package payment exceeds total'; end if;
+    end loop;
+    if v_payment_sum is distinct from v_checkout.total_minor
+    then raise exception 'package payment does not match total'; end if;
+  end if;
   -- Transaction-local identity is used ONLY inside this privileged bridge.
   -- Existing finance RPCs re-check the actual finance membership and branch.
   perform set_config('request.jwt.claim.sub',p_actor_auth_user_id::text,true);
