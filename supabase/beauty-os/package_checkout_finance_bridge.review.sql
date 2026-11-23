@@ -96,8 +96,10 @@ begin
     if jsonb_array_length(p_payments) < 1 or jsonb_array_length(p_payments) > 4
     then raise exception 'invalid tender count'; end if;
     for v_payment in select value from jsonb_array_elements(p_payments) loop
-      if jsonb_typeof(v_payment) <> 'object'
-         or exists (select 1 from jsonb_object_keys(v_payment) k
+      if jsonb_typeof(v_payment) <> 'object' then
+        raise exception 'invalid package payment object';
+      end if;
+      if exists (select 1 from jsonb_object_keys(v_payment) k
                     where k not in ('method','amount','reference','id'))
          or (v_payment ? 'reference' and (
                jsonb_typeof(v_payment->'reference') <> 'string'
