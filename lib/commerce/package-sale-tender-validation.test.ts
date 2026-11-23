@@ -12,7 +12,7 @@ describe("package sale tender validation", () => {
       { method: "CARD", amount: 6000, reference: "receipt-1" },
     ], 10000)).toHaveLength(2);
   });
-  it.each([
+  it.each<Array<unknown>>([
     [{ method: "CASH", amount: 9999 }],
     [{ method: "CASH", amount: 10001 }],
     [{ method: "CASH", amount: 0 }],
