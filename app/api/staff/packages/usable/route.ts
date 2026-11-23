@@ -54,6 +54,23 @@ export async function GET(request: NextRequest) {
       if (mapped.data?.length === 1) financeCustomer = mapped.data[0]!;
     }
   }
+  // Prefer the verified LINE-member finance identity when the booking customer
+  // has an explicit, current identity link. Never match by name or phone.
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(customerId)) {
+    const {data:verifiedLinks,error:verifiedError} = await db.from("member_booking_finance_identity_links")
+      .select("finance_customer_id").eq("organization_id",orgDbId)
+      .eq("booking_customer_id",customerId).not("verified_at","is",null)
+      .is("revoked_at",null).limit(2);
+    if (verifiedError) return fail(503,"無法確認 LINE 會員身分");
+    if ((verifiedLinks?.length??0)>1) return fail(409,"LINE 會員身分對應不唯一");
+    if (verifiedLinks?.length===1) {
+      const {data:verifiedCustomers,error:verifiedCustomerError} = await db.from("customers")
+        .select("id").eq("organization_id",orgDbId)
+        .eq("id",verifiedLinks[0]!.finance_customer_id).limit(2);
+      if (verifiedCustomerError || verifiedCustomers?.length!==1) return fail(409,"LINE 會員資料不一致");
+      financeCustomer=verifiedCustomers[0]!;
+    }
+  }
   if (!financeCustomer || services?.length !== 1) return NextResponse.json({packages:[]},{headers:noStore});
   const {data:packages,error:packageError} = await db.from("customer_packages")
     .select("id,app_id,name_snapshot,status,expires_at,purchased_at,included_service_ids_snapshot")
