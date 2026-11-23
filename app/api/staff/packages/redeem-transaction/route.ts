@@ -89,22 +89,27 @@ export async function POST(request: Request) {
   if (bookingError || bookingRows?.length !== 1) return fail(409,"找不到對應的預約");
   const booked = bookingRows[0]!;
   const [{data:bookingOrgs,error:bookingOrgError},{data:bookingLocations,error:bookingLocError},
-    {data:customerLinks,error:customerLinkError}] = await Promise.all([
+    {data:customerLinks,error:customerLinkError},
+    {data:verifiedMemberLinks,error:verifiedMemberError}] = await Promise.all([
     booking.from("organizations").select("app_id").eq("id",booked.organization_id).limit(1),
     booking.from("locations").select("app_id").eq("id",booked.location_id).limit(1),
     db.from("booking_source_customer_links").select("source_customer_key")
       .eq("organization_id",orgDbId).eq("finance_booking_customer_id",draft.customer_id)
       .eq("source_customer_key",booked.customer_id).eq("status","ACTIVE").limit(2),
+    db.from("member_booking_finance_identity_links").select("finance_customer_id")
+      .eq("organization_id",orgDbId).eq("booking_customer_id",booked.customer_id)
+      .eq("finance_customer_id",draft.customer_id).not("verified_at","is",null)
+      .is("revoked_at",null).limit(2),
   ]);
   const {data:draftLocations,error:draftLocationError} = await db.from("checkout_drafts")
     .select("location_id").eq("id",draft.id).limit(1);
   const {data:financeLocations,error:financeLocationError} = draftLocations?.length===1
     ? await db.from("locations").select("app_id").eq("id",draftLocations[0]!.location_id).limit(1)
     : {data:null,error:null};
-  if (bookingOrgError || bookingLocError || customerLinkError || draftLocationError || financeLocationError ||
+  if (bookingOrgError || bookingLocError || customerLinkError || verifiedMemberError || draftLocationError || financeLocationError ||
       bookingOrgs?.[0]?.app_id !== organizationId ||
       !bookingLocations?.[0]?.app_id || bookingLocations[0]!.app_id !== financeLocations?.[0]?.app_id ||
-      customerLinks?.length !== 1 || booked.service_id !== service.id)
+      (customerLinks?.length !== 1 && verifiedMemberLinks?.length !== 1) || booked.service_id !== service.id)
     return fail(409,"預約與套票核銷資料不符");
   // A booking may have only one completed package-redemption checkout.
   const {data:alreadyLinked,error:alreadyLinkedError} = await db
