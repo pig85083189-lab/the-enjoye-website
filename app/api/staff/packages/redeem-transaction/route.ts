@@ -121,22 +121,25 @@ export async function POST(request: Request) {
   }
   // Link only the completed transaction created by this checkout; never settle again.
   const {data:completed,error:completedError} = await db.from("transactions")
-    .select("id,package_redemption,status").eq("checkout_draft_id",draft.id).limit(2);
+    .select("id,organization_id,package_redemption,status").eq("checkout_draft_id",draft.id).limit(2);
   if (completedError || completed?.length !== 1 || completed[0]!.status !== "COMPLETED" ||
+      completed[0]!.organization_id !== orgDbId ||
       completed[0]!.package_redemption?.customerPackageId !== pkg.app_id) {
     console.error("[package-redemption] appointment link pending: transaction not found");
     return NextResponse.json({bundle:data,appointmentLinkPending:true},{headers});
   }
   const tx = completed[0]!;
-  const existingLink = tx.package_redemption?.bookingAppointmentId;
-  if (existingLink && existingLink !== input.appointmentAppId)
-    return NextResponse.json({bundle:data,appointmentLinkPending:true},{headers});
-  if (!existingLink) {
-    const {error:linkError} = await db.from("transactions")
-      .update({package_redemption:{...tx.package_redemption,bookingAppointmentId:input.appointmentAppId}})
-      .eq("id",tx.id).eq("status","COMPLETED")
-      .is("package_redemption->>bookingAppointmentId",null);
-    if (linkError) {
+  // Transaction settlement snapshots are immutable. Keep the booking identity
+  // in a separate, uniquely constrained, service-role-only link table.
+  const {error:linkError} = await db.from("package_redemption_booking_links").insert({
+    transaction_id:tx.id,organization_id:orgDbId,
+    booking_appointment_app_id:input.appointmentAppId,
+  });
+  if (linkError) {
+    const {data:existing,error:lookupError} = await db.from("package_redemption_booking_links")
+      .select("booking_appointment_app_id").eq("transaction_id",tx.id).limit(1);
+    if (lookupError || existing?.length !== 1 ||
+        existing[0]!.booking_appointment_app_id !== input.appointmentAppId) {
       console.error("[package-redemption] appointment link pending",{code:linkError.code});
       return NextResponse.json({bundle:data,appointmentLinkPending:true},{headers});
     }
