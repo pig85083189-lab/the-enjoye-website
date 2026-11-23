@@ -122,6 +122,25 @@ begin
     if v_payment_sum is distinct from v_checkout.total_minor
     then raise exception 'package payment does not match total'; end if;
   end if;
+  -- SETTLE must re-check persisted payments under the same row lock.
+  -- A previously saved draft is not proof that its payments remain valid.
+  if p_action='SETTLE' then
+    if (select count(*) from public.checkout_payments p
+        where p.checkout_draft_id=v_checkout.id) not between 1 and 4
+       or exists (
+         select 1 from public.checkout_payments p
+         where p.checkout_draft_id=v_checkout.id
+           and (p.method::text not in ('CASH','CARD','TRANSFER','OTHER')
+                or p.amount_minor <= 0))
+       or exists (
+         select 1 from public.checkout_payments p
+         where p.checkout_draft_id=v_checkout.id
+         group by p.method having count(*) > 1)
+       or (select coalesce(sum(p.amount_minor),0)
+           from public.checkout_payments p
+           where p.checkout_draft_id=v_checkout.id) <> v_checkout.total_minor
+    then raise exception 'invalid settled package tenders'; end if;
+  end if;
   -- Restrict transaction scope to the package definition's organization.
   if p_action='SETTLE' and not exists (
     select 1 from public.package_definitions d
