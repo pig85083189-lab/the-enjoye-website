@@ -6,7 +6,7 @@
 begin;
 create table if not exists public.finance_booking_actor_links (
   booking_auth_user_id uuid primary key,
-  finance_membership_id uuid not null unique references public.staff_auth_memberships(id) on delete restrict,
+  finance_membership_id text not null unique references public.staff_auth_memberships(id) on delete restrict,
   created_at timestamptz not null default now()
 );
 alter table public.finance_booking_actor_links enable row level security;
