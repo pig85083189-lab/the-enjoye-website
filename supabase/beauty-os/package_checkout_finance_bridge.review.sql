@@ -25,7 +25,7 @@ declare
   v_membership public.staff_auth_memberships;
   v_result jsonb;
   v_payment jsonb;
-  v_payment_sum bigint := 0;
+  v_payment_sum numeric := 0;
   v_payment_methods text[] := array[]::text[];
 begin
   -- Defense in depth: PostgREST must have authenticated the server key.
@@ -122,7 +122,7 @@ commit;
          or (v_payment->>'method') = any(v_payment_methods)
       then raise exception 'invalid package payment'; end if;
       v_payment_methods := array_append(v_payment_methods,v_payment->>'method');
-      v_payment_sum := v_payment_sum + (v_payment->>'amount')::bigint;
+      v_payment_sum := v_payment_sum + (v_payment->>'amount')::numeric;
       if v_payment_sum > v_checkout.total_minor
       then raise exception 'package payment exceeds total'; end if;
     end loop;
