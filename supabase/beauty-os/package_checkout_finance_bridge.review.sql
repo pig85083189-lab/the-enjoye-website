@@ -91,32 +91,7 @@ begin
       if jsonb_typeof(v_payment) <> 'object'
          or (v_payment->>'method') not in ('CASH','CARD','TRANSFER','OTHER')
          or jsonb_typeof(v_payment->'amount') <> 'number'
-         or (v_payment->>'amount') !~ '^[0-9]+
-  -- Existing finance RPCs re-check the actual finance membership and branch.
-  perform set_config('request.jwt.claim.sub',p_actor_auth_user_id::text,true);
-  perform set_config('request.jwt.claims',
-    jsonb_build_object('sub',p_actor_auth_user_id::text,'role','authenticated')::text,true);
-  if p_action='OPEN' then
-    v_result:=public.open_package_purchase_checkout(
-      p_checkout_app_id,p_customer_app_id,p_location_app_id,p_package_definition_app_id);
-  elsif p_action='SAVE' then
-    v_result:=public.save_checkout_draft(
-      p_checkout_app_id,p_expected_updated_at,p_payments,'[]'::jsonb);
-  else
-    v_result:=public.settle_checkout_with_package_purchase(
-      p_checkout_app_id,p_expected_updated_at,p_package_definition_id);
-  end if;
-  return v_result;
-end;
-$$;
-revoke all on function public.finance_package_checkout_bridge(
-  text,uuid,text,text,text,text,timestamptz,jsonb,uuid
-) from public, anon, authenticated;
-grant execute on function public.finance_package_checkout_bridge(
-  text,uuid,text,text,text,text,timestamptz,jsonb,uuid
-) to service_role;
-commit;
-
+         or (v_payment->>'amount') !~ '^[0-9]+$'
          or (v_payment->>'amount')::numeric <= 0
          or (v_payment->>'amount')::numeric > 9223372036854775807
          or (v_payment->>'method') = any(v_payment_methods)
