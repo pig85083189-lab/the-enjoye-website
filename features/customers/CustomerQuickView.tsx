@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useOrganization } from "@/lib/tenant/OrganizationContext";
+import { useCustomerRemoteAppointments } from "@/features/customers/use-appointment-remote-read";
 import { AlertCircle, CalendarPlus, ChevronRight, Crown, Pencil, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -40,10 +42,36 @@ export function CustomerQuickView({
   onClose,
 }: CustomerQuickViewProps) {
   const [tab, setTab] = useState<"summary" | "full">("summary");
+  const { organization } = useOrganization();
+  const remote = useCustomerRemoteAppointments(organization.id, customer.id, true);
+  const remoteHints: AppointmentHint[] = remote.status === "data"
+    ? remote.value.map(a => ({customerId:customer.id,status:a.status,serviceId:a.serviceId,
+      serviceName:a.serviceName,durationMinutes:a.durationMinutes,startAt:a.startAt,
+      endAt:a.endAt,staffName:a.staffName})) : [];
+  const linkedAppointments = remote.status === "data" ? remoteHints : appointments;
+  const [packages,setPackages] = useState<{key:string;name?:string;remaining?:number;total?:number;usedAt?:string;error?:boolean}|null>(null);
+  const packageKey = organization.id+":"+customer.id;
+  useEffect(()=>{
+    const controller=new AbortController();
+    const params=new URLSearchParams({organizationId:organization.id,customerId:customer.id});
+    void (async()=>{
+      try{
+        const response=await fetch("/api/staff/packages/overview?"+params,{credentials:"same-origin",cache:"no-store",signal:controller.signal});
+        if(!response.ok)throw new Error("read failed");
+        const data=await response.json();
+        if(!Array.isArray(data.purchases)||!Array.isArray(data.balances)||!Array.isArray(data.ledger))throw new Error("invalid");
+        const pkg=data.purchases[0];
+        const remaining=pkg?data.balances.find((b:{customer_package_id:string;ledger_balance:number})=>b.customer_package_id===pkg.id)?.ledger_balance:undefined;
+        const usedAt=pkg?data.ledger.find((e:{customer_package_id:string;type:string;created_at:string})=>e.customer_package_id===pkg.id&&e.type==="REDEMPTION")?.created_at:undefined;
+        if(!controller.signal.aborted)setPackages({key:packageKey,name:pkg?.name_snapshot,remaining,total:pkg?.session_count_snapshot,usedAt});
+      }catch{if(!controller.signal.aborted)setPackages({key:packageKey,error:true});}
+    })();
+    return ()=>controller.abort();
+  },[organization.id,customer.id,packageKey]);
   const membership = membershipBadge(customer);
   const interest = serviceInterestTags(customer);
-  const lastService = deriveLastService({ customer, appointments, catalog });
-  const nextAppointment = deriveNextAppointment({ customer, appointments, now });
+  const lastService = deriveLastService({ customer, appointments:linkedAppointments, catalog });
+  const nextAppointment = deriveNextAppointment({ customer, appointments:linkedAppointments, now });
   const attention = collectCustomerAttentionNotes(customer, extras);
   const source = sourceLabel(customer.source);
   const notes = customer.preferences?.notes?.trim() || "";
@@ -192,7 +220,7 @@ export function CustomerQuickView({
                 </p>
               </div>
             ) : (
-              <p className="mt-2 text-[13px] text-secondary-text">尚無服務紀錄</p>
+              <p className="mt-2 text-[13px] text-secondary-text">{remote.status==="loading" ? "正在讀取正式服務紀錄…" : remote.status==="error" ? "正式服務紀錄暫時無法讀取" : "尚無已完成服務紀錄"}</p>
             )}
           </section>
 
@@ -211,7 +239,7 @@ export function CustomerQuickView({
                 </p>
               </div>
             ) : (
-              <p className="mt-2 text-[13px] text-secondary-text">尚未預約</p>
+              <p className="mt-2 text-[13px] text-secondary-text">{remote.status==="loading" ? "正在讀取正式預約…" : remote.status==="error" ? "正式預約暫時無法讀取" : "尚未預約"}</p>
             )}
             <Link
               href={createHref}
@@ -220,6 +248,20 @@ export function CustomerQuickView({
               <CalendarPlus className="h-3.5 w-3.5" aria-hidden />
               安排預約
             </Link>
+          </section>
+
+          <section className="mt-3.5 rounded-2xl bg-[#FAF7F5] px-3.5 py-3">
+            <Link href={profileHref+"?tab=wallet&section=packages"} className="flex items-center justify-between text-[13px] font-semibold text-text">
+              套票紀錄 <ChevronRight className="h-3.5 w-3.5 text-secondary-text" aria-hidden />
+            </Link>
+            {packages?.key!==packageKey ? <p className="mt-2 text-[13px] text-secondary-text">正在讀取正式套票…</p>
+              : packages.error ? <p className="mt-2 text-[13px] text-secondary-text">暫時無法讀取正式套票</p>
+              : packages.name ? <div className="mt-2 text-[12px] text-secondary-text">
+                  <p className="text-[13px] font-medium text-text">{packages.name}</p>
+                  <p>剩餘 {packages.remaining??"待確認"} / {packages.total} 堂</p>
+                  {packages.usedAt ? <p>最近核銷：{new Date(packages.usedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"})}</p> : null}
+                </div>
+              : <p className="mt-2 text-[13px] text-secondary-text">尚無已購套票</p>}
           </section>
 
           {attention.length > 0 ? (
