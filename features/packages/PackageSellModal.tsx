@@ -48,6 +48,7 @@ export function PackageSellModal({
   const [definitionId, setDefinitionId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [opening, setOpening] = useState(false);
+  const [previewOnly, setPreviewOnly] = useState(false);
   const [purchaseCheckout, setPurchaseCheckout] = useState<{ draft: CheckoutDraft; transaction: Transaction | null } | null>(null);
 
   const [remoteDefinitions, setRemoteDefinitions] = useState<PackageDefinition[]>([]);
@@ -167,6 +168,7 @@ export function PackageSellModal({
     setError("");
     setDefinitionId(null);
     setPurchaseCheckout(null);
+    setPreviewOnly(false);
     onClose();
   }
 
@@ -203,7 +205,8 @@ export function PackageSellModal({
         throw new Error("套票內容已更新，請關閉視窗重新選擇");
       }
       if (response.readyForWrite !== true) {
-        throw new Error("套票付款安全串接尚未完成，目前暫停結帳，請勿收款");
+        setPreviewOnly(true);
+        return;
       }
       const bundle = await openCommerceRemotePackagePurchaseDraft({
         checkoutAppId: `chk-package-${crypto.randomUUID()}`,
@@ -217,6 +220,34 @@ export function PackageSellModal({
     } finally {
       setOpening(false);
     }
+  }
+
+  if (previewOnly && selected && definition) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(48,43,43,0.35)] min-[720px]:items-center min-[720px]:px-5">
+        <div role="dialog" aria-modal="true" aria-labelledby="package-preview-title"
+          className="w-full max-w-lg rounded-t-3xl border border-border bg-surface p-5 shadow-xl min-[720px]:rounded-2xl">
+          <div className="flex items-center justify-between">
+            <h2 id="package-preview-title" className="text-[17px] font-semibold text-text">套票結帳預覽</h2>
+            <button type="button" aria-label="關閉" onClick={close}><X className="h-5 w-5" /></button>
+          </div>
+          <p role="status" className="mt-3 rounded-xl bg-[#FAF7F5] p-3 text-[13px] text-[#986B58]">
+            測試預覽模式：尚未開放付款，不會建立結帳單、收款或增加顧客堂數。
+          </p>
+          <div className="mt-4 space-y-3 text-[14px]">
+            <div className="flex justify-between"><span className="text-secondary-text">顧客</span><span>{selected.name}</span></div>
+            <div className="flex justify-between"><span className="text-secondary-text">套票名稱</span><span>{definition.name}</span></div>
+            <div className="flex justify-between"><span className="text-secondary-text">購買堂數</span><span>{definition.sessionCount} 堂</span></div>
+            <div><p className="text-secondary-text">指定療程</p><p className="mt-1">{definition.includedServices.map(row => remoteServiceNames[row.serviceId] ?? row.serviceId).join("、")}</p></div>
+            <div className="flex justify-between"><span className="text-secondary-text">有效期限</span><span>{planValidityLabel(definition.validityDays)}</span></div>
+            <div className="flex justify-between border-t border-border pt-3 font-semibold"><span>應付金額</span><span>{formatTwd(definition.priceMinor)}</span></div>
+          </div>
+          <Button className="mt-5 h-[50px] w-full rounded-2xl" disabled>付款功能尚未開放</Button>
+          <button type="button" className="mt-3 w-full text-center text-[13px] text-secondary-text"
+            onClick={() => setPreviewOnly(false)}>返回選擇套票</button>
+        </div>
+      </div>
+    );
   }
 
   const checkoutItem: CheckoutWorkspaceItem | null = purchaseCheckout && selected && definition ? {
@@ -490,7 +521,7 @@ export function PackageSellModal({
             {opening ? "正在建立結帳單…" : "前往結帳"}
           </Button>
           <p className="mt-2 text-center text-[12px] text-secondary-text">
-            付款與套票建立走既有結帳流程，此處不會直接扣款。
+            目前提供結帳預覽，尚未開放正式付款。
           </p>
         </div>
       </div>
