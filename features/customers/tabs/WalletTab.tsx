@@ -139,8 +139,11 @@ export function WalletTab({
   const [remoteTopUpOpen, setRemoteTopUpOpen] = useState(false);
   const [remotePackages, setRemotePackages] = useState<{
     definitions: Array<{ id: string; name: string; session_count: number; price_minor: number; is_active: boolean }>;
-    purchases: Array<{ id: string; name_snapshot: string; session_count_snapshot: number; expires_at: string | null; status: string }>;
+    purchases: Array<{ id: string; name_snapshot: string; session_count_snapshot: number; price_snapshot_minor:number; purchase_transaction_id:string|null; purchased_at:string; expires_at: string | null; status: string }>;
     balances: Array<{ customer_package_id: string; ledger_balance: number }>;
+    ledger: Array<{id:string;customer_package_id:string;type:string;session_delta:number;service_id:string|null;transaction_id:string|null;created_at:string;reason:string|null}>;
+    services: Array<{id:string;name:string}>;
+    historyTransactions:Array<{id:string;app_id:string;transaction_number:string;status:string;total_minor:number;completed_at:string}>;
   } | null>(null);
   const [remotePackagesError, setRemotePackagesError] = useState(false);
   useEffect(() => {
@@ -156,7 +159,7 @@ export function WalletTab({
         });
         if (!response.ok) throw new Error("Package overview unavailable");
         const data = await response.json();
-        if (!Array.isArray(data.definitions) || !Array.isArray(data.purchases) || !Array.isArray(data.balances)) throw new Error("Invalid package response");
+        if (!Array.isArray(data.definitions) || !Array.isArray(data.purchases) || !Array.isArray(data.balances) || !Array.isArray(data.ledger) || !Array.isArray(data.historyTransactions) || !Array.isArray(data.services)) throw new Error("Invalid package response");
         if (!controller.signal.aborted) setRemotePackages(data);
       } catch {
         if (!controller.signal.aborted) setRemotePackagesError(true);
@@ -288,6 +291,16 @@ export function WalletTab({
             <ul className="space-y-2">
               {remotePackages.purchases.map(pkg => {
                 const balance = remotePackages.balances.find(row => row.customer_package_id === pkg.id)?.ledger_balance;
+                const entries = remotePackages.ledger.filter(row=>row.customer_package_id===pkg.id);
+                const transactions = new Map(remotePackages.historyTransactions.map(tx=>[tx.id,tx]));
+                const purchaseTx = pkg.purchase_transaction_id ? transactions.get(pkg.purchase_transaction_id) : null;
+                // Ledger deltas are the sole source of remaining-session history.
+                const chronological = [...entries].sort((a,b)=>a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+                let running = 0;
+                const movements = chronological.map(entry=>{
+                  running += entry.session_delta;
+                  return {...entry,remainingAfter:running};
+                }).reverse();
                 return <li key={pkg.id} className="rounded-2xl border border-border bg-surface px-4 py-3">
                   <p className="text-[14px] font-medium text-text">{pkg.name_snapshot}</p>
                   <p className="mt-1 text-xs text-secondary-text">
@@ -295,6 +308,42 @@ export function WalletTab({
                     {pkg.expires_at ? ` · 至 ${formatYmd(new Date(pkg.expires_at))}` : ""}
                     {" · "}{pkg.status}
                   </p>
+                  <details className="mt-3 border-t border-border/70 pt-2">
+                    <summary className="min-h-9 cursor-pointer text-sm font-medium text-primary">查看購買與使用紀錄</summary>
+                    <div className="space-y-3 pb-2 pt-2 text-sm">
+                      <div className="flex justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-text">套票購買</p>
+                          <p className="text-xs text-secondary-text">
+                            {formatYmd(new Date(pkg.purchased_at))} · {pkg.session_count_snapshot} 堂
+                            {purchaseTx ? ` · ${purchaseTx.transaction_number}` : ""}
+                          </p>
+                        </div>
+                        <span className="shrink-0 tabular-nums text-text">
+                          {formatTwd(purchaseTx?.status==="COMPLETED" ? Number(purchaseTx.total_minor) : Number(pkg.price_snapshot_minor))}
+                        </span>
+                      </div>
+                      {movements.filter(row=>row.type!=="PURCHASE").map(row=>{
+                        const tx=row.transaction_id ? transactions.get(row.transaction_id) : null;
+                        const service=remotePackages.services.find(s=>s.id===row.service_id);
+                        return <div key={row.id} className="flex justify-between gap-3 border-t border-border/60 pt-2">
+                          <div className="min-w-0">
+                            <p className="font-medium text-text">{row.type==="REDEMPTION" ? "套票核銷" : row.type==="REFUND" ? "套票退回" : "堂數異動"}</p>
+                            <p className="text-xs text-secondary-text">
+                              {formatYmd(new Date(row.created_at))}
+                              {service ? ` · ${service.name}` : ""}
+                              {tx ? ` · ${tx.transaction_number}` : ""}
+                              {row.reason ? ` · ${row.reason}` : ""}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right tabular-nums">
+                            <p>{row.session_delta>0?"+":""}{row.session_delta} 堂</p>
+                            <p className="text-xs text-secondary-text">當時剩餘 {row.remainingAfter} 堂</p>
+                          </div>
+                        </div>;
+                      })}
+                    </div>
+                  </details>
                 </li>;
               })}
             </ul>
