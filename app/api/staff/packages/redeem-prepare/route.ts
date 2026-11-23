@@ -17,7 +17,7 @@ export async function POST(request:Request) {
   catch{return fail(400,"資料格式不正確");}
   const allowed=["organizationId","locationId","customerId","customerPackageAppId","serviceAppId","checkoutAppId"];
   if(Object.keys(body).some(k=>!allowed.includes(k))||allowed.some(k=>!valid(body[k])) ||
-     !(body.checkoutAppId as string).startsWith("redemption:"))return fail(400,"核銷資料不完整");
+     !/^redemption:[a-zA-Z0-9_-]{12,90}$/.test(body.checkoutAppId as string))return fail(400,"核銷資料不完整");
   const organizationId=body.organizationId as string;
   const identity=await getAuthenticatedStaffMembership({organizationId});
   if(identity.status==="unauthenticated")return fail(401,"請先登入");
