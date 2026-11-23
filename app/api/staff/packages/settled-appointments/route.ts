@@ -6,6 +6,7 @@ import { canCheckout } from "@/lib/staff-auth/operational-capabilities";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  if (request.headers.get("origin") !== new URL(request.url).origin) return NextResponse.json({error:"FORBIDDEN"},{status:403});
   const body: unknown = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({error:"INVALID_REQUEST"},{status:400});
   const input = body as Record<string,unknown>;
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
       input.appointmentIds.length > 100 || !input.appointmentIds.every(x=>typeof x==="string" && /^apt-[A-Za-z0-9_-]{5,100}$/.test(x)))
     return NextResponse.json({error:"INVALID_REQUEST"},{status:400});
   const auth = await getAuthenticatedStaffMembership({organizationId:input.organizationId});
-  if (auth.status !== "authenticated" || !auth.membership || !canCheckout(auth.membership))
+  if (auth.status !== "ok" || !auth.membership || !canCheckout(auth.membership))
     return NextResponse.json({error:"FORBIDDEN"},{status:403});
   const db = createBeautyOsFinanceClient();
   if (!db) return NextResponse.json({error:"UNAVAILABLE"},{status:503});
