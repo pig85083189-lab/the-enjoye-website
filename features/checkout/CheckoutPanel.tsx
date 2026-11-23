@@ -255,6 +255,7 @@ export function CheckoutPanel({
         );
   const [remotePackages, setRemotePackages] = useState<Array<{id:string;name:string;remaining:number}>>([]);
   const [remotePackageError, setRemotePackageError] = useState("");
+  const [selectedRemotePackageId, setSelectedRemotePackageId] = useState<string | null>(null);
   const primaryServiceAppId = primaryService?.referenceId ?? "";
   const checkoutCustomerId = item.customerId || liveDraft?.customerId || "";
   useEffect(() => {
@@ -264,6 +265,7 @@ export function CheckoutPanel({
     }
     const controller = new AbortController();
     setRemotePackages([]);
+    setSelectedRemotePackageId(null);
     setRemotePackageError("");
     const params = new URLSearchParams({organizationId,customerId:checkoutCustomerId,serviceId:primaryServiceAppId});
     void fetch(`/api/staff/packages/usable?${params.toString()}`,{credentials:"same-origin",cache:"no-store",signal:controller.signal})
@@ -1116,11 +1118,20 @@ export function CheckoutPanel({
                     ) : remotePackages.length ? (
                       <div className="space-y-2">
                         {remotePackages.map(pkg => (
-                          <div key={pkg.id} className="text-[13px]">
-                            <p className="font-medium text-text">{pkg.name} · 剩餘 {pkg.remaining} 堂</p>
-                          </div>
+                          <label key={pkg.id} className="flex cursor-pointer items-center gap-2 text-[13px]">
+                            <input type="radio" name="remote-package-redemption" value={pkg.id}
+                              checked={selectedRemotePackageId === pkg.id}
+                              onChange={() => setSelectedRemotePackageId(pkg.id)}
+                              disabled={readOnly || submitting}
+                              className="accent-[#C56B70]" />
+                            <span className="font-medium text-text">{pkg.name} · 剩餘 {pkg.remaining} 堂</span>
+                          </label>
                         ))}
-                        <p className="text-[12px] text-secondary-text">正式套票已讀取。扣堂交易尚未開放，請勿以一般收款代替核銷。</p>
+                        {selectedRemotePackageId ? (
+                          <p className="text-[12px] text-secondary-text">已選擇套票，正式扣堂交易尚未啟用。請勿按下方一般收款按鈕代替核銷。</p>
+                        ) : (
+                          <p className="text-[12px] text-secondary-text">請選擇要使用的套票。正式扣堂交易尚未啟用。</p>
+                        )}
                       </div>
                     ) : <p className="text-[13px] text-secondary-text">目前沒有可用於本次服務的套票。</p>}
                   </div>
