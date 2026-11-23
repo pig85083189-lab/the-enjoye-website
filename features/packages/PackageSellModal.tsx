@@ -46,6 +46,10 @@ export function PackageSellModal({
   const [definitionId, setDefinitionId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [previewOnly, setPreviewOnly] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [paymentStatus, setPaymentStatus] = useState<"idle"|"busy"|"ready"|"done">("idle");
+  const [financeDraft, setFinanceDraft] = useState<{id:string;updatedAt:string}|null>(null);
+  const [paymentError, setPaymentError] = useState("");
   const [purchaseCheckout, setPurchaseCheckout] = useState<{ draft: CheckoutDraft; transaction: Transaction | null } | null>(null);
 
   const [remoteDefinitions, setRemoteDefinitions] = useState<PackageDefinition[]>([]);
@@ -185,6 +189,43 @@ export function PackageSellModal({
     setPreviewOnly(true);
   }
 
+  async function financeAction(payload: Record<string,unknown>) {
+    const response = await fetch("/api/staff/packages/checkout-transaction", {
+      method: "POST", credentials: "same-origin", cache: "no-store",
+      headers: {"content-type":"application/json"}, body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error ?? "付款交易失敗");
+    return result.bundle as {draft:{id:string;updatedAt:string};customerPackageDbId?:string};
+  }
+  async function savePayment() {
+    if (!selected || !definition || paymentStatus !== "idle") return;
+    setPaymentStatus("busy"); setPaymentError("");
+    try {
+      const opened = financeDraft ?? (await financeAction({
+        action:"OPEN", checkoutAppId:"package-sale-"+crypto.randomUUID(),
+        organizationId,locationId,customerId:selected.id,packageDefinitionId:definition.id,
+      })).draft;
+      setFinanceDraft(opened);
+      const saved = await financeAction({
+        action:"SAVE",checkoutAppId:opened.id,expectedUpdatedAt:opened.updatedAt,
+        payments:[{method:paymentMethod,amount:definition.priceMinor}],
+      });
+      setFinanceDraft(saved.draft); setPaymentStatus("ready");
+    } catch(e) { setPaymentError(e instanceof Error?e.message:"付款資料無法儲存"); setPaymentStatus("idle"); }
+  }
+  async function settlePayment() {
+    if (!financeDraft || paymentStatus !== "ready") return;
+    setPaymentStatus("busy");setPaymentError("");
+    try {
+      const result=await financeAction({action:"SETTLE",checkoutAppId:financeDraft.id,expectedUpdatedAt:financeDraft.updatedAt});
+      if (!result.customerPackageDbId) throw new Error("未收到套票入帳確認");
+      setPaymentStatus("done");
+    } catch(e) {
+      setPaymentError((e instanceof Error?e.message:"交易結果不明")+"，請先核對交易紀錄，勿重複收款。");
+      setPaymentStatus("busy");
+    }
+  }
   if (previewOnly && selected && definition) {
     return (
       <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(48,43,43,0.35)] min-[720px]:items-center min-[720px]:px-5">
@@ -195,7 +236,7 @@ export function PackageSellModal({
             <button type="button" aria-label="關閉" onClick={close}><X className="h-5 w-5" /></button>
           </div>
           <p role="status" className="mt-3 rounded-xl bg-[#FAF7F5] p-3 text-[13px] text-[#986B58]">
-            測試預覽模式：尚未開放付款，不會建立結帳單、收款或增加顧客堂數。
+            請確認顧客與付款金額，確認收款後才會執行套票入帳。
           </p>
           <div className="mt-4 space-y-3 text-[14px]">
             <div className="flex justify-between"><span className="text-secondary-text">顧客</span><span>{selected.name}</span></div>
@@ -205,7 +246,20 @@ export function PackageSellModal({
             <div className="flex justify-between"><span className="text-secondary-text">有效期限</span><span>{planValidityLabel(definition.validityDays)}</span></div>
             <div className="flex justify-between border-t border-border pt-3 font-semibold"><span>應付金額</span><span>{formatTwd(definition.priceMinor)}</span></div>
           </div>
-          <Button className="mt-5 h-[50px] w-full rounded-2xl" disabled>付款功能尚未開放</Button>
+          <div className="mt-5 space-y-3">
+            <label className="block text-sm" htmlFor="package-tender">付款方式</label>
+            <select id="package-tender" className="w-full rounded-xl border border-border bg-surface p-3"
+              value={paymentMethod} disabled={paymentStatus!=="idle" || Boolean(financeDraft)}
+              onChange={event=>setPaymentMethod(event.target.value)}>
+              <option value="CASH">現金</option><option value="CARD">刷卡</option>
+              <option value="TRANSFER">轉帳</option><option value="OTHER">其他</option>
+            </select>
+            {paymentError ? <p role="alert" className="text-sm text-[#B07A4A]">{paymentError}</p> : null}
+            {paymentStatus==="done" ? <p role="status">套票已完成付款入帳</p> :
+              paymentStatus==="ready" ? <Button className="w-full" onClick={()=>{void settlePayment();}}>確認已收款並入帳</Button> :
+              <Button className="w-full" disabled={paymentStatus==="busy" || Boolean(financeDraft)}
+                onClick={()=>{void savePayment();}}>{paymentStatus==="busy"?"正在處理…":"建立付款明細"}</Button>}
+          </div>
           <button type="button" className="mt-3 w-full text-center text-[13px] text-secondary-text"
             onClick={() => setPreviewOnly(false)}>返回選擇套票</button>
         </div>
