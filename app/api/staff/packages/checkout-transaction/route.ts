@@ -97,8 +97,16 @@ export async function POST(request: Request) {
   }
   const actor = await getServerStaffAuthUser();
   if (!actor) return fail(401, "請先登入");
+  const { data: financeOrganizations, error: financeOrgError } = await db.from("organizations")
+    .select("id").eq("app_id", organizationId).limit(2);
+  if (financeOrgError || financeOrganizations?.length !== 1) return fail(409, "無法確認結帳店家");
+  const financeOrganizationId = financeOrganizations[0]!.id;
+  if (draftOrganizationDbId && financeOrganizationId !== draftOrganizationDbId) {
+    return fail(409, "結帳單與店家不一致");
+  }
   const { data: definitions, error: defError } = await db.from("package_definitions")
-    .select("id,organization_id,price_minor").eq("app_id",packageDefinitionId).eq("is_active",true).limit(2);
+    .select("id,organization_id,price_minor").eq("organization_id",financeOrganizationId)
+    .eq("app_id",packageDefinitionId).eq("is_active",true).limit(2);
   if (defError || definitions?.length !== 1) return fail(409, "套票方案已失效");
   if (definitions[0]!.price_minor !== check.amountMinor ||
       (draftOrganizationDbId && definitions[0]!.organization_id !== draftOrganizationDbId)) {
