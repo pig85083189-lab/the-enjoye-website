@@ -12,7 +12,7 @@ describe("package sale tender validation", () => {
       { method: "CARD", amount: 6000, reference: "receipt-1" },
     ], 10000)).toHaveLength(2);
   });
-  it.each<Array<unknown>>([
+  it.each([
     [{ method: "CASH", amount: 9999 }],
     [{ method: "CASH", amount: 10001 }],
     [{ method: "CASH", amount: 0 }],
@@ -23,7 +23,7 @@ describe("package sale tender validation", () => {
     [{ method: "PACKAGE", amount: 10000 }],
     [{ method: "CASH", amount: 5000 }, { method: "CASH", amount: 5000 }],
     [{ method: "CASH", amount: 10000, actorId: "other" }],
-  ])("rejects invalid or unsafe tender %j", (payments) => {
+  ].map(payments => [payments] as [unknown]))("rejects invalid or unsafe tender %j", (payments) => {
     expect(() => validatePackageSaleTenders(payments, 10000)).toThrow();
   });
   it("rejects unsafe totals and empty payment", () => {
