@@ -4,6 +4,15 @@
 -- and cross-check the staff, customer, package and LINE membership.
 -- No finance keys or RPC access are exposed to browser code.
 begin;
+create table if not exists public.finance_booking_actor_links (
+  booking_auth_user_id uuid primary key,
+  finance_membership_id uuid not null unique references public.staff_auth_memberships(id) on delete restrict,
+  created_at timestamptz not null default now()
+);
+alter table public.finance_booking_actor_links enable row level security;
+revoke all on public.finance_booking_actor_links from public, anon, authenticated;
+grant select on public.finance_booking_actor_links to service_role;
+
 create or replace function public.finance_package_checkout_bridge(
   p_action text,
   p_actor_auth_user_id uuid,
@@ -64,12 +73,13 @@ begin
   if v_org is null or v_location is null then raise exception 'unknown checkout location'; end if;
   select m.* into v_membership from public.staff_auth_memberships m
     join public.organizations o on o.app_id=m.organization_id
-    where o.id=v_org and m.auth_user_id=p_actor_auth_user_id
+    left join public.finance_booking_actor_links actor_link on actor_link.finance_membership_id=m.id
+    where o.id=v_org and (m.auth_user_id=p_actor_auth_user_id or actor_link.booking_auth_user_id=p_actor_auth_user_id)
       and m.is_active=true and m.role in ('OWNER','MANAGER','STAFF','RECEPTIONIST')
       and public.is_operational_staff_id(m.user_id)
     order by case m.role when 'OWNER' then 0 when 'MANAGER' then 1 else 2 end
     limit 1;
-  if v_membership.id is null then raise exception 'finance actor not authorized'; end if;
+  if v_membership.id is null or v_membership.auth_user_id is null then raise exception 'finance actor not authorized'; end if;
   if exists (select 1 from public.staff_auth_membership_locations x
              where x.membership_id=v_membership.id)
      and not exists (
@@ -149,9 +159,9 @@ begin
 
   -- Transaction-local identity is used ONLY inside this privileged bridge.
   -- Existing finance RPCs re-check the actual finance membership and branch.
-  perform set_config('request.jwt.claim.sub',p_actor_auth_user_id::text,true);
+  perform set_config('request.jwt.claim.sub',v_membership.auth_user_id::text,true);
   perform set_config('request.jwt.claims',
-    jsonb_build_object('sub',p_actor_auth_user_id::text,'role','authenticated')::text,true);
+    jsonb_build_object('sub',v_membership.auth_user_id::text,'role','authenticated')::text,true);
   if p_action='OPEN' then
     v_result:=public.open_package_purchase_checkout(
       p_checkout_app_id,p_customer_app_id,p_location_app_id,p_package_definition_app_id);
