@@ -253,6 +253,30 @@ export function CheckoutPanel({
           liveDraft!.customerId,
           primaryService.referenceId,
         );
+  const [remotePackages, setRemotePackages] = useState<Array<{id:string;name:string;remaining:number}>>([]);
+  const [remotePackageError, setRemotePackageError] = useState("");
+  const primaryServiceAppId = primaryService?.referenceId ?? "";
+  const checkoutCustomerId = liveDraft?.customerId ?? "";
+  useEffect(() => {
+    if (!commerceRemoteWrite || readOnly || !checkoutCustomerId || !primaryServiceAppId) {
+      setRemotePackages([]);
+      return;
+    }
+    const controller = new AbortController();
+    setRemotePackages([]);
+    setRemotePackageError("");
+    const params = new URLSearchParams({organizationId,customerId:checkoutCustomerId,serviceId:primaryServiceAppId});
+    void fetch(`/api/staff/packages/usable?${params.toString()}`,{credentials:"same-origin",cache:"no-store",signal:controller.signal})
+      .then(async r => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(typeof data?.error === "string" ? data.error : "套票查詢失敗");
+        if (!controller.signal.aborted) setRemotePackages(Array.isArray(data?.packages) ? data.packages : []);
+      })
+      .catch((error:unknown) => {
+        if (!controller.signal.aborted) setRemotePackageError(error instanceof Error ? error.message : "套票查詢失敗");
+      });
+    return () => controller.abort();
+  },[commerceRemoteWrite,readOnly,checkoutCustomerId,primaryServiceAppId,organizationId]);
   const selectedUsable = usablePackages.find(
     (pkg) => pkg.id === liveDraft?.packageRedemption?.customerPackageId,
   );
@@ -1085,7 +1109,22 @@ export function CheckoutPanel({
                     可使用下方套票折抵本次服務
                   </p>
                 </div>
-                {usablePackages.length === 0 ? (
+                {commerceRemoteWrite ? (
+                  <div className="rounded-xl border border-border px-3 py-2.5">
+                    {remotePackageError ? (
+                      <p className="text-[13px] text-secondary-text">{remotePackageError}</p>
+                    ) : remotePackages.length ? (
+                      <div className="space-y-2">
+                        {remotePackages.map(pkg => (
+                          <div key={pkg.id} className="text-[13px]">
+                            <p className="font-medium text-text">{pkg.name} · 剩餘 {pkg.remaining} 堂</p>
+                          </div>
+                        ))}
+                        <p className="text-[12px] text-secondary-text">正式套票已讀取。扣堂交易尚未開放，請勿以一般收款代替核銷。</p>
+                      </div>
+                    ) : <p className="text-[13px] text-secondary-text">目前沒有可用於本次服務的套票。</p>}
+                  </div>
+                ) : usablePackages.length === 0 ? (
                   <div className="rounded-xl border border-border px-3 py-2.5">
                     <p className="text-[13px] text-secondary-text">
                       目前沒有可用於本次服務的套票。
