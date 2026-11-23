@@ -51,6 +51,15 @@ export function PackageSellModal({
   const [financeDraft, setFinanceDraft] = useState<{id:string;updatedAt:string}|null>(null);
   const [paymentError, setPaymentError] = useState("");
   const [checkoutId, setCheckoutId] = useState<string | null>(null);
+  const [paymentEnabled, setPaymentEnabled] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    void fetch("/api/staff/packages/checkout-capability", {credentials:"same-origin",cache:"no-store",signal:controller.signal})
+      .then(r=>r.ok?r.json():null).then(v=>{if(!controller.signal.aborted)setPaymentEnabled(v?.enabled===true);})
+      .catch(()=>{if(!controller.signal.aborted)setPaymentEnabled(false);});
+    return ()=>controller.abort();
+  },[open]);
   const [purchaseCheckout, setPurchaseCheckout] = useState<{ draft: CheckoutDraft; transaction: Transaction | null } | null>(null);
 
   const [remoteDefinitions, setRemoteDefinitions] = useState<PackageDefinition[]>([]);
@@ -238,7 +247,7 @@ export function PackageSellModal({
             <button type="button" aria-label="關閉" onClick={close}><X className="h-5 w-5" /></button>
           </div>
           <p role="status" className="mt-3 rounded-xl bg-[#FAF7F5] p-3 text-[13px] text-[#986B58]">
-            請確認顧客與付款金額，確認收款後才會執行套票入帳。
+            {paymentEnabled ? "請確認顧客與付款金額，確認收款後才會執行套票入帳。" : "付款功能尚未啟用，僅提供預覽。"}
           </p>
           <div className="mt-4 space-y-3 text-[14px]">
             <div className="flex justify-between"><span className="text-secondary-text">顧客</span><span>{selected.name}</span></div>
@@ -248,7 +257,7 @@ export function PackageSellModal({
             <div className="flex justify-between"><span className="text-secondary-text">有效期限</span><span>{planValidityLabel(definition.validityDays)}</span></div>
             <div className="flex justify-between border-t border-border pt-3 font-semibold"><span>應付金額</span><span>{formatTwd(definition.priceMinor)}</span></div>
           </div>
-          <div className="mt-5 space-y-3">
+          {paymentEnabled ? <div className="mt-5 space-y-3">
             <label className="block text-sm" htmlFor="package-tender">付款方式</label>
             <select id="package-tender" className="w-full rounded-xl border border-border bg-surface p-3"
               value={paymentMethod} disabled={paymentStatus!=="idle" || Boolean(financeDraft)}
@@ -261,7 +270,7 @@ export function PackageSellModal({
               paymentStatus==="ready" ? <Button className="w-full" onClick={()=>{void settlePayment();}}>確認已收款並入帳</Button> :
               <Button className="w-full" disabled={paymentStatus==="busy" || Boolean(financeDraft)}
                 onClick={()=>{void savePayment();}}>{paymentStatus==="busy"?"正在處理…":"建立付款明細"}</Button>}
-          </div>
+          </div> : <Button className="mt-5 w-full" disabled>付款功能尚未開放</Button>}
           <button type="button" className="mt-3 w-full text-center text-[13px] text-secondary-text"
             onClick={() => setPreviewOnly(false)}>返回選擇套票</button>
         </div>
