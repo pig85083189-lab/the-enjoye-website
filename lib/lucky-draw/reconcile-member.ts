@@ -30,6 +30,27 @@ export async function verifyRewardMember(bookingOrg:string,bookingCustomer:strin
  if(source.outcome!=="hash")return null;
  const pairs=await finance.from("member_booking_finance_identity_links").select("finance_customer_id,finance_confirmation_id").eq("organization_id",financeOrg).eq("booking_organization_id",bookingOrg).eq("booking_customer_id",bookingCustomer).is("revoked_at",null).limit(2);
  if(pairs.error)throw new Error("PAIR_QUERY");
+ if(pairs.data?.length===0){
+  const [history,sourceOwners,destOwners,legacy]=await Promise.all([
+   finance.from("member_booking_finance_identity_links").select("id").eq("organization_id",financeOrg).eq("booking_customer_id",bookingCustomer).limit(1),
+   booking.from("member_line_customer_links").select("customer_id,verified_at").eq("organization_id",bookingOrg).eq("line_subject_hash",source.hash).limit(2),
+   finance.from("member_line_customer_links").select("customer_id,verified_at").eq("organization_id",financeOrg).eq("line_subject_hash",source.hash).limit(2),
+   finance.from("line_customer_bindings").select("id").eq("organization_id",app).eq("line_user_id_hash",source.hash).limit(1),
+  ]);
+  if([history,sourceOwners,destOwners,legacy].some(x=>x.error))throw new Error("FIRST_TIME_QUERY");
+  if(history.data?.length!==0||legacy.data?.length!==0||sourceOwners.data?.length!==1||sourceOwners.data[0].customer_id!==bookingCustomer||!sourceOwners.data[0].verified_at||destOwners.data?.length!==1||!destOwners.data[0].verified_at)return null;
+  const id=destOwners.data[0].customer_id;
+  const [otherPairs,challenges,wallet]=await Promise.all([
+   finance.from("member_booking_finance_identity_links").select("id").eq("organization_id",financeOrg).eq("finance_customer_id",id).limit(1),
+   finance.from("member_finance_binding_challenges").select("id").eq("organization_id",financeOrg).eq("line_subject_hash",source.hash).limit(1),
+   finance.from("customer_wallet_identities").select("id").eq("organization_id",financeOrg).or(`booking_customer_id.eq.${id},wallet_customer_id.eq.${id}`).limit(1),
+  ]);
+  if([otherPairs,challenges,wallet].some(x=>x.error))throw new Error("FIRST_TIME_CONFLICT_QUERY");
+  if([otherPairs,challenges,wallet].some(x=>x.data?.length!==0))return null;
+  const dest=await subject(finance as typeof booking,financeOrg,id);
+  if(dest.outcome!=="hash"||dest.hash!==source.hash)return null;
+  return {financeOrg,financeCustomer:id,firstTime:true as const};
+ }
  if(pairs.data?.length!==1)return null;
  const pair=pairs.data[0];
  const confirmation=await finance.from("member_finance_binding_challenges").select("id").eq("id",pair.finance_confirmation_id).eq("organization_id",financeOrg).eq("confirmed_customer_id",pair.finance_customer_id).eq("status","CONFIRMED").not("confirmed_at","is",null).maybeSingle();
