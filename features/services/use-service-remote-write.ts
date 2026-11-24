@@ -38,7 +38,7 @@ export async function submitServiceRemoteUpdate(
   staffId: string,
   patch: { name?: string; category?: string | null; durationMinutes?: number; priceMinor?: number; isActive?: boolean },
 ) {
-  const client = createBrowserClientOrNull();
+  const client = writeClient();
   if (!client) throw new Error("無法連線至資料庫");
   const { identity } = await resolveAuthenticatedServiceManagement(
     client as ServiceWriteClient, organizationId, serviceId, staffId,
@@ -59,7 +59,8 @@ export async function submitServiceRemoteUpdate(
     values.price_minor = patch.priceMinor;
   }
   if (patch.isActive !== undefined) values.is_active = patch.isActive;
-  const { data, error } = await client.from("services").update(values)
+  const updateClient = client as unknown as { from(table: string): { update(values: Record<string, string | number | boolean | null>): { eq(column: string, value: string): { eq(column: string, value: string): { select(columns: string): { single(): PromiseLike<{ data: { id: string } | null; error: { message: string } | null }> } } } } } };
+  const { data, error } = await updateClient.from("services").update(values)
     .eq("organization_id", identity.organizationDbId).eq("app_id", serviceId).select("id").single();
   if (error || !data) throw new Error(error?.message || "服務更新失敗");
   emitServiceRemoteWriteRefresh({ organizationId, serviceId });
