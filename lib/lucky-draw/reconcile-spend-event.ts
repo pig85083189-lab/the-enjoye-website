@@ -21,7 +21,7 @@ export async function reconcileSpendEvent(event:RewardEvent):Promise<RewardOutco
   if(amount!==Number(t.total_minor))return {state:"review",code:"PAYMENT_MISMATCH"};
   const member=await verifyRewardMember(event.organization_id,t.customer_id);
   if(!member)return {state:"review",code:"IDENTITY_UNCONFIRMED"};
-  const grant=await finance.rpc("lucky_draw_grant_booking_spend",{p_org:member.financeOrg,p_booking_org:event.organization_id,p_booking_customer:t.customer_id,p_transaction:event.transaction_id,p_amount:amount,p_completed_at:t.completed_at});
+  const grant=await finance.rpc("lucky_draw_grant_booking_spend",{p_org:member.financeOrg,p_booking_org:event.organization_id,p_booking_customer:t.customer_id,p_transaction:event.transaction_id,p_amount:amount,p_completed_at:t.completed_at,p_verified_hash:member.verifiedHash,p_expected_customer:member.financeCustomer});
   if(grant.error)throw new Error("GRANT");
   return grant.data===null?{state:"review",code:"GRANT_NOT_CONFIRMED"}:{state:"done",code:"GRANTED"};
  }
