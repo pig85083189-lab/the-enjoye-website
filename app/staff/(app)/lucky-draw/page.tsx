@@ -54,7 +54,7 @@ function Draft({organizationId}:{organizationId:string}) {
   },[organizationId]);
   async function save(){
     if(busy||!dbId)return;
-    if(!name.trim()||name.trim().length>200||(start&&end&&end<start)||rules.some(r=>!Number.isSafeInteger(Number(r.value))||Number(r.value)<1)||prizes.some(p=>!p.name.trim()||!validWeight(p.weight)||!/^\\d+$/.test(p.stock)||!Number.isSafeInteger(Number(p.stock)))){setMessage("請確認活動名稱、日期、資格數值與獎品欄位。");return;}
+    if(!name.trim()||name.trim().length>200||(start&&end&&end<start)||rules.some(r=>!Number.isSafeInteger(Number(r.value))||Number(r.value)<1)||prizes.some(p=>!p.name.trim()||!validWeight(p.weight)||!/^\d+$/.test(p.stock)||!Number.isSafeInteger(Number(p.stock)))){setMessage("請確認活動名稱、日期、資格數值與獎品欄位。");return;}
     setBusy(true);setMessage("");
     try{
       const client=createClient();
@@ -79,7 +79,7 @@ function Draft({organizationId}:{organizationId:string}) {
     <section className={panel}><h2 className="font-semibold">活動設定</h2>
       <label className="block">活動名稱<input className={field} value={name} onChange={e=>setName(e.target.value)}/></label>
       <div className="grid gap-3 sm:grid-cols-2"><label>開始日期<input type="date" className={field} value={start} onChange={e=>setStart(e.target.value)}/></label><label>結束日期<input type="date" min={start} className={field} value={end} onChange={e=>setEnd(e.target.value)}/></label></div>
-      <p className="text-sm text-secondary-text">活動狀態：未發布</p>
+      <p className="text-sm text-secondary-text">此區為活動草稿設定。</p>
     </section>
     <section className={panel}><h2 className="font-semibold">抽獎資格設定</h2>
       {rules.map((r,i)=><div key={r.label} className="space-y-2 border-b border-border pb-3"><label className="flex justify-between gap-3">{r.label}<input type="checkbox" checked={r.enabled} onChange={e=>setRules(old=>old.map((x,j)=>j===i?{...x,enabled:e.target.checked}:x))}/></label>{r.enabled&&<label className="flex items-center gap-3"><input type="number" min="1" step="1" className={field} value={r.value} onChange={e=>setRules(old=>old.map((x,j)=>j===i?{...x,value:e.target.value}:x))}/><span className="shrink-0 text-sm">{r.unit}</span></label>}</div>)}
@@ -98,6 +98,7 @@ function Draft({organizationId}:{organizationId:string}) {
     <button type="button" disabled={busy||!dbId} onClick={()=>void save()} className="rounded-xl bg-primary px-5 py-3 text-white disabled:opacity-50">{busy?"處理中…":"儲存設定"}</button>
     </fieldset>
     <p role="status">{message}</p>
+    <CampaignControls organizationId={organizationId}/>
     <MemberGrant organizationId={organizationId}/>
     <p className="text-sm text-secondary-text">儲存草稿不會發布活動；機率未滿 100% 仍可儲存草稿。</p>
   </div>;
@@ -145,5 +146,46 @@ function MemberGrant({organizationId}:{organizationId:string}){
  </div>}
  </fieldset>
  <p role="status">{busy?"查詢中…":message}</p>
+ </section>;
+}
+
+type LiveCampaign={id:string;name:string;version:number;status:"active"|"paused"|"ended"};
+function CampaignControls({organizationId}:{organizationId:string}){
+ const [campaign,setCampaign]=useState<LiveCampaign|null>(null);
+ const [enabled,setEnabled]=useState(false);
+ const [loaded,setLoaded]=useState(false);
+ const [busy,setBusy]=useState(false);
+ const [message,setMessage]=useState("");
+ async function refresh(){
+  setBusy(true);setLoaded(false);
+  try{
+   const r=await fetch("/api/staff/lucky-draw/campaign?"+new URLSearchParams({organizationId}),{cache:"no-store"});
+   if(!r.ok)throw new Error();
+   const data=await r.json();setCampaign(data.campaign);setEnabled(data.enabled===true);setLoaded(true);setMessage("");
+  }catch{setMessage("無法讀取正式活動狀態");}finally{setBusy(false);}
+ }
+ useEffect(()=>{void refresh();},[organizationId]);
+ async function act(action:string){
+  if(!loaded||!enabled||busy)return;
+  if(!window.confirm(action==="publish"?"確定發布最後儲存的草稿？":action==="end"?"確定結束活動？結束後不可恢復。":"確定變更活動狀態？"))return;
+  setBusy(true);
+  try{
+   const r=await fetch("/api/staff/lucky-draw/campaign",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({organizationId,action,campaignId:campaign?.id,expected:campaign?.status})});
+   if(!r.ok){const data=await r.json();throw new Error(String(data.code??"操作失敗"));}
+   await refresh();
+  }catch(e){setMessage(e instanceof Error?e.message:"操作失敗");}finally{setBusy(false);}
+ }
+ const button="rounded-xl border border-border px-4 py-2 disabled:opacity-50";
+ return <section className="rounded-2xl border border-border bg-surface p-5 space-y-3">
+ <h2 className="font-semibold">正式活動管理</h2>
+ <p>{!loaded?"狀態尚未確認":campaign?campaign.name+" V"+campaign.version+" · "+({active:"啟用中",paused:"已暫停",ended:"已結束"}[campaign.status]):"尚未發布活動"}</p>
+ <p className="text-sm text-secondary-text">{enabled?"發布前請先儲存草稿。":"正式發布功能尚未開放。"}</p>
+ <div className="flex flex-wrap gap-2">
+ {(!campaign||campaign.status==="ended")&&<button className={button} disabled={!loaded||!enabled||busy} onClick={()=>void act("publish")}>發布活動</button>}
+ {campaign?.status==="paused"&&<button className={button} disabled={!enabled||busy||!loaded} onClick={()=>void act("activate")}>啟用／恢復活動</button>}
+ {campaign?.status==="active"&&<button className={button} disabled={!enabled||busy||!loaded} onClick={()=>void act("pause")}>暫停活動</button>}
+ {campaign&&campaign.status!=="ended"&&<button className={button} disabled={!enabled||busy||!loaded} onClick={()=>void act("end")}>結束活動</button>}
+ <button className={button} disabled={busy} onClick={()=>void refresh()}>重新整理狀態</button>
+ </div><p role="status">{message}</p>
  </section>;
 }
