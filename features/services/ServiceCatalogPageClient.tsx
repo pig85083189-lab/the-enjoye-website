@@ -681,7 +681,7 @@ function ServiceRowMenu({ row, onEdit, onToggle }: { row: ServiceCatalogWorkspac
       </button>
       {open ? <div className="absolute right-0 top-full z-30 w-36 rounded-xl border border-border bg-surface p-1 shadow-lg">
         <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-light" onClick={() => { setOpen(false); onEdit(); }}>編輯服務</button>
-        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-light" onClick={() => { setOpen(false); onToggle(); }}>{row.isActive ? "停止販售" : "恢復販售"}</button>
+        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-light" onClick={() => { setOpen(false); if (row.isActive && !window.confirm("確定停止販售此服務？服務資料與歷史紀錄將保留。")) return; onToggle(); }}>{row.isActive ? "停止販售" : "恢復販售"}</button>
       </div> : null}
     </div>
   );
