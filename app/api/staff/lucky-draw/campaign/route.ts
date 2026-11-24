@@ -8,6 +8,7 @@ export async function POST(request:Request){
  const headers={"Cache-Control":"private, no-store"};
  const fail=(status:number,code:string)=>NextResponse.json({code},{status,headers});
  if(request.headers.get("origin")!==new URL(request.url).origin)return fail(403,"INVALID_ORIGIN");
+ if(!request.headers.get("content-type")?.startsWith("application/json"))return fail(415,"INVALID_CONTENT_TYPE");
  let body:Record<string,unknown>;
  try{body=await request.json();if(!body||typeof body!=="object")return fail(400,"INVALID_INPUT");}catch{return fail(400,"INVALID_INPUT");}
  const {organizationId,action,campaignId,expected}=body;
@@ -35,6 +36,7 @@ export async function POST(request:Request){
  }
  if(typeof campaignId!=="string"||! /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(campaignId)||(expected!=="active"&&expected!=="paused"))return fail(400,"INVALID_INPUT");
  if(process.env.LUCKY_DRAW_PUBLICATION_ENABLED!=="true")return fail(503,"LIFECYCLE_NOT_ENABLED");
+ if(action==="activate"&&process.env.LUCKY_DRAW_ACTIVATION_ENABLED!=="true")return fail(503,"ACTIVATION_NOT_ENABLED");
  const next=action==="activate"?"active":action==="pause"?"paused":"ended";
  const result=await finance.rpc("lucky_draw_transition",{p_org:org.data.id,p_id:campaignId,p_expected:expected,p_next:next});
  if(result.error)return fail(409,"TRANSITION_FAILED");
