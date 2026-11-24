@@ -98,6 +98,52 @@ function Draft({organizationId}:{organizationId:string}) {
     <button type="button" disabled={busy||!dbId} onClick={()=>void save()} className="rounded-xl bg-primary px-5 py-3 text-white disabled:opacity-50">{busy?"處理中…":"儲存設定"}</button>
     </fieldset>
     <p role="status">{message}</p>
+    <MemberGrant organizationId={organizationId}/>
     <p className="text-sm text-secondary-text">儲存草稿不會發布活動；機率未滿 100% 仍可儲存草稿。</p>
   </div>;
+}
+
+type MemberOption={id:string;name:string;phoneSuffix:string};
+function MemberGrant({organizationId}:{organizationId:string}){
+ const [q,setQ]=useState("");
+ const [members,setMembers]=useState<MemberOption[]>([]);
+ const [selected,setSelected]=useState<MemberOption|null>(null);
+ const [eligible,setEligible]=useState<boolean|null>(null);
+ const [qty,setQty]=useState("1");
+ const [reason,setReason]=useState("");
+ const [busy,setBusy]=useState(false);
+ const [message,setMessage]=useState("");
+ const field="w-full rounded-xl border border-border bg-surface px-3 py-2 text-text";
+ async function search(){
+  setBusy(true);setSelected(null);setEligible(null);setMembers([]);setMessage("");
+  try{
+   const r=await fetch("/api/staff/lucky-draw/members?"+new URLSearchParams({organizationId,q:q.trim()}),{cache:"no-store"});
+   if(!r.ok)throw new Error();
+   const data=await r.json();setMembers(data.members);if(!data.members.length)setMessage("查無符合的會員");
+  }catch{setMessage("會員查詢失敗");}finally{setBusy(false);}
+ }
+ async function choose(member:MemberOption){
+  setBusy(true);setSelected(member);setEligible(null);setMessage("");
+  try{
+   const r=await fetch("/api/staff/lucky-draw/member?"+new URLSearchParams({organizationId,customerId:member.id}),{cache:"no-store"});
+   if(!r.ok)throw new Error();
+   const data=await r.json();setEligible(data.lineVerified===true);
+  }catch{setMessage("資格查詢失敗");}finally{setBusy(false);}
+ }
+ return <section className="rounded-2xl border border-border bg-surface p-5 space-y-4">
+ <h2 className="font-semibold">抽獎次數管理</h2>
+ <p className="text-sm text-secondary-text">活動尚未發布，目前僅開放會員資格查詢。</p>
+ <fieldset disabled={busy} className="space-y-3 min-w-0">
+ <label className="block">會員姓名或手機<input className={field} value={q} maxLength={80} onChange={e=>{setQ(e.target.value);setMembers([]);setSelected(null);setEligible(null);setMessage("");}}/></label>
+ <button type="button" disabled={busy||q.trim().length<2} className="rounded-xl border border-border px-4 py-2 disabled:opacity-50" onClick={()=>void search()}>搜尋會員</button>
+ {members.map(m=><button type="button" key={m.id} className="block w-full text-left rounded-xl border border-border p-3" onClick={()=>void choose(m)}>{m.name} · 手機末四碼 {m.phoneSuffix||"未提供"}</button>)}
+ {selected&&<div className="space-y-3 border-t border-border pt-3">
+ <p>{selected.name}：{eligible===null?"尚未確認資格":eligible?"LINE 會員資格通過":"不符合抽獎資格"}</p>
+ <label className="block">贈送次數<input className={field} type="number" min="1" max="100" step="1" value={qty} onChange={e=>setQty(e.target.value)}/></label>
+ <label className="block">贈送原因<textarea className={field} maxLength={300} value={reason} onChange={e=>setReason(e.target.value)}/></label>
+ <button type="button" disabled className="rounded-xl border border-border px-4 py-2 opacity-50">確認贈送（尚未開放）</button>
+ </div>}
+ </fieldset>
+ <p role="status">{busy?"查詢中…":message}</p>
+ </section>;
 }
