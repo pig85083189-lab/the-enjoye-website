@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { grantSettledBookingSpend } from "@/lib/lucky-draw/booking-spend-server";
 import { callBookingSourceCheckout, readBookingCheckoutSource } from "@/lib/commerce/booking-source-checkout-server";
 import { linkVerifiedLineBookingSource } from "@/lib/commerce/line-verified-booking-source-server";
 import {
@@ -168,6 +169,7 @@ export async function POST(request: Request) {
           p_checkout_app_id: draftId,
           p_expected_updated_at: expectedUpdatedAt,
         });
+      await grantSettledBookingSpend(draftId);
         return NextResponse.json({ bundle }, { headers: { "Cache-Control": "private, no-store" } });
       }
       const stored = storedValueAmount(
@@ -231,6 +233,7 @@ export async function POST(request: Request) {
         p_checkout_app_id: draftId,
         p_expected_updated_at: expectedUpdatedAt,
       });
+      await grantSettledBookingSpend(draftId);
       return NextResponse.json({ bundle }, { headers: { "Cache-Control": "private, no-store" } });
     }
     return fail(400, "目前無法完成結帳，請稍後再試");
