@@ -40,3 +40,18 @@ export async function POST(request:Request){
  if(result.error)return fail(409,"TRANSITION_FAILED");
  return NextResponse.json({campaignId,status:result.data},{headers});
 }
+
+export async function GET(request:Request){
+ const headers={"Cache-Control":"private, no-store"};
+ const fail=(status:number,code:string)=>NextResponse.json({code},{status,headers});
+ const organizationId=new URL(request.url).searchParams.get("organizationId")?.trim();
+ if(!organizationId||organizationId.length>120)return fail(400,"INVALID_INPUT");
+ const identity=await getAuthenticatedStaffMembership({organizationId});
+ if(identity.status!=="ok"||!["OWNER","MANAGER"].includes(identity.membership.role))return fail(403,"FORBIDDEN");
+ const finance=createBeautyOsFinanceClient();if(!finance)return fail(503,"CONFIG_MISSING");
+ const org=await finance.from("organizations").select("id").eq("app_id",organizationId).single();
+ if(org.error||!org.data)return fail(503,"ORG_UNAVAILABLE");
+ const campaign=await finance.from("lucky_draw_campaigns").select("id,name,version,status").eq("organization_id",org.data.id).order("version",{ascending:false}).limit(1).maybeSingle();
+ if(campaign.error)return fail(503,"STATUS_UNAVAILABLE");
+ return NextResponse.json({campaign:campaign.data,enabled:process.env.LUCKY_DRAW_PUBLICATION_ENABLED==="true"},{headers});
+}
