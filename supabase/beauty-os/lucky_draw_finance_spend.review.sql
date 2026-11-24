@@ -5,6 +5,8 @@ returns bigint language plpgsql security definer set search_path='' as $$
 declare t public.transactions%rowtype; c public.lucky_draw_campaigns%rowtype; n bigint; threshold bigint;
 begin
  if coalesce(auth.jwt()->>'role','') <> 'service_role' then raise exception 'FORBIDDEN'; end if;
+ perform lucky_draw_private.lock_spend(p_org,'finance:'||p_transaction::text);
+ if exists(select 1 from lucky_draw_private.spend_cancellations where organization_id=p_org and source_key='finance:'||p_transaction::text) then return null; end if;
  select * into t from public.transactions where id=p_transaction and organization_id=p_org for update;
  if not found or t.status::text<>'COMPLETED' or t.voided_at is not null or t.completed_at is null or t.total_minor<=0 then return null; end if;
  -- Only finance-native package purchases, never wallet mirror or top-up.
