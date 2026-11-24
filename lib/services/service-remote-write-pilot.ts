@@ -119,3 +119,21 @@ export async function runAuthenticatedServiceWriteCreate(
     persistence,
   );
 }
+
+/** Resolve an existing service for a management operation without creating a replacement. */
+export async function resolveAuthenticatedServiceManagement(
+  client: ServiceWriteClient,
+  organizationId: string,
+  serviceId: string,
+  actorStaffId: string,
+  env: NodeJS.Dict<string> = typeof process !== "undefined" ? process.env : {},
+): Promise<{ identity: LoadedAuthenticatedIdentity; service: Service }> {
+  if (!isServiceRemoteWritePilotEnabled(env)) throw new ServiceWritePilotOffError();
+  const persistence = await createAuthenticatedServiceWritePersistence(client);
+  assertOrganizationBoundary(persistence.identity, organizationId);
+  persistence.identity.mapper.requireOperationalStaffId(organizationId, actorStaffId);
+  assertCanManageServices(persistence.identity);
+  const service = await persistence.services.getById(organizationId, serviceId);
+  if (!service) throw new Error("找不到服務項目");
+  return { identity: persistence.identity, service };
+}
