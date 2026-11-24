@@ -10,7 +10,7 @@ import {
   type ServiceCatalogDraft,
   type ServiceCatalogStep,
 } from "@/lib/services/service-catalog-derived";
-import { submitServiceRemoteCreate } from "@/features/services/use-service-remote-write";
+import { submitServiceRemoteCreate, submitServiceRemoteUpdate } from "@/features/services/use-service-remote-write";
 import { serviceWriteUserMessage } from "@/lib/services/service-write-ui-error";
 import { createService, updateService } from "@/lib/services/store";
 import { cn } from "@/lib/utils";
@@ -120,7 +120,17 @@ export function ServiceFormDialog({
     try {
       if (remoteWritePilot) {
         if (mode === "edit") {
-          throw new Error("目前僅能新增服務");
+          if (!serviceId) throw new Error("找不到服務項目");
+          await submitServiceRemoteUpdate(organizationId, serviceId, staffId, {
+            name: parsed.value.name,
+            category: parsed.value.category || null,
+            durationMinutes: parsed.value.durationMinutes,
+            priceMinor: parsed.value.priceMinor,
+            isActive: parsed.value.isActive,
+          });
+          onSaved(serviceId);
+          onClose();
+          return;
         }
         const created = await submitServiceRemoteCreate({
           organizationId,
