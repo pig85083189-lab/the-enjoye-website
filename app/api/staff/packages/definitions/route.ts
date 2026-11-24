@@ -66,3 +66,25 @@ export async function POST(request: Request) {
   if (error || !data?.id) return fail(409, "套票方案未建立，請檢查資料");
   return NextResponse.json({ id: data.id }, { status: 201, headers: { "Cache-Control": "no-store" } });
 }
+
+/** Administrative catalogue only; independent of customer purchase and ledger reads. */
+export async function GET(request: Request) {
+  const organizationId = new URL(request.url).searchParams.get("organizationId")?.trim() ?? "";
+  if (!organizationId || organizationId.length > 120) return fail(400, "無效的店家");
+  const identity = await getAuthenticatedStaffMembership({ organizationId });
+  if (identity.status === "unauthenticated") return fail(401, "請先登入");
+  if (identity.status !== "ok" || !identity.membership.isActive ||
+      !["OWNER", "MANAGER"].includes(identity.membership.role)) return fail(403, "只有主管或店長可管理套票方案");
+  const db = createBeautyOsFinanceClient();
+  if (!db) return fail(503, "正式資料庫未設定");
+  const { data: org, error: orgError } = await db.from("organizations").select("id").eq("app_id", organizationId).limit(2);
+  if (orgError || org?.length !== 1) return fail(409, "無法確認店家");
+  const orgId = org[0]!.id;
+  const [definitions, services] = await Promise.all([
+    db.from("package_definitions").select("id,name,session_count,price_minor,is_active,included_services").eq("organization_id", orgId).order("created_at", {ascending:false}).limit(500),
+    db.from("services").select("id,name,is_active").eq("organization_id", orgId).order("name").limit(500),
+  ]);
+  if (definitions.error) return fail(503, "無法讀取正式套票方案");
+  if (services.error) return fail(503, "無法讀取指定療程");
+  return NextResponse.json({definitions:definitions.data ?? [],services:services.data ?? []},{headers:{"Cache-Control":"private, no-store"}});
+}
