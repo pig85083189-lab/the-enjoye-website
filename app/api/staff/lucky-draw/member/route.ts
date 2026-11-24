@@ -14,6 +14,7 @@ async function handle(request: Request) {
  const params=new URL(request.url).searchParams;
  let body:Record<string,unknown>|null=null;
  if(request.method==="POST"){
+  if(!request.headers.get("content-type")?.startsWith("application/json"))return fail(415,"INVALID_CONTENT_TYPE");
   try{body=await request.json();if(!body||typeof body!=="object")return fail(400,"INVALID_INPUT");}catch{return fail(400,"INVALID_INPUT");}
  }
  const organizationId=params.get("organizationId")?.trim();
@@ -57,8 +58,9 @@ async function handle(request: Request) {
   const {quantity,reason,requestId,campaignId}=body;
   if(campaignId!==c.id||typeof quantity!=="number"||!Number.isInteger(quantity)||quantity<1||quantity>100||typeof reason!=="string"||!reason.trim()||reason.trim().length>300||typeof requestId!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId))return fail(400,"INVALID_GRANT");
   const actor=await getServerStaffAuthUser();if(!actor)return fail(403,"FORBIDDEN");
-  // Keep release gate closed until transactional identity recheck is implemented.
-  return fail(503,"GRANT_RPC_NOT_ENABLED");
+  const grant=await db.rpc("lucky_draw_grant_manual",{p_org:org.data.id,p_customer:resolvedCustomer.id,p_campaign:c.id,p_request:requestId,p_qty:quantity,p_actor:actor.id,p_reason:reason.trim()});
+  if(grant.error||!Number.isSafeInteger(Number(grant.data))||grant.data===null)return fail(409,"GRANT_NOT_CONFIRMED");
+  return NextResponse.json({success:true,balance:Number(grant.data)},{headers});
  }
  let balance=0;
  if(c){
@@ -66,5 +68,5 @@ async function handle(request: Request) {
   if(account.error)return fail(503,"BALANCE_UNAVAILABLE");
   balance=Number(account.data?.balance??0);
  }
- return NextResponse.json({lineVerified:true,reason:null,grantEnabled:false,campaignId:c?.id??null,balance},{headers});
+ return NextResponse.json({lineVerified:true,reason:null,grantEnabled:enabled,campaignId:c?.id??null,balance},{headers});
 }
