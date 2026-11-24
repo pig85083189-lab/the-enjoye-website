@@ -110,13 +110,17 @@ function MemberGrant({organizationId}:{organizationId:string}){
  const [members,setMembers]=useState<MemberOption[]>([]);
  const [selected,setSelected]=useState<MemberOption|null>(null);
  const [eligible,setEligible]=useState<boolean|null>(null);
+ const [balance,setBalance]=useState<number|null>(null);
+ const [grantEnabled,setGrantEnabled]=useState(false);
+ const [campaignId,setCampaignId]=useState<string|null>(null);
+ const [pending,setPending]=useState<{id:string;signature:string}|null>(null);
  const [qty,setQty]=useState("1");
  const [reason,setReason]=useState("");
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState("");
  const field="w-full rounded-xl border border-border bg-surface px-3 py-2 text-text";
  async function search(){
-  setBusy(true);setSelected(null);setEligible(null);setMembers([]);setMessage("");
+  setBusy(true);setSelected(null);setEligible(null);setBalance(null);setGrantEnabled(false);setCampaignId(null);setMembers([]);setMessage("");
   try{
    const r=await fetch("/api/staff/lucky-draw/members?"+new URLSearchParams({organizationId,q:q.trim()}),{cache:"no-store"});
    if(!r.ok)throw new Error();
@@ -124,25 +128,40 @@ function MemberGrant({organizationId}:{organizationId:string}){
   }catch{setMessage("會員查詢失敗");}finally{setBusy(false);}
  }
  async function choose(member:MemberOption){
-  setBusy(true);setSelected(member);setEligible(null);setMessage("");
+  setBusy(true);setSelected(member);setEligible(null);setBalance(null);setGrantEnabled(false);setCampaignId(null);setMessage("");
   try{
    const r=await fetch("/api/staff/lucky-draw/member?"+new URLSearchParams({organizationId,customerId:member.id}),{cache:"no-store"});
    if(!r.ok)throw new Error();
-   const data=await r.json();setEligible(data.lineVerified===true);
+   const data=await r.json();setEligible(data.lineVerified===true);setBalance(Number.isSafeInteger(data.balance)?data.balance:null);setCampaignId(typeof data.campaignId==="string"?data.campaignId:null);setGrantEnabled(data.grantEnabled===true);
   }catch{setMessage("資格查詢失敗");}finally{setBusy(false);}
+ }
+ async function grant(){
+  const quantity=Number(qty);
+  if(busy||!selected||!eligible||!grantEnabled||!campaignId||!Number.isInteger(quantity)||quantity<1||quantity>100||!reason.trim())return;
+  if(!window.confirm("確定贈送 "+quantity+" 次抽獎機會給 "+selected.name+"？"))return;
+  const signature=JSON.stringify([selected.id,campaignId,quantity,reason.trim()]);
+  const requestId=pending?.signature===signature?pending.id:crypto.randomUUID();
+  setPending({id:requestId,signature});setBusy(true);
+  try{
+   const r=await fetch("/api/staff/lucky-draw/member?"+new URLSearchParams({organizationId,customerId:selected.id}),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({campaignId,quantity,reason:reason.trim(),requestId})});
+   const data=await r.json();
+   if(!r.ok||data.success!==true||!Number.isSafeInteger(data.balance))throw new Error("贈送未確認，請勿重複建立新請求。");
+   setBalance(data.balance);setPending(null);setReason("");setMessage("贈送成功");
+  }catch{setMessage("贈送未確認，請以相同資料重試或重新查詢。");}finally{setBusy(false);}
  }
  return <section className="rounded-2xl border border-border bg-surface p-5 space-y-4">
  <h2 className="font-semibold">抽獎次數管理</h2>
- <p className="text-sm text-secondary-text">活動尚未發布，目前僅開放會員資格查詢。</p>
+ <p className="text-sm text-secondary-text">選擇會員後查詢資格與目前抽獎次數。</p>
  <fieldset disabled={busy} className="space-y-3 min-w-0">
- <label className="block">會員姓名或手機<input className={field} value={q} maxLength={80} onChange={e=>{setQ(e.target.value);setMembers([]);setSelected(null);setEligible(null);setMessage("");}}/></label>
+ <label className="block">會員姓名或手機<input className={field} value={q} maxLength={80} onChange={e=>{setQ(e.target.value);setMembers([]);setSelected(null);setEligible(null);setBalance(null);setGrantEnabled(false);setCampaignId(null);setMessage("");}}/></label>
  <button type="button" disabled={busy||q.trim().length<2} className="rounded-xl border border-border px-4 py-2 disabled:opacity-50" onClick={()=>void search()}>搜尋會員</button>
  {members.map(m=><button type="button" key={m.id} className="block w-full text-left rounded-xl border border-border p-3" onClick={()=>void choose(m)}>{m.name} · 手機末四碼 {m.phoneSuffix||"未提供"}</button>)}
  {selected&&<div className="space-y-3 border-t border-border pt-3">
  <p>{selected.name}：{eligible===null?"尚未確認資格":eligible?"LINE 會員資格通過":"不符合抽獎資格"}</p>
+ <p>目前抽獎次數：{balance===null?"尚未確認":balance+" 次"}</p>
  <label className="block">贈送次數<input className={field} type="number" min="1" max="100" step="1" value={qty} onChange={e=>setQty(e.target.value)}/></label>
  <label className="block">贈送原因<textarea className={field} maxLength={300} value={reason} onChange={e=>setReason(e.target.value)}/></label>
- <button type="button" disabled className="rounded-xl border border-border px-4 py-2 opacity-50">確認贈送（尚未開放）</button>
+ <button type="button" disabled={busy||!eligible||!grantEnabled||!campaignId||!Number.isInteger(Number(qty))||Number(qty)<1||Number(qty)>100||!reason.trim()} onClick={()=>void grant()} className="rounded-xl border border-border px-4 py-2 disabled:opacity-50">{grantEnabled?"確認贈送":"確認贈送（尚未開放）"}</button>
  </div>}
  </fieldset>
  <p role="status">{busy?"查詢中…":message}</p>
