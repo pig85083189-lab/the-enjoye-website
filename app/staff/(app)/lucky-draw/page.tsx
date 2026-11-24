@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useOrganization } from "@/lib/tenant/OrganizationContext";
 import { DEFAULT_LUCKY_DRAW_RULES } from "@/lib/lucky-draw/rules";
+import { createClient } from "@/lib/supabase/client";
 const tiers = ["大獎","二獎","參獎","小獎"] as const;
 type Tier = typeof tiers[number];
 const initial = [
@@ -13,15 +14,59 @@ const initial = [
 export default function LuckyDrawPage() {
   const {membership, organization} = useOrganization();
   if (!membership || !["OWNER","MANAGER"].includes(membership.role)) return <p>僅主管及店長可管理抽獎活動。</p>;
-  return <Draft key={organization.id}/>;
+  return <Draft key={organization.id} organizationId={organization.id}/>;
 }
-function Draft() {
+function Draft({organizationId}:{organizationId:string}) {
   const [name,setName]=useState("幸運寵愛轉盤");
   const [start,setStart]=useState("");
   const [end,setEnd]=useState("");
   const [rules,setRules]=useState(initial.map(r=>({...r,enabled:true,value:String(r.value)})));
   const [manual,setManual]=useState(true);
   const [prizes,setPrizes]=useState<{tier:Tier;name:string;weight:string;stock:string}[]>([]);
+  const [dbId,setDbId]=useState("");
+  const [busy,setBusy]=useState(true);
+  const [message,setMessage]=useState("");
+  useEffect(()=>{
+    let cancelled=false;
+    async function load(){
+      try {
+        const client=createClient();
+        const {data:org,error:orgError}=await client.from("organizations").select("id").eq("app_id",organizationId).single();
+        if(orgError||!org) throw new Error("無法確認店家身分");
+        const {data,error}=await client.from("lucky_draw_campaign_drafts").select("*").eq("organization_id",org.id).maybeSingle();
+        if(error) throw error;
+        if(cancelled)return;
+        if(data){
+          const r=data.rules;
+          const values=[r.spend.amountMinor,r.points.pointsPerDraw,r.treatment.drawsPerTreatment,r.birthday.drawsPerYear];
+          const enabled=[r.spend.enabled,r.points.enabled,r.treatment.enabled,r.birthday.enabled];
+          if(!Array.isArray(data.prizes)||values.some(v=>!Number.isSafeInteger(v)||v<1)||enabled.some(v=>typeof v!=="boolean")||typeof r.manual.enabled!=="boolean")throw new Error("草稿格式不正確");
+          setName(data.name);setStart(data.starts_on||"");setEnd(data.ends_on||"");
+          setRules(initial.map((x,i)=>({...x,value:String(values[i]),enabled:enabled[i]})));
+          setManual(r.manual.enabled);
+          setPrizes(data.prizes);
+        }
+        setDbId(org.id);
+      }catch{if(!cancelled)setMessage("讀取失敗，請重新整理或確認管理權限。");}
+      finally{if(!cancelled)setBusy(false);}
+    }
+    void load();return()=>{cancelled=true;};
+  },[organizationId]);
+  async function save(){
+    if(busy||!dbId)return;
+    if(!name.trim()||name.trim().length>200||(start&&end&&end<start)||rules.some(r=>!Number.isSafeInteger(Number(r.value))||Number(r.value)<1)||prizes.some(p=>!p.name.trim()||!validWeight(p.weight)||!/^\\d+$/.test(p.stock)||!Number.isSafeInteger(Number(p.stock)))){setMessage("請確認活動名稱、日期、資格數值與獎品欄位。");return;}
+    setBusy(true);setMessage("");
+    try{
+      const client=createClient();
+      const {error}=await client.from("lucky_draw_campaign_drafts").upsert({
+        organization_id:dbId,name:name.trim(),starts_on:start||null,ends_on:end||null,
+        rules:{spend:{enabled:rules[0].enabled,amountMinor:Number(rules[0].value)},points:{enabled:rules[1].enabled,pointsPerDraw:Number(rules[1].value)},treatment:{enabled:rules[2].enabled,drawsPerTreatment:Number(rules[2].value)},birthday:{enabled:rules[3].enabled,drawsPerYear:Number(rules[3].value)},manual:{enabled:manual}},
+        prizes,status:"draft",updated_at:new Date().toISOString()
+      },{onConflict:"organization_id"}).select("organization_id").single();
+      if(error)throw error;
+      setMessage("草稿已儲存，活動尚未發布。");
+    }catch{setMessage("儲存失敗，請確認連線及管理權限。");}finally{setBusy(false);}
+  }
   const validWeight=(v:string)=>/^\d+(\.\d{1,2})?$/.test(v)&&Number(v)<=100;
   const basisPoints=(v:string)=>validWeight(v)?Math.round(Number(v)*100):0;
   const total=prizes.reduce((sum,p)=>sum+basisPoints(p.weight),0);
@@ -29,7 +74,8 @@ function Draft() {
   const field="w-full rounded-xl border border-border bg-surface px-3 py-2 text-text";
   const panel="rounded-2xl border border-border bg-surface p-5 space-y-4";
   return <div className="space-y-5">
-    <header><h1 className="text-2xl font-semibold text-text">抽獎活動管理</h1><p className="mt-2 text-sm text-secondary-text">設定預覽 · 尚未連接資料庫，不會發放或扣除任何會員權益。</p></header>
+    <header><h1 className="text-2xl font-semibold text-text">抽獎活動管理</h1><p className="mt-2 text-sm text-secondary-text">草稿管理 · 不會發放或扣除任何會員權益。</p></header>
+    <fieldset disabled={busy||!dbId} className="space-y-5 min-w-0">
     <section className={panel}><h2 className="font-semibold">活動設定</h2>
       <label className="block">活動名稱<input className={field} value={name} onChange={e=>setName(e.target.value)}/></label>
       <div className="grid gap-3 sm:grid-cols-2"><label>開始日期<input type="date" className={field} value={start} onChange={e=>setStart(e.target.value)}/></label><label>結束日期<input type="date" min={start} className={field} value={end} onChange={e=>setEnd(e.target.value)}/></label></div>
@@ -49,6 +95,9 @@ function Draft() {
       <p>機率合計：{(total/100).toFixed(2)}%</p>
       <p role="status" className="text-sm text-secondary-text">{total===10000&&valid?"獎品設定檢查通過（尚未發布）":"發布前須合計 100%，獎品名稱、機率及庫存均須有效。"}</p>
     </section>
-    <p className="text-sm text-secondary-text">目前僅為未儲存的設定預覽；重新整理會恢復預設值。</p>
+    <button type="button" disabled={busy||!dbId} onClick={()=>void save()} className="rounded-xl bg-primary px-5 py-3 text-white disabled:opacity-50">{busy?"處理中…":"儲存設定"}</button>
+    </fieldset>
+    <p role="status">{message}</p>
+    <p className="text-sm text-secondary-text">儲存草稿不會發布活動；機率未滿 100% 仍可儲存草稿。</p>
   </div>;
 }
