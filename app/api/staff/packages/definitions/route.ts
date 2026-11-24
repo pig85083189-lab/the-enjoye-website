@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 import { randomUUID } from "node:crypto";
 import { getAuthenticatedStaffMembership } from "@/lib/staff-auth/server";
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
 
+async function bookingCatalog(organizationId: string) {
+  const client = await createClient();
+  const org = await client.from("organizations").select("id").eq("app_id", organizationId).limit(2);
+  if (org.error || org.data?.length !== 1) throw new Error("booking organization unavailable");
+  const result = await client.from("services").select("id,app_id,name,is_active,service_type,duration_minutes,price,price_minor,category,currency").eq("organization_id",org.data[0]!.id).order("name").limit(500);
+  if (result.error || !result.data) throw new Error("booking services unavailable");
+  return result.data;
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const fail = (status: number, error: string) =>
   NextResponse.json({ error }, { status, headers: { "Cache-Control": "no-store" } });
@@ -48,15 +57,29 @@ export async function POST(request: Request) {
   const { data: org, error: orgError } = await db.from("organizations").select("id")
     .eq("app_id", organizationId).limit(2);
   if (orgError || org?.length !== 1) return fail(409, "無法確認店家");
-  const { data: services, error: serviceError } = await db.from("services").select("id")
-    .eq("organization_id", org[0]!.id).eq("is_active", true).in("id", serviceIds as string[]);
-  if (serviceError || services?.length !== serviceIds.length) return fail(409, "指定療程不存在或未啟用");
+  let catalog;
+  try { catalog = await bookingCatalog(organizationId); } catch { return fail(503,"無法讀取正式服務項目"); }
+  const chosen = catalog.filter(row => row.is_active && row.app_id && (serviceIds as string[]).includes(row.id));
+  if (chosen.length !== serviceIds.length) return fail(409,"指定療程不存在或未啟用");
+  const financeIds: string[] = [];
+  for (const row of chosen) {
+    const existing = await db.from("services").select("id,is_active").eq("organization_id",org[0]!.id).eq("app_id",row.app_id).limit(2);
+    if (existing.error || (existing.data?.length ?? 0)>1) return fail(409,"療程對應異常");
+    if (existing.data?.length === 1) {
+      if (!existing.data[0]!.is_active) return fail(409,"財務療程未啟用");
+      financeIds.push(existing.data[0]!.id);
+    } else {
+      const inserted = await db.from("services").insert({id:row.id,organization_id:org[0]!.id,app_id:row.app_id,name:row.name,is_active:true,service_type:row.service_type,duration_minutes:row.duration_minutes,price:row.price,price_minor:row.price_minor,category:row.category,currency:row.currency}).select("id").single();
+      if (inserted.error || !inserted.data) return fail(409,"療程同步失敗，請重新讀取");
+      financeIds.push(inserted.data.id);
+    }
+  }
   const { data, error } = await db.from("package_definitions").insert({
     organization_id: org[0]!.id,
     app_id: `pkgdef-${randomUUID()}`,
     name: name.trim(),
     description: typeof description === "string" ? description.trim() : null,
-    included_services: (serviceIds as string[]).map(serviceId => ({ serviceId, sessionsPerRedemption: 1 })),
+    included_services: financeIds.map(serviceId => ({ serviceId, sessionsPerRedemption: 1 })),
     session_count: sessionCount,
     price_minor: priceMinor,
     currency: "TWD",
@@ -82,9 +105,18 @@ export async function GET(request: Request) {
   const orgId = org[0]!.id;
   const [definitions, services] = await Promise.all([
     db.from("package_definitions").select("id,name,session_count,price_minor,is_active,included_services").eq("organization_id", orgId).order("created_at", {ascending:false}).limit(500),
-    db.from("services").select("id,name,is_active").eq("organization_id", orgId).order("name").limit(500),
+    db.from("services").select("id,app_id,name,is_active").eq("organization_id", orgId).order("name").limit(500),
   ]);
   if (definitions.error) return fail(503, "無法讀取正式套票方案");
   if (services.error) return fail(503, "無法讀取指定療程");
-  return NextResponse.json({definitions:definitions.data ?? [],services:services.data ?? []},{headers:{"Cache-Control":"private, no-store"}});
+  let catalog;
+  try { catalog = await bookingCatalog(organizationId); } catch { return fail(503,"無法讀取正式服務項目"); }
+  const historical = (services.data ?? []).map(row => ({...row,is_active:false}));
+  const current = catalog.map(row => ({id:row.id,name:row.name,is_active:row.is_active && Boolean(row.app_id)}));
+  const displayDefinitions = (definitions.data ?? []).map(def => ({...def,included_services:(Array.isArray(def.included_services)?def.included_services:[]).map(item => {
+    const finance = (services.data ?? []).find(row=>row.id===item.serviceId);
+    const booking = catalog.find(row=>row.app_id && row.app_id===finance?.app_id);
+    return {...item,serviceId:booking?.id ?? item.serviceId};
+  })}));
+  return NextResponse.json({definitions:displayDefinitions,services:[...current,...historical.filter(row=>!current.some(item=>item.id===row.id))]},{headers:{"Cache-Control":"private, no-store"}});
 }
