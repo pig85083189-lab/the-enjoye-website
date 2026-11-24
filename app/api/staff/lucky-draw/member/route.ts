@@ -29,5 +29,13 @@ export async function GET(request: Request) {
  ...(legacy.data??[]).map(row=>({source:"binding" as const,hash:row.line_user_id_hash,verified:row.verified===true,status:String(row.status??""),confirmedAt:row.confirmed_at,boundAt:row.bound_at,unboundAt:row.unbound_at,blockedAt:row.blocked_at}))
  ];
  const decision=decideVerifiedLineSubject({organizationAppId:organizationId,customerOrganizationAppId:organizationId,customerStatus:customer.data.status,bindings});
- return NextResponse.json({lineVerified:decision.outcome==="hash",reason:decision.outcome==="review"?decision.reason:null,grantEnabled:false},{headers});
+ if(decision.outcome==="review")return NextResponse.json({lineVerified:false,reason:decision.reason,grantEnabled:false},{headers});
+ // Fail closed even for historical duplicate ownership until reconciled.
+ const [owners,oldOwners]=await Promise.all([
+ db.from("member_line_customer_links").select("customer_id").eq("organization_id",org.data.id).ilike("line_subject_hash",decision.hash).limit(101),
+ db.from("line_customer_bindings").select("customer_uuid").eq("organization_id",organizationId).ilike("line_user_id_hash",decision.hash).limit(101)
+ ]);
+ if(owners.error||oldOwners.error||(owners.data?.length??0)>100||(oldOwners.data?.length??0)>100)return fail(503,"IDENTITY_LOOKUP_FAILED");
+ if((owners.data??[]).some(row=>row.customer_id!==customer.data.id)||(oldOwners.data??[]).some(row=>row.customer_uuid!==customer.data.id))return NextResponse.json({lineVerified:false,reason:"MULTIPLE_FINANCE_CUSTOMERS",grantEnabled:false},{headers});
+ return NextResponse.json({lineVerified:true,reason:null,grantEnabled:false},{headers});
 }
