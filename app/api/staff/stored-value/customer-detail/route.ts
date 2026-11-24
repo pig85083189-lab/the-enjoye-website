@@ -46,6 +46,7 @@ export async function GET(request: Request) {
     .limit(2);
   if (customerError) return fail(503, "無法讀取顧客資料");
   let resolvedCustomers = customers;
+  let linkedBookingFinanceId: string | null = null;
   // Normal customer management may use the booking-system UUID rather than
   // the finance customer's app_id. Resolve only an active, verified source link.
   if (!customers?.length) {
@@ -95,6 +96,7 @@ export async function GET(request: Request) {
         if (wallets?.length === 1) resolvedFinanceCustomerId = pair.finance_customer_id;
       }
     }
+    if (links?.length === 1 && resolvedFinanceCustomerId) linkedBookingFinanceId = links[0]!.finance_booking_customer_id;
     if (!resolvedFinanceCustomerId && links?.length !== 1) return fail(404, "找不到此客戶");
     const { data: mapped, error: mappedError } = await db
       .from("customers")
@@ -186,9 +188,37 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false })
     .limit(500);
   if (walletHistoryError) return fail(503, "無法讀取儲值異動紀錄");
-  const completedIds = new Set(financeTransactions.map((tx) => tx.id));
+  const packageCustomerIds = [...new Set([customerRow.id, ...(linkedBookingFinanceId ? [linkedBookingFinanceId] : [])])];
+  const {data: packages,error: packageError} = await db.from("customer_packages")
+    .select("id,customer_id,name_snapshot,session_count_snapshot,purchase_transaction_id")
+    .eq("organization_id",organization[0]!.id).in("customer_id",packageCustomerIds);
+  if(packageError)return fail(503,"無法讀取套票紀錄");
+  const {data: packageEntries,error: packageEntryError} = await db.from("package_ledger_entries")
+    .select("id,customer_package_id,customer_id,type,session_delta,transaction_id,created_at")
+    .eq("organization_id",organization[0]!.id).in("customer_id",packageCustomerIds)
+    .in("type",["PURCHASE","REDEMPTION"]).order("created_at",{ascending:false}).limit(500);
+  if(packageEntryError)return fail(503,"無法讀取套票異動紀錄");
+  const packageTxIds=[...new Set((packageEntries??[]).map(e=>e.transaction_id).filter((id):id is string=>typeof id==="string"))];
+  const {data: packageTx,error: packageTxError}=packageTxIds.length ? await db.from("transactions")
+    .select("id,customer_id,total_minor,completed_at").eq("organization_id",organization[0]!.id)
+    .eq("status","COMPLETED").in("customer_id",packageCustomerIds).in("id",packageTxIds) : {data:[],error:null};
+  if(packageTxError)return fail(503,"無法確認套票交易");
+  const packageActivity=(packageEntries??[]).flatMap(e=>{
+    const pkg=packages?.find(p=>p.id===e.customer_package_id&&p.customer_id===e.customer_id);
+    const tx=packageTx?.find(t=>t.id===e.transaction_id&&t.customer_id===e.customer_id);
+    if(!pkg||!tx)return [];
+    const purchase=e.type==="PURCHASE";
+    if(purchase&&pkg.purchase_transaction_id!==tx.id)return [];
+    return [{id:"package:"+e.id,kind:purchase?"PACKAGE_PURCHASE":"PACKAGE_REDEMPTION",
+      label:(purchase?"購買套票":"套票核銷")+"｜"+pkg.name_snapshot,
+      amountMinor:purchase?-Number(tx.total_minor):0,sessionDelta:Number(e.session_delta),
+      occurredAt:e.created_at,transactionId:tx.id}];
+  });
+  const packageActivityIds=new Set(packageActivity.map(e=>e.transactionId));
+  const completedIds = new Set([...financeTransactions.map((tx) => tx.id),...packageActivityIds]);
   const financeActivity = [
-    ...financeTransactions.map((tx) => ({
+    ...packageActivity,
+    ...financeTransactions.filter(tx=>!packageActivityIds.has(tx.id)).map((tx) => ({
       id: "checkout:" + tx.id, kind: "CHECKOUT", label: "消費結帳",
       amountMinor: -tx.total, occurredAt: tx.completedAt, transactionId: tx.id,
     })),
