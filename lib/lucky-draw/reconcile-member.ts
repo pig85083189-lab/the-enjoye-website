@@ -49,7 +49,7 @@ export async function verifyRewardMember(bookingOrg:string,bookingCustomer:strin
   if([otherPairs,challenges,wallet].some(x=>x.data?.length!==0))return null;
   const dest=await subject(finance as typeof booking,financeOrg,id);
   if(dest.outcome!=="hash"||dest.hash!==source.hash)return null;
-  return {financeOrg,financeCustomer:id,firstTime:true as const};
+  return {financeOrg,financeCustomer:id,verifiedHash:source.hash,firstTime:true as const};
  }
  if(pairs.data?.length!==1)return null;
  const pair=pairs.data[0];
@@ -58,5 +58,5 @@ export async function verifyRewardMember(bookingOrg:string,bookingCustomer:strin
  if(!confirmation.data)return null;
  const dest=await subject(finance as typeof booking,financeOrg,pair.finance_customer_id);
  if(dest.outcome!=="hash"||dest.hash!==source.hash)return null;
- return {financeOrg,financeCustomer:pair.finance_customer_id};
+ return {financeOrg,financeCustomer:pair.finance_customer_id,verifiedHash:source.hash};
 }
