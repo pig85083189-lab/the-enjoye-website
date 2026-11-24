@@ -10,7 +10,7 @@ import { createBrowserClientOrNull } from "@/lib/supabase/client";
 import type { Customer } from "@/types";
 import type { Transaction } from "@/lib/commerce/domain";
 
-export interface FinanceActivityRow { id: string; kind: string; label: string; amountMinor: number; occurredAt: string; transactionId?: string | null }
+export interface FinanceActivityRow { id: string; kind: string; label: string; amountMinor: number; occurredAt: string; transactionId?: string | null; sessionDelta?: number }
 
 export type CustomerRemoteReadState<T> =
   | { status: "off" }
