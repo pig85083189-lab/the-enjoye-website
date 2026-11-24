@@ -1,7 +1,6 @@
 /**
  * Service Catalog mutation surface.
- * Remote WRITE is create-only. EDIT / ACTIVE stay local-only
- * so the same flag cannot silently open a larger mutation path.
+ * Remote writes support create, edit and active status for authorized managers.
  */
 
 export const SERVICE_REMOTE_CREATE_UNAVAILABLE_REASON =
@@ -28,9 +27,8 @@ export function resolveServiceCatalogMutationSurface(input: {
   if (input.remoteWritePilot) {
     return {
       create: true,
-      edit: false,
-      toggleActive: false,
-      reason: SERVICE_REMOTE_MUTATE_UNAVAILABLE_REASON,
+      edit: true,
+      toggleActive: true,
     };
   }
   if (input.remoteReadPilot) {
