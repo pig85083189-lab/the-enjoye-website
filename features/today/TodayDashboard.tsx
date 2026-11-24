@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   CalendarDays,
   Check,
@@ -96,9 +96,18 @@ export function TodayDashboard({
     organizationId: organization.id,
     enabled: commerceRemoteReadPilot,
   });
-  const paidAppointmentIds = completedTransactionIdsByAppointment(
+  const [packagePaid,setPackagePaid]=useState<{org:string;rows:{appointmentId:string;id:string}[]}|null>(null);
+  useEffect(()=>{
+    if(!commerceRemoteReadPilot||!checkoutAllowed)return;
+    let cancelled=false;
+    const refresh=()=>{void fetch("/api/staff/packages/settled-appointments?organizationId="+encodeURIComponent(organization.id),{cache:"no-store",credentials:"same-origin"}).then(async r=>{if(!r.ok)throw Error("read failed");return r.json();}).then(data=>{if(!cancelled&&Array.isArray(data.completed))setPackagePaid({org:organization.id,rows:data.completed});}).catch(()=>{if(!cancelled)setPackagePaid(null);});};
+    refresh();window.addEventListener("focus",refresh);
+    return()=>{cancelled=true;window.removeEventListener("focus",refresh);};
+  },[organization.id,commerceRemoteReadPilot,checkoutAllowed]);
+  const paidAppointmentIds = new Map(completedTransactionIdsByAppointment(
     transactionsFromRemoteCommerceState(remoteTransactions),
-  );
+  ));
+  if(packagePaid?.org===organization.id)for(const row of packagePaid.rows)paidAppointmentIds.set(row.appointmentId,row.id);
   const schedule = applyRosterStaffDisplayNames(
     todayRemoteReadPilot && remoteState.status === "data"
       ? remoteState.value
