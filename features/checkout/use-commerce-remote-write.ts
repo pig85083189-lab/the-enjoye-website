@@ -4,9 +4,6 @@ import { useEffect, useState } from "react";
 import { COMMERCE_REMOTE_READ_PILOT_ENV } from "@/lib/commerce/commerce-remote-read-flag";
 import { COMMERCE_REMOTE_WRITE_PILOT_ENV } from "@/lib/commerce/commerce-remote-write-flag";
 import {
-  runAuthenticatedCommerceHydrate,
-  runAuthenticatedCommerceSaveDraft,
-  runAuthenticatedCommerceSettle,
   runAuthenticatedPackagePurchaseSettle,
   runAuthenticatedPackageRedemptionSettle,
   runAuthenticatedPackageRedemptionVoid,
@@ -42,6 +39,23 @@ function requireClient(): CommerceWriteClient {
   return client;
 }
 
+type CommerceBundle = { draft: CheckoutDraft; transaction: Transaction | null };
+
+async function postCommerceCheckout(body: Record<string, unknown>): Promise<CommerceBundle> {
+  const response = await fetch("/api/staff/commerce/checkout", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify(body),
+  });
+  const payload = (await response.json()) as { bundle?: CommerceBundle; message?: string };
+  if (!response.ok || !payload.bundle) {
+    throw new Error(payload.message || "目前無法完成結帳，請稍後再試");
+  }
+  return payload.bundle;
+}
+
 export type CommerceRemoteDraftState =
   | { status: "off" }
   | { status: "idle" }
@@ -65,14 +79,7 @@ export function useCommerceRemoteDraft(input: {
     let cancelled = false;
     void (async () => {
       try {
-        const bundle = await runAuthenticatedCommerceHydrate(
-          requireClient(),
-          {
-            appointmentId: input.appointmentId!,
-            treatmentId: input.treatmentId!,
-          },
-          commerceWritePilotEnv(),
-        );
+        const bundle = await postCommerceCheckout({action:"hydrate",appointmentId:input.appointmentId,treatmentId:input.treatmentId});
         if (cancelled) return;
         setResult({
           key: requestKey,
@@ -103,14 +110,14 @@ export async function submitCommerceRemoteSaveDraft(input: {
   payments: PaymentDraft[];
   discounts: CheckoutDiscount[];
 }) {
-  return runAuthenticatedCommerceSaveDraft(requireClient(), input, commerceWritePilotEnv());
+  return postCommerceCheckout({action:"save",...input});
 }
 
 export async function submitCommerceRemoteSettle(input: {
   draftId: string;
   expectedUpdatedAt: string;
 }) {
-  return runAuthenticatedCommerceSettle(requireClient(), input, commerceWritePilotEnv());
+  return postCommerceCheckout({action:"settle",...input});
 }
 
 /** Dedicated opt-in package checkout actions. Legacy settle is unchanged. */
