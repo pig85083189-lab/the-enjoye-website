@@ -281,6 +281,17 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     roles: ["OWNER", "MANAGER"],
   },
   {
+    id: "lucky-draw",
+    label: "抽獎活動",
+    href: "/staff/lucky-draw",
+    icon: Gift,
+    group: "system",
+    status: "ready",
+    description: "抽獎活動與獎品設定預覽",
+    requiredPermissions: ["settings.manage"],
+    roles: ["OWNER", "MANAGER"],
+  },
+  {
     id: "rewards",
     label: "會員獎勵中心",
     href: "/staff/rewards",
