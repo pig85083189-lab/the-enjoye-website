@@ -161,7 +161,17 @@ export async function submitCommerceRemotePackagePurchaseByAppId(input: {
   expectedUpdatedAt: string;
   packageDefinitionAppId: string;
 }) {
-  return runAuthenticatedPackagePurchaseByAppId(requireClient(), input, commerceWritePilotEnv());
+  const result = await runAuthenticatedPackagePurchaseByAppId(requireClient(), input, commerceWritePilotEnv());
+  // Settlement remains authoritative; notification never retries payment.
+  try {
+    await fetch("/api/staff/lucky-draw/settled-checkout", {
+      method:"POST", credentials:"same-origin", cache:"no-store",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({draftId:input.draftId}),
+      signal:AbortSignal.timeout(5000),
+    });
+  } catch { console.warn("[lucky-draw] purchase_notification_pending"); }
+  return result;
 }
 
 /** Never accept a customer/package UUID supplied by a local draft. */
