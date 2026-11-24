@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type SyntheticEvent,
 } from "react";
-import { ChevronRight, Plus, Search } from "lucide-react";
+import { ChevronRight, MoreVertical, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { submitServiceRemoteUpdate } from "@/features/services/use-service-remote-write";
@@ -217,13 +217,13 @@ export function ServiceCatalogPageClient({
     setActionError("");
   }
 
-  async function setActive(isActive: boolean) {
-    if (!mutation.toggleActive || !selectedServiceId || !staffId) return;
+  async function setActive(isActive: boolean, targetId = selectedServiceId) {
+    if (!mutation.toggleActive || !targetId || !staffId) return;
     try {
       if (remoteWritePilot) {
-        await submitServiceRemoteUpdate(organization.id, selectedServiceId, staffId, { isActive });
-      } else if (isActive) reactivateService(organization.id, selectedServiceId, staffId);
-      else deactivateService(organization.id, selectedServiceId, staffId);
+        await submitServiceRemoteUpdate(organization.id, targetId, staffId, { isActive });
+      } else if (isActive) reactivateService(organization.id, targetId, staffId);
+      else deactivateService(organization.id, targetId, staffId);
       setActionError("");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "無法更新服務狀態");
@@ -395,7 +395,7 @@ export function ServiceCatalogPageClient({
             <>
               <div
                 data-service-catalog-list
-                className="hidden overflow-hidden rounded-2xl border border-border bg-surface min-[1200px]:block"
+                className="hidden rounded-2xl border border-border bg-surface min-[1200px]:block"
               >
                 <div className="grid grid-cols-[minmax(160px,1.5fr)_88px_72px_88px_72px_minmax(180px,1.2fr)_24px] bg-[#FAF7F5]/80 px-4 py-2 text-[11px] text-secondary-text">
                   <span>服務名稱</span>
@@ -414,6 +414,7 @@ export function ServiceCatalogPageClient({
                     onSelect={selectService}
                     onPointerDown={selectFromPointer}
                     onKeyDown={handleRowKeyDown}
+                    actions={mutation.edit ? (row) => <ServiceRowMenu row={row} onEdit={() => { selectService(row.serviceId); setFormMode("edit"); setFormOpen(true); setActionError(""); }} onToggle={() => { void setActive(!row.isActive, row.serviceId); }} /> : undefined}
                   />
                 ))}
               </div>
@@ -430,6 +431,7 @@ export function ServiceCatalogPageClient({
                     onSelect={selectService}
                     onPointerDown={selectFromPointer}
                     onKeyDown={handleRowKeyDown}
+                    actions={mutation.edit ? (row) => <ServiceRowMenu row={row} onEdit={() => { selectService(row.serviceId); setFormMode("edit"); setFormOpen(true); setActionError(""); }} onToggle={() => { void setActive(!row.isActive, row.serviceId); }} /> : undefined}
                   />
                 ))}
               </div>
@@ -538,6 +540,7 @@ function SummaryCard({
 }
 
 interface RowProps {
+  actions?: (row: ServiceCatalogWorkspaceRow) => React.ReactNode;
   row: ServiceCatalogWorkspaceRow;
   selected: boolean;
   onSelect: (id: string) => void;
@@ -545,7 +548,7 @@ interface RowProps {
   onKeyDown: (event: KeyboardEvent<HTMLElement>, id: string) => void;
 }
 
-function DesktopRow({ row, selected, onSelect, onPointerDown, onKeyDown }: RowProps) {
+function DesktopRow({ row, selected, onSelect, onPointerDown, onKeyDown, actions }: RowProps) {
   return (
     <div
       data-service-catalog-row
@@ -610,14 +613,14 @@ function DesktopRow({ row, selected, onSelect, onPointerDown, onKeyDown }: RowPr
         {" · "}
         ✓ 可加入套票
       </div>
-      <div className="pointer-events-none relative z-0 flex justify-end text-secondary-text">
-        <ChevronRight className="h-4 w-4" aria-hidden />
+      <div className="relative z-20 flex justify-end text-secondary-text">
+        {actions ? actions(row) : <ChevronRight className="h-4 w-4" aria-hidden />}
       </div>
     </div>
   );
 }
 
-function MobileCard({ row, selected, onSelect, onPointerDown, onKeyDown }: RowProps) {
+function MobileCard({ row, selected, onSelect, onPointerDown, onKeyDown, actions }: RowProps) {
   return (
     <div
       data-service-catalog-row
@@ -663,7 +666,23 @@ function MobileCard({ row, selected, onSelect, onPointerDown, onKeyDown }: RowPr
         >
           {row.statusTitle}
         </span>
+        {actions?.(row)}
       </div>
+    </div>
+  );
+}
+
+function ServiceRowMenu({ row, onEdit, onToggle }: { row: ServiceCatalogWorkspaceRow; onEdit: () => void; onToggle: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative shrink-0" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Escape") setOpen(false); }}>
+      <button type="button" aria-label={row.name + " 操作選單"} aria-expanded={open} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-primary-light" onClick={() => setOpen(!open)}>
+        <MoreVertical className="h-4 w-4" />
+      </button>
+      {open ? <div className="absolute right-0 top-full z-30 w-36 rounded-xl border border-border bg-surface p-1 shadow-lg">
+        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-light" onClick={() => { setOpen(false); onEdit(); }}>編輯服務</button>
+        <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-primary-light" onClick={() => { setOpen(false); onToggle(); }}>{row.isActive ? "停止販售" : "恢復販售"}</button>
+      </div> : null}
     </div>
   );
 }
