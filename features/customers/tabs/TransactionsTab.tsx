@@ -56,9 +56,9 @@ export function TransactionsTab({
           <li key={entry.id} className="rounded-2xl border border-border bg-surface px-4 py-3">
             <div className="flex justify-between gap-2">
               <p className="font-medium text-text">{entry.label}</p>
-              <p className="tabular-nums">{entry.amountMinor > 0 ? "+" : ""}{formatTwd(entry.amountMinor)}</p>
+              <p className="tabular-nums">{entry.kind === "PACKAGE_REDEMPTION" ? `扣除 ${Math.abs(entry.sessionDelta ?? 0)} 堂` : `${entry.amountMinor > 0 ? "+" : ""}${formatTwd(entry.amountMinor)}`}</p>
             </div>
-            <p className="mt-1 text-xs text-secondary-text">{formatCompletedAtTaipei(entry.occurredAt)}</p>
+            <p className="mt-1 text-xs text-secondary-text">{formatCompletedAtTaipei(entry.occurredAt)}{entry.kind === "PACKAGE_PURCHASE" && entry.sessionDelta != null ? ` · 購買 ${entry.sessionDelta} 堂` : ""}</p>
           </li>
         ))}
       </ul>
