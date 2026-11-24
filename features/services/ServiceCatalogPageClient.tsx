@@ -10,6 +10,7 @@ import {
 import { ChevronRight, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { submitServiceRemoteUpdate } from "@/features/services/use-service-remote-write";
 import { ServiceFormDialog } from "@/features/services/ServiceFormDialog";
 import { ServiceQuickView } from "@/features/services/ServiceQuickView";
 import {
@@ -216,10 +217,12 @@ export function ServiceCatalogPageClient({
     setActionError("");
   }
 
-  function setActive(isActive: boolean) {
+  async function setActive(isActive: boolean) {
     if (!mutation.toggleActive || !selectedServiceId || !staffId) return;
     try {
-      if (isActive) reactivateService(organization.id, selectedServiceId, staffId);
+      if (remoteWritePilot) {
+        await submitServiceRemoteUpdate(organization.id, selectedServiceId, staffId, { isActive });
+      } else if (isActive) reactivateService(organization.id, selectedServiceId, staffId);
       else deactivateService(organization.id, selectedServiceId, staffId);
       setActionError("");
     } catch (err) {
