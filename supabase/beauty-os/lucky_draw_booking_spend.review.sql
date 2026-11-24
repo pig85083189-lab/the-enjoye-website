@@ -8,6 +8,8 @@ returns bigint language plpgsql security definer set search_path='' as $$
 declare c public.lucky_draw_campaigns%rowtype; v_customer uuid; n bigint; threshold bigint; matches bigint;
 begin
  if coalesce(auth.jwt()->>'role','') <> 'service_role' then raise exception 'FORBIDDEN'; end if;
+ perform lucky_draw_private.lock_spend(p_org,'booking:'||p_transaction::text);
+ if exists(select 1 from lucky_draw_private.spend_cancellations where organization_id=p_org and source_key='booking:'||p_transaction::text) then return null; end if;
  if p_transaction is null or p_amount is null or p_amount<=0 or p_completed_at is null or p_completed_at>now() then return null; end if;
  select count(*) into matches from public.member_booking_finance_identity_links l
  where l.organization_id=p_org and l.booking_organization_id=p_booking_org and l.booking_customer_id=p_booking_customer and l.revoked_at is null;
