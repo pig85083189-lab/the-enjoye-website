@@ -18,6 +18,8 @@ export async function reconcileSpendEvent(event:RewardEvent):Promise<RewardOutco
  const target=await finance.from("organizations").select("id").eq("app_id",org.data.app_id).single();
  if(target.error||!target.data)throw new Error("FINANCE_ORG");
  const key="booking:"+event.transaction_id;
+ const fence=await finance.rpc("lucky_draw_mark_spend_cancelled",{p_org:target.data.id,p_key:key});
+ if(fence.error)throw new Error("CANCELLATION_FENCE");
  const entries=await finance.from("lucky_draw_chance_entries").select("campaign_id").eq("organization_id",target.data.id).eq("source","spend").eq("source_key",key).limit(101);
  if(entries.error||!entries.data||entries.data.length>100)throw new Error("LEDGER");
  for(const entry of entries.data){
@@ -26,7 +28,5 @@ export async function reconcileSpendEvent(event:RewardEvent):Promise<RewardOutco
   if(result.data==="REVIEW_INSUFFICIENT_BALANCE")return {state:"review",code:"INSUFFICIENT_BALANCE"};
   if(result.data!=="REVERSED"&&result.data!=="ALREADY_REVERSED")return {state:"pending",code:"REVERSAL_UNCONFIRMED"};
  }
- // Keep missing grants under review until grant/void cross-database races
- // are closed by a durable finance-side cancellation fence.
- return entries.data.length?{state:"done",code:"REVERSED"}:{state:"review",code:"NO_GRANT_FOUND"};
+ return {state:"done",code:entries.data.length?"REVERSED":"CANCELLED_BEFORE_GRANT"};
 }
