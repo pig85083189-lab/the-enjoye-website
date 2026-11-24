@@ -329,7 +329,15 @@ export function CheckoutPanel({
     const checkoutAppId = redemptionRequestId ??
       `redemption:${crypto.randomUUID().replace(/-/g, "")}`;
     setRedemptionRequestId(checkoutAppId);
+    const confirmAlreadySettled = async () => {
+      const response = await fetch("/api/staff/packages/settled-appointments?organizationId="+encodeURIComponent(organizationId), {cache:"no-store",credentials:"same-origin"});
+      if (!response.ok) throw new Error("無法確認既有核銷狀態，請稍後再試");
+      const result = await response.json();
+      if (!Array.isArray(result.completed)) throw new Error("無法確認既有核銷狀態");
+      return result.completed.some((row:{appointmentId:string})=>row.appointmentId===item.appointmentId);
+    };
     try {
+      if (await confirmAlreadySettled()) { window.location.assign("/staff/today"); return; }
       const send = async (path: string, payload: Record<string,unknown>) => {
         const response = await fetch(path, {
           method:"POST",credentials:"same-origin",cache:"no-store",
@@ -350,7 +358,7 @@ export function CheckoutPanel({
         ? prepared.draft as Record<string,unknown> : null;
       if (!draft || typeof draft.expectedUpdatedAt !== "string" ||
           draft.status !== "OPEN") throw new Error("核銷結帳單狀態不正確，請重新確認");
-      await send("/api/staff/packages/redeem-transaction", {
+      const settled = await send("/api/staff/packages/redeem-transaction", {
         organizationId,checkoutAppId,expectedUpdatedAt:draft.expectedUpdatedAt,
         customerPackageAppId:selectedRemotePackageId,serviceAppId:primaryServiceAppId,
         appointmentAppId:item.appointmentId,
@@ -360,8 +368,10 @@ export function CheckoutPanel({
       setWalletNonce(n=>n+1);
       // The canonical transaction belongs to the finance checkout, not the
       // local booking draft. Refresh instead of passing a misleading ID.
-      window.location.reload();
+      if (settled.appointmentLinkPending || !(await confirmAlreadySettled())) throw new Error("核銷狀態待確認，請勿重複扣堂");
+      window.location.assign("/staff/today");
     } catch(err:unknown) {
+      try { if (await confirmAlreadySettled()) { window.location.assign("/staff/today"); return; } } catch { /* preserve original error */ }
       setError(toCommerceUserMessage(err));
     } finally {
       setSubmitting(false);
