@@ -13,12 +13,14 @@ export async function verifyRewardMember(bookingOrg:string,bookingCustomer:strin
  if(target.error||!target.data)throw new Error("FINANCE_ORG");
  const financeOrg=target.data.id;
  async function subject(db:typeof booking,orgId:string,customerId:string){
-  const legacyColumns = db === booking ? "line_user_id_hash,status,verified,confirmed_at,bound_at,unbound_at" : "line_user_id_hash,status,verified,confirmed_at,bound_at,unbound_at,blocked_at";
+  const legacyQuery = () => db === booking
+   ? db!.from("line_customer_bindings").select("line_user_id_hash,status,verified,confirmed_at,bound_at,unbound_at")
+   : db!.from("line_customer_bindings").select("line_user_id_hash,status,verified,confirmed_at,bound_at,unbound_at,blocked_at");
   const [customer,canonical,legacyA,legacyB]=await Promise.all([
    db!.from("customers").select("status").eq("organization_id",orgId).eq("id",customerId).maybeSingle(),
    db!.from("member_line_customer_links").select("line_subject_hash,verified_at").eq("organization_id",orgId).eq("customer_id",customerId).limit(101),
-   db!.from("line_customer_bindings").select(legacyColumns).eq("organization_id",app).eq("customer_id",customerId).limit(101),
-   db!.from("line_customer_bindings").select(legacyColumns).eq("organization_id",app).eq("customer_uuid",customerId).limit(101),
+   legacyQuery().eq("organization_id",app).eq("customer_id",customerId).limit(101),
+   legacyQuery().eq("organization_id",app).eq("customer_uuid",customerId).limit(101),
   ]);
   if([customer,canonical,legacyA,legacyB].some(x=>x.error)||[canonical,legacyA,legacyB].some(x=>(x.data?.length??0)>100))throw new Error("IDENTITY_QUERY");
   const bindings:VerifiedLineBinding[]=[
