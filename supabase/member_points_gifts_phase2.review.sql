@@ -32,7 +32,7 @@ revoke all on public.member_points_gifts,public.member_points_redemptions from p
 grant select,insert,update on public.member_points_gifts,public.member_points_redemptions to service_role;
 create function public.member_points_redeem(p_org uuid,p_customer uuid,p_gift uuid,p_request uuid)
 returns uuid language plpgsql security invoker set search_path='' as $$
-declare g public.member_points_gifts%rowtype; r public.member_points_redemptions%rowtype; rid uuid;
+declare g public.member_points_gifts%rowtype; r public.member_points_redemptions%rowtype; rid uuid; b bigint;
 begin
  if coalesce(auth.jwt()->>'role','') <> 'service_role' then raise exception 'FORBIDDEN'; end if;
  if p_org is null or p_customer is null or p_gift is null or p_request is null then raise exception 'INVALID_REQUEST'; end if;
@@ -45,11 +45,40 @@ begin
  end if;
  select * into g from public.member_points_gifts where organization_id=p_org and id=p_gift for update;
  if not found or not g.active or g.stock<1 then raise exception 'GIFT_UNAVAILABLE'; end if;
- update public.member_points_accounts set balance=balance-g.points_cost where organization_id=p_org and customer_id=p_customer and balance>=g.points_cost;
+ update public.member_points_accounts set balance=balance-g.points_cost where organization_id=p_org and customer_id=p_customer and balance>=g.points_cost returning balance into b;
  if not found then raise exception 'INSUFFICIENT_POINTS'; end if;
  update public.member_points_gifts set stock=stock-1 where organization_id=p_org and id=p_gift;
  insert into public.member_points_redemptions(organization_id,customer_id,gift_id,request_id,gift_name,points_cost) values(p_org,p_customer,p_gift,p_request,g.name,g.points_cost) returning id into rid;
+ insert into public.member_points_entries(organization_id,customer_id,source_key,kind,delta,balance_after,spend_amount,spend_per_point) values(p_org,p_customer,'gift:'||rid,'redeem',-g.points_cost,b,0,1);
  return rid;
 end $$;
 revoke all on function public.member_points_redeem(uuid,uuid,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.member_points_redeem(uuid,uuid,uuid,uuid) to service_role;
+
+-- Extend ledger without changing existing earn/reverse semantics.
+alter table public.member_points_entries drop constraint member_points_entries_kind_check;
+alter table public.member_points_entries drop constraint member_points_entries_check;
+alter table public.member_points_entries add constraint member_points_entries_kind_check check(kind in ('earn','reverse','redeem','refund'));
+alter table public.member_points_entries add constraint member_points_entries_delta_check check((kind in ('earn','refund') and delta>0) or (kind in ('reverse','redeem') and delta<0));
+create function public.member_points_resolve_gift(p_org uuid,p_redemption uuid,p_action text)
+returns text language plpgsql security invoker set search_path='' as $$
+declare r public.member_points_redemptions%rowtype; b bigint;
+begin
+ if coalesce(auth.jwt()->>'role','') <> 'service_role' then raise exception 'FORBIDDEN'; end if;
+ if p_action is null or p_action not in ('used','cancelled') then raise exception 'INVALID_ACTION'; end if;
+ select * into r from public.member_points_redemptions where organization_id=p_org and id=p_redemption for update;
+ if not found then raise exception 'NOT_FOUND'; end if;
+ if r.status=p_action then return 'ALREADY_RESOLVED'; end if;
+ if r.status<>'issued' then raise exception 'ALREADY_RESOLVED_DIFFERENT_ACTION'; end if;
+ if p_action='cancelled' then
+  perform 1 from public.member_points_gifts where organization_id=p_org and id=r.gift_id for update;
+  update public.member_points_accounts set balance=balance+r.points_cost where organization_id=p_org and customer_id=r.customer_id returning balance into b;
+  if not found then raise exception 'ACCOUNT_MISSING'; end if;
+  update public.member_points_gifts set stock=stock+1 where organization_id=p_org and id=r.gift_id;
+  insert into public.member_points_entries(organization_id,customer_id,source_key,kind,delta,balance_after,spend_amount,spend_per_point) values(p_org,r.customer_id,'gift:'||r.id,'refund',r.points_cost,b,0,1);
+ end if;
+ update public.member_points_redemptions set status=p_action,resolved_at=now() where organization_id=p_org and id=r.id;
+ return 'RESOLVED';
+end $$;
+revoke all on function public.member_points_resolve_gift(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.member_points_resolve_gift(uuid,uuid,text) to service_role;
