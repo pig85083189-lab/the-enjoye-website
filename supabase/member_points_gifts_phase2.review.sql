@@ -82,3 +82,16 @@ begin
 end $$;
 revoke all on function public.member_points_resolve_gift(uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.member_points_resolve_gift(uuid,uuid,text) to service_role;
+
+create function public.member_points_adjust_gift_stock(p_org uuid,p_gift uuid,p_delta integer)
+returns integer language plpgsql security invoker set search_path='' as $$
+declare n integer;
+begin
+ if coalesce(auth.jwt()->>'role','') <> 'service_role' then raise exception 'FORBIDDEN'; end if;
+ if p_delta is null or p_delta=0 or p_delta not between -1000000 and 1000000 then raise exception 'INVALID_DELTA'; end if;
+ update public.member_points_gifts set stock=stock+p_delta where organization_id=p_org and id=p_gift and stock::bigint+p_delta between 0 and 1000000 returning stock into n;
+ if not found then raise exception 'STOCK_ADJUST_FAILED'; end if;
+ return n;
+end $$;
+revoke all on function public.member_points_adjust_gift_stock(uuid,uuid,integer) from public,anon,authenticated;
+grant execute on function public.member_points_adjust_gift_stock(uuid,uuid,integer) to service_role;
