@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/lucky-draw-spend",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/member-points",
+      "schedule": "* * * * *"
     }
   ]
 }
