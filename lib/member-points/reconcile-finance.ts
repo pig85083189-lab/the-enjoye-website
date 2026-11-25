@@ -22,6 +22,7 @@ export async function reconcileFinancePoints(event:RewardEvent):Promise<RewardOu
  db.from("transaction_items").select("type,line_total_minor").eq("organization_id",event.organization_id).eq("transaction_id",event.transaction_id).limit(101),
  db.from("transaction_payments").select("method,amount_minor").eq("organization_id",event.organization_id).eq("transaction_id",event.transaction_id).limit(101)]);
  if(items.error||payments.error||!items.data||!payments.data||items.data.length>100||payments.data.length>100)throw new Error("SETTLEMENT_EVIDENCE");
+ if(items.data.length&&items.data.every(i=>i.type==="STORED_VALUE_TOP_UP"))return {state:"done",code:"NOT_ELIGIBLE"};
  if(!items.data.length||!items.data.every(i=>["PRODUCT","PACKAGE_PURCHASE"].includes(String(i.type))))return {state:"review",code:"UNSUPPORTED_OR_MIXED_ITEMS"};
  const amount=eligibleSpend(Number(t.total_minor),payments.data.map(p=>({method:String(p.method),amount:Number(p.amount_minor)})));
  if(amount!==Number(t.total_minor))return {state:"review",code:"PAYMENT_MISMATCH"};
