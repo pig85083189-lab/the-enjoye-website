@@ -13,7 +13,7 @@ export async function verifyRewardMember(bookingOrg:string,bookingCustomer:strin
  if(target.error||!target.data)throw new Error("FINANCE_ORG");
  const financeOrg=target.data.id;
  async function subject(db:typeof booking,orgId:string,customerId:string){
-  const legacyColumns = "line_user_id_hash,status,verified,confirmed_at,bound_at,unbound_at" + (db === booking ? "" : ",blocked_at");
+  const legacyColumns = db === booking ? "line_user_id_hash,status,verified,confirmed_at,bound_at,unbound_at" : "line_user_id_hash,status,verified,confirmed_at,bound_at,unbound_at,blocked_at";
   const [customer,canonical,legacyA,legacyB]=await Promise.all([
    db!.from("customers").select("status").eq("organization_id",orgId).eq("id",customerId).maybeSingle(),
    db!.from("member_line_customer_links").select("line_subject_hash,verified_at").eq("organization_id",orgId).eq("customer_id",customerId).limit(101),
