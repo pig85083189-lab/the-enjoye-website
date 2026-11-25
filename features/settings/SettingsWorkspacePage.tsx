@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import {MemberPointsSettings} from "./MemberPointsSettings";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { OrgLocationSwitcher } from "@/components/navigation/OrgLocationSwitcher";
@@ -350,6 +351,7 @@ export function SettingsWorkspacePage() {
         </div>
       </div>
 
+      {membership && ["OWNER","MANAGER"].includes(membership.role) ? <MemberPointsSettings key={organization.id} organizationId={organization.id}/> : null}
       {showLineEntry ? (
         <Card
           data-line-settings-entry
