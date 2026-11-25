@@ -95,3 +95,5 @@ begin
 end $$;
 revoke all on function public.member_points_adjust_gift_stock(uuid,uuid,integer) from public,anon,authenticated;
 grant execute on function public.member_points_adjust_gift_stock(uuid,uuid,integer) to service_role;
+
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values('member-points-gift-images','member-points-gift-images',true,1500000,array['image/jpeg','image/png','image/webp']);
