@@ -82,3 +82,16 @@ end $$;
 revoke all on function public.member_points_apply(uuid,uuid,text,bigint,timestamptz,boolean) from public,anon,authenticated;
 grant execute on function public.member_points_apply(uuid,uuid,text,bigint,timestamptz,boolean) to service_role;
 -- Internal primitive only: callers must verify current cross-database identity and authoritative settlement before invoking.
+
+create function public.member_points_save_settings(p_org uuid,p_enabled boolean,p_spend bigint)
+returns void language plpgsql security invoker set search_path='' as $$
+begin
+ if coalesce(auth.jwt()->>'role','') <> 'service_role' then raise exception 'FORBIDDEN'; end if;
+ if p_org is null or p_enabled is null or p_spend is null or p_spend not between 1 and 1000000 then raise exception 'INVALID_SETTINGS'; end if;
+ insert into public.member_points_settings(organization_id,enabled,spend_per_point,enabled_at)
+ values(p_org,p_enabled,p_spend,case when p_enabled then now() else null end)
+ on conflict(organization_id) do update set enabled=excluded.enabled,spend_per_point=excluded.spend_per_point,
+ enabled_at=case when excluded.enabled and not public.member_points_settings.enabled then now() else public.member_points_settings.enabled_at end,updated_at=now();
+end $$;
+revoke all on function public.member_points_save_settings(uuid,boolean,bigint) from public,anon,authenticated;
+grant execute on function public.member_points_save_settings(uuid,boolean,bigint) to service_role;
