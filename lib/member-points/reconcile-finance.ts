@@ -25,6 +25,12 @@ export async function reconcileFinancePoints(event:RewardEvent):Promise<RewardOu
  if(!items.data.length||!items.data.every(i=>["PRODUCT","PACKAGE_PURCHASE"].includes(String(i.type))))return {state:"review",code:"UNSUPPORTED_OR_MIXED_ITEMS"};
  const amount=eligibleSpend(Number(t.total_minor),payments.data.map(p=>({method:String(p.method),amount:Number(p.amount_minor)})));
  if(amount!==Number(t.total_minor))return {state:"review",code:"PAYMENT_MISMATCH"};
- // Fail closed until finance-only current LINE identity verification is wired.
- return {state:"review",code:"FINANCE_IDENTITY_VERIFICATION_REQUIRED"};
+ if(items.data.some(i=>i.type==="PACKAGE_PURCHASE")){
+ const evidence=await db.from("customer_packages").select("id").eq("organization_id",event.organization_id).eq("customer_id",t.customer_id).eq("purchase_transaction_id",event.transaction_id).limit(1);
+ if(evidence.error||!evidence.data?.length)return {state:"review",code:"PACKAGE_EVIDENCE_MISSING"};
+ }
+ const r=await db.rpc("member_points_apply",{p_org:event.organization_id,p_customer:t.customer_id,p_key:key,p_amount:amount,p_completed_at:t.completed_at,p_reverse:false});
+ if(r.error)throw new Error("POINTS_EARN");
+ const code=String(r.data);
+ return {state:["EARNED","ALREADY_EARNED","NO_POINTS","DISABLED","CANCELLED"].includes(code)?"done":"review",code};
 }
