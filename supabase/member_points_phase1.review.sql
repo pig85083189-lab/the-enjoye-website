@@ -56,6 +56,15 @@ alter table public.member_points_cancellations enable row level security;
 revoke all on public.member_points_cancellations from public,anon,authenticated;
 grant select,insert on public.member_points_cancellations to service_role;
 
+create function public.member_points_assert_line_member(p_org uuid,p_customer uuid)
+returns void language plpgsql security definer set search_path='' as $identity$
+begin
+ if coalesce(auth.jwt()->>'role','') <> 'service_role' then raise exception 'FORBIDDEN'; end if;
+ perform lucky_draw_private.assert_line_member(p_org,p_customer);
+end $identity$;
+revoke all on function public.member_points_assert_line_member(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.member_points_assert_line_member(uuid,uuid) to service_role;
+
 create function public.member_points_apply(p_org uuid,p_customer uuid,p_key text,p_amount bigint,p_completed_at timestamptz,p_reverse boolean default false)
 returns text language plpgsql security invoker set search_path='' as $$
 declare e public.member_points_entries%rowtype; s public.member_points_settings_history%rowtype; n bigint; b bigint;
@@ -81,7 +90,7 @@ begin
  end if;
  select * into s from public.member_points_settings_history where organization_id=p_org and effective_at<=p_completed_at order by effective_at desc limit 1;
  if not found or not s.enabled then return 'DISABLED'; end if;
- perform lucky_draw_private.assert_line_member(p_org,p_customer);
+ perform public.member_points_assert_line_member(p_org,p_customer);
  n:=p_amount/s.spend_per_point;
  if n=0 then return 'NO_POINTS'; end if;
  insert into public.member_points_accounts(organization_id,customer_id) values(p_org,p_customer) on conflict do nothing;
