@@ -13,16 +13,17 @@ export async function verifyRewardMember(bookingOrg:string,bookingCustomer:strin
  if(target.error||!target.data)throw new Error("FINANCE_ORG");
  const financeOrg=target.data.id;
  async function subject(db:typeof booking,orgId:string,customerId:string){
+  const legacyColumns = "line_user_id_hash,status,verified,confirmed_at,bound_at,unbound_at" + (db === booking ? "" : ",blocked_at");
   const [customer,canonical,legacyA,legacyB]=await Promise.all([
    db!.from("customers").select("status").eq("organization_id",orgId).eq("id",customerId).maybeSingle(),
    db!.from("member_line_customer_links").select("line_subject_hash,verified_at").eq("organization_id",orgId).eq("customer_id",customerId).limit(101),
-   db!.from("line_customer_bindings").select("line_user_id_hash,status,verified,confirmed_at,bound_at,unbound_at,blocked_at").eq("organization_id",app).eq("customer_id",customerId).limit(101),
-   db!.from("line_customer_bindings").select("line_user_id_hash,status,verified,confirmed_at,bound_at,unbound_at,blocked_at").eq("organization_id",app).eq("customer_uuid",customerId).limit(101),
+   db!.from("line_customer_bindings").select(legacyColumns).eq("organization_id",app).eq("customer_id",customerId).limit(101),
+   db!.from("line_customer_bindings").select(legacyColumns).eq("organization_id",app).eq("customer_uuid",customerId).limit(101),
   ]);
   if([customer,canonical,legacyA,legacyB].some(x=>x.error)||[canonical,legacyA,legacyB].some(x=>(x.data?.length??0)>100))throw new Error("IDENTITY_QUERY");
   const bindings:VerifiedLineBinding[]=[
    ...(canonical.data??[]).map(x=>({source:"member_link" as const,hash:x.line_subject_hash,verified:!!x.verified_at,status:"active",confirmedAt:x.verified_at,boundAt:x.verified_at,unboundAt:null,blockedAt:null})),
-   ...[...(legacyA.data??[]),...(legacyB.data??[])].map(x=>({source:"binding" as const,hash:x.line_user_id_hash,verified:x.verified===true,status:x.status,confirmedAt:x.confirmed_at,boundAt:x.bound_at,unboundAt:x.unbound_at,blockedAt:x.blocked_at})),
+   ...[...(legacyA.data??[]),...(legacyB.data??[])].map(x=>({source:"binding" as const,hash:x.line_user_id_hash,verified:x.verified===true,status:x.status,confirmedAt:x.confirmed_at,boundAt:x.bound_at,unboundAt:x.unbound_at,blockedAt:(x as unknown as {blocked_at?:string|null}).blocked_at??null})),
   ];
   return decideVerifiedLineSubject({organizationAppId:app,customerOrganizationAppId:customer.data?app:null,customerStatus:customer.data?.status??null,bindings});
  }
