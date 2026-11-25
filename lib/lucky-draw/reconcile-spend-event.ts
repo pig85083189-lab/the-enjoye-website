@@ -8,17 +8,17 @@ import type {RewardEvent,RewardOutcome} from "./outbox-worker";
 export async function reconcileSpendEvent(event:RewardEvent):Promise<RewardOutcome>{
  const booking=createServiceRoleClient(),finance=createBeautyOsFinanceClient();
  if(!booking||!finance)throw new Error("CONFIG");
- const tx=await booking.from("transactions").select("id,status,voided_at,customer_id,total_minor,completed_at,package_redemption").eq("id",event.transaction_id).eq("organization_id",event.organization_id).single();
+ const tx=await booking.from("transactions").select("id,status,voided_at,customer_id,total_minor,completed_at,package_redemption,treatment_id").eq("id",event.transaction_id).eq("organization_id",event.organization_id).single();
  if(tx.error||!tx.data)throw new Error("TRANSACTION");
  if(tx.data.status!==event.desired_status)return {state:"pending",code:"STALE_EVENT"};
  if(event.desired_status==="COMPLETED"){
   const t=tx.data;
   if(t.voided_at||!t.completed_at)return {state:"review",code:"INVALID_SETTLEMENT"};
-  if(t.package_redemption||Number(t.total_minor)===0)return {state:"done",code:"NOT_ELIGIBLE"};
+  if(t.package_redemption||!t.treatment_id)return {state:"done",code:"NOT_ELIGIBLE"};
   const payments=await booking.from("transaction_payments").select("method,amount_minor").eq("organization_id",event.organization_id).eq("transaction_id",event.transaction_id).limit(101);
   if(payments.error||!payments.data||payments.data.length>100)throw new Error("PAYMENTS");
   const amount=eligibleSpend(Number(t.total_minor),payments.data.map(p=>({method:String(p.method),amount:Number(p.amount_minor)})));
-  if(amount!==Number(t.total_minor))return {state:"review",code:"PAYMENT_MISMATCH"};
+  if(!Number.isSafeInteger(Number(t.total_minor))||Number(t.total_minor)<0||amount!==Number(t.total_minor))return {state:"review",code:"PAYMENT_MISMATCH"};
   const member=await verifyRewardMember(event.organization_id,t.customer_id);
   if(!member)return {state:"review",code:"IDENTITY_UNCONFIRMED"};
   const grant=await finance.rpc("lucky_draw_grant_booking_spend",{p_org:member.financeOrg,p_booking_org:event.organization_id,p_booking_customer:t.customer_id,p_transaction:event.transaction_id,p_amount:amount,p_completed_at:t.completed_at,p_verified_hash:member.verifiedHash,p_expected_customer:member.financeCustomer});
