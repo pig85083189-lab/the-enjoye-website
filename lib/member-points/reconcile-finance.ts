@@ -5,7 +5,7 @@ import type {RewardEvent,RewardOutcome} from "@/lib/lucky-draw/outbox-worker";
 export async function reconcileFinancePoints(event:RewardEvent):Promise<RewardOutcome>{
  const db=createBeautyOsFinanceClient();
  if(!db)throw new Error("FINANCE_CONFIG");
- const tx=await db.from("transactions").select("status,voided_at,completed_at,total_minor,customer_id,package_redemption,treatment_id").eq("id",event.transaction_id).eq("organization_id",event.organization_id).single();
+ const tx=await db.from("transactions").select("status,voided_at,completed_at,total_minor,customer_id,package_redemption,treatment_id,appointment_id,app_id").eq("id",event.transaction_id).eq("organization_id",event.organization_id).single();
  if(tx.error||!tx.data)throw new Error("FINANCE_TRANSACTION");
  const t=tx.data,key="finance:"+event.transaction_id;
  if(t.status!==event.desired_status)return {state:"pending",code:"STALE_EVENT"};
@@ -17,7 +17,7 @@ export async function reconcileFinancePoints(event:RewardEvent):Promise<RewardOu
   return {state:["REVERSED","ALREADY_REVERSED","CANCELLED_BEFORE_EARN"].includes(code)?"done":"review",code};
  }
  if(t.voided_at||!t.completed_at)return {state:"review",code:"INVALID_SETTLEMENT"};
- if(t.package_redemption||t.treatment_id)return {state:"done",code:"NOT_ELIGIBLE"};
+ if(t.package_redemption||t.treatment_id||t.appointment_id||String(t.app_id??"").startsWith("stx-chk-"))return {state:"done",code:"NOT_ELIGIBLE"};
  const [items,payments]=await Promise.all([
  db.from("transaction_items").select("type,line_total_minor").eq("organization_id",event.organization_id).eq("transaction_id",event.transaction_id).limit(101),
  db.from("transaction_payments").select("method,amount_minor").eq("organization_id",event.organization_id).eq("transaction_id",event.transaction_id).limit(101)]);
