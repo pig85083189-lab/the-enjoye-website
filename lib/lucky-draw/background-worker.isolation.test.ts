@@ -8,7 +8,7 @@ import {reconcileSpendEvent} from "./reconcile-spend-event";
 import {reconcileFinanceEvent} from "./reconcile-finance-purchase";
 import {reconcileRewardOutbox, type RewardEvent} from "./outbox-worker";
 const event:RewardEvent={transaction_id:"tx",organization_id:"org",revision:1,desired_status:"COMPLETED",attempts:0};
-const tx={status:"COMPLETED",completed_at:"2026-11-25T00:00:00Z",voided_at:null,customer_id:"customer",total_minor:2500,package_redemption:false};
+const tx={status:"COMPLETED",completed_at:"2026-11-25T00:00:00Z",voided_at:null,customer_id:"customer",total_minor:2500,treatment_id:"treatment",package_redemption:false};
 function query(data:unknown, error:unknown=null){
  const result={data,error};
  const q={select:vi.fn(),eq:vi.fn(),lte:vi.fn(),order:vi.fn(),limit:vi.fn(),single:vi.fn(),update:vi.fn(),then:(resolve:(v:typeof result)=>unknown)=>Promise.resolve(result).then(resolve)};
@@ -19,13 +19,13 @@ beforeEach(()=>{vi.resetAllMocks();h.member.mockResolvedValue({financeOrg:"finan
 describe("reward background isolation (mocked database boundary)",()=>{
  it("passes authoritative checkout amount to finance RPC",async()=>{
  h.booking.from.mockImplementation((t)=>query(t==="transactions"?tx:[{method:"CASH",amount_minor:2500}]));
- h.finance.rpc.mockResolvedValue({data:2,error:null});
+ h.finance.rpc.mockResolvedValue({data:1,error:null});
  expect(await reconcileSpendEvent(event)).toEqual({state:"done",code:"GRANTED"});
  expect(h.finance.rpc).toHaveBeenCalledWith("lucky_draw_grant_booking_spend",expect.objectContaining({p_amount:2500,p_transaction:"tx"}));
  });
- it("accepts zero grant for below-threshold checkout",async()=>{
+ it("accepts fixed grant for below-threshold checkout",async()=>{
  h.booking.from.mockImplementation((t)=>query(t==="transactions"?{...tx,total_minor:500}:[{method:"CASH",amount_minor:500}]));
- h.finance.rpc.mockResolvedValue({data:0,error:null});
+ h.finance.rpc.mockResolvedValue({data:1,error:null});
  expect((await reconcileSpendEvent(event)).state).toBe("done");
  expect(h.finance.rpc).toHaveBeenCalledWith("lucky_draw_grant_booking_spend",expect.objectContaining({p_amount:500}));
  });
