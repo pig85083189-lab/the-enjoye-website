@@ -26,6 +26,9 @@ export async function reconcileBookingPoints(event:RewardEvent):Promise<RewardOu
  }
  if(t.voided_at||!t.completed_at)return {state:"review",code:"INVALID_SETTLEMENT"};
  if(t.package_redemption||!t.treatment_id)return {state:"done",code:"NOT_ELIGIBLE"};
+ const items=await booking.from("transaction_items").select("type").eq("organization_id",event.organization_id).eq("transaction_id",event.transaction_id).limit(101);
+ if(items.error||!items.data||items.data.length>100)throw new Error("ITEMS");
+ if(!items.data.length||!items.data.every(i=>i.type==="SERVICE"))return {state:"review",code:"UNSUPPORTED_OR_MIXED_ITEMS"};
  const payments=await booking.from("transaction_payments").select("method,amount_minor").eq("organization_id",event.organization_id).eq("transaction_id",event.transaction_id).limit(101);
  if(payments.error||!payments.data||payments.data.length>100)throw new Error("PAYMENTS");
  const amount=eligibleSpend(Number(t.total_minor),payments.data.map(p=>({method:String(p.method),amount:Number(p.amount_minor)})));
