@@ -103,6 +103,6 @@ begin
  on conflict(organization_id) do update set enabled=excluded.enabled,spend_per_point=excluded.spend_per_point,
  enabled_at=case when excluded.enabled and not public.member_points_settings.enabled then now() else public.member_points_settings.enabled_at end,updated_at=now();
  insert into public.member_points_settings_history(organization_id,enabled,spend_per_point) values(p_org,p_enabled,p_spend);
-end $;
+end $$;
 revoke all on function public.member_points_save_settings(uuid,boolean,bigint) from public,anon,authenticated;
 grant execute on function public.member_points_save_settings(uuid,boolean,bigint) to service_role;
