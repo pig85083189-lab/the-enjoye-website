@@ -7,6 +7,16 @@ create table public.member_points_settings (
  updated_at timestamptz not null default now(),
  check (not enabled or enabled_at is not null)
 );
+create table public.member_points_settings_history (
+ organization_id uuid not null references public.organizations(id),
+ effective_at timestamptz not null default clock_timestamp(),
+ enabled boolean not null,
+ spend_per_point bigint not null check(spend_per_point>0),
+ primary key(organization_id,effective_at)
+);
+alter table public.member_points_settings_history enable row level security;
+revoke all on public.member_points_settings_history from public,anon,authenticated;
+grant select,insert on public.member_points_settings_history to service_role;
 create table public.member_points_accounts (
  organization_id uuid not null references public.organizations(id),
  customer_id uuid not null references public.customers(id),
@@ -48,7 +58,7 @@ grant select,insert on public.member_points_cancellations to service_role;
 
 create function public.member_points_apply(p_org uuid,p_customer uuid,p_key text,p_amount bigint,p_completed_at timestamptz,p_reverse boolean default false)
 returns text language plpgsql security invoker set search_path='' as $$
-declare e public.member_points_entries%rowtype; s public.member_points_settings%rowtype; n bigint; b bigint;
+declare e public.member_points_entries%rowtype; s public.member_points_settings_history%rowtype; n bigint; b bigint;
 begin
  if coalesce(auth.jwt()->>'role','') <> 'service_role' then raise exception 'FORBIDDEN'; end if;
  if p_org is null or p_key is null or p_key !~ '^(booking|finance):[0-9a-f-]{36}$' or p_reverse is null then raise exception 'INVALID_EVENT'; end if;
@@ -69,9 +79,9 @@ begin
   if e.customer_id is distinct from p_customer or e.spend_amount is distinct from p_amount then raise exception 'EVENT_CONFLICT'; end if;
   return 'ALREADY_EARNED';
  end if;
- select * into s from public.member_points_settings where organization_id=p_org for share;
- if not found or not s.enabled or p_completed_at<s.enabled_at then return 'DISABLED'; end if;
- if not exists(select 1 from public.customers where id=p_customer and organization_id=p_org) or not exists(select 1 from public.member_line_customer_links where organization_id=p_org and customer_id=p_customer and verified_at is not null) then return 'IDENTITY_UNCONFIRMED'; end if;
+ select * into s from public.member_points_settings_history where organization_id=p_org and effective_at<=p_completed_at order by effective_at desc limit 1;
+ if not found or not s.enabled then return 'DISABLED'; end if;
+ perform lucky_draw_private.assert_line_member(p_org,p_customer);
  n:=p_amount/s.spend_per_point;
  if n=0 then return 'NO_POINTS'; end if;
  insert into public.member_points_accounts(organization_id,customer_id) values(p_org,p_customer) on conflict do nothing;
@@ -92,6 +102,7 @@ begin
  values(p_org,p_enabled,p_spend,case when p_enabled then now() else null end)
  on conflict(organization_id) do update set enabled=excluded.enabled,spend_per_point=excluded.spend_per_point,
  enabled_at=case when excluded.enabled and not public.member_points_settings.enabled then now() else public.member_points_settings.enabled_at end,updated_at=now();
-end $$;
+ insert into public.member_points_settings_history(organization_id,enabled,spend_per_point) values(p_org,p_enabled,p_spend);
+end $;
 revoke all on function public.member_points_save_settings(uuid,boolean,bigint) from public,anon,authenticated;
 grant execute on function public.member_points_save_settings(uuid,boolean,bigint) to service_role;
