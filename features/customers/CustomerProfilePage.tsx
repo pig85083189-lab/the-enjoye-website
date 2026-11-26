@@ -591,7 +591,7 @@ function Customer360Workspace({
             {tab === "wallet" && walletSection !== "vouchers" ? (
               <WalletTab
                 customerId={customer.id}
-                section={walletSection === "vouchers" ? undefined : walletSection}
+                section={walletSection}
                 onOpenTransactions={() => onSelectTab("transactions")}
                 commerceRemoteRead={commerceRemoteReadPilot || financeProfileReadOnly}
                 balanceMinorOverride={financeStoredValueBalanceMinor}
