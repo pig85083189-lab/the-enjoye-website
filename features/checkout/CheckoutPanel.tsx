@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import CheckoutVoucherList from "./CheckoutVoucherList";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Crown, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -63,12 +64,13 @@ import { getCustomerStoredValueBalance } from "@/lib/stored-value/store";
 import { MEMBERSHIP_LABEL, cn } from "@/lib/utils";
 import type { Customer } from "@/types";
 
-type PanelTab = "consume" | "package" | "stored" | "notes";
+type PanelTab = "consume" | "package" | "stored" | "voucher" | "notes";
 
 const TABS: Array<{ id: PanelTab; label: string }> = [
   { id: "consume", label: "本次消費" },
   { id: "package", label: "套票" },
   { id: "stored", label: "儲值" },
+  { id: "voucher", label: "票券" },
   { id: "notes", label: "客戶備註" },
 ];
 
@@ -1327,6 +1329,7 @@ export function CheckoutPanel({
               </div>
             ) : null}
 
+            {tab === "voucher" ? <CheckoutVoucherList organizationId={organizationId} draftId={liveDraft?.id ?? ""}/> : null}
             {tab === "notes" ? (
               notes.length === 0 ? (
                 <p className="text-[13px] text-secondary-text">尚無客戶備註</p>
