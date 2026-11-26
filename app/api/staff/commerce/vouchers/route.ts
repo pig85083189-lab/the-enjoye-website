@@ -14,7 +14,9 @@ import {
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 
-export async function GET(request: Request) {
+export async function GET(request: Request) { return handle(request); }
+export async function POST(request: Request) { return handle(request); }
+async function handle(request: Request) {
   const params = new URL(request.url).searchParams;
   const organizationId = params.get("organizationId");
   const draftId = params.get("draftId");
@@ -278,6 +280,22 @@ export async function GET(request: Request) {
     return fail(decision.code === "LINE_LINK_REQUIRED" ? 403 : 409, decision.code);
   }
 
+  if(request.method==="POST"){
+    let body: {tickets?:unknown};
+    try {body=await request.json();}catch{return fail(400,"INVALID_INPUT");}
+    if(!body||!Array.isArray(body.tickets)||body.tickets.length<1||body.tickets.length>100||!draftId||!source)return fail(400,"INVALID_INPUT");
+    const tickets=body.tickets.map((key:unknown)=>typeof key==="string"?key.split(":"):[]);
+    if(tickets.some(x=>x.length!==2||!["draw","points"].includes(x[0])||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x[1])))return fail(400,"INVALID_TICKET");
+    const booking=createServiceRoleClient();
+    if(!booking)return fail(503,"CONFIG_MISSING");
+    const draft=await booking.from("checkout_drafts").select("id,customer_id,status").eq("organization_id",source.organizationId).eq("app_id",draftId).maybeSingle();
+    if(draft.error||!draft.data||draft.data.status!=="COMPLETED")return fail(409,"CHECKOUT_NOT_COMPLETED");
+    const tx=await booking.from("transactions").select("id").eq("organization_id",source.organizationId).eq("checkout_draft_id",draft.data.id).eq("customer_id",draft.data.customer_id).eq("status","COMPLETED").limit(2);
+    if(tx.error||tx.data?.length!==1)return fail(409,"CHECKOUT_NOT_COMPLETED");
+    const redeemed=await db.rpc("redeem_checkout_vouchers",{p_org:org.id,p_customer:decision.walletCustomerId,p_checkout:draftId,p_tickets:tickets.map(x=>({source:x[0],id:x[1]}))});
+    if(redeemed.error)return fail(409,"VOUCHER_REDEMPTION_FAILED");
+    return NextResponse.json({redeemed:redeemed.data},{headers});
+  }
   const [points,draw]=await Promise.all([
     db.from("member_points_redemptions").select("id,gift_name,created_at").eq("organization_id",org.id).eq("customer_id",decision.walletCustomerId).eq("status","issued").limit(100),
     db.from("lucky_draw_results").select("id,prize_name,prize_tier,created_at").eq("organization_id",org.id).eq("customer_id",decision.walletCustomerId).eq("voucher_status","issued").limit(100)
