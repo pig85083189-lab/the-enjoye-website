@@ -23,6 +23,18 @@ export async function POST(request:Request){
  if(request.headers.get("origin")!==new URL(request.url).origin)return fail(403,"INVALID_ORIGIN");
  if(!request.headers.get("content-type")?.startsWith("application/json"))return fail(415,"INVALID_CONTENT_TYPE");
  try{const b=await request.json();const s=await scope(b?.organizationId);if(!s)return fail(403,"FORBIDDEN");
+ if(b.action==="carousel"){
+ const prefix="https://bfzquejrtgqzzarhkiya.supabase.co/storage/v1/object/public/member-points-gift-images/"+s.org+"/";
+ if(!Array.isArray(b.slides)||b.slides.length>10||typeof b.enabled!=="boolean")return fail(400,"INVALID_INPUT");
+ const slides=[];
+ for(const x of b.slides){
+ if(!x||typeof x.image_url!=="string"||!x.image_url.startsWith(prefix)||!/^[-a-f0-9]{36}\.(jpg|png|webp)$/.test(x.image_url.slice(prefix.length))||typeof x.href!=="string"||x.href.length>2048||typeof x.enabled!=="boolean")return fail(400,"INVALID_SLIDE");
+ const href=x.href.trim();
+ if(href&&!/^#[a-zA-Z][\w-]*$/.test(href)&&!/^\/(?![\/\\])[^\\\s]*$/.test(href)){try{const u=new URL(href);if(u.protocol!=="https:"||u.username||u.password)return fail(400,"INVALID_LINK");}catch{return fail(400,"INVALID_LINK");}}
+ slides.push({image_url:x.image_url,href,enabled:x.enabled});
+ }
+ const r=await s.db.from("member_points_banner").upsert({organization_id:s.org,slides,enabled:b.enabled,show_text:false});if(r.error)return fail(409,"SAVE_FAILED");return NextResponse.json({ok:true},{headers});
+ }
  if(b.action==="banner"){
  if(typeof b.title!=="string"||b.title.length>120||typeof b.subtitle!=="string"||b.subtitle.length>200||typeof b.show_text!=="boolean"||typeof b.enabled!=="boolean"||typeof b.image!=="string")return fail(400,"INVALID_INPUT");
  const prefix="https://bfzquejrtgqzzarhkiya.supabase.co/storage/v1/object/public/member-points-gift-images/"+s.org+"/";
