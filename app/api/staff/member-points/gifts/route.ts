@@ -15,14 +15,20 @@ async function scope(value:unknown){
 }
 export async function GET(request:Request){
  try{const s=await scope(new URL(request.url).searchParams.get("organizationId"));if(!s)return fail(403,"FORBIDDEN");
- const [g,r]=await Promise.all([s.db.from("member_points_gifts").select("*").eq("organization_id",s.org).order("created_at",{ascending:false}).limit(100),s.db.from("member_points_redemptions").select("id,gift_name,points_cost,status,created_at,customer_id").eq("organization_id",s.org).order("created_at",{ascending:false}).limit(100)]);
- if(g.error||r.error)throw new Error("READ");return NextResponse.json({gifts:g.data,redemptions:r.data},{headers});
+ const [g,r,banner]=await Promise.all([s.db.from("member_points_gifts").select("*").eq("organization_id",s.org).order("created_at",{ascending:false}).limit(100),s.db.from("member_points_redemptions").select("id,gift_name,points_cost,status,created_at,customer_id").eq("organization_id",s.org).order("created_at",{ascending:false}).limit(100),s.db.from("member_points_banner").select("*").eq("organization_id",s.org).maybeSingle()]);
+ if(g.error||r.error||banner.error)throw new Error("READ");return NextResponse.json({gifts:g.data,redemptions:r.data,banner:banner.data},{headers});
  }catch{return fail(503,"UNAVAILABLE");}
 }
 export async function POST(request:Request){
  if(request.headers.get("origin")!==new URL(request.url).origin)return fail(403,"INVALID_ORIGIN");
  if(!request.headers.get("content-type")?.startsWith("application/json"))return fail(415,"INVALID_CONTENT_TYPE");
  try{const b=await request.json();const s=await scope(b?.organizationId);if(!s)return fail(403,"FORBIDDEN");
+ if(b.action==="banner"){
+ if(typeof b.title!=="string"||b.title.length>120||typeof b.subtitle!=="string"||b.subtitle.length>200||typeof b.show_text!=="boolean"||typeof b.enabled!=="boolean"||typeof b.image!=="string")return fail(400,"INVALID_INPUT");
+ const prefix="https://bfzquejrtgqzzarhkiya.supabase.co/storage/v1/object/public/member-points-gift-images/"+s.org+"/";
+ if(b.image&&(!b.image.startsWith(prefix)||!/^[-a-f0-9]{36}\.(jpg|png|webp)$/.test(b.image.slice(prefix.length))))return fail(400,"INVALID_IMAGE");
+ const r=await s.db.from("member_points_banner").upsert({organization_id:s.org,title:b.title,subtitle:b.subtitle,show_text:b.show_text,enabled:b.enabled,image_url:b.image||null});if(r.error)return fail(409,"SAVE_FAILED");return NextResponse.json({ok:true},{headers});
+ }
  if(b.action==="resolve"){if(!uuid(b.id)||!["used","cancelled"].includes(b.status))return fail(400,"INVALID_INPUT");const r=await s.db.rpc("member_points_resolve_gift",{p_org:s.org,p_redemption:b.id,p_action:b.status});if(r.error)return fail(409,"RESOLVE_FAILED");return NextResponse.json({ok:true},{headers});}
  if(b.action==="publish"){if(!uuid(b.id)||typeof b.active!=="boolean")return fail(400,"INVALID_INPUT");const r=await s.db.from("member_points_gifts").update({active:b.active}).eq("organization_id",s.org).eq("id",b.id).select("id").single();if(r.error)return fail(409,"SAVE_FAILED");return NextResponse.json({ok:true},{headers});}
  if(b.action==="stock"){if(!uuid(b.id)||!Number.isSafeInteger(b.delta)||b.delta===0||Math.abs(b.delta)>1000000)return fail(400,"INVALID_INPUT");const r=await s.db.rpc("member_points_adjust_gift_stock",{p_org:s.org,p_gift:b.id,p_delta:b.delta});if(r.error)return fail(409,"STOCK_FAILED");return NextResponse.json({ok:true},{headers});}
