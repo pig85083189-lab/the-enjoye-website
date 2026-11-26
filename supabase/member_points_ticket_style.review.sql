@@ -1,0 +1,1 @@
+alter table public.member_points_gifts add column ticket_color text not null default 'gold' check(ticket_color in ('gold','rose','sage','lavender')), add column ticket_icon text not null default 'gift' check(ticket_icon in ('gift','aroma','facial','lotus')), add column ticket_image_url text;
