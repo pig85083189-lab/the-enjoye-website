@@ -318,6 +318,16 @@ export function CheckoutPanel({
     });
 
   const [pendingVoucher,setPendingVoucher]=useState<{draftId:string;transactionId:string;tickets:string[]}|null>(null);
+  useEffect(()=>{
+    if(!commerceRemoteWrite || !liveDraft?.id)return;
+    const controller=new AbortController();
+    const draftId=liveDraft.id;
+    const params=new URLSearchParams({organizationId,draftId,recovery:"1"});
+    void fetch("/api/staff/commerce/vouchers?"+params,{credentials:"same-origin",cache:"no-store",signal:controller.signal})
+      .then(async response=>{if(!response.ok)return;const data=await response.json();if(!controller.signal.aborted && data.pending?.draftId===draftId)setPendingVoucher(data.pending);})
+      .catch(()=>{});
+    return ()=>controller.abort();
+  },[organizationId,liveDraft?.id,commerceRemoteWrite]);
   async function finishVoucherRedemption(p:{draftId:string;transactionId:string;tickets:string[]}){
     const params=new URLSearchParams({organizationId,draftId:p.draftId});
     const response=await fetch("/api/staff/commerce/vouchers?"+params,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({tickets:p.tickets})});
