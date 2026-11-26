@@ -177,6 +177,9 @@ export function CheckoutPanel({
   ]);
 
   const [tab, setTab] = useState<PanelTab>("consume");
+  const [voucherSelection,setVoucherSelection]=useState<{key:string;ids:string[]}>({key:"",ids:[]});
+  const voucherKey=JSON.stringify([organizationId,liveDraft?.id,item.customerId]);
+  const selectedVouchers=voucherSelection.key===voucherKey?voucherSelection.ids:[];
   const [error, setError] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [productQuery, setProductQuery] = useState("");
@@ -1329,7 +1332,7 @@ export function CheckoutPanel({
               </div>
             ) : null}
 
-            {tab === "voucher" ? <CheckoutVoucherList organizationId={organizationId} draftId={liveDraft?.id ?? ""}/> : null}
+            {tab === "voucher" ? <CheckoutVoucherList organizationId={organizationId} draftId={liveDraft?.id ?? ""} selected={selectedVouchers} disabled={readOnly} onToggle={id=>setVoucherSelection(prev=>{const ids=prev.key===voucherKey?prev.ids:[];return {key:voucherKey,ids:ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]};})}/> : null}
             {tab === "notes" ? (
               notes.length === 0 ? (
                 <p className="text-[13px] text-secondary-text">尚無客戶備註</p>
