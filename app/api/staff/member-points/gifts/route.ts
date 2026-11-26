@@ -41,6 +41,11 @@ export async function POST(request:Request){
  if(b.image&&(!b.image.startsWith(prefix)||!/^[-a-f0-9]{36}\.(jpg|png|webp)$/.test(b.image.slice(prefix.length))))return fail(400,"INVALID_IMAGE");
  const r=await s.db.from("member_points_banner").upsert({organization_id:s.org,title:b.title,subtitle:b.subtitle,show_text:b.show_text,enabled:b.enabled,image_url:b.image||null});if(r.error)return fail(409,"SAVE_FAILED");return NextResponse.json({ok:true},{headers});
  }
+ if(b.action==="ticket_style"){
+ const prefix="https://bfzquejrtgqzzarhkiya.supabase.co/storage/v1/object/public/member-points-gift-images/"+s.org+"/";
+ if(!uuid(b.id)||!["gold","rose","sage","lavender"].includes(b.color)||!["gift","aroma","facial","lotus"].includes(b.icon)||typeof b.image!=="string"||(b.image&&(!b.image.startsWith(prefix)||!/^[-a-f0-9]{36}\.(jpg|png|webp)$/.test(b.image.slice(prefix.length)))))return fail(400,"INVALID_INPUT");
+ const r=await s.db.from("member_points_gifts").update({ticket_color:b.color,ticket_icon:b.icon,ticket_image_url:b.image||null}).eq("organization_id",s.org).eq("id",b.id).select("id").single();if(r.error)return fail(409,"SAVE_FAILED");return NextResponse.json({ok:true},{headers});
+ }
  if(b.action==="resolve"){if(!uuid(b.id)||!["used","cancelled"].includes(b.status))return fail(400,"INVALID_INPUT");const r=await s.db.rpc("member_points_resolve_gift",{p_org:s.org,p_redemption:b.id,p_action:b.status});if(r.error)return fail(409,"RESOLVE_FAILED");return NextResponse.json({ok:true},{headers});}
  if(b.action==="publish"){if(!uuid(b.id)||typeof b.active!=="boolean")return fail(400,"INVALID_INPUT");const r=await s.db.from("member_points_gifts").update({active:b.active}).eq("organization_id",s.org).eq("id",b.id).select("id").single();if(r.error)return fail(409,"SAVE_FAILED");return NextResponse.json({ok:true},{headers});}
  if(b.action==="stock"){if(!uuid(b.id)||!Number.isSafeInteger(b.delta)||b.delta===0||Math.abs(b.delta)>1000000)return fail(400,"INVALID_INPUT");const r=await s.db.rpc("member_points_adjust_gift_stock",{p_org:s.org,p_gift:b.id,p_delta:b.delta});if(r.error)return fail(409,"STOCK_FAILED");return NextResponse.json({ok:true},{headers});}
