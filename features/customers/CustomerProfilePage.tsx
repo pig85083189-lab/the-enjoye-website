@@ -18,6 +18,7 @@ import { PhotosTab } from "./tabs/PhotosTab";
 import { AppointmentsTab } from "./tabs/AppointmentsTab";
 import { NotesTab } from "./tabs/NotesTab";
 import { TransactionsTab } from "./tabs/TransactionsTab";
+import { VouchersTab } from "./tabs/VouchersTab";
 import { WalletTab } from "./tabs/WalletTab";
 import { useCustomer360Snapshot } from "./use-customer-360";
 import { useCustomerRemoteAppointments } from "@/features/customers/use-appointment-remote-read";
@@ -585,7 +586,7 @@ function Customer360Workspace({
               />
             ) : null}
             {tab === "wallet" && walletSection === "vouchers" ? (
-              <Card><p className="p-4 text-sm">票券資料串接中，尚未開放核銷。</p></Card>
+              <VouchersTab organizationId={organization.id} customerId={customer.id} />
             ) : null}
             {tab === "wallet" && walletSection !== "vouchers" ? (
               <WalletTab
@@ -610,6 +611,7 @@ function Customer360Workspace({
                 }))}
               />
             ) : null}
+            {tab === "transactions" ? <VouchersTab organizationId={organization.id} customerId={customer.id} historyOnly /> : null}
             {tab === "notes" ? <NotesTab customerId={customer.id} /> : null}
           </div>
         </div>
