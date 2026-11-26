@@ -1,3 +1,4 @@
+import { resolveVoucherCustomer } from "@/lib/commerce/resolve-voucher-customer-server";
 import { NextResponse } from "next/server";
 import { createBeautyOsFinanceClient } from "@/lib/supabase/beauty-os-finance";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
@@ -26,12 +27,15 @@ export async function POST(request: Request) {
     if (!body || typeof body !== "object" || Array.isArray(body)) return fail(400,"資料格式不正確");
     input = body as Record<string,unknown>;
   } catch { return fail(400,"資料格式不正確"); }
-  const allowed = ["organizationId","checkoutAppId","expectedUpdatedAt","customerPackageAppId","serviceAppId","appointmentAppId"];
+  const allowed = ["organizationId","checkoutAppId","expectedUpdatedAt","customerPackageAppId","serviceAppId","appointmentAppId","voucherTickets"];
   if (Object.keys(input).some(k=>!allowed.includes(k)) ||
       ![input.organizationId,input.checkoutAppId,input.customerPackageAppId,input.serviceAppId,input.appointmentAppId].every(id) ||
       !/^redemption:[a-zA-Z0-9_-]{12,90}$/.test(input.checkoutAppId as string) ||
       typeof input.expectedUpdatedAt !== "string" ||
       !Number.isFinite(Date.parse(input.expectedUpdatedAt))) return fail(400,"套票核銷資料不完整");
+  const rawTickets=input.voucherTickets??[];
+  if(!Array.isArray(rawTickets)||rawTickets.length>100||rawTickets.some(t=>typeof t!=="string"||!/^(draw|points):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t)))return fail(400,"票券資料不正確");
+  const tickets=(rawTickets as string[]).map(t=>{const [source,id]=t.split(":");return {source,id};});
   const organizationId = input.organizationId as string;
   const auth = await getAuthenticatedStaffMembership({ organizationId });
   if (auth.status === "unauthenticated") return fail(401,"請先登入");
@@ -114,7 +118,9 @@ export async function POST(request: Request) {
   if (alreadyLinked?.length) return fail(409,"此預約已完成套票核銷，請重新整理");
   // The RPC independently validates actor, branch, checkout, customer and
   // service and atomically settles and debits one session.
-  const {data,error} = await db.rpc("finance_redeem_booking_atomic",{
+  const voucherIdentity=tickets.length?await resolveVoucherCustomer(organizationId,booked.customer_id,db,{id:orgDbId}):null;
+  if(voucherIdentity && !voucherIdentity.ok)return fail(409,"無法確認票券會員身分");
+  const {data,error} = await db.rpc(tickets.length?"finance_redeem_booking_with_vouchers":"finance_redeem_booking_atomic",{
     p_organization_id:orgDbId,
     p_appointment_app_id:input.appointmentAppId,
     p_actor_auth_user_id:actor.id,
@@ -122,6 +128,7 @@ export async function POST(request: Request) {
     p_expected_updated_at:input.expectedUpdatedAt,
     p_customer_package_id:pkg.id,
     p_service_id:service.id,
+    ...(voucherIdentity?.ok?{p_voucher_customer_id:voucherIdentity.walletCustomerId,p_tickets:tickets}:{}),
   });
   if (error) {
     console.error("[package-redemption] rejected",{code:error.code});
