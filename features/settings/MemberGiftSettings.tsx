@@ -1,7 +1,8 @@
 "use client";
 import {useEffect,useState,useCallback} from "react";
-type Banner={image_url:string|null;title:string;subtitle:string;show_text:boolean;enabled:boolean};
-const defaultBanner:Banner={image_url:null,title:"寵愛好禮・點數兌換",subtitle:"讓每一次保養，累積更多美好",show_text:true,enabled:true};
+type Slide={image_url:string;href:string;enabled:boolean};
+type Banner={slides:Slide[];enabled:boolean};
+const defaultBanner:Banner={slides:[],enabled:true};
 type Gift={id:string;name:string;description:string;image_url:string|null;points_cost:number;stock:number;active:boolean};
 type Redemption={id:string;gift_name:string;points_cost:number;status:string;created_at:string};
 const endpoint="/api/staff/member-points/gifts";
@@ -19,7 +20,7 @@ export function MemberGiftSettings({organizationId}:{organizationId:string}){
  const [busy,setBusy]=useState(false),[message,setMessage]=useState("");
  const [editing,setEditing]=useState<string|null>(null);
  const [name,setName]=useState(""),[description,setDescription]=useState(""),[image,setImage]=useState(""),[points,setPoints]=useState("100"),[stock,setStock]=useState("0");
- const load=useCallback(async()=>{const r=await fetch(endpoint+"?organizationId="+encodeURIComponent(organizationId),{cache:"no-store"});if(!r.ok)throw new Error("READ");const v=await r.json();setData(v);setBanner(v.banner??defaultBanner);},[organizationId]);
+ const load=useCallback(async()=>{const r=await fetch(endpoint+"?organizationId="+encodeURIComponent(organizationId),{cache:"no-store"});if(!r.ok)throw new Error("READ");const v=await r.json();setData(v);setBanner(v.banner?{enabled:v.banner.enabled,slides:v.banner.slides??(v.banner.image_url?[{image_url:v.banner.image_url,href:'',enabled:true}]:[])}:defaultBanner);},[organizationId]);
  useEffect(()=>{load().catch(()=>setMessage("目前無法讀取禮品管理"));},[load]);
  async function send(payload:Record<string,unknown>){
  if(busy)return false;setBusy(true);setMessage("");
@@ -30,16 +31,19 @@ export function MemberGiftSettings({organizationId}:{organizationId:string}){
  <p className="text-sm text-secondary-text">新增禮品後須手動上架，會員才可兌換。</p>
  {message&&<p role="status">{message}</p>}
  <section className="space-y-3 rounded-xl border border-border p-3">
- <h3 className="font-semibold">商城橫幅設定</h3>
- <p className="text-sm">建議圖片尺寸 1500 × 600 px，支援 JPG、PNG、WebP。</p>
- {banner.image_url&&<img src={banner.image_url} alt="商城橫幅預覽" className="w-full rounded-xl object-contain" style={{maxHeight:240}}/>}
- <label>上傳橫幅圖片<input className={field} type="file" accept="image/jpeg,image/png,image/webp" disabled={busy||!data} onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(!file||busy)return;setBusy(true);try{const form=new FormData();form.set("organizationId",organizationId);form.set("image",await prepareGiftImage(file));const r=await fetch(endpoint+"/image",{method:"POST",body:form});if(!r.ok)throw Error("圖片上傳失敗（HTTP "+r.status+"）");const v=await r.json();if(typeof v.url!=="string")throw Error("圖片網址錯誤");setBanner(b=>({...b,image_url:v.url}));setMessage("橫幅圖片已上傳，請儲存設定");}catch(error){setMessage(error instanceof Error?error.message:"上傳失敗");}finally{setBusy(false);}}}/></label>
- <button type="button" className={button} disabled={busy||!data} onClick={()=>setBanner(b=>({...b,image_url:null}))}>移除橫幅圖片</button>
- <label className="block">橫幅標題<input className={field} maxLength={120} value={banner.title} onChange={e=>setBanner(b=>({...b,title:e.target.value}))}/></label>
- <label className="block">橫幅副標題<input className={field} maxLength={200} value={banner.subtitle} onChange={e=>setBanner(b=>({...b,subtitle:e.target.value}))}/></label>
- <label className="block"><input type="checkbox" checked={banner.show_text} onChange={e=>setBanner(b=>({...b,show_text:e.target.checked}))}/> 顯示橫幅文字</label>
- <label className="block"><input type="checkbox" checked={banner.enabled} onChange={e=>setBanner(b=>({...b,enabled:e.target.checked}))}/> 啟用活動橫幅</label>
- <button type="button" className={button} disabled={busy||!data} onClick={()=>void send({action:"banner",...banner,image:banner.image_url??""})}>儲存橫幅設定</button>
+ <h3 className="font-semibold">商城輪播橫幅設定</h3>
+ <fieldset disabled={busy||!data} className="space-y-3">
+ <p>最多 10 張，建議使用相同比例圖片。</p>
+ {banner.slides.map((s,i)=><article key={i} className="rounded-xl border border-border p-3 space-y-2">
+ <strong>橫幅圖片 {i+1}</strong><img src={s.image_url} alt="橫幅預覽" className="w-full rounded-xl object-contain" style={{maxHeight:240}}/>
+ <label>圖片跳轉連結<input className={field} maxLength={2048} placeholder="#catalog 或 https://..." value={s.href} onChange={e=>setBanner(b=>({...b,slides:b.slides.map((x,j)=>j===i?{...x,href:e.target.value}:x)}))}/></label>
+ <label><input type="checkbox" checked={s.enabled} onChange={e=>setBanner(b=>({...b,slides:b.slides.map((x,j)=>j===i?{...x,enabled:e.target.checked}:x)}))}/> 啟用此圖片</label>
+ <div className="flex gap-2">{[-1,1].map(d=><button key={d} type="button" className={button} disabled={i+d<0||i+d>=banner.slides.length} onClick={()=>setBanner(b=>{const slides=[...b.slides];[slides[i],slides[i+d]]=[slides[i+d],slides[i]];return {...b,slides};})}>{d<0?"上移":"下移"}</button>)}<button type="button" className={button} onClick={()=>setBanner(b=>({...b,slides:b.slides.filter((_,j)=>j!==i)}))}>移除</button></div>
+ </article>)}
+ <label>新增輪播圖片<input className={field} type="file" accept="image/jpeg,image/png,image/webp" disabled={banner.slides.length>=10} onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(!file||busy)return;setBusy(true);try{const form=new FormData();form.set("organizationId",organizationId);form.set("image",await prepareGiftImage(file));const r=await fetch(endpoint+"/image",{method:"POST",body:form});if(!r.ok)throw Error("圖片上傳失敗（HTTP "+r.status+"）");const v=await r.json();if(typeof v.url!=="string")throw Error("圖片網址錯誤");setBanner(b=>({...b,slides:[...b.slides,{image_url:v.url,href:"",enabled:true}]}));setMessage("圖片已上傳，請儲存輪播設定");}catch(error){setMessage(error instanceof Error?error.message:"上傳失敗");}finally{setBusy(false);}}}/></label>
+ <label><input type="checkbox" checked={banner.enabled} onChange={e=>setBanner(b=>({...b,enabled:e.target.checked}))}/> 啟用輪播</label>
+ <button type="button" className={button} onClick={()=>void send({action:"carousel",...banner})}>儲存輪播設定</button>
+ </fieldset>
  </section>
  <form className="grid gap-3 sm:grid-cols-2" onSubmit={async e=>{e.preventDefault();if(await send({action:editing?"edit":"create",id:editing,name,description,image,points:Number(points),stock:Number(stock)})){setEditing(null);setName("");setDescription("");setImage("");setStock("0");}}}>
  <label>禮品名稱<input className={field} required maxLength={120} value={name} onChange={e=>setName(e.target.value)}/></label>
