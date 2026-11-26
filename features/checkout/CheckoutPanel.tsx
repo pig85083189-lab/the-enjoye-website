@@ -336,7 +336,6 @@ export function CheckoutPanel({
     onCompleted?.(p.transactionId);
   }
   async function redeemSelectedRemotePackage() {
-    if(selectedVouchers.length){setError("目前套票扣堂與電子票券須分開處理，請先取消電子票券勾選。");return;}
     if (!commerceRemoteWrite || !liveDraft || !selectedRemotePackageId ||
         !primaryServiceAppId || !checkoutCustomerId || submitting) return;
     if (liveDraft.items.length !== 1 || liveDraft.items[0]?.type !== "SERVICE" ||
@@ -386,6 +385,7 @@ export function CheckoutPanel({
         organizationId,checkoutAppId,expectedUpdatedAt:draft.expectedUpdatedAt,
         customerPackageAppId:selectedRemotePackageId,serviceAppId:primaryServiceAppId,
         appointmentAppId:item.appointmentId,
+        ...(selectedVouchers.length?{voucherTickets:selectedVouchers}:{}),
       });
       setSelectedRemotePackageId(null);
       setRedemptionRequestId(null);
