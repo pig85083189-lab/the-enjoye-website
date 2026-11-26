@@ -54,7 +54,7 @@ import type { Transaction } from "@/lib/commerce/domain";
 import type { FinanceActivityRow } from "@/features/customers/use-customer-remote-read";
 
 function isWalletSection(value: string | null): value is Customer360WalletSection {
-  return value === "packages" || value === "stored-value";
+  return value === "packages" || value === "stored-value" || value === "vouchers";
 }
 
 interface CustomerProfilePageProps {
@@ -584,10 +584,13 @@ function Customer360Workspace({
                 remoteReadPilot={appointmentRemoteReadPilot}
               />
             ) : null}
-            {tab === "wallet" ? (
+            {tab === "wallet" && walletSection === "vouchers" ? (
+              <Card><p className="p-4 text-sm">票券資料串接中，尚未開放核銷。</p></Card>
+            ) : null}
+            {tab === "wallet" && walletSection !== "vouchers" ? (
               <WalletTab
                 customerId={customer.id}
-                section={walletSection}
+                section={walletSection === "vouchers" ? undefined : walletSection}
                 onOpenTransactions={() => onSelectTab("transactions")}
                 commerceRemoteRead={commerceRemoteReadPilot || financeProfileReadOnly}
                 balanceMinorOverride={financeStoredValueBalanceMinor}
