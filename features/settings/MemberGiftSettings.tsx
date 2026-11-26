@@ -19,7 +19,7 @@ export function MemberGiftSettings({organizationId}:{organizationId:string}){
  const [data,setData]=useState<{gifts:Gift[];redemptions:Redemption[];prizes?:{id:string;name:string;tier:string;ticket_color:string;ticket_icon:string;ticket_image_url:string|null}[];draws?:{id:string;prize_name:string;prize_tier:string;voucher_status:string;created_at:string}[]}|null>(null);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState("");
  const [ticket,setTicket]=useState<{id:string;color:string;icon:string;image:string;draw?:boolean}|null>(null);
- const [view,setView]=useState<"gifts"|"banner"|"draw"|"history">("gifts");
+ const [view,setView]=useState<"gifts"|"banner"|"draw">("gifts");
  const [search,setSearch]=useState("");const [filter,setFilter]=useState("all");const [page,setPage]=useState(1);const [formOpen,setFormOpen]=useState(false);
  const [editing,setEditing]=useState<string|null>(null);
  const [name,setName]=useState(""),[description,setDescription]=useState(""),[image,setImage]=useState(""),[points,setPoints]=useState("100"),[stock,setStock]=useState("0");
@@ -34,7 +34,7 @@ export function MemberGiftSettings({organizationId}:{organizationId:string}){
  <h2 className="text-base font-semibold">點數禮品管理</h2>
  <p className="text-sm text-secondary-text">新增禮品後須手動上架，會員才可兌換。</p>
  {message&&<p role="status">{message}</p>}
- <nav className="flex flex-wrap gap-2" aria-label="禮品管理分類">{([["gifts","點數禮品"],["banner","商城輪播"],["draw","抽獎票券外觀"],["history","兌換紀錄"]] as const).map(([k,label])=><button key={k} type="button" disabled={busy} aria-pressed={view===k} className={button+(view===k?" bg-primary text-white":"")} onClick={()=>{setView(k);setTicket(null);setFormOpen(false);setEditing(null);}}>{label}</button>)}</nav>
+ <nav className="flex flex-wrap gap-2" aria-label="禮品管理分類">{([["gifts","點數禮品"],["banner","商城輪播"],["draw","抽獎票券外觀"]] as const).map(([k,label])=><button key={k} type="button" disabled={busy} aria-pressed={view===k} className={button+(view===k?" bg-primary text-white":"")} onClick={()=>{setView(k);setTicket(null);setFormOpen(false);setEditing(null);}}>{label}</button>)}</nav>
  {view==="banner"&&<section className="space-y-3 rounded-xl border border-border p-3">
  <h3 className="font-semibold">商城輪播橫幅設定</h3>
  <fieldset disabled={busy||!data} className="space-y-3">
@@ -74,9 +74,6 @@ export function MemberGiftSettings({organizationId}:{organizationId:string}){
  {view==="gifts"&&pages>1&&<nav className="flex items-center justify-center gap-3"><button className={button} disabled={current===1} onClick={()=>setPage(current-1)}>上一頁</button><span>{current} / {pages}</span><button className={button} disabled={current===pages} onClick={()=>setPage(current+1)}>下一頁</button></nav>}
  {view==="draw"&&<><h3 className="font-semibold">抽獎票券外觀</h3>
  {data?.prizes?.map(p=><article key={p.id} className="rounded-xl border border-border p-3"><strong>{p.tier}・{p.name}</strong><button className={button} disabled={busy} onClick={()=>{setTicket({id:p.id,color:p.ticket_color,icon:p.ticket_icon,image:p.ticket_image_url??"",draw:true});}}>電子票券外觀設定</button></article>)}
- </>}
- {view==="history"&&<><h3 className="font-semibold">會員兌換紀錄</h3>
- {data?.redemptions.map(r=><article key={r.id} className="rounded-xl border border-border p-3 space-y-2"><strong>{r.gift_name}</strong><p>{r.points_cost} 點 · {r.status==="issued"?"待核銷":r.status==="used"?"已核銷":"已取消"}</p><p className="break-all text-xs">券號：{r.id}</p>{r.status==="issued"&&<div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>{if(window.confirm("確認會員出示的券號及禮品已交付？"))void send({action:"resolve",id:r.id,status:"used"});}}>確認核銷</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm("取消兌換並退回點數及庫存？"))void send({action:"resolve",id:r.id,status:"cancelled"});}}>取消退點</button></div>}</article>)}
  </>}
  </section>;
 }
