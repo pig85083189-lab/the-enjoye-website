@@ -63,15 +63,16 @@ export const CUSTOMER_360_PRIMARY_TABS: Array<{
 
 export const CUSTOMER_360_FINANCIAL_ITEMS: Array<{
   id: Extract<Customer360TabId, "wallet" | "transactions">;
-  section?: "packages" | "stored-value";
+  section?: "packages" | "stored-value" | "vouchers";
   label: string;
 }> = [
   { id: "wallet", section: "packages", label: "套票" },
   { id: "wallet", section: "stored-value", label: "儲值" },
+  { id: "wallet", section: "vouchers", label: "票券" },
   { id: "transactions", label: "交易" },
 ];
 
-export type Customer360WalletSection = "packages" | "stored-value";
+export type Customer360WalletSection = "packages" | "stored-value" | "vouchers";
 
 export function isCustomer360TabId(value: string | null): value is Customer360TabId {
   return CUSTOMER_360_TAB_IDS.some((id) => id === value);
