@@ -1,5 +1,7 @@
 "use client";
 import {useEffect,useState,useCallback} from "react";
+type Banner={image_url:string|null;title:string;subtitle:string;show_text:boolean;enabled:boolean};
+const defaultBanner:Banner={image_url:null,title:"寵愛好禮・點數兌換",subtitle:"讓每一次保養，累積更多美好",show_text:true,enabled:true};
 type Gift={id:string;name:string;description:string;image_url:string|null;points_cost:number;stock:number;active:boolean};
 type Redemption={id:string;gift_name:string;points_cost:number;status:string;created_at:string};
 const endpoint="/api/staff/member-points/gifts";
@@ -12,11 +14,12 @@ async function prepareGiftImage(file:File):Promise<File>{
  try{const canvas=document.createElement("canvas");const scale=Math.min(1,1600/Math.max(bitmap.width,bitmap.height));canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));const ctx=canvas.getContext("2d");if(!ctx)throw new Error("無法處理圖片");ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);for(const quality of [0.85,0.7,0.5,0.3]){const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,"image/webp",quality));if(blob&&blob.size<=1400000&&blob.type==="image/webp")return new File([blob],"gift.webp",{type:blob.type});}throw new Error("圖片仍過大，請選擇較小的圖片");}finally{bitmap.close();}
 }
 export function MemberGiftSettings({organizationId}:{organizationId:string}){
+ const [banner,setBanner]=useState<Banner>(defaultBanner);
  const [data,setData]=useState<{gifts:Gift[];redemptions:Redemption[]}|null>(null);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState("");
  const [editing,setEditing]=useState<string|null>(null);
  const [name,setName]=useState(""),[description,setDescription]=useState(""),[image,setImage]=useState(""),[points,setPoints]=useState("100"),[stock,setStock]=useState("0");
- const load=useCallback(async()=>{const r=await fetch(endpoint+"?organizationId="+encodeURIComponent(organizationId),{cache:"no-store"});if(!r.ok)throw new Error("READ");setData(await r.json());},[organizationId]);
+ const load=useCallback(async()=>{const r=await fetch(endpoint+"?organizationId="+encodeURIComponent(organizationId),{cache:"no-store"});if(!r.ok)throw new Error("READ");const v=await r.json();setData(v);setBanner(v.banner??defaultBanner);},[organizationId]);
  useEffect(()=>{load().catch(()=>setMessage("目前無法讀取禮品管理"));},[load]);
  async function send(payload:Record<string,unknown>){
  if(busy)return false;setBusy(true);setMessage("");
@@ -26,6 +29,18 @@ export function MemberGiftSettings({organizationId}:{organizationId:string}){
  <h2 className="text-base font-semibold">點數禮品管理</h2>
  <p className="text-sm text-secondary-text">新增禮品後須手動上架，會員才可兌換。</p>
  {message&&<p role="status">{message}</p>}
+ <section className="space-y-3 rounded-xl border border-border p-3">
+ <h3 className="font-semibold">商城橫幅設定</h3>
+ <p className="text-sm">建議圖片尺寸 1500 × 600 px，支援 JPG、PNG、WebP。</p>
+ {banner.image_url&&<img src={banner.image_url} alt="商城橫幅預覽" className="w-full rounded-xl object-contain" style={{maxHeight:240}}/>}
+ <label>上傳橫幅圖片<input className={field} type="file" accept="image/jpeg,image/png,image/webp" disabled={busy||!data} onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(!file||busy)return;setBusy(true);try{const form=new FormData();form.set("organizationId",organizationId);form.set("image",await prepareGiftImage(file));const r=await fetch(endpoint+"/image",{method:"POST",body:form});if(!r.ok)throw Error("圖片上傳失敗（HTTP "+r.status+"）");const v=await r.json();if(typeof v.url!=="string")throw Error("圖片網址錯誤");setBanner(b=>({...b,image_url:v.url}));setMessage("橫幅圖片已上傳，請儲存設定");}catch(error){setMessage(error instanceof Error?error.message:"上傳失敗");}finally{setBusy(false);}}}/></label>
+ <button type="button" className={button} disabled={busy||!data} onClick={()=>setBanner(b=>({...b,image_url:null}))}>移除橫幅圖片</button>
+ <label className="block">橫幅標題<input className={field} maxLength={120} value={banner.title} onChange={e=>setBanner(b=>({...b,title:e.target.value}))}/></label>
+ <label className="block">橫幅副標題<input className={field} maxLength={200} value={banner.subtitle} onChange={e=>setBanner(b=>({...b,subtitle:e.target.value}))}/></label>
+ <label className="block"><input type="checkbox" checked={banner.show_text} onChange={e=>setBanner(b=>({...b,show_text:e.target.checked}))}/> 顯示橫幅文字</label>
+ <label className="block"><input type="checkbox" checked={banner.enabled} onChange={e=>setBanner(b=>({...b,enabled:e.target.checked}))}/> 啟用活動橫幅</label>
+ <button type="button" className={button} disabled={busy||!data} onClick={()=>void send({action:"banner",...banner,image:banner.image_url??""})}>儲存橫幅設定</button>
+ </section>
  <form className="grid gap-3 sm:grid-cols-2" onSubmit={async e=>{e.preventDefault();if(await send({action:editing?"edit":"create",id:editing,name,description,image,points:Number(points),stock:Number(stock)})){setEditing(null);setName("");setDescription("");setImage("");setStock("0");}}}>
  <label>禮品名稱<input className={field} required maxLength={120} value={name} onChange={e=>setName(e.target.value)}/></label>
  <div className="space-y-2"><label>禮品圖片<input className={field} type="file" accept="image/jpeg,image/png,image/webp" disabled={busy||!data} onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(!file||busy)return;setBusy(true);try{const form=new FormData();form.set("organizationId",organizationId);form.set("image",await prepareGiftImage(file));const r=await fetch(endpoint+"/image",{method:"POST",body:form});if(!r.ok)throw new Error("圖片上傳失敗（HTTP "+r.status+"）");const v=await r.json();if(typeof v.url!=="string")throw new Error("URL");setImage(v.url);setMessage("圖片已上傳，請儲存禮品");}catch(error){setMessage(error instanceof Error?error.message:"圖片上傳失敗");}finally{setBusy(false);}}}/></label>{image&&<img src={image} alt="禮品預覽" className="h-28 w-28 rounded-xl object-cover" referrerPolicy="no-referrer"/>}<button type="button" className={button} disabled={busy||!image} onClick={()=>setImage("")}>移除圖片</button></div>
