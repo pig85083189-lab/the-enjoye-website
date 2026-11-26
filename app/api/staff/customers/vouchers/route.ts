@@ -25,7 +25,7 @@ export async function GET(request:Request){
  ]);
  if(draw.error||points.error||audit.error)return fail(503,"VOUCHER_LOOKUP_FAILED");
  const vouchers=[...(draw.data??[]).map(r=>({id:r.id,source:"draw",name:r.prize_name,tier:r.prize_tier,status:r.voucher_status,createdAt:r.created_at,resolvedAt:r.voucher_resolved_at})),...(points.data??[]).map(r=>({id:r.id,source:"points",name:r.gift_name,tier:null,status:r.status,createdAt:r.created_at,resolvedAt:r.resolved_at}))].sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
- return NextResponse.json({vouchers,redemptions:audit.data??[]},{headers});
+ return NextResponse.json({vouchers,redemptions:audit.data??[],canRedeem:["OWNER","MANAGER"].includes(identity.membership.role)},{headers});
 }
 
 export async function POST(request:Request){
