@@ -302,6 +302,20 @@ async function handle(request: Request) {
     if(redeemed.error)return fail(409,"VOUCHER_REDEMPTION_FAILED");
     return NextResponse.json({redeemed:redeemed.data},{headers});
   }
+  if(request.method==="GET" && params.get("recovery")==="1" && draftId && source){
+    const booking=createServiceRoleClient();
+    if(!booking)return fail(503,"CONFIG_MISSING");
+    const draft=await booking.from("checkout_drafts").select("id,customer_id,status").eq("organization_id",source.organizationId).eq("app_id",draftId).maybeSingle();
+    if(draft.error)return fail(503,"RECOVERY_LOOKUP_FAILED");
+    if(!draft.data || draft.data.status!=="COMPLETED")return NextResponse.json({pending:null},{headers});
+    const intent=await db.from("checkout_voucher_intents").select("tickets").eq("organization_id",org.id).eq("customer_id",decision.walletCustomerId).eq("checkout_app_id",draftId).eq("completed",false).maybeSingle();
+    if(intent.error)return fail(503,"RECOVERY_LOOKUP_FAILED");
+    if(!intent.data)return NextResponse.json({pending:null},{headers});
+    const tx=await booking.from("transactions").select("id,app_id").eq("organization_id",source.organizationId).eq("checkout_draft_id",draft.data.id).eq("customer_id",draft.data.customer_id).eq("status","COMPLETED").limit(2);
+    if(tx.error||tx.data?.length!==1)return fail(409,"CHECKOUT_NOT_COMPLETED");
+    const tickets=(intent.data.tickets as {source:string;id:string}[]).map(t=>t.source+":"+t.id);
+    return NextResponse.json({pending:{draftId,transactionId:tx.data[0].app_id??tx.data[0].id,tickets}},{headers});
+  }
   const [points,draw]=await Promise.all([
     db.from("member_points_redemptions").select("id,gift_name,created_at").eq("organization_id",org.id).eq("customer_id",decision.walletCustomerId).eq("status","issued").limit(100),
     db.from("lucky_draw_results").select("id,prize_name,prize_tier,created_at").eq("organization_id",org.id).eq("customer_id",decision.walletCustomerId).eq("voucher_status","issued").limit(100)
