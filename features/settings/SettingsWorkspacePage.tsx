@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import {MemberCardCampaignSettings} from "./MemberCardCampaignSettings";
 import {MemberCardThemeSettings} from "./MemberCardThemeSettings";
 import {MemberCampaignSettings} from "./MemberCampaignSettings";
 import {MemberGiftSettings} from "./MemberGiftSettings";
@@ -354,7 +355,7 @@ export function SettingsWorkspacePage() {
         </div>
       </div>
 
-      {membership && ["OWNER","MANAGER"].includes(membership.role) ? <><MemberPointsSettings key={organization.id} organizationId={organization.id}/><MemberGiftSettings key={"gifts:"+organization.id} organizationId={organization.id}/><MemberCampaignSettings key={"campaigns:"+organization.id} organizationId={organization.id}/><MemberCardThemeSettings key={"card:"+organization.id} organizationId={organization.id}/></> : null}
+      {membership && ["OWNER","MANAGER"].includes(membership.role) ? <><MemberPointsSettings key={organization.id} organizationId={organization.id}/><MemberGiftSettings key={"gifts:"+organization.id} organizationId={organization.id}/><MemberCampaignSettings key={"campaigns:"+organization.id} organizationId={organization.id}/><MemberCardThemeSettings key={"card:"+organization.id} organizationId={organization.id}/><MemberCardCampaignSettings key={"seasonal:"+organization.id} organizationId={organization.id}/></> : null}
       {showLineEntry ? (
         <Card
           data-line-settings-entry
