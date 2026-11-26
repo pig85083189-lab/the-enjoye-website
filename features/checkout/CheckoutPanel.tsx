@@ -1410,7 +1410,13 @@ export function CheckoutPanel({
                   const packagePurchase = liveDraft.items.length === 1 &&
                     liveDraft.items[0]?.type === "PACKAGE_PURCHASE"
                     ? liveDraft.items[0] : null;
-                  void (packagePurchase
+                  void (async () => {
+                    if(selectedVouchers.length){
+                      const params=new URLSearchParams({organizationId,draftId:liveDraft.id});
+                      const prepared=await fetch("/api/staff/commerce/vouchers?"+params,{method:"PUT",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({tickets:selectedVouchers})});
+                      if(!prepared.ok)throw new Error("票券準備失敗，尚未付款，請重新確認票券。");
+                    }
+                    return packagePurchase
                     ? submitCommerceRemotePackagePurchaseByAppId({
                         draftId: liveDraft.id,
                         expectedUpdatedAt: liveDraft.updatedAt,
@@ -1419,7 +1425,8 @@ export function CheckoutPanel({
                     : submitCommerceRemoteSettle({
                         draftId: liveDraft.id,
                         expectedUpdatedAt: liveDraft.updatedAt,
-                      }))
+                      });
+                  })()
                     .then(
                       async (bundle) => {
                         setEditedRemoteDraft(bundle.draft);
