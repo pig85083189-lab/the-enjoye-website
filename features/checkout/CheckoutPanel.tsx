@@ -317,7 +317,16 @@ export function CheckoutPanel({
       payments: liveDraft?.payments ?? [],
     });
 
+  const [pendingVoucher,setPendingVoucher]=useState<{draftId:string;transactionId:string;tickets:string[]}|null>(null);
+  async function finishVoucherRedemption(p:{draftId:string;transactionId:string;tickets:string[]}){
+    const params=new URLSearchParams({organizationId,draftId:p.draftId});
+    const response=await fetch("/api/staff/commerce/vouchers?"+params,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({tickets:p.tickets})});
+    if(!response.ok)throw new Error("付款已完成，票券尚未核銷。請重試票券核銷，勿再次付款。");
+    setPendingVoucher(null);
+    onCompleted?.(p.transactionId);
+  }
   async function redeemSelectedRemotePackage() {
+    if(selectedVouchers.length){setError("目前套票扣堂與電子票券須分開處理，請先取消電子票券勾選。");return;}
     if (!commerceRemoteWrite || !liveDraft || !selectedRemotePackageId ||
         !primaryServiceAppId || !checkoutCustomerId || submitting) return;
     if (liveDraft.items.length !== 1 || liveDraft.items[0]?.type !== "SERVICE" ||
@@ -1359,7 +1368,9 @@ export function CheckoutPanel({
         </div>
 
         <div className="shrink-0 border-t border-border bg-surface px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          {readOnly ? (
+          {pendingVoucher ? (
+            <button type="button" disabled={submitting} className="flex h-[50px] w-full items-center justify-center rounded-2xl bg-[#C56B70] text-white" onClick={()=>{setSubmitting(true);void finishVoucherRedemption(pendingVoucher).catch(()=>setError("付款已完成，票券尚未核銷，請重試。")).finally(()=>setSubmitting(false));}}>重試票券核銷（不再付款）</button>
+          ) : readOnly ? (
             <Link
               href={
                 transaction
@@ -1384,7 +1395,8 @@ export function CheckoutPanel({
               disabled={!canConfirm || submitting || Boolean(selectedRemotePackageId)}
               className="flex h-[50px] w-full items-center justify-center rounded-2xl bg-[#C56B70] text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               onClick={() => {
-                if (!liveDraft || !canConfirm || submitting || selectedRemotePackageId) return;
+                if (!liveDraft || !canConfirm || submitting || selectedRemotePackageId || pendingVoucher) return;
+                if(selectedVouchers.length && (!commerceRemoteWrite || liveDraft.items.some(x=>x.type==="PACKAGE_PURCHASE"))){setError("目前此結帳類型不支援電子票券核銷，請取消票券勾選。");return;}
                 if (commerceRemoteWrite) {
                   const blocked = remoteStoredValueBlockReason(
                     remoteWallet,
@@ -1409,10 +1421,14 @@ export function CheckoutPanel({
                         expectedUpdatedAt: liveDraft.updatedAt,
                       }))
                     .then(
-                      (bundle) => {
+                      async (bundle) => {
                         setEditedRemoteDraft(bundle.draft);
                         setWalletNonce((nonce) => nonce + 1);
-                        if (bundle.transaction) onCompleted?.(bundle.transaction.id);
+                        if (bundle.transaction && selectedVouchers.length) {
+                          const pending={draftId:liveDraft.id,transactionId:bundle.transaction.id,tickets:[...selectedVouchers]};
+                          setPendingVoucher(pending);
+                          try {await finishVoucherRedemption(pending);} catch {setError("付款已完成，票券尚未核銷，請重試票券核銷。");}
+                        } else if (bundle.transaction) onCompleted?.(bundle.transaction.id);
                       },
                       (err: unknown) => setError(toCommerceUserMessage(err)),
                     )
