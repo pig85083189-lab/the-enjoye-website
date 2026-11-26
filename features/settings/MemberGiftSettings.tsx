@@ -16,9 +16,9 @@ async function prepareGiftImage(file:File):Promise<File>{
 }
 export function MemberGiftSettings({organizationId}:{organizationId:string}){
  const [banner,setBanner]=useState<Banner>(defaultBanner);
- const [data,setData]=useState<{gifts:Gift[];redemptions:Redemption[]}|null>(null);
+ const [data,setData]=useState<{gifts:Gift[];redemptions:Redemption[];prizes?:{id:string;name:string;tier:string;ticket_color:string;ticket_icon:string;ticket_image_url:string|null}[];draws?:{id:string;prize_name:string;prize_tier:string;voucher_status:string;created_at:string}[]}|null>(null);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState("");
- const [ticket,setTicket]=useState<{id:string;color:string;icon:string;image:string}|null>(null);
+ const [ticket,setTicket]=useState<{id:string;color:string;icon:string;image:string;draw?:boolean}|null>(null);
  const [editing,setEditing]=useState<string|null>(null);
  const [name,setName]=useState(""),[description,setDescription]=useState(""),[image,setImage]=useState(""),[points,setPoints]=useState("100"),[stock,setStock]=useState("0");
  const load=useCallback(async()=>{const r=await fetch(endpoint+"?organizationId="+encodeURIComponent(organizationId),{cache:"no-store"});if(!r.ok)throw new Error("READ");const v=await r.json();setData(v);setBanner(v.banner?{enabled:v.banner.enabled,slides:v.banner.slides??(v.banner.image_url?[{image_url:v.banner.image_url,href:'',enabled:true}]:[])}:defaultBanner);},[organizationId]);
@@ -62,10 +62,14 @@ export function MemberGiftSettings({organizationId}:{organizationId:string}){
  {ticket.image&&<img src={ticket.image} alt="票券圖案預覽" className="h-24 w-24 object-contain"/>}
  <label>上傳專屬圖案<input className={field} type="file" accept="image/jpeg,image/png,image/webp" onChange={async e=>{const file=e.target.files?.[0];e.target.value="";if(!file||busy)return;setBusy(true);try{const form=new FormData();form.set("organizationId",organizationId);form.set("image",await prepareGiftImage(file));const r=await fetch(endpoint+"/image",{method:"POST",body:form});if(!r.ok)throw Error("圖片上傳失敗");const v=await r.json();if(typeof v.url!=="string")throw Error("圖片網址錯誤");setTicket(t=>t?{...t,image:v.url}:t);}catch(error){setMessage(error instanceof Error?error.message:"上傳失敗");}finally{setBusy(false);}}}/></label>
  <button type="button" className={button} onClick={()=>setTicket(t=>t?{...t,image:""}:t)}>使用預設圖示</button>
- <button type="button" className={button} onClick={async()=>{if(await send({action:"ticket_style",...ticket}))setTicket(null)}}>儲存票券外觀</button>
+ <button type="button" className={button} onClick={async()=>{if(await send({action:ticket.draw?"draw_style":"ticket_style",...ticket}))setTicket(null)}}>儲存票券外觀</button>
  <button type="button" className={button} onClick={()=>setTicket(null)}>取消</button>
  </fieldset>}
  {data?.gifts.map(g=><article key={g.id} className="rounded-xl border border-border p-3 space-y-2"><strong>{g.name}</strong><p>{g.points_cost} 點 · 庫存 {g.stock} · {g.active?"已上架":"未上架"}</p><button className={button} disabled={busy} onClick={()=>{setEditing(g.id);setName(g.name);setDescription(g.description);setImage(g.image_url??"");setPoints(String(g.points_cost));setStock(String(g.stock));}}>編輯禮品</button><button type="button" className={button} disabled={busy} onClick={()=>setTicket({id:g.id,color:g.ticket_color??"gold",icon:g.ticket_icon??"gift",image:g.ticket_image_url??""})}>電子票券外觀設定</button><button className={button} disabled={busy} onClick={()=>{const raw=window.prompt("輸入庫存增減數量，例如 5 或 -2");if(raw===null)return;const delta=Number(raw);if(!Number.isSafeInteger(delta)||!delta){setMessage("請輸入非零整數");return;}if(window.confirm("確認調整庫存 "+delta+" 件？"))void send({action:"stock",id:g.id,delta});}}>調整庫存</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm(g.active?"確定下架？":"確定上架？"))void send({action:"publish",id:g.id,active:!g.active});}}>{g.active?"下架":"上架"}</button></article>)}
+ <h3 className="font-semibold">抽獎票券外觀</h3>
+ {data?.prizes?.map(p=><article key={p.id} className="rounded-xl border border-border p-3"><strong>{p.tier}・{p.name}</strong><button className={button} disabled={busy} onClick={()=>{setTicket({id:p.id,color:p.ticket_color,icon:p.ticket_icon,image:p.ticket_image_url??"",draw:true});}}>電子票券外觀設定</button></article>)}
+ <h3 className="font-semibold">抽獎票券核銷</h3>
+ {data?.draws?.map(r=><article key={r.id} className="rounded-xl border border-border p-3 space-y-2"><strong>{r.prize_tier}・{r.prize_name}</strong><p>{r.voucher_status==="issued"?"待核銷":r.voucher_status==="used"?"已核銷":"已取消"}</p><p className="break-all text-xs">券號：{r.id}</p>{r.voucher_status==="issued"&&<button className={button} disabled={busy} onClick={()=>{if(window.confirm("確認會員出示的券號及獎品已交付？"))void send({action:"draw_resolve",id:r.id,status:"used"});}}>確認核銷</button>}</article>)}
  <h3 className="font-semibold">會員兌換紀錄</h3>
  {data?.redemptions.map(r=><article key={r.id} className="rounded-xl border border-border p-3 space-y-2"><strong>{r.gift_name}</strong><p>{r.points_cost} 點 · {r.status==="issued"?"待核銷":r.status==="used"?"已核銷":"已取消"}</p><p className="break-all text-xs">券號：{r.id}</p>{r.status==="issued"&&<div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>{if(window.confirm("確認會員出示的券號及禮品已交付？"))void send({action:"resolve",id:r.id,status:"used"});}}>確認核銷</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm("取消兌換並退回點數及庫存？"))void send({action:"resolve",id:r.id,status:"cancelled"});}}>取消退點</button></div>}</article>)}
  </section>;
