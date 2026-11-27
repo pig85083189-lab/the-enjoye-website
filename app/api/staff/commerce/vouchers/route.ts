@@ -23,6 +23,7 @@ async function handle(request: Request) {
   const draftId = params.get("draftId");
   const source = draftId && draftId.length <= 120 ? await readBookingCheckoutSource(draftId) : null;
   const customerId = source && source.organizationAppId === organizationId ? source.sourceCustomerKey : null;
+  const dailyAllowed=process.env.MEMBER_DAILY_VOUCHER_CHECKOUT_ENABLED==="true";
   const headers = { "Cache-Control": "private, no-store" };
   const fail = (status: number, code: string) =>
     NextResponse.json({ error: "無法查詢電子票券", code }, { status, headers });
@@ -286,7 +287,7 @@ async function handle(request: Request) {
     try {body=await request.json();}catch{return fail(400,"INVALID_INPUT");}
     if(!body||!Array.isArray(body.tickets)||body.tickets.length<1||body.tickets.length>100||!draftId||!source)return fail(400,"INVALID_INPUT");
     const tickets=body.tickets.map((key:unknown)=>typeof key==="string"?key.split(":"):[]);
-    if(tickets.some(x=>x.length!==2||!["draw","points"].includes(x[0])||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x[1])))return fail(400,"INVALID_TICKET");
+    if(tickets.some(x=>x.length!==2||!(["draw","points",...(dailyAllowed?["task_reward"]:[])]).includes(x[0])||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x[1])))return fail(400,"INVALID_TICKET");
     const booking=createServiceRoleClient();
     if(!booking)return fail(503,"CONFIG_MISSING");
     const draft=await booking.from("checkout_drafts").select("id,customer_id,status").eq("organization_id",source.organizationId).eq("app_id",draftId).maybeSingle();
@@ -321,5 +322,7 @@ async function handle(request: Request) {
     db.from("lucky_draw_results").select("id,prize_name,prize_tier,created_at").eq("organization_id",org.id).eq("customer_id",decision.walletCustomerId).eq("voucher_status","issued").limit(100)
   ]);
   if(points.error||draw.error)return fail(503,"VOUCHER_READ_FAILED");
-  return NextResponse.json({tickets:[...(points.data??[]).map(x=>({id:x.id,name:x.gift_name,source:"points"})),...(draw.data??[]).map(x=>({id:x.id,name:x.prize_name,source:"draw",tier:x.prize_tier}))]},{headers});
+  const daily=dailyAllowed?await db.from("member_daily_vouchers").select("id,title").eq("organization_id",org.id).eq("customer_id",decision.walletCustomerId).eq("status","issued").gte("expires_on",new Date(Date.now()+28800000).toISOString().slice(0,10)).limit(100):null;
+  if(daily?.error)return fail(503,"VOUCHER_READ_FAILED");
+  return NextResponse.json({tickets:[...(daily?.data??[]).map(x=>({id:x.id,name:x.title,source:"task_reward"})),...(points.data??[]).map(x=>({id:x.id,name:x.gift_name,source:"points"})),...(draw.data??[]).map(x=>({id:x.id,name:x.prize_name,source:"draw",tier:x.prize_tier}))]},{headers});
 }
