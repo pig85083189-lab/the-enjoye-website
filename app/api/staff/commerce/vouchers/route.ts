@@ -287,7 +287,7 @@ async function handle(request: Request) {
     try {body=await request.json();}catch{return fail(400,"INVALID_INPUT");}
     if(!body||!Array.isArray(body.tickets)||body.tickets.length<1||body.tickets.length>100||!draftId||!source)return fail(400,"INVALID_INPUT");
     const tickets=body.tickets.map((key:unknown)=>typeof key==="string"?key.split(":"):[]);
-    if(tickets.some(x=>x.length!==2||!(["draw","points",...(dailyAllowed?["task_reward"]:[])]).includes(x[0])||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x[1])))return fail(400,"INVALID_TICKET");
+    if(tickets.some(x=>x.length!==2||!(["draw","points",...((dailyAllowed||request.method==="POST")?["task_reward"]:[])]).includes(x[0])||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x[1])))return fail(400,"INVALID_TICKET");
     const booking=createServiceRoleClient();
     if(!booking)return fail(503,"CONFIG_MISSING");
     const draft=await booking.from("checkout_drafts").select("id,customer_id,status").eq("organization_id",source.organizationId).eq("app_id",draftId).maybeSingle();
