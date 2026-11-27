@@ -22,7 +22,7 @@ returns text language plpgsql security definer set search_path='' as $$
 declare rule jsonb; d date := (now() at time zone 'Asia/Taipei')::date; n integer; voucher_name text; valid_days integer; inserted integer; k text;
 begin
  if coalesce(auth.jwt()->>'role','') <> 'service_role' then raise exception 'FORBIDDEN'; end if;
- if p_line_hash is null or p_line_hash !~ '^[0-9a-f]{64} or p_member_hash !~ '^[0-9a-f]{64}$' or p_task is null or p_task !~ '^[a-zA-Z0-9_-]{1,80}$' then raise exception 'INVALID_TASK'; end if;
+ if p_line_hash is null or p_line_hash !~ '^[0-9a-f]{64}$' or p_member_hash is null or p_member_hash !~ '^[0-9a-f]{64}$' or p_task is null or p_task !~ '^[a-zA-Z0-9_-]{1,80}$' then raise exception 'INVALID_TASK'; end if;
  perform public.member_points_assert_line_member(p_org,p_customer);
  -- The existing assertion holds identity locks and establishes exactly one valid hash.
  -- The trusted server derives both hashes from the same authenticated LINE subject.
