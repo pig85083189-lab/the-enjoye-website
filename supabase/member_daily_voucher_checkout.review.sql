@@ -1,5 +1,13 @@
 begin;
 alter table public.checkout_voucher_redemptions drop constraint checkout_voucher_redemptions_source_check, add constraint checkout_voucher_redemptions_source_check check(source in ('draw','points','task_reward'));
+create table public.member_daily_voucher_reservations (
+ organization_id uuid not null, voucher_id uuid not null references public.member_daily_vouchers(id),
+ customer_id uuid not null, checkout_app_id text not null, reserved_at timestamptz not null default now(),
+ primary key(organization_id,voucher_id)
+);
+alter table public.member_daily_voucher_reservations enable row level security;
+revoke all on public.member_daily_voucher_reservations from public,anon,authenticated;
+grant select,insert,delete on public.member_daily_voucher_reservations to service_role;
 grant update(status,resolved_at) on public.member_daily_vouchers to service_role;
 CREATE OR REPLACE FUNCTION public.prepare_checkout_vouchers(p_org uuid, p_customer uuid, p_checkout text, p_tickets jsonb)
  RETURNS boolean
@@ -10,17 +18,19 @@ declare t record; normalized jsonb;
 begin
 if p_org is null or p_customer is null or p_checkout is null or length(p_checkout) not between 1 and 120 or jsonb_typeof(p_tickets) is distinct from 'array' then raise exception 'INVALID_INPUT'; end if;
 if jsonb_array_length(p_tickets) not between 1 and 100 then raise exception 'INVALID_INPUT'; end if;
-for t in select distinct x.source,x.id from jsonb_to_recordset(p_tickets) x(source text,id uuid) loop
+for t in select distinct x.source,x.id from jsonb_to_recordset(p_tickets) x(source text,id uuid) order by x.source,x.id loop
 if t.source='draw' then
  if not exists(select 1 from public.lucky_draw_results where organization_id=p_org and customer_id=p_customer and id=t.id and voucher_status='issued') then raise exception 'VOUCHER_NOT_AVAILABLE'; end if;
 elsif t.source='points' then
  if not exists(select 1 from public.member_points_redemptions where organization_id=p_org and customer_id=p_customer and id=t.id and status='issued') then raise exception 'VOUCHER_NOT_AVAILABLE'; end if;
 elsif t.source='task_reward' then
  if not exists(select 1 from public.member_daily_vouchers where organization_id=p_org and customer_id=p_customer and id=t.id and status='issued' and expires_on >= (now() at time zone 'Asia/Taipei')::date) then raise exception 'VOUCHER_NOT_AVAILABLE'; end if;
+ insert into public.member_daily_voucher_reservations(organization_id,voucher_id,customer_id,checkout_app_id) values(p_org,t.id,p_customer,p_checkout) on conflict do nothing;
+ if not exists(select 1 from public.member_daily_voucher_reservations where organization_id=p_org and voucher_id=t.id and customer_id=p_customer and checkout_app_id=p_checkout) then raise exception 'VOUCHER_RESERVED'; end if;
 else raise exception 'INVALID_TICKET'; end if;
 end loop;
 select jsonb_agg(jsonb_build_object('source',x.source,'id',x.id) order by x.source,x.id) into normalized from (select distinct source,id from jsonb_to_recordset(p_tickets) as r(source text,id uuid)) x;
-insert into public.checkout_voucher_intents(organization_id,customer_id,checkout_app_id,tickets) values(p_org,p_customer,p_checkout,normalized) on conflict(organization_id,checkout_app_id) do update set tickets=excluded.tickets where checkout_voucher_intents.customer_id=excluded.customer_id and not checkout_voucher_intents.completed;
+insert into public.checkout_voucher_intents(organization_id,customer_id,checkout_app_id,tickets) values(p_org,p_customer,p_checkout,normalized) on conflict(organization_id,checkout_app_id) do update set tickets=excluded.tickets where checkout_voucher_intents.customer_id=excluded.customer_id and not checkout_voucher_intents.completed and (checkout_voucher_intents.tickets=excluded.tickets or not exists(select 1 from public.member_daily_voucher_reservations where organization_id=p_org and checkout_app_id=p_checkout));
 if not found then raise exception 'INTENT_CONFLICT'; end if;
 return true;
 end; $function$
@@ -45,7 +55,7 @@ begin
  if t.source='draw' then
  update public.lucky_draw_results set voucher_status='used',voucher_resolved_at=now() where organization_id=p_org and customer_id=p_customer and id=t.id and voucher_status='issued';
  elsif t.source='task_reward' then
- update public.member_daily_vouchers set status='used',resolved_at=now() where organization_id=p_org and customer_id=p_customer and id=t.id and status='issued' and expires_on >= (now() at time zone 'Asia/Taipei')::date;
+ update public.member_daily_vouchers set status='used',resolved_at=now() where organization_id=p_org and customer_id=p_customer and id=t.id and status='issued' and exists(select 1 from public.member_daily_voucher_reservations r where r.organization_id=p_org and r.voucher_id=t.id and r.customer_id=p_customer and r.checkout_app_id=p_checkout);
  else
  update public.member_points_redemptions set status='used',resolved_at=now() where organization_id=p_org and customer_id=p_customer and id=t.id and status='issued';
  end if;
